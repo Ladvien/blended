@@ -83,7 +83,23 @@ DRIFT_ENTRIES: tuple[DriftEntry, ...] = (
         ),
         source="[measured] scp_characters session",
     ),
+    DriftEntry(
+        symbol="duplicate object names on retry (silent .001 suffix)",
+        changed_in="all",
+        error_signature=".001",
+        fix=(
+            "A failed attempt leaves its partial objects in the scene, so "
+            "re-running a builder with the same name silently creates "
+            "'Name.001' while name lookups still find the stale 'Name' - "
+            "no error raised, wrong object measured. Ops are idempotent by "
+            "name (constructors remove a same-name object first); builders "
+            "must reuse deterministic names, never rely on Blender's "
+            "auto-suffix."
+        ),
+        source="[measured] blended stage-1 retry test, 2026-08-21",
+    ),
 )
+
 
 
 def validate_catalog() -> list[str]:

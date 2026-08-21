@@ -69,3 +69,21 @@ def test_capture_renders_all_four_views(empty_scene, tmp_path):
     for view_name, image_path in captured.items():
         assert Path(image_path).exists(), f"missing render for {view_name}"
         assert Path(image_path).stat().st_size > 0
+
+
+def test_add_box_is_idempotent_by_name(empty_scene):
+    """Rebuilding under the same name replaces, never creates '.001'."""
+    from blended.ops.primitives import add_box, link_into_scene
+
+    first_box = add_box("SameName", width_m=1.0, depth_m=1.0, height_m=1.0)
+    link_into_scene(first_box)
+    second_box = add_box("SameName", width_m=2.0, depth_m=2.0, height_m=2.0)
+    link_into_scene(second_box)
+
+    matching_names = [
+        scene_object.name
+        for scene_object in bpy.data.objects
+        if scene_object.name.startswith("SameName")
+    ]
+    assert matching_names == ["SameName"], matching_names
+    assert second_box.dimensions.x > 1.5  # it is the NEW box that survived

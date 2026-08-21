@@ -5,6 +5,12 @@ Operators depend on context (active object, mode, area) and their
 keyword arguments drift across versions; bmesh construction is
 context-free, deterministic, and headless-safe. This is the base
 vocabulary the reusable-component library grows from.
+
+Convention: construction is IDEMPOTENT BY NAME. A failed attempt leaves
+its partial objects in the scene; re-creating under the same name would
+silently become "Name.001" while lookups still find the stale "Name"
+(measured in the stage-1 retry test — see drift catalog). So every
+constructor first removes any existing object with its target name.
 """
 
 from __future__ import annotations
@@ -25,6 +31,7 @@ def add_box(
     import bmesh
     import bpy
 
+    remove_object_and_mesh(name)
     mesh_data = bpy.data.meshes.new(name)
     box_object = bpy.data.objects.new(name, mesh_data)
 
@@ -52,3 +59,21 @@ def link_into_scene(blender_object) -> None:
     import bpy
 
     bpy.context.scene.collection.objects.link(blender_object)
+
+
+def remove_object_and_mesh(object_name: str) -> None:
+    """Remove an object (and its now-orphaned mesh) by exact name.
+
+    The idempotency primitive: constructors call this first so a rerun
+    after a failed attempt replaces the stale object instead of silently
+    creating a .001-suffixed sibling on top of it.
+    """
+    import bpy
+
+    existing_object = bpy.data.objects.get(object_name)
+    if existing_object is None:
+        return
+    existing_mesh = existing_object.data
+    bpy.data.objects.remove(existing_object)
+    if existing_mesh is not None and existing_mesh.users == 0:
+        bpy.data.meshes.remove(existing_mesh)
