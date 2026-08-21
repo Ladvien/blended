@@ -98,7 +98,22 @@ DRIFT_ENTRIES: tuple[DriftEntry, ...] = (
         ),
         source="[measured] blended stage-1 retry test, 2026-08-21",
     ),
+    DriftEntry(
+        symbol="scene.display.shading.show_backface_culling in renders",
+        changed_in="all",
+        error_signature="show_backface_culling",
+        fix=(
+            "Backface culling is a VIEWPORT display setting: Workbench "
+            "renders ignore it entirely (measured: 0 changed pixels), so a "
+            "flipped normal cannot be visualized that way headless. Use the "
+            "analyzer's ray-parity flipped_normal_triangle_count, or show "
+            "it via shading contrast. show_xray DOES affect Workbench "
+            "renders and is the supported transparency debug path."
+        ),
+        source="[measured] blended stage-4 pretest, 2026-08-21",
+    ),
 )
+
 
 
 

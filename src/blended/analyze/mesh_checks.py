@@ -37,6 +37,7 @@ class MeshBudget:
     allow_boundary_edges: bool = False
     maximum_component_count: int = 1
     allow_self_intersections: bool = False
+    allow_flipped_normals: bool = False
 
 
 @dataclass(frozen=True)
@@ -52,6 +53,7 @@ class MeshReport:
     connected_component_count: int
     duplicate_vertex_pair_count: int
     self_intersecting_face_pair_count: int
+    flipped_normal_triangle_count: int
 
     def failures(self, budget: MeshBudget) -> list[str]:
         """Return human-readable failures against a budget (empty = pass)."""
@@ -94,6 +96,14 @@ class MeshReport:
             found_failures.append(
                 f"{self.self_intersecting_face_pair_count} self-intersecting "
                 f"face pairs (join-without-union is the usual cause)"
+            )
+        if (
+            not budget.allow_flipped_normals
+            and self.flipped_normal_triangle_count > 0
+        ):
+            found_failures.append(
+                f"{self.flipped_normal_triangle_count} triangles face inward "
+                f"(flipped normals)"
             )
         return found_failures
 
@@ -148,6 +158,55 @@ def _count_self_intersecting_pairs(evaluated_mesh) -> int:
     return intersecting_pair_count
 
 
+# Ray-parity constants for flipped-normal detection.
+PARITY_RAY_OFFSET_M = 1.0e-5
+PARITY_MAXIMUM_CASTS = 64
+
+
+def _count_flipped_normal_triangles(evaluated_mesh) -> int:
+    """Count triangles whose normal points into the solid (ray parity).
+
+    For each triangle, step epsilon along its normal and count surface
+    crossings out to infinity: an even count means the step landed
+    outside (normal is outward-correct), an odd count means it landed
+    inside (the triangle is flipped). Simplified single-ray variant of
+    Takayama et al.'s visibility voting; only meaningful for closed
+    manifold meshes, so the caller gates on that.
+    """
+    from mathutils import Vector
+    from mathutils.bvhtree import BVHTree
+
+    evaluated_mesh.calc_loop_triangles()
+    vertex_coordinates = [vertex.co[:] for vertex in evaluated_mesh.vertices]
+    triangles = [
+        tuple(loop_triangle.vertices)
+        for loop_triangle in evaluated_mesh.loop_triangles
+    ]
+    if not triangles:
+        return 0
+    bvh_tree = BVHTree.FromPolygons(vertex_coordinates, triangles)
+
+    flipped_count = 0
+    for loop_triangle in evaluated_mesh.loop_triangles:
+        triangle_normal = Vector(loop_triangle.normal)
+        centroid = Vector((0.0, 0.0, 0.0))
+        for vertex_index in loop_triangle.vertices:
+            centroid += Vector(vertex_coordinates[vertex_index])
+        centroid /= 3.0
+
+        ray_origin = centroid + triangle_normal * PARITY_RAY_OFFSET_M
+        crossing_count = 0
+        for _ in range(PARITY_MAXIMUM_CASTS):
+            hit_location = bvh_tree.ray_cast(ray_origin, triangle_normal)[0]
+            if hit_location is None:
+                break
+            crossing_count += 1
+            ray_origin = hit_location + triangle_normal * PARITY_RAY_OFFSET_M
+        if crossing_count % 2 == 1:
+            flipped_count += 1
+    return flipped_count
+
+
 def analyze_object(blender_object) -> MeshReport:
     """Measure the object's *evaluated* mesh (modifiers included).
 
@@ -198,6 +257,14 @@ def analyze_object(blender_object) -> MeshReport:
             self_intersecting_face_pair_count = (
                 _count_self_intersecting_pairs(evaluated_mesh)
             )
+            # Parity is only meaningful on closed manifold geometry;
+            # open/non-manifold meshes already fail their own checks.
+            if boundary_edge_count == 0 and non_manifold_edge_count == 0:
+                flipped_normal_triangle_count = (
+                    _count_flipped_normal_triangles(evaluated_mesh)
+                )
+            else:
+                flipped_normal_triangle_count = 0
         finally:
             working_mesh.free()
     finally:
@@ -213,4 +280,5 @@ def analyze_object(blender_object) -> MeshReport:
         connected_component_count=connected_component_count,
         duplicate_vertex_pair_count=duplicate_vertex_pair_count,
         self_intersecting_face_pair_count=self_intersecting_face_pair_count,
+        flipped_normal_triangle_count=flipped_normal_triangle_count,
     )
