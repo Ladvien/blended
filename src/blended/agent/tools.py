@@ -1,0 +1,312 @@
+"""The agent-computer interface: the tools the model can actually call.
+
+SWE-agent's measured result — a purpose-built ACI beat a bare shell
+18.0% vs 11.0% on the same model — plus its ablations, shape every
+choice here:
+
+* A too-large observation window cost MORE than a too-small one
+  (-5.3pp vs -3.7pp), so every tool bounds its output.
+* Iterative search was WORSE than no search at all (-6.0pp), so
+  `search_ops` returns one ranked page and never paginates.
+* Guardrails that prevent a bad edit beat recovery after one, because a
+  single failed edit drops the next success rate from 90.5% to 57.2% —
+  so `run_python` reports the gate verdict with every run rather than
+  letting the agent proceed on an unmeasured mesh.
+"""
+
+from __future__ import annotations
+
+import json
+from pathlib import Path
+
+# Bounded observation windows.
+MAXIMUM_SCENE_OBJECTS_LISTED = 40
+MAXIMUM_SEARCH_RESULTS = 8
+MAXIMUM_TRACEBACK_CHARACTERS = 1500
+
+TOOL_SCHEMAS = [
+    {
+        "type": "function",
+        "function": {
+            "name": "run_python",
+            "description": (
+                "Execute a Python chunk in the live Blender session, then "
+                "measure the named object against the analyzer gate. "
+                "Returns execution status, any traceback with known API-drift "
+                "fixes attached, and the full gate report. This is your "
+                "primary tool — build by running small chunks."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "source": {
+                        "type": "string",
+                        "description": "Python source. `blended.ops` is importable.",
+                    },
+                    "object_name": {
+                        "type": "string",
+                        "description": (
+                            "Name of the object to gate after the chunk runs. "
+                            "Omit to run the chunk without gating."
+                        ),
+                    },
+                },
+                "required": ["source"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "inspect_object",
+            "description": (
+                "Measure an existing object without rebuilding it. Returns "
+                "the full analyzer report: triangles, components, manifold "
+                "status, self-intersections, normals, UVs."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "object_name": {"type": "string"},
+                },
+                "required": ["object_name"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "render_views",
+            "description": (
+                "Render an object from front, right, top and three-quarter "
+                "into one contact sheet, and return the image so you can SEE "
+                "it. Use X-ray to look through geometry when debugging "
+                "overlaps or hidden parts. Always look before declaring done."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "object_name": {"type": "string"},
+                    "xray": {
+                        "type": "boolean",
+                        "description": (
+                            "Semi-transparent shading — reveals interpenetration "
+                            "and hidden interior geometry."
+                        ),
+                    },
+                },
+                "required": ["object_name"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "search_ops",
+            "description": (
+                "Find harness operations by keyword. Use this before "
+                "guessing a signature. Returns the closest matches with "
+                "their exact signatures."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "e.g. 'boolean', 'unwrap', 'array', 'ground'",
+                    },
+                },
+                "required": ["query"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "list_scene",
+            "description": (
+                "List mesh objects currently in the scene with their triangle "
+                "counts and dimensions. Bounded — use it to orient, not to "
+                "search."
+            ),
+            "parameters": {"type": "object", "properties": {}},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "export_asset",
+            "description": (
+                "Export an object to .glb and VERIFY it by re-importing the "
+                "written file and re-measuring. Only call this on a mesh that "
+                "already passes the gate."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "object_name": {"type": "string"},
+                    "path": {"type": "string", "description": "Output .glb path."},
+                },
+                "required": ["object_name", "path"],
+            },
+        },
+    },
+]
+
+
+def _report_to_dict(report) -> dict:
+    from dataclasses import asdict
+
+    return asdict(report)
+
+
+def dispatch_tool(
+    tool_name: str,
+    arguments: dict,
+    output_directory: Path = Path("_renders/agent"),
+) -> tuple[str, list[Path]]:
+    """Execute one tool call. Returns (text_result, image_paths).
+
+    Image paths are returned separately so the caller can attach them to
+    the model's next message as actual images — a contact sheet the
+    model cannot see is worthless.
+    """
+    import bpy
+
+    from blended.analyze import MeshBudget, analyze_object
+
+    output_directory = Path(output_directory)
+
+    if tool_name == "run_python":
+        from blended.harness import HarnessSettings, run_chunk
+        from blended.run.executor import run_source_in_process
+
+        source_code = arguments["source"]
+        object_name = arguments.get("object_name")
+        if not object_name:
+            run_result = run_source_in_process(source_code, "<chat>")
+            if run_result.ok:
+                return f"Executed OK in {run_result.duration_s:.2f}s.", []
+            drift_notes = "".join(
+                f"\n  KNOWN TRAP [{entry.symbol}]: {entry.fix}"
+                for entry in run_result.matched_drift
+            )
+            return (
+                f"FAILED: {run_result.error_type}: {run_result.error_message}\n"
+                f"{run_result.traceback_text[:MAXIMUM_TRACEBACK_CHARACTERS]}"
+                f"{drift_notes}",
+                [],
+            )
+        harness_result = run_chunk(
+            source_code,
+            object_name=object_name,
+            settings=HarnessSettings(output_directory=output_directory),
+            chunk_label="chat",
+        )
+        images = (
+            [harness_result.contact_sheet_path]
+            if harness_result.contact_sheet_path is not None
+            else []
+        )
+        return harness_result.summary(), images
+
+    if tool_name == "inspect_object":
+        object_name = arguments["object_name"]
+        blender_object = bpy.data.objects.get(object_name)
+        if blender_object is None:
+            return f"No object named {object_name!r} in the scene.", []
+        report = analyze_object(blender_object)
+        failures = report.failures(MeshBudget())
+        verdict = "PASS" if not failures else "FAIL: " + "; ".join(failures)
+        return (
+            f"GATE {verdict}\n{json.dumps(_report_to_dict(report), indent=1)}",
+            [],
+        )
+
+    if tool_name == "render_views":
+        from blended.capture import CaptureSettings, capture_contact_sheet
+
+        object_name = arguments["object_name"]
+        blender_object = bpy.data.objects.get(object_name)
+        if blender_object is None:
+            return f"No object named {object_name!r} in the scene.", []
+        report = analyze_object(blender_object)
+        sheet_path = capture_contact_sheet(
+            blender_object,
+            output_directory,
+            settings=CaptureSettings(xray=bool(arguments.get("xray", False))),
+            report=report,
+        )
+        return (
+            f"Rendered {object_name} ({'x-ray' if arguments.get('xray') else 'solid'}). "
+            f"Look at the attached contact sheet.",
+            [sheet_path],
+        )
+
+    if tool_name == "search_ops":
+        from blended.manifest import OP_MODULE_NAMES, _public_functions
+        import importlib
+
+        query = arguments["query"].lower()
+        matches: list[str] = []
+        for module_name in OP_MODULE_NAMES:
+            module = importlib.import_module(f"blended.ops.{module_name}")
+            for signature, summary in _public_functions(module):
+                haystack = f"{module_name} {signature} {summary}".lower()
+                if query in haystack:
+                    matches.append(
+                        f"blended.ops.{module_name}: {signature}\n    {summary}"
+                    )
+        if not matches:
+            return (
+                f"No operation matches {arguments['query']!r}. "
+                f"Available modules: {', '.join(OP_MODULE_NAMES)}.",
+                [],
+            )
+        return "\n".join(matches[:MAXIMUM_SEARCH_RESULTS]), []
+
+    if tool_name == "list_scene":
+        mesh_objects = [
+            scene_object
+            for scene_object in bpy.context.scene.objects
+            if scene_object.type == "MESH"
+        ]
+        if not mesh_objects:
+            return "Scene is empty (no mesh objects).", []
+        bpy.context.view_layer.update()
+        lines = []
+        for scene_object in mesh_objects[:MAXIMUM_SCENE_OBJECTS_LISTED]:
+            triangle_count = sum(
+                len(polygon.vertices) - 2
+                for polygon in scene_object.data.polygons
+            )
+            dimensions = scene_object.dimensions
+            lines.append(
+                f"{scene_object.name}: {triangle_count} tris, "
+                f"{dimensions.x:.3f} x {dimensions.y:.3f} x {dimensions.z:.3f} m"
+            )
+        if len(mesh_objects) > MAXIMUM_SCENE_OBJECTS_LISTED:
+            lines.append(
+                f"... and {len(mesh_objects) - MAXIMUM_SCENE_OBJECTS_LISTED} more"
+            )
+        return "\n".join(lines), []
+
+    if tool_name == "export_asset":
+        from blended.export import export_glb
+
+        object_name = arguments["object_name"]
+        blender_object = bpy.data.objects.get(object_name)
+        if blender_object is None:
+            return f"No object named {object_name!r} in the scene.", []
+        export_report = export_glb(blender_object, Path(arguments["path"]))
+        failures = export_report.round_trip_failures()
+        if failures:
+            return "EXPORT VERIFICATION FAILED:\n" + "\n".join(failures), []
+        return (
+            f"Exported and verified: {export_report.export_path} "
+            f"({export_report.file_size_bytes} bytes, "
+            f"{export_report.reimported_welded.triangle_count} tris round-tripped).",
+            [],
+        )
+
+    return f"Unknown tool: {tool_name}", []
