@@ -33,6 +33,10 @@ def _apply_boolean(
     apply_all_modifiers(target_object)
     remove_object_and_mesh(operand_object.name)
 
+    from blended.ops.heal import weld_and_dissolve
+
+    weld_and_dissolve(target_object)
+
 
 def boolean_difference(target_object, cutter_object, solver=BOOLEAN_SOLVER_DEFAULT):
     """Subtract cutter from target; the cutter is consumed."""
