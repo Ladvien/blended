@@ -61,3 +61,33 @@ def test_xray_reveals_hidden_geometry(empty_scene, tmp_path):
         numpy.abs(plain_pixels - xray_pixels) > CHANGED_PIXEL_THRESHOLD
     ).sum()
     assert changed_pixel_count > MINIMUM_CHANGED_PIXELS
+
+
+def test_numpy_compositor_matches_pillow_dimensions(empty_scene, tmp_path):
+    """The Pillow-free path must produce a real sheet, since Blender
+    bundles numpy but not Pillow."""
+    from blended.builders import CrateBuilder, CrateParameters
+    from blended.capture import capture_views
+    from blended.capture.compose import compose_grid_numpy
+
+    crate_object = CrateBuilder(CrateParameters()).build()
+    view_paths = capture_views(crate_object, tmp_path)
+    sheet_path = compose_grid_numpy(view_paths, tmp_path / "numpy_sheet.png")
+
+    assert sheet_path.exists()
+    sheet_image = PIL_Image.open(sheet_path)
+    single_view_size = PIL_Image.open(view_paths["front"]).size
+    assert sheet_image.size[0] > single_view_size[0] * 1.5
+    assert sheet_image.size[1] > single_view_size[1] * 1.5
+
+
+def test_contact_sheet_falls_back_when_pillow_is_absent(empty_scene, tmp_path, monkeypatch):
+    from blended.builders import CrateBuilder, CrateParameters
+    from blended.capture import capture_contact_sheet
+    import blended.capture.compose as compose_module
+
+    monkeypatch.setattr(compose_module, "pillow_available", lambda: False)
+    crate_object = CrateBuilder(CrateParameters()).build()
+    sheet_path = capture_contact_sheet(crate_object, tmp_path)
+    assert sheet_path.exists()
+    assert sheet_path.stat().st_size > 0

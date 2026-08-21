@@ -31,12 +31,15 @@ def compose_contact_sheet(
     verdict_passed: bool | None = None,
 ) -> Path:
     """Tile the captured views into a labeled 2x2 sheet."""
-    try:
-        from PIL import Image, ImageDraw
-    except ImportError as import_error:  # pragma: no cover
-        raise RuntimeError(
-            "Contact sheets need Pillow: pip install pillow"
-        ) from import_error
+    from blended.capture.compose import compose_grid_numpy, pillow_available
+
+    # Blender bundles numpy, not Pillow. Without Pillow we still produce
+    # the sheet — just without burnt-in labels. The agent gets the
+    # verdict as tool text either way; labels are for humans.
+    if not pillow_available():
+        return compose_grid_numpy(view_paths, output_path)
+
+    from PIL import Image, ImageDraw
 
     view_names = list(view_paths)
     view_images = [

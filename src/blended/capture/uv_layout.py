@@ -28,6 +28,15 @@ def render_uv_layout(
 ) -> Path:
     """Draw the active UV layer's islands into a PNG; return the path."""
     import bmesh
+
+    from blended.capture.compose import pillow_available
+
+    if not pillow_available():
+        raise RuntimeError(
+            "render_uv_layout needs Pillow, which Blender does not bundle. "
+            "Install it into Blender's Python, or inspect UVs numerically "
+            "via the analyzer's uv_* fields instead."
+        )
     from PIL import Image, ImageDraw
 
     output_path = Path(output_path)
