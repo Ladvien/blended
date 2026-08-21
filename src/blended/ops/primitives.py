@@ -77,3 +77,42 @@ def remove_object_and_mesh(object_name: str) -> None:
     bpy.data.objects.remove(existing_object)
     if existing_mesh is not None and existing_mesh.users == 0:
         bpy.data.meshes.remove(existing_mesh)
+
+
+def add_cylinder(
+    name: str,
+    radius_m: float,
+    height_m: float,
+    segment_count: int = 24,
+    location_m: tuple[float, float, float] = (0.0, 0.0, 0.0),
+):
+    """Create a closed cylinder, base at location_m[2] (same convention
+    as add_box). Idempotent by name."""
+    import bmesh
+    import bpy
+
+    remove_object_and_mesh(name)
+    mesh_data = bpy.data.meshes.new(name)
+    cylinder_object = bpy.data.objects.new(name, mesh_data)
+
+    working_mesh = bmesh.new()
+    try:
+        bmesh.ops.create_cone(
+            working_mesh,
+            cap_ends=True,
+            cap_tris=False,
+            segments=segment_count,
+            radius1=radius_m,
+            radius2=radius_m,
+            depth=height_m,
+        )
+        half_height_offset_m = height_m / 2.0
+        for vertex in working_mesh.verts:
+            vertex.co.x += location_m[0]
+            vertex.co.y += location_m[1]
+            vertex.co.z += location_m[2] + half_height_offset_m
+        working_mesh.to_mesh(mesh_data)
+    finally:
+        working_mesh.free()
+
+    return cylinder_object
