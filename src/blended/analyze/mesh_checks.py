@@ -38,6 +38,13 @@ class MeshBudget:
     maximum_component_count: int = 1
     allow_self_intersections: bool = False
     allow_flipped_normals: bool = False
+    # UV requirements. Off by default so pure-geometry stages (blockout,
+    # CSG intermediates) are not forced to carry a UV layout; turn on
+    # for anything headed to texturing or export.
+    require_uv_layer: bool = False
+    allow_uv_overlaps: bool = True
+    allow_uv_out_of_bounds: bool = True
+    maximum_uv_island_count: int | None = None
 
 
 @dataclass(frozen=True)
@@ -54,6 +61,16 @@ class MeshReport:
     duplicate_vertex_pair_count: int
     self_intersecting_face_pair_count: int
     flipped_normal_triangle_count: int
+    uv_layer_count: int = 0
+    uv_island_count: int = 0
+    uv_overlapping_face_pair_count: int = 0
+    uv_out_of_bounds_face_count: int = 0
+    # SUM of UV triangle areas over the unit square. This DOUBLE-COUNTS
+    # overlapped area by design, so a value near or above 1.0 alongside a
+    # nonzero overlap count means stacking, not efficient packing
+    # (measured: a barrel atlas reporting 94.1% here was 69.9% by
+    # rasterization, with 38% of covered pixels multiply-covered).
+    uv_coverage_fraction: float = 0.0
 
     def failures(self, budget: MeshBudget) -> list[str]:
         """Return human-readable failures against a budget (empty = pass)."""
@@ -104,6 +121,34 @@ class MeshReport:
             found_failures.append(
                 f"{self.flipped_normal_triangle_count} triangles face inward "
                 f"(flipped normals)"
+            )
+        if budget.require_uv_layer and self.uv_layer_count == 0:
+            found_failures.append("no UV layer (cannot be textured)")
+        if (
+            budget.require_uv_layer
+            and not budget.allow_uv_overlaps
+            and self.uv_overlapping_face_pair_count > 0
+        ):
+            found_failures.append(
+                f"{self.uv_overlapping_face_pair_count} overlapping UV face "
+                f"pairs (texels shared between surfaces)"
+            )
+        if (
+            budget.require_uv_layer
+            and not budget.allow_uv_out_of_bounds
+            and self.uv_out_of_bounds_face_count > 0
+        ):
+            found_failures.append(
+                f"{self.uv_out_of_bounds_face_count} faces outside the 0-1 UV "
+                f"square"
+            )
+        if (
+            budget.maximum_uv_island_count is not None
+            and self.uv_island_count > budget.maximum_uv_island_count
+        ):
+            found_failures.append(
+                f"{self.uv_island_count} UV islands exceeds budget "
+                f"{budget.maximum_uv_island_count} (seam-heavy layout)"
             )
         return found_failures
 
@@ -207,6 +252,261 @@ def _count_flipped_normal_triangles(evaluated_mesh) -> int:
     return flipped_count
 
 
+# UV analysis constants.
+UV_COINCIDENT_EPSILON = 1.0e-6
+UV_BOUNDS_EPSILON = 1.0e-6
+# Total area of the 0-1 UV square.
+UV_SQUARE_AREA = 1.0
+
+
+def _uv_signed_area(first_uv, second_uv, third_uv) -> float:
+    """Twice the signed area — the standard 2D orientation predicate."""
+    return (second_uv[0] - first_uv[0]) * (third_uv[1] - first_uv[1]) - (
+        third_uv[0] - first_uv[0]
+    ) * (second_uv[1] - first_uv[1])
+
+
+def _uv_triangle_area(first_uv, second_uv, third_uv) -> float:
+    """Absolute area of a triangle in UV space."""
+    return abs(_uv_signed_area(first_uv, second_uv, third_uv)) / 2.0
+
+
+def _point_strictly_inside_triangle(point_uv, triangle_uvs) -> bool:
+    """True when the point is strictly inside (not on) the triangle."""
+    first_uv, second_uv, third_uv = triangle_uvs
+    orientations = (
+        _uv_signed_area(first_uv, second_uv, point_uv),
+        _uv_signed_area(second_uv, third_uv, point_uv),
+        _uv_signed_area(third_uv, first_uv, point_uv),
+    )
+    if any(abs(value) <= UV_COINCIDENT_EPSILON for value in orientations):
+        return False
+    return all(value > 0 for value in orientations) or all(
+        value < 0 for value in orientations
+    )
+
+
+def _segments_properly_cross(
+    first_start, first_end, second_start, second_end
+) -> bool:
+    """True when two segments cross at an interior point of both.
+
+    Shared endpoints (mesh adjacency in UV space) are not a crossing.
+    """
+    for endpoint in (first_start, first_end):
+        for other_endpoint in (second_start, second_end):
+            if (
+                abs(endpoint[0] - other_endpoint[0]) <= UV_COINCIDENT_EPSILON
+                and abs(endpoint[1] - other_endpoint[1]) <= UV_COINCIDENT_EPSILON
+            ):
+                return False
+    first_side = _uv_signed_area(first_start, first_end, second_start)
+    second_side = _uv_signed_area(first_start, first_end, second_end)
+    third_side = _uv_signed_area(second_start, second_end, first_start)
+    fourth_side = _uv_signed_area(second_start, second_end, first_end)
+    return (first_side * second_side < 0.0) and (third_side * fourth_side < 0.0)
+
+
+def _uv_triangles_overlap(first_triangle_uvs, second_triangle_uvs) -> bool:
+    """True when two UV triangles share area, not merely an edge.
+
+    Corner-sharing alone is NOT overlap (that is island adjacency) and
+    is NOT a licence to skip the pair either: perfectly stacked
+    triangles share every corner and overlap completely. So the test is
+    geometric: containment either way, or a proper edge crossing.
+    """
+    first_centroid = (
+        sum(uv[0] for uv in first_triangle_uvs) / 3.0,
+        sum(uv[1] for uv in first_triangle_uvs) / 3.0,
+    )
+    if _point_strictly_inside_triangle(first_centroid, second_triangle_uvs):
+        return True
+    second_centroid = (
+        sum(uv[0] for uv in second_triangle_uvs) / 3.0,
+        sum(uv[1] for uv in second_triangle_uvs) / 3.0,
+    )
+    if _point_strictly_inside_triangle(second_centroid, first_triangle_uvs):
+        return True
+    for first_index in range(3):
+        for second_index in range(3):
+            if _segments_properly_cross(
+                first_triangle_uvs[first_index],
+                first_triangle_uvs[(first_index + 1) % 3],
+                second_triangle_uvs[second_index],
+                second_triangle_uvs[(second_index + 1) % 3],
+            ):
+                return True
+    return False
+
+
+# Uniform-grid broadphase resolution for UV overlap search. A 2D grid
+# replaces BVHTree here deliberately: BVHTree.overlap silently returns
+# NOTHING for exactly-coplanar triangles (measured), and every triangle
+# in UV space is coplanar by definition. See the drift catalog.
+UV_BROADPHASE_GRID_RESOLUTION = 32
+
+
+def _count_overlapping_uv_triangle_pairs(triangle_uv_corners) -> int:
+    """Count genuinely overlapping UV triangle pairs.
+
+    Uniform-grid broadphase (cheap AABB bucketing) then the exact 2D
+    predicate on each candidate pair.
+    """
+    if len(triangle_uv_corners) < 2:
+        return 0
+
+    all_u = [uv[0] for corners in triangle_uv_corners for uv in corners]
+    all_v = [uv[1] for corners in triangle_uv_corners for uv in corners]
+    minimum_u, maximum_u = min(all_u), max(all_u)
+    minimum_v, maximum_v = min(all_v), max(all_v)
+    span_u = max(maximum_u - minimum_u, UV_COINCIDENT_EPSILON)
+    span_v = max(maximum_v - minimum_v, UV_COINCIDENT_EPSILON)
+
+    buckets: dict[tuple[int, int], list[int]] = {}
+    triangle_bounds: list[tuple[float, float, float, float]] = []
+    for triangle_index, corners in enumerate(triangle_uv_corners):
+        low_u = min(uv[0] for uv in corners)
+        high_u = max(uv[0] for uv in corners)
+        low_v = min(uv[1] for uv in corners)
+        high_v = max(uv[1] for uv in corners)
+        triangle_bounds.append((low_u, high_u, low_v, high_v))
+        first_column = int(
+            (low_u - minimum_u) / span_u * (UV_BROADPHASE_GRID_RESOLUTION - 1)
+        )
+        last_column = int(
+            (high_u - minimum_u) / span_u * (UV_BROADPHASE_GRID_RESOLUTION - 1)
+        )
+        first_row = int(
+            (low_v - minimum_v) / span_v * (UV_BROADPHASE_GRID_RESOLUTION - 1)
+        )
+        last_row = int(
+            (high_v - minimum_v) / span_v * (UV_BROADPHASE_GRID_RESOLUTION - 1)
+        )
+        for column in range(first_column, last_column + 1):
+            for row in range(first_row, last_row + 1):
+                buckets.setdefault((column, row), []).append(triangle_index)
+
+    checked_pairs: set[tuple[int, int]] = set()
+    overlapping_pair_count = 0
+    for bucket_triangles in buckets.values():
+        for position, first_index in enumerate(bucket_triangles):
+            for second_index in bucket_triangles[position + 1:]:
+                pair_key = (
+                    (first_index, second_index)
+                    if first_index < second_index
+                    else (second_index, first_index)
+                )
+                if pair_key in checked_pairs:
+                    continue
+                checked_pairs.add(pair_key)
+                first_low_u, first_high_u, first_low_v, first_high_v = (
+                    triangle_bounds[pair_key[0]]
+                )
+                second_low_u, second_high_u, second_low_v, second_high_v = (
+                    triangle_bounds[pair_key[1]]
+                )
+                if (
+                    first_high_u < second_low_u
+                    or second_high_u < first_low_u
+                    or first_high_v < second_low_v
+                    or second_high_v < first_low_v
+                ):
+                    continue
+                if _uv_triangles_overlap(
+                    triangle_uv_corners[pair_key[0]],
+                    triangle_uv_corners[pair_key[1]],
+                ):
+                    overlapping_pair_count += 1
+    return overlapping_pair_count
+
+
+def _count_uv_islands(working_mesh, uv_layer) -> int:
+    """Count UV islands: faces are in one island when they share an edge
+    whose UV coordinates match on BOTH sides. A UV seam is exactly an
+    edge where they do not."""
+    unvisited_faces = set(working_mesh.faces)
+    island_count = 0
+    while unvisited_faces:
+        island_count += 1
+        frontier = [unvisited_faces.pop()]
+        while frontier:
+            current_face = frontier.pop()
+            for current_loop in current_face.loops:
+                shared_edge = current_loop.edge
+                for neighbor_face in shared_edge.link_faces:
+                    if neighbor_face not in unvisited_faces:
+                        continue
+                    # Compare the edge's UVs as seen from both faces.
+                    current_edge_uvs = {
+                        tuple(round(component, 6) for component in loop[uv_layer].uv)
+                        for loop in current_face.loops
+                        if loop.vert in shared_edge.verts
+                    }
+                    neighbor_edge_uvs = {
+                        tuple(round(component, 6) for component in loop[uv_layer].uv)
+                        for loop in neighbor_face.loops
+                        if loop.vert in shared_edge.verts
+                    }
+                    if current_edge_uvs == neighbor_edge_uvs:
+                        unvisited_faces.remove(neighbor_face)
+                        frontier.append(neighbor_face)
+    return island_count
+
+
+def _measure_uvs(working_mesh) -> dict:
+    """Measure the active UV layer: islands, overlaps, bounds, coverage."""
+    empty_measurements = {
+        "uv_island_count": 0,
+        "uv_overlapping_face_pair_count": 0,
+        "uv_out_of_bounds_face_count": 0,
+        "uv_coverage_fraction": 0.0,
+    }
+    uv_layer = working_mesh.loops.layers.uv.active
+    if uv_layer is None or not working_mesh.faces:
+        return empty_measurements
+
+    # Flatten UVs into a z=0 mesh so the same BVH overlap machinery that
+    # finds 3D self-intersections finds UV overlaps.
+    uv_vertex_coordinates: list[tuple[float, float, float]] = []
+    uv_triangles: list[tuple[int, int, int]] = []
+    out_of_bounds_face_count = 0
+    total_uv_area = 0.0
+    for face in working_mesh.faces:
+        face_uvs = [tuple(loop[uv_layer].uv) for loop in face.loops]
+        if any(
+            component < -UV_BOUNDS_EPSILON
+            or component > 1.0 + UV_BOUNDS_EPSILON
+            for uv in face_uvs
+            for component in uv
+        ):
+            out_of_bounds_face_count += 1
+        base_index = len(uv_vertex_coordinates)
+        uv_vertex_coordinates.extend((uv[0], uv[1], 0.0) for uv in face_uvs)
+        # Fan-triangulate the face in UV space.
+        for corner_index in range(1, len(face_uvs) - 1):
+            uv_triangles.append(
+                (base_index, base_index + corner_index, base_index + corner_index + 1)
+            )
+            total_uv_area += _uv_triangle_area(
+                face_uvs[0], face_uvs[corner_index], face_uvs[corner_index + 1]
+            )
+
+    triangle_uv_corners = [
+        [uv_vertex_coordinates[vertex_index][:2] for vertex_index in triangle]
+        for triangle in uv_triangles
+    ]
+    overlapping_pair_count = _count_overlapping_uv_triangle_pairs(
+        triangle_uv_corners
+    )
+
+    return {
+        "uv_island_count": _count_uv_islands(working_mesh, uv_layer),
+        "uv_overlapping_face_pair_count": overlapping_pair_count,
+        "uv_out_of_bounds_face_count": out_of_bounds_face_count,
+        "uv_coverage_fraction": total_uv_area / UV_SQUARE_AREA,
+    }
+
+
 def analyze_object(blender_object) -> MeshReport:
     """Measure the object's *evaluated* mesh (modifiers included).
 
@@ -265,6 +565,8 @@ def analyze_object(blender_object) -> MeshReport:
                 )
             else:
                 flipped_normal_triangle_count = 0
+            uv_layer_count = len(working_mesh.loops.layers.uv)
+            uv_measurements = _measure_uvs(working_mesh)
         finally:
             working_mesh.free()
     finally:
@@ -281,4 +583,13 @@ def analyze_object(blender_object) -> MeshReport:
         duplicate_vertex_pair_count=duplicate_vertex_pair_count,
         self_intersecting_face_pair_count=self_intersecting_face_pair_count,
         flipped_normal_triangle_count=flipped_normal_triangle_count,
+        uv_layer_count=uv_layer_count,
+        uv_island_count=uv_measurements["uv_island_count"],
+        uv_overlapping_face_pair_count=uv_measurements[
+            "uv_overlapping_face_pair_count"
+        ],
+        uv_out_of_bounds_face_count=uv_measurements[
+            "uv_out_of_bounds_face_count"
+        ],
+        uv_coverage_fraction=uv_measurements["uv_coverage_fraction"],
     )

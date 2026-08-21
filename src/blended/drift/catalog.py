@@ -128,7 +128,60 @@ DRIFT_ENTRIES: tuple[DriftEntry, ...] = (
         ),
         source="[measured] blended stage-8 export round-trip, 2026-08-21",
     ),
+    DriftEntry(
+        symbol="BVHTree.overlap on coplanar triangles",
+        changed_in="all",
+        error_signature="BVHTree",
+        fix=(
+            "BVHTree.overlap() silently returns an EMPTY list for "
+            "exactly-coplanar triangle pairs - measured: two obviously "
+            "overlapping triangles at z=0 report no pairs, the same two "
+            "report a pair once one is nudged off-plane. No error, no "
+            "warning, just a clean-looking zero. So BVHTree is unusable "
+            "for any 2D/flattened work (UV overlap above all); use a "
+            "uniform-grid or sweep broadphase plus an explicit 2D "
+            "predicate. It remains correct for genuine 3D self-"
+            "intersection, where the triangles are not coplanar."
+        ),
+        source="[measured] blended stage-3.2 UV overlap, 2026-08-21",
+    ),
+    DriftEntry(
+        symbol="bpy.ops.uv.smart_project on curved geometry",
+        changed_in="all",
+        error_signature="smart_project",
+        fix=(
+            "smart_project silently produces a heavily OVERLAPPING atlas "
+            "on curved/lathe geometry - measured on a barrel: 210 "
+            "overlapping face pairs, 38% of covered texels multiply "
+            "covered, max stack depth 40, while reporting a healthy "
+            "looking 94% coverage (area sum double-counts overlap). It is "
+            "clean on boxy meshes. bpy.ops.uv.unwrap(method='ANGLE_BASED') "
+            "stayed at 0 overlaps on every mesh tested and is the default. "
+            "cube_project stacks by design. Never trust an unwrap without "
+            "measuring its overlap count."
+        ),
+        source="[measured] blended stage-3.2 unwrap comparison, 2026-08-21",
+    ),
+    DriftEntry(
+        symbol="UV unwrap inherits pre-existing seams",
+        changed_in="all",
+        error_signature="uv_layers",
+        fix=(
+            "Unwrap solvers reuse the existing UV layout's seams and "
+            "island structure, so unwrapping a mesh that already has UVs "
+            "silently yields a different result than unwrapping it fresh "
+            "- measured: a barrel unwrapped ANGLE_BASED right after "
+            "SMART_PROJECT inherited that method's 26 overlapping islands "
+            "instead of its own clean 344, with no warning. Clear "
+            "mesh.uv_layers before unwrapping so the op is a pure "
+            "function of the geometry."
+        ),
+        source="[measured] blended stage-3.2 unwrap determinism, 2026-08-21",
+    ),
 )
+
+
+
 
 
 

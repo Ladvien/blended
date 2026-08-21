@@ -8,6 +8,7 @@ from blended.ops.heal import weld_and_dissolve
 from blended.ops.modifiers import add_bevel, apply_all_modifiers
 from blended.ops.arrays import linear_array
 from blended.ops.booleans import boolean_difference, boolean_intersect, boolean_union
+from blended.ops.uv import UnwrapReport, smart_unwrap, unwrap_uvs
 from blended.ops.transforms import (
     apply_object_transform,
     center_on_origin_xy,
@@ -22,6 +23,9 @@ __all__ = [
     "add_bevel",
     "linear_array",
     "weld_and_dissolve",
+    "smart_unwrap",
+    "unwrap_uvs",
+    "UnwrapReport",
     "apply_all_modifiers",
     "boolean_difference",
     "boolean_intersect",
