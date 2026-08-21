@@ -36,6 +36,7 @@ class MeshBudget:
     require_manifold: bool = True
     allow_boundary_edges: bool = False
     maximum_component_count: int = 1
+    allow_self_intersections: bool = False
 
 
 @dataclass(frozen=True)
@@ -50,6 +51,7 @@ class MeshReport:
     non_finite_coordinate_count: int
     connected_component_count: int
     duplicate_vertex_pair_count: int
+    self_intersecting_face_pair_count: int
 
     def failures(self, budget: MeshBudget) -> list[str]:
         """Return human-readable failures against a budget (empty = pass)."""
@@ -85,6 +87,14 @@ class MeshReport:
                 f"{self.duplicate_vertex_pair_count} duplicate vertex pairs "
                 f"within {DUPLICATE_VERTEX_DISTANCE_M} m"
             )
+        if (
+            not budget.allow_self_intersections
+            and self.self_intersecting_face_pair_count > 0
+        ):
+            found_failures.append(
+                f"{self.self_intersecting_face_pair_count} self-intersecting "
+                f"face pairs (join-without-union is the usual cause)"
+            )
         return found_failures
 
     def passes(self, budget: MeshBudget) -> bool:
@@ -106,6 +116,36 @@ def _count_connected_components(working_mesh) -> int:
                     unvisited_vertices.remove(neighbor_vertex)
                     frontier.append(neighbor_vertex)
     return component_count
+
+
+def _count_self_intersecting_pairs(evaluated_mesh) -> int:
+    """Count non-adjacent triangle pairs whose bounding volumes overlap
+    and whose triangles actually intersect (BVH self-overlap).
+
+    Pairs sharing any vertex are skipped: mesh adjacency always
+    "overlaps" and is not a defect. What remains is real geometry
+    passing through other geometry — the signature of a join that
+    should have been a boolean union, or of a bad boolean.
+    """
+    from mathutils.bvhtree import BVHTree
+
+    evaluated_mesh.calc_loop_triangles()
+    vertex_coordinates = [vertex.co[:] for vertex in evaluated_mesh.vertices]
+    triangles = [
+        tuple(loop_triangle.vertices)
+        for loop_triangle in evaluated_mesh.loop_triangles
+    ]
+    if not triangles:
+        return 0
+    bvh_tree = BVHTree.FromPolygons(vertex_coordinates, triangles)
+    intersecting_pair_count = 0
+    for first_index, second_index in bvh_tree.overlap(bvh_tree):
+        if first_index >= second_index:
+            continue  # symmetric duplicate or self-pair
+        if set(triangles[first_index]) & set(triangles[second_index]):
+            continue  # adjacency, not a defect
+        intersecting_pair_count += 1
+    return intersecting_pair_count
 
 
 def analyze_object(blender_object) -> MeshReport:
@@ -155,6 +195,9 @@ def analyze_object(blender_object) -> MeshReport:
                 dist=DUPLICATE_VERTEX_DISTANCE_M,
             )
             duplicate_vertex_pair_count = len(duplicate_search["targetmap"])
+            self_intersecting_face_pair_count = (
+                _count_self_intersecting_pairs(evaluated_mesh)
+            )
         finally:
             working_mesh.free()
     finally:
@@ -169,4 +212,5 @@ def analyze_object(blender_object) -> MeshReport:
         non_finite_coordinate_count=non_finite_coordinate_count,
         connected_component_count=connected_component_count,
         duplicate_vertex_pair_count=duplicate_vertex_pair_count,
+        self_intersecting_face_pair_count=self_intersecting_face_pair_count,
     )

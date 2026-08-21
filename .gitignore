@@ -216,3 +216,8 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# blended workspace artifacts
+_renders/
+_to_delete/
+_smoke*/
