@@ -1,0 +1,122 @@
+"""glTF export with round-trip verification.
+
+The export call's return value proves nothing about the file on disk.
+So export_glb measures the artifact: it re-imports the .glb it just
+wrote and runs the analyzer on what actually came back.
+
+Measured lesson (see drift catalog): glTF stores per-vertex normals, so
+the exporter SPLITS vertices along flat-shading seams — a watertight
+mesh ships as topologically disconnected shards (the pallet: 1 solid
+out, 46 components / 376 boundary edges back). Engines render this
+fine; naive re-analysis panics. So the shipped file is judged on its
+POSITION-WELDED topology (the same convention TRELLIS metadata uses),
+while the raw re-import report is kept for information. Invariants:
+welded re-import passes the budget, triangle count survives unchanged,
+and dimensions match within tolerance (catching axis/unit mistakes).
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from pathlib import Path
+
+from blended.analyze.mesh_checks import MeshBudget, MeshReport, analyze_object
+
+EXPORT_DIMENSION_TOLERANCE_M = 1.0e-4
+REIMPORT_OBJECT_SUFFIX = "_reimport_check"
+
+
+@dataclass(frozen=True)
+class ExportReport:
+    export_path: Path
+    file_size_bytes: int
+    pre_export: MeshReport
+    reimported_raw: MeshReport
+    reimported_welded: MeshReport
+    pre_export_dimensions_m: tuple[float, float, float]
+    reimported_dimensions_m: tuple[float, float, float]
+
+    def round_trip_failures(self, budget: MeshBudget = MeshBudget()) -> list[str]:
+        found_failures: list[str] = []
+        pre_export_gate_failures = self.pre_export.failures(budget)
+        if pre_export_gate_failures:
+            found_failures.append(
+                f"mesh failed the gate BEFORE export: "
+                f"{'; '.join(pre_export_gate_failures)}"
+            )
+        welded_gate_failures = self.reimported_welded.failures(budget)
+        if welded_gate_failures:
+            found_failures.append(
+                f"re-imported file fails the gate even after welding: "
+                f"{'; '.join(welded_gate_failures)}"
+            )
+        if (
+            self.reimported_welded.triangle_count
+            != self.pre_export.triangle_count
+        ):
+            found_failures.append(
+                f"triangle count drifted through export: "
+                f"{self.pre_export.triangle_count} -> "
+                f"{self.reimported_welded.triangle_count}"
+            )
+        for axis_index, axis_name in enumerate(("x", "y", "z")):
+            dimension_drift_m = abs(
+                self.reimported_dimensions_m[axis_index]
+                - self.pre_export_dimensions_m[axis_index]
+            )
+            if dimension_drift_m > EXPORT_DIMENSION_TOLERANCE_M:
+                found_failures.append(
+                    f"dimension {axis_name} drifted {dimension_drift_m:.6f} m "
+                    f"through export (axis-convention or unit error)"
+                )
+        return found_failures
+
+    def passes(self, budget: MeshBudget = MeshBudget()) -> bool:
+        return not self.round_trip_failures(budget)
+
+
+def export_glb(blender_object, output_path: Path) -> ExportReport:
+    """Export one object to .glb and verify the file by re-importing it."""
+    import bpy
+
+    from blended.ingest.import_glb import import_glb
+    from blended.ops.primitives import remove_object_and_mesh
+
+    output_path = Path(output_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    pre_export_report = analyze_object(blender_object)
+    bpy.context.view_layer.update()
+    pre_export_dimensions_m = tuple(blender_object.dimensions)
+
+    for scene_object in bpy.context.scene.objects:
+        scene_object.select_set(scene_object == blender_object)
+    bpy.context.view_layer.objects.active = blender_object
+    bpy.ops.export_scene.gltf(
+        filepath=str(output_path),
+        export_format="GLB",
+        use_selection=True,
+        export_apply=True,
+    )
+    file_size_bytes = output_path.stat().st_size
+
+    reimport_name = blender_object.name + REIMPORT_OBJECT_SUFFIX
+    reimported_object = import_glb(output_path, reimport_name)
+    reimported_raw_report = analyze_object(reimported_object)
+    from blended.ops.heal import weld_and_dissolve
+
+    weld_and_dissolve(reimported_object)
+    reimported_welded_report = analyze_object(reimported_object)
+    bpy.context.view_layer.update()
+    reimported_dimensions_m = tuple(reimported_object.dimensions)
+    remove_object_and_mesh(reimport_name)
+
+    return ExportReport(
+        export_path=output_path,
+        file_size_bytes=file_size_bytes,
+        pre_export=pre_export_report,
+        reimported_raw=reimported_raw_report,
+        reimported_welded=reimported_welded_report,
+        pre_export_dimensions_m=pre_export_dimensions_m,
+        reimported_dimensions_m=reimported_dimensions_m,
+    )

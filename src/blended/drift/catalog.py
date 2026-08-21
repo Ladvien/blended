@@ -112,7 +112,24 @@ DRIFT_ENTRIES: tuple[DriftEntry, ...] = (
         ),
         source="[measured] blended stage-4 pretest, 2026-08-21",
     ),
+    DriftEntry(
+        symbol="glTF export splits vertices at flat-shading seams",
+        changed_in="all",
+        error_signature="io_scene_gltf2",
+        fix=(
+            "glTF stores per-vertex normals, so exporting a flat-shaded "
+            "watertight solid ships a file whose vertices are split along "
+            "every sharp edge: re-imported it reads as dozens of "
+            "disconnected components and boundary edges everywhere, with "
+            "no error raised. Engines render it fine. Judge shipped GLBs "
+            "on POSITION-WELDED topology (weld_and_dissolve first), never "
+            "on the raw re-import - the same reason TRELLIS metadata "
+            "reports as_shipped and position_welded topology separately."
+        ),
+        source="[measured] blended stage-8 export round-trip, 2026-08-21",
+    ),
 )
+
 
 
 
