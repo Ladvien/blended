@@ -178,7 +178,26 @@ DRIFT_ENTRIES: tuple[DriftEntry, ...] = (
         ),
         source="[measured] blended stage-3.2 unwrap determinism, 2026-08-21",
     ),
+    DriftEntry(
+        symbol="matrix_world is stale until view_layer.update()",
+        changed_in="all",
+        error_signature="matrix_world",
+        fix=(
+            "Setting object.location / .rotation_euler does NOT update "
+            "matrix_world - the depsgraph evaluates it lazily. Reading it "
+            "first returns the stale matrix (identity on a fresh object), "
+            "so any op that bakes matrix_world into mesh data silently "
+            "does NOTHING: no error, no warning, vertices untouched. "
+            "Measured: an agent positioned three splayed stool legs via "
+            "rotation_euler + location, called apply_object_transform, and "
+            "all three stayed at the origin and unioned into a single "
+            "central post. Call bpy.context.view_layer.update() before "
+            "reading matrix_world."
+        ),
+        source="[measured] blended agent stool run, 2026-08-21",
+    ),
 )
+
 
 
 

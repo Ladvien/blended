@@ -1,6 +1,25 @@
-"""Transform operations through the data API (no bpy.ops, no context)."""
+"""Transform operations through the data API (no bpy.ops, no context).
+
+Every op here reads `matrix_world`, which Blender evaluates LAZILY:
+setting `.location` or `.rotation_euler` does NOT update it until the
+dependency graph runs. Reading it before then returns the STALE matrix
+(identity on a fresh object) and the transform silently does nothing —
+no error, no warning. Measured: an agent set rotation and location,
+called apply_object_transform, and its vertices were untouched, so
+three splayed stool legs collapsed into a single central post.
+
+So every function here refreshes the depsgraph first. See the drift
+catalog.
+"""
 
 from __future__ import annotations
+
+
+def _refresh_dependency_graph() -> None:
+    """Force matrix_world to reflect pending location/rotation changes."""
+    import bpy
+
+    bpy.context.view_layer.update()
 
 
 def apply_object_transform(blender_object) -> None:
@@ -12,6 +31,7 @@ def apply_object_transform(blender_object) -> None:
     """
     from mathutils import Matrix
 
+    _refresh_dependency_graph()
     blender_object.data.transform(blender_object.matrix_world)
     blender_object.matrix_world = Matrix.Identity(4)
 
@@ -19,11 +39,11 @@ def apply_object_transform(blender_object) -> None:
 def snap_base_to_ground(blender_object) -> float:
     """Move the object so its lowest point sits exactly at z=0.
 
-    Returns the applied z offset in meters. Uses world-space bounds, so
-    apply transforms first if the object has any.
+    Returns the applied z offset in meters.
     """
     from mathutils import Vector
 
+    _refresh_dependency_graph()
     world_corners = [
         blender_object.matrix_world @ Vector(corner)
         for corner in blender_object.bound_box
@@ -38,6 +58,7 @@ def center_on_origin_xy(blender_object) -> None:
     """Center the object's world-space bounds on the X/Y origin."""
     from mathutils import Vector
 
+    _refresh_dependency_graph()
     world_corners = [
         blender_object.matrix_world @ Vector(corner)
         for corner in blender_object.bound_box

@@ -82,3 +82,22 @@ def test_snap_base_to_ground(empty_scene):
         for corner in floating_box.bound_box
     )
     assert abs(lowest_z_m) < GROUND_TOLERANCE_M
+
+
+def test_transform_ops_see_pending_location_and_rotation(empty_scene):
+    """matrix_world is lazily evaluated: transform ops must refresh the
+    depsgraph or they silently bake nothing."""
+    from blended.ops import add_cylinder, link_into_scene
+    from blended.ops.transforms import apply_object_transform
+
+    leg = add_cylinder("PendingLeg", radius_m=0.02, height_m=0.4)
+    link_into_scene(leg)
+    leg.rotation_euler = (0.0, -0.3, 1.0)
+    leg.location = (0.2, 0.1, 0.0)
+
+    vertex_before = tuple(leg.data.vertices[0].co)
+    apply_object_transform(leg)
+    vertex_after = tuple(leg.data.vertices[0].co)
+    assert vertex_before != vertex_after, (
+        "apply_object_transform baked nothing — matrix_world was stale"
+    )
