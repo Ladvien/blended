@@ -15,7 +15,7 @@ bpy.ops.wm.read_factory_settings(use_empty=True)
 
 from blended.analyze import MeshBudget, analyze_object  # noqa: E402
 from blended.builders import CrateBuilder, CrateParameters  # noqa: E402
-from blended.capture import capture_views  # noqa: E402
+from blended.capture import capture_contact_sheet  # noqa: E402
 from blended.version import assert_supported_blender  # noqa: E402
 
 assert_supported_blender()
@@ -25,5 +25,9 @@ failures = report.failures(MeshBudget())
 print(report)
 if failures:
     raise SystemExit(f"GATE FAILED: {failures}")
-captured = capture_views(crate_object, Path("_renders/crate_example"))
-print("GATE PASSED. Views:", ", ".join(str(path) for path in captured.values()))
+sheet_path = capture_contact_sheet(
+    crate_object,
+    Path("_renders/crate_example"),
+    report=report,
+)
+print("GATE PASSED. Contact sheet:", sheet_path)

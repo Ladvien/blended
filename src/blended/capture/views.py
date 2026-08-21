@@ -32,6 +32,9 @@ FRAME_MARGIN_FACTOR = 1.2
 PERSPECTIVE_DISTANCE_FACTOR = 3.0
 
 
+XRAY_ALPHA_DEFAULT = 0.4
+
+
 @dataclass(frozen=True)
 class CaptureSettings:
     resolution_px: int = 512
@@ -40,6 +43,12 @@ class CaptureSettings:
     preferred_engine: str = "BLENDER_WORKBENCH"
     fallback_engine: str = "CYCLES"
     fallback_cycles_samples: int = 8
+    # X-ray: semi-transparent Workbench shading, the supported way to see
+    # THROUGH geometry when debugging mesh conflicts (interpenetration,
+    # hidden components). Measured working in headless Workbench renders;
+    # note backface culling is NOT (see drift catalog).
+    xray: bool = False
+    xray_alpha: float = XRAY_ALPHA_DEFAULT
 
 
 def _world_bounds_center_and_radius(blender_object):
@@ -79,6 +88,12 @@ def capture_views(
     scene.render.resolution_y = settings.resolution_px
     scene.render.image_settings.file_format = "PNG"
 
+    shading = scene.display.shading
+    previous_xray_state = (shading.show_xray, shading.xray_alpha)
+    if settings.xray:
+        shading.show_xray = True
+        shading.xray_alpha = settings.xray_alpha
+
     captured_paths: dict[str, Path] = {}
     try:
         for view_name, direction_tuple in VIEW_DIRECTIONS.items():
@@ -106,6 +121,7 @@ def capture_views(
                 bpy.ops.render.render(write_still=True)
             captured_paths[view_name] = output_path
     finally:
+        shading.show_xray, shading.xray_alpha = previous_xray_state
         scene.camera = previous_camera
         bpy.data.objects.remove(camera_object)
         bpy.data.cameras.remove(camera_data)
