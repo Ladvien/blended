@@ -257,56 +257,42 @@ def test_unlinked_object_reports_a_measurement_not_a_crash(empty_scene):
 # This build is also the assembly-level regression fixture.
 
 
-# How far below the floor the sole-flattening cutter reaches. Only its
-# TOP face matters (it sits on z=0); the depth just has to clear the
-# lowest point any tilted leg end can reach.
-SOLE_CUTTER_DEPTH_M = 0.1
-# Extra drop beyond the geometric minimum, so the whole tilted end cap
-# clears the cut plane rather than grazing it.
-SOLE_OVERHANG_MARGIN_M = 0.005
+# The sole-clearance margin and cutter depth now live with the
+# arithmetic they belong to, in blended.ops.legs. They are not
+# redeclared here: two copies is how the fixture and the agent came to
+# disagree in the first place.
 
 
 def _build_reference_stool(*, angled_feet: bool = False, leg_angles_deg=None):
     """A stool that satisfies THREE_LEG_STOOL_BRIEF, built from the
     whitelisted ops only.
 
-    `angled_feet=True` seeds the iteration-4 defect: the legs are tilted
-    cylinders, so their end caps are tilted too, and the stool is then
-    dropped onto z=0 by its lowest POINT. Grounding passes; the stool
-    rocks on three edges.
+    The correct path is `blended.ops.legs`, which owns the placement
+    arithmetic. This fixture deliberately does NOT recompute it: the
+    sole-inboard trap was measured twice (this fixture, then the agent
+    at iteration 17), and a second copy of the numbers is how a fix
+    lands in one of them and not the other.
+
+    `angled_feet=True` seeds the iteration-4 defect and therefore does
+    not use the op: the legs are naive tilted cylinders whose end caps
+    are tilted too, and the stool is dropped onto z=0 by its lowest
+    POINT. Grounding passes; the stool rocks on three edges. It is a
+    test input, not a second way to build a stool.
     """
     import math
 
     from mathutils import Euler
 
     from blended.evaluate import briefs
-    from blended.ops.booleans import boolean_difference, boolean_union
-    from blended.ops.primitives import add_box, add_cylinder, link_into_scene
+    from blended.ops.booleans import boolean_union
+    from blended.ops.legs import SplayedLegSpec, add_splayed_leg, trim_soles_flat
+    from blended.ops.primitives import add_cylinder, link_into_scene
     from blended.ops.transforms import apply_object_transform, snap_base_to_ground
 
     seat_radius_m = briefs.STOOL_SEAT_DIAMETER_M / 2.0
     leg_radius_m = 0.022
-    # Legs run from under the seat out to the foot circle. Length is the
-    # hypotenuse of that rise and that outward run.
     leg_top_radius_m = seat_radius_m * 0.45
     rise_m = briefs.STOOL_TOTAL_HEIGHT_Z_M - briefs.STOOL_SEAT_THICKNESS_M
-    run_m = briefs.STOOL_FOOT_CIRCLE_RADIUS_M - leg_top_radius_m
-    splay_rad = math.atan2(run_m, rise_m)
-    # The naive construction stands the leg base on the floor and never
-    # cuts, which is exactly how iteration 4 built it. The correct one
-    # drops the leg until its whole tilted end cap clears the cut plane;
-    # otherwise the cap crosses z=0 — high on the outer side, low on the
-    # inner — and the cut leaves a crescent whose centroid sits inboard.
-    # Measured: that lands the sole at r=0.1281 against a specified
-    # 0.1400, which the placement probe correctly rejects.
-    overhang_m = (
-        0.0
-        if angled_feet
-        else leg_radius_m / math.cos(splay_rad) + SOLE_OVERHANG_MARGIN_M
-    )
-    # Exactly the drop, no more: the leg has to regain the length it
-    # loses going below the floor, or it no longer meets the seat.
-    leg_length_m = math.hypot(rise_m, run_m) + overhang_m
 
     seat = add_cylinder(
         "Stool",
@@ -322,53 +308,82 @@ def _build_reference_stool(*, angled_feet: bool = False, leg_angles_deg=None):
         for index in range(briefs.STOOL_LEG_COUNT)
     ]
     for leg_index, placement_deg in enumerate(placements_deg):
-        angle_rad = math.radians(placement_deg)
-        leg = add_cylinder(
-            f"Leg{leg_index}",
-            radius_m=leg_radius_m,
-            height_m=leg_length_m,
-            segment_count=12,
-        )
-        link_into_scene(leg)
-        # Tilt outward in the leg's own radial direction, then stand it
-        # up at the foot. Rotation happens about the cylinder base.
-        leg.rotation_euler = Euler(
-            (splay_rad * math.sin(angle_rad), -splay_rad * math.cos(angle_rad), 0.0),
-            "XYZ",
-        )
-        # Going DOWN, the axis leans outward, so the base must start
-        # further out for the axis to cross z=0 exactly on the circle.
-        base_radius_m = (
-            briefs.STOOL_FOOT_CIRCLE_RADIUS_M + overhang_m * math.tan(splay_rad)
-        )
-        leg.location = (
-            base_radius_m * math.cos(angle_rad),
-            base_radius_m * math.sin(angle_rad),
-            -overhang_m,
-        )
-        apply_object_transform(leg)
+        if angled_feet:
+            leg = _add_naive_tilted_leg(
+                f"Leg{leg_index}",
+                placement_deg=placement_deg,
+                foot_radius_m=briefs.STOOL_FOOT_CIRCLE_RADIUS_M,
+                top_radius_m=leg_top_radius_m,
+                rise_m=rise_m,
+                leg_radius_m=leg_radius_m,
+            )
+        else:
+            leg = add_splayed_leg(
+                f"Leg{leg_index}",
+                SplayedLegSpec(
+                    foot_radius_m=briefs.STOOL_FOOT_CIRCLE_RADIUS_M,
+                    foot_bearing_deg=placement_deg,
+                    top_radius_m=leg_top_radius_m,
+                    top_z_m=rise_m,
+                    leg_radius_m=leg_radius_m,
+                ),
+            )
         boolean_union(seat, leg)
 
     if not angled_feet:
-        # Cut the tilted end caps off flush with the floor, so each foot
-        # presents a face to stand on rather than an edge to rock on.
-        # BEFORE snapping, not after: snapping lifts the stool until its
-        # lowest POINT is at z=0, which leaves nothing below the plane
-        # for the cutter to remove.
-        cutter = add_box(
-            "SoleCutter",
-            width_m=briefs.STOOL_SEAT_DIAMETER_M * 2.0,
-            depth_m=briefs.STOOL_SEAT_DIAMETER_M * 2.0,
-            height_m=SOLE_CUTTER_DEPTH_M,
-            location_m=(0.0, 0.0, -SOLE_CUTTER_DEPTH_M),
-        )
-        link_into_scene(cutter)
-        boolean_difference(seat, cutter)
+        # Turns each tilted cap into a face to stand on. BEFORE
+        # snapping, not after — snapping leaves nothing below z=0.
+        trim_soles_flat(seat, span_m=briefs.STOOL_SEAT_DIAMETER_M)
     snap_base_to_ground(seat)
     apply_object_transform(seat)
     _assign_material(seat, "Wood")
     bpy.context.view_layer.update()
     return seat
+
+
+def _add_naive_tilted_leg(
+    name: str,
+    *,
+    placement_deg: float,
+    foot_radius_m: float,
+    top_radius_m: float,
+    rise_m: float,
+    leg_radius_m: float,
+):
+    """The WRONG construction, kept as a test input.
+
+    Stands the leg's base centre on the foot circle with no drop, so
+    the tilted end cap straddles z=0. Nothing here may be reused: this
+    is the shape the gate has to keep rejecting.
+    """
+    import math
+
+    from mathutils import Euler
+
+    from blended.ops.primitives import add_cylinder, link_into_scene
+    from blended.ops.transforms import apply_object_transform
+
+    angle_rad = math.radians(placement_deg)
+    run_m = foot_radius_m - top_radius_m
+    splay_rad = math.atan2(run_m, rise_m)
+    leg = add_cylinder(
+        name,
+        radius_m=leg_radius_m,
+        height_m=math.hypot(rise_m, run_m),
+        segment_count=12,
+    )
+    link_into_scene(leg)
+    leg.rotation_euler = Euler(
+        (splay_rad * math.sin(angle_rad), -splay_rad * math.cos(angle_rad), 0.0),
+        "XYZ",
+    )
+    leg.location = (
+        foot_radius_m * math.cos(angle_rad),
+        foot_radius_m * math.sin(angle_rad),
+        0.0,
+    )
+    apply_object_transform(leg)
+    return leg
 
 
 def test_stool_brief_is_satisfiable(empty_scene):

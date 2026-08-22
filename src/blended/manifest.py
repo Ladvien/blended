@@ -15,6 +15,7 @@ failure mode the drift catalog exists to prevent.
 
 from __future__ import annotations
 
+import dataclasses
 import inspect
 from dataclasses import fields
 
@@ -24,11 +25,19 @@ OP_MODULE_NAMES = (
     "booleans",
     "lathe",
     "arrays",
+    "legs",
     "transforms",
     "modifiers",
     "heal",
     "uv",
 )
+
+# Config dataclasses that an operation takes as an argument. Listed
+# because a signature reading `spec: SplayedLegSpec` documents nothing
+# on its own — an agent cannot construct a type it has never been
+# shown, and would fall back to hand-rolling the geometry the op
+# exists to get right.
+OP_CONFIG_DATACLASSES = (("blended.ops.legs", "SplayedLegSpec"),)
 
 CONVENTIONS = (
     (
@@ -119,6 +128,26 @@ def build_manifest(include_drift_catalog: bool = True) -> str:
         sections.append(f"### blended.ops.{module_name}")
         for signature, summary in functions:
             sections.append(f"- `{signature}`\n      {summary}")
+
+    if OP_CONFIG_DATACLASSES:
+        sections.append("\n### Operation config objects\n")
+        for module_path, class_name in OP_CONFIG_DATACLASSES:
+            config_class = getattr(
+                importlib.import_module(module_path), class_name
+            )
+            sections.append(
+                f"- `{class_name}` — "
+                f"{(config_class.__doc__ or '').strip().splitlines()[0]}"
+            )
+            for config_field in fields(config_class):
+                default = config_field.default
+                shown_default = (
+                    "" if default is dataclasses.MISSING else f" = {default}"
+                )
+                sections.append(
+                    f"      `{config_field.name}: "
+                    f"{config_field.type}{shown_default}`"
+                )
 
     sections.append("\n## What the gate measures\n")
     sections.append(

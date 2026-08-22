@@ -73,6 +73,11 @@ def main(argv) -> int:
     )
     from blended.evaluate.briefs import get_brief
     from blended.evaluate.iteration_log import IterationLog, IterationRecord
+    from blended.evaluate.object_identity import (
+        measure_locality,
+        new_identity,
+        stamp_identity,
+    )
     from blended.export.gltf import export_glb
     from blended.version import assert_supported_blender
 
@@ -172,8 +177,15 @@ def main(argv) -> int:
     # does too) but "did anything the user did not name move".
     refinement_summaries: list[str] = []
     refinement_failures: list[str] = []
+    refinement_locality: list[str] = []
     refinement_passed = True
     if brief.refinements and not form_failures and structural_passed:
+        # Stamp AFTER the export, so the shipped .glb never carries it,
+        # and BEFORE the first follow-up, so the stamp predates any edit
+        # it is meant to survive. The primitives are idempotent by name,
+        # so a rebuild under the same name destroys the datablock and
+        # takes the stamp with it — which is the whole measurement.
+        stamped_identity = stamp_identity(built_object, new_identity())
         for step in brief.refinements:
             print(f"\n[refine] {step.instruction_text}", flush=True)
             before_report = form_report
@@ -189,6 +201,11 @@ def main(argv) -> int:
             refinement_passed = refinement_passed and not step_failures
             print(outcome.summary(brief), flush=True)
             refined_object = bpy.data.objects.get(brief.object_name)
+            locality = measure_locality(
+                refined_object, step.name, stamped_identity
+            )
+            refinement_locality.append(locality.summary())
+            print(locality.summary(), flush=True)
             if refined_object is not None and (
                 refined_object.name in bpy.context.scene.objects
             ):
@@ -226,6 +243,7 @@ def main(argv) -> int:
         refinement_gate_passed=refinement_passed,
         refinement_failures=tuple(refinement_failures),
         refinement_summary="\n".join(refinement_summaries),
+        refinement_locality=tuple(refinement_locality),
     )
     IterationLog(Path(arguments.log)).append(record)
 
@@ -253,6 +271,10 @@ def main(argv) -> int:
     print(f"render     : {render_path or '(none — nothing to render)'}", flush=True)
     print(f"glb        : {glb_path or '(none)'}", flush=True)
     for summary in refinement_summaries:
+        print(summary, flush=True)
+    # Evidence, printed beside the gates but never folded into them:
+    # the exit code below does not consult it.
+    for summary in refinement_locality:
         print(summary, flush=True)
     print("=================================================", flush=True)
     return (

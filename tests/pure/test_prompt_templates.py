@@ -15,7 +15,7 @@ from blended.agent import prompt_templates, prompt_versions
 # The revision the convergence loop signed off. Its hash is the claim
 # that the pinned TEXT is the text that was measured; if extracting the
 # templates had altered so much as a space, this is what would say so.
-PINNED_IDENTITY = "v5:6eadb9526276"
+PINNED_IDENTITY = "v9:2e5d0dab1033"
 
 # Jinja's delimiters. The bodies are prose and markdown, and the day one
 # of these appears in a body is the day a prompt silently loses a

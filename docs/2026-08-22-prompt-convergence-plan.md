@@ -44,9 +44,16 @@ RUN -> RENDER -> EXAMINE (deterministic gate, then visual critique, then
 classify) -> ADJUST (exactly one prompt element, hypothesis stated first) ->
 REPEAT. Cap 10 iterations.
 
-Classification decides the action, and only one of the three touches the prompt:
+Classification decides the action, and only one of the four touches the prompt:
 - **prompt failure** -> one surgical prompt edit
 - **harness-code failure** -> fix the code, no prompt edit
+- **harness-critique failure** -> fix the critique (question set, render, or move
+  the judgement into the deterministic gate), no prompt edit. The critique is a
+  fallible instrument: LL3M's critic VLM missed spatial errors a human caught,
+  and the TikZ study measured visual verification at imperfect precision and
+  recall. A missed deviation and a false positive are both critique failures,
+  and tuning the working agreement to satisfy a blind critic tunes the wrong
+  artifact.
 - **bad test prompt** -> fix the brief, no prompt edit
 
 ## Phase 3 — convergence

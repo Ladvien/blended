@@ -222,35 +222,195 @@ PROMPT_REVISIONS: tuple[PromptRevision, ...] = (
             "while every other dimension, foot radius and leg bearing "
             "stays where it was."
         ),
-        outcome="",
+        outcome=(
+            "Iteration 14, the first run to exercise a RefinementStep: "
+            "both deterministic gates PASS and the refinement gate PASS "
+            "— total_height_z 0.4500 -> 0.5500 m exact, 2 dimensions "
+            "and 3 foot placements preserved with 0 disturbed, soles "
+            "0.001522 m2 flat contact each at bearings 0.0/120.0/240.0 "
+            "deg, material 1-in-1, 21 tool calls of 24 (16 first build, "
+            "5 refinement) ending in a written report. The human "
+            "confirmed the render with zero visual deviations. The "
+            "section's first-build prediction held. Its CENTRAL "
+            "instruction did not: told to change one dimension, the "
+            "agent re-ran add_cylinder / boolean_union / ground-cut "
+            "from scratch at 0.55 m rather than editing the stool in "
+            "front of it. No gate could see it — a rebuild from the "
+            "same constants lands on the same numbers, which is exactly "
+            "what preservation compares. The human ruled the rebuild "
+            "ACCEPTABLE, which makes the examiner's finding a false "
+            "positive (mistake memory: "
+            "the-critique-called-a-clean-rebuild-a-failure) and makes "
+            "v6's 'Do not rebuild it from scratch' a demand nothing "
+            "enforces and nobody wants enforced. Superseded by v7."
+        ),
+    ),
+    PromptRevision(
+        revision=7,
+        changed_element=(
+            "Softened the opening of 'Changing something they already "
+            "have' from an absolute prohibition on rebuilding to a "
+            "preference for editing, with the preservation of settled "
+            "detail as the binding requirement instead."
+        ),
+        hypothesis=(
+            "Changed it because iteration 14 rebuilt the stool at "
+            "0.55 m, preserved every unnamed measurement exactly, and "
+            "the human ruled that acceptable. v6 forbids in words what "
+            "the loop permits in measurement: an instruction that can "
+            "be violated with no consequence and no signal teaches the "
+            "reader which lines are decorative. v7 keeps the reason "
+            "(seconds versus minutes) and the requirement that survives "
+            "scrutiny (nothing settled may be lost), and drops the ban "
+            "that does not. Expect iteration 15 to measure as 14 did — "
+            "both gates clean, the refinement preserving every unnamed "
+            "number — with the run no longer in conflict with its own "
+            "instructions, and `refinement_locality` in the log "
+            "recording which way the follow-up went."
+        ),
+        outcome=(
+            "CONFIRMED on its own target across iterations 15-17. "
+            "Iteration 15 (three_leg_stool): both gates PASS, "
+            "refinement PASS with 0 unnamed measurements disturbed, 18 "
+            "tool calls (down from 21 at v6), and LOCALITY recorded "
+            "'rebuilt (stamped 9337507e4ccd, found no stamp)' — the "
+            "follow-up replaced the datablock, which v7 permits and the "
+            "gate correctly did not fail. The instruction and the "
+            "measurement agree for the first time. Iteration 16 "
+            "(planter_box): both gates PASS at 12 calls, every "
+            "dimension exact. Human confirmed both renders, zero "
+            "deviations. NOT a converging sequence: iteration 17 "
+            "(three_leg_stool) FAILED the form gate at 10 calls — all "
+            "three sole centres at r=0.1281 m against 0.1400 +/- "
+            "0.0100. Unrelated to this edit: v7 changed only the "
+            "follow-up paragraph, and 17 failed on its FIRST build, "
+            "before any follow-up ran. Superseded by v8, which "
+            "addresses that failure."
+        ),
+    ),
+    PromptRevision(
+        revision=8,
+        changed_element=(
+            "Extended the contact paragraph: a position the user "
+            "specified belongs to the contact patch, not to the axis "
+            "that produced it."
+        ),
+        hypothesis=(
+            "Changed it because iteration 17 placed all three leg base "
+            "centres at r=0.1400, cut them flat at z=0, and the "
+            "surviving ellipse's centroid landed at r=0.1281 on every "
+            "foot — 11.9 mm inboard, past the 0.0100 tolerance — while "
+            "the run's own report claimed 'each foot's axis landing on "
+            "radius 0.14'. It measured, and measured the wrong feature: "
+            "v5 taught it that resting is a contact rather than a "
+            "height, and it now produces a flat sole and then verifies "
+            "the axis that made it. The number is not incidental: "
+            "0.1281 is exactly what the harness's own reference fixture "
+            "produced before it was fixed (mistake memory: "
+            "the-reference-stool-put-its-soles-inboard), so this is a "
+            "known geometric trap, not run-to-run noise, and the "
+            "tolerance was deliberately not loosened when the fixture "
+            "hit it. Expect all three sole centres inside 0.1400 +/- "
+            "0.0100, with the flatness, spacing, termination and "
+            "refinement behaviour of v5-v7 unchanged."
+        ),
+        outcome=(
+            "CONFIRMED on its target, iteration 18: all three sole "
+            "centres measured r=0.1400 m exactly (from 0.1281), "
+            "bearings 0.0/120.0/240.0 deg, flat contact 0.001228 m2 "
+            "each, both gates PASS, refinement PASS with 0 disturbed, "
+            "and 7 tool calls — the shortest run the suite has "
+            "produced. The sentence worked. SUPERSEDED ANYWAY, by "
+            "decision rather than by measurement: the trap was "
+            "reclassified harness_code and moved into the builder API "
+            "(blended/ops/legs.py), because prose that asks the model "
+            "to re-derive trigonometry has to be re-derived on every "
+            "run, while an op that cannot be called wrongly does not. "
+            "Iteration 18 was not human-verified; no convergence claim "
+            "rests on it."
+        ),
+    ),
+    PromptRevision(
+        revision=9,
+        changed_element=(
+            "Reverted v8's contact-position sentence. The text is "
+            "byte-identical to v7 again."
+        ),
+        hypothesis=(
+            "Reverted because v8 was an edit made under a "
+            "classification that was wrong. Iteration 17 was called a "
+            "prompt failure; it is a harness_code failure, and the "
+            "loop's own discipline says a harness_code failure is "
+            "fixed by coding and permits no prompt edit. The fix now "
+            "lives in blended.ops.legs, which owns the placement "
+            "arithmetic and is exposed to the agent through the "
+            "generated manifest, so the sentence is redundant — and "
+            "keeping it would leave the loop unable to tell which of "
+            "the two fixed the run. Expect iteration 19 to hold "
+            "iteration 18's sole placement (r=0.1400 +/- 0.0100 on all "
+            "three feet) with the sentence gone, because the op "
+            "supplies it. If placement regresses, the op is present "
+            "but unused, and the answer is to make it the obvious call "
+            "in the manifest — not to restore the prose."
+        ),
+        outcome=(
+            "CONFIRMED, and CONVERGED. Iteration 19 answered the "
+            "question the revert was written to ask: with v8's sentence "
+            "gone, the agent reached for add_splayed_leg unprompted (23 "
+            "references in its transcript) and sole centres held at "
+            "r=0.1400 m exactly on all three feet. The geometry came "
+            "from the op, not the prose. Then three consecutive "
+            "human-verified clean runs on the settled harness: "
+            "iteration 20 planter_box (8 calls), 21 three_leg_stool (9 "
+            "calls, refinement 0 disturbed), 22 planter_box (3 calls, "
+            "the fewest any run has taken). Iterations 15, 16 and 19 "
+            "ran this same TEXT and are NOT counted: 15 and 16 predate "
+            "the leg ops, 19 predates the removal of the smart_unwrap "
+            "shim, and 'no prompt change between them' has to mean the "
+            "bytes the agent actually received."
+        ),
     ),
 )
 
 # --- CONVERGED --------------------------------------------------------
-# v5 is PINNED. The rule is three CONSECUTIVE runs passing both
+# v9 is PINNED, superseding the v5 pin of earlier the same day. The rule is three CONSECUTIVE runs passing both
 # deterministic gates with zero visual deviations, confirmed by the
 # human, with no prompt change between them. Met 2026-08-22:
 #
-#   iteration 11  three_leg_stool    7 calls  both gates PASS  0 deviations
-#   iteration 12  planter_box       10 calls  both gates PASS  0 deviations
-#   iteration 13  three_leg_stool    9 calls  both gates PASS  0 deviations
+#   iteration 20  planter_box        8 calls  both gates PASS  0 deviations
+#   iteration 21  three_leg_stool    9 calls  both gates PASS  0 deviations
+#   iteration 22  planter_box        3 calls  both gates PASS  0 deviations
 #
 # All three terminated with a written report, all three exported a
-# round-trip-verified .glb, and the human answered Yes to every derived
-# verification question on all three. The prompt has been byte-identical
-# since iteration 9.
+# round-trip-verified .glb, and the human confirmed every render. The
+# stool run also passed the refinement gate with 0 unnamed measurements
+# disturbed, which v5 was never asked to do.
+#
+# WHAT "NO PROMPT CHANGE" MEANS HERE. v9's working agreement is
+# byte-identical to v7's — same hash, 2e5d0dab1033 — because v9 reverts
+# v8. But iterations 15, 16 and 19 ran that same text and are NOT
+# counted toward this pin: 15 and 16 predate blended.ops.legs, and 19
+# predates the removal of the uv.smart_unwrap shim. Both changed the
+# generated manifest, and the manifest is part of the bytes the agent
+# receives. Counting them would claim evidence from a system that no
+# longer exists.
+#
+# The v5 pin was earned on its own harness and is not disowned: it is
+# in the append-only log, and v5 still carries its outcome above. What
+# it no longer has is a golden test, because its runs cannot be
+# replayed against a harness that has since gained ops.
 #
 # The evidence is MODEL-SPECIFIC and the log records it per run. v1-v4
 # were scored against deepseek-v4-flash, which never converged this
 # suite: the last two blockers were not prompt wording at all but a
 # writer too weak to place geometry and a tool budget too small to
 # build, verify AND report in one turn.
-PINNED_PROMPT_REVISION = 5
+PINNED_PROMPT_REVISION = 9
 CONVERGED_ON = "2026-08-22"
 CONVERGENCE_RUNS = (
-    (11, "three_leg_stool"),
-    (12, "planter_box"),
-    (13, "three_leg_stool"),
+    (20, "planter_box"),
+    (21, "three_leg_stool"),
+    (22, "planter_box"),
 )
 CONVERGENCE_WRITER_MODEL = "deepseek-v4-pro:cloud"
 CONVERGENCE_VISION_MODEL = "minimax-m3:cloud"

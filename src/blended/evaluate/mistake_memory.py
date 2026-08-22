@@ -754,6 +754,115 @@ MISTAKES: tuple[MistakeRecord, ...] = (
         ),
         recorded_on="2026-08-22",
     ),
+    MistakeRecord(
+        identifier="the-critique-called-a-clean-rebuild-a-failure",
+        scope="process",
+        failure=(
+            "Iteration 14: every gate passed and the human confirmed "
+            "the render, but the examiner raised a deviation anyway — "
+            "the taller_stool follow-up re-ran add_cylinder / "
+            "boolean_union / ground-cut at 0.55 m instead of editing "
+            "the existing stool, which v6 forbids in words. It was "
+            "classified harness_code, on the reasoning that the "
+            "refinement gate was blind to it. The human ruled the "
+            "rebuild ACCEPTABLE: it preserved 2 dimensions and 3 foot "
+            "placements exactly, 0 disturbed. The finding was a FALSE "
+            "POSITIVE, and a run that had passed was nearly recorded "
+            "as a failure in an append-only log."
+        ),
+        cause=(
+            "The examiner scored the run against the prompt's wording "
+            "rather than against the result, and treated a rule the "
+            "harness states as a rule the harness has verified is "
+            "wanted. 'The gate cannot see X' is a statement about the "
+            "gate; whether X should fail a run is a question for the "
+            "human, and it was answered by assumption instead. Note "
+            "the direction: the earlier critique failure "
+            "(the-critique-explained-away-its-own-evidence) was a MISS, "
+            "this one is a FALSE ALARM. Both are harness_critique "
+            "failures, which is why that classification exists."
+        ),
+        fix=(
+            "Object identity is stamped and READ BACK after every "
+            "follow-up (evaluate/object_identity.py), so edit-versus-"
+            "rebuild is measured rather than argued — and recorded as "
+            "evidence in `IterationRecord.refinement_locality`, never "
+            "consulted by `passed`. v7 softens the prompt to match what "
+            "is actually enforced: editing is preferred for its cost, "
+            "preserving settled detail is the binding requirement. The "
+            "general lesson: when the critique wants to fail a run on a "
+            "rule no gate enforces, that is a question for the human, "
+            "not a finding."
+        ),
+        guarded_by=(
+            "tests/pure/test_object_identity.py::"
+            "test_a_rebuild_is_recorded_as_evidence_and_never_gated — "
+            "asserts a rebuilt object reads as not edited_in_place AND "
+            "that IterationRecord.passed stays True with that evidence "
+            "present, so wiring locality into the gate breaks the test "
+            "rather than silently reversing the ruling."
+        ),
+        recorded_on="2026-08-22",
+    ),
+    MistakeRecord(
+        identifier="a-geometry-trap-was-taught-as-prose-not-built-into-an-op",
+        scope="harness_code",
+        failure=(
+            "Iteration 17: all three sole centres measured r=0.1281 m "
+            "against a specified 0.1400 +/- 0.0100. The loop classified "
+            "it a prompt failure and answered with v8, a sentence "
+            "telling the agent that a specified position belongs to the "
+            "contact patch rather than the axis. It WORKED — iteration "
+            "18 measured r=0.1400 exactly on all three feet in 7 tool "
+            "calls, the shortest run the suite has produced. It was "
+            "still the wrong fix: the same trap had already been solved "
+            "once, with arithmetic, in this suite's own reference "
+            "stool, and the sentence left the trigonometry to be "
+            "re-derived by a model on every future run."
+        ),
+        cause=(
+            "Inside a prompt-convergence loop every failure looks like "
+            "a prompt failure, because the prompt is the artifact being "
+            "tuned. The classification question is not 'could a "
+            "sentence fix this' — a sentence can fix almost anything "
+            "once — but 'where does the fix belong so that it stays "
+            "fixed'. A geometric fact that is constant across every "
+            "run belongs in the builder API. Prose that reminds the "
+            "model of trigonometry will keep needing more prose, and "
+            "each sentence is re-derived, re-tested and re-paid for on "
+            "every run."
+        ),
+        fix=(
+            "blended/ops/legs.py owns the placement arithmetic: drop = "
+            "leg_radius/cos(splay) + margin so the whole tilted cap "
+            "clears the cut plane, base_radius = foot_radius + "
+            "drop*tan(splay) so the axis crosses z=0 exactly on the "
+            "foot circle, length = hypot(rise, run) + drop so the leg "
+            "regains what the drop spent. No argument combination "
+            "reproduces the trap. The reference stool fixture was "
+            "rewritten to call the op, and its duplicate constants "
+            "deleted, so the numbers exist once. The manifest is "
+            "generated from live code, so add_splayed_leg, "
+            "splayed_leg_ring and trim_soles_flat reached the agent's "
+            "vocabulary without touching a prompt template — and a new "
+            "OP_CONFIG_DATACLASSES section documents SplayedLegSpec's "
+            "fields, because a signature reading 'spec: SplayedLegSpec' "
+            "documents nothing an agent can construct. v9 reverts v8's "
+            "sentence and is byte-identical to v7, which is how the log "
+            "can tell the op apart from the prose."
+        ),
+        guarded_by=(
+            "tests/blender/test_leg_ops.py::"
+            "test_the_naive_placement_still_lands_inboard — builds the "
+            "leg the way iteration 17 did and asserts the sole STILL "
+            "misses by more than the gate's tolerance, so deleting the "
+            "outboard offset breaks a test instead of quietly "
+            "returning. Plus tests/pure/test_splayed_leg_spec.py::"
+            "test_the_axis_crosses_the_floor_exactly_on_the_foot_circle, "
+            "which asserts the identity itself with no Blender needed."
+        ),
+        recorded_on="2026-08-22",
+    ),
 )
 
 
