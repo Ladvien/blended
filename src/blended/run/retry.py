@@ -62,8 +62,7 @@ def build_retry_prompt(source_code: str, result: RunResult) -> str:
             for entry in result.matched_drift
         )
         drift_section = (
-            "\n--- known API drift matched in this traceback ---\n"
-            f"{drift_lines}\n"
+            f"\n--- known API drift matched in this traceback ---\n{drift_lines}\n"
         )
     return (
         "The previous attempt failed. Correct the source and return the "

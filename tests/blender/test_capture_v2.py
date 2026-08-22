@@ -45,9 +45,7 @@ def test_xray_reveals_hidden_geometry(empty_scene, tmp_path):
     link_into_scene(inner_box)
 
     plain_paths = capture_views(outer_box, tmp_path / "plain")
-    xray_paths = capture_views(
-        outer_box, tmp_path / "xray", CaptureSettings(xray=True)
-    )
+    xray_paths = capture_views(outer_box, tmp_path / "xray", CaptureSettings(xray=True))
 
     plain_pixels = numpy.asarray(
         PIL_Image.open(plain_paths["three_quarter"]).convert("L"), dtype=int
@@ -81,7 +79,9 @@ def test_numpy_compositor_matches_pillow_dimensions(empty_scene, tmp_path):
     assert sheet_image.size[1] > single_view_size[1] * 1.5
 
 
-def test_contact_sheet_falls_back_when_pillow_is_absent(empty_scene, tmp_path, monkeypatch):
+def test_contact_sheet_falls_back_when_pillow_is_absent(
+    empty_scene, tmp_path, monkeypatch
+):
     from blended.builders import CrateBuilder, CrateParameters
     from blended.capture import capture_contact_sheet
     import blended.capture.compose as compose_module

@@ -60,9 +60,7 @@ def compose_grid_numpy(
     cell_height_px, cell_width_px = view_arrays[0].shape[:2]
     row_count = (len(view_arrays) + column_count - 1) // column_count
 
-    sheet_width_px = (
-        column_count * cell_width_px + (column_count + 1) * SHEET_MARGIN_PX
-    )
+    sheet_width_px = column_count * cell_width_px + (column_count + 1) * SHEET_MARGIN_PX
     sheet_height_px = row_count * cell_height_px + (row_count + 1) * SHEET_MARGIN_PX
     sheet = numpy.zeros(
         (sheet_height_px, sheet_width_px, CHANNELS_PER_PIXEL), dtype=numpy.float32

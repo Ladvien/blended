@@ -95,12 +95,9 @@ def test_out_of_bounds_uvs_are_detected(empty_scene):
 
     report = analyze_object(box_object)
     assert report.uv_out_of_bounds_face_count > 0
-    strict_budget = MeshBudget(
-        require_uv_layer=True, allow_uv_out_of_bounds=False
-    )
+    strict_budget = MeshBudget(require_uv_layer=True, allow_uv_out_of_bounds=False)
     assert any(
-        "outside the 0-1 UV" in failure
-        for failure in report.failures(strict_budget)
+        "outside the 0-1 UV" in failure for failure in report.failures(strict_budget)
     )
 
 
@@ -113,9 +110,7 @@ def test_island_budget_catches_seam_heavy_layouts(empty_scene):
     smart_unwrap(barrel_object)
     report = analyze_object(barrel_object)
 
-    tight_budget = MeshBudget(
-        require_uv_layer=True, maximum_uv_island_count=1
-    )
+    tight_budget = MeshBudget(require_uv_layer=True, maximum_uv_island_count=1)
     assert any(
         "UV islands exceeds budget" in failure
         for failure in report.failures(tight_budget)

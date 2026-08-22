@@ -81,17 +81,13 @@ class MeshReport:
                 f"{budget.maximum_triangle_count}"
             )
         if budget.require_manifold and self.non_manifold_edge_count > 0:
-            found_failures.append(
-                f"{self.non_manifold_edge_count} non-manifold edges"
-            )
+            found_failures.append(f"{self.non_manifold_edge_count} non-manifold edges")
         if not budget.allow_boundary_edges and self.boundary_edge_count > 0:
             found_failures.append(
                 f"{self.boundary_edge_count} boundary edges (open mesh)"
             )
         if self.zero_area_face_count > 0:
-            found_failures.append(
-                f"{self.zero_area_face_count} zero-area faces"
-            )
+            found_failures.append(f"{self.zero_area_face_count} zero-area faces")
         if self.non_finite_coordinate_count > 0:
             found_failures.append(
                 f"{self.non_finite_coordinate_count} non-finite coordinates"
@@ -114,10 +110,7 @@ class MeshReport:
                 f"{self.self_intersecting_face_pair_count} self-intersecting "
                 f"face pairs (join-without-union is the usual cause)"
             )
-        if (
-            not budget.allow_flipped_normals
-            and self.flipped_normal_triangle_count > 0
-        ):
+        if not budget.allow_flipped_normals and self.flipped_normal_triangle_count > 0:
             found_failures.append(
                 f"{self.flipped_normal_triangle_count} triangles face inward "
                 f"(flipped normals)"
@@ -139,8 +132,7 @@ class MeshReport:
             and self.uv_out_of_bounds_face_count > 0
         ):
             found_failures.append(
-                f"{self.uv_out_of_bounds_face_count} faces outside the 0-1 UV "
-                f"square"
+                f"{self.uv_out_of_bounds_face_count} faces outside the 0-1 UV square"
             )
         if (
             budget.maximum_uv_island_count is not None
@@ -187,8 +179,7 @@ def _count_self_intersecting_pairs(evaluated_mesh) -> int:
     evaluated_mesh.calc_loop_triangles()
     vertex_coordinates = [vertex.co[:] for vertex in evaluated_mesh.vertices]
     triangles = [
-        tuple(loop_triangle.vertices)
-        for loop_triangle in evaluated_mesh.loop_triangles
+        tuple(loop_triangle.vertices) for loop_triangle in evaluated_mesh.loop_triangles
     ]
     if not triangles:
         return 0
@@ -224,8 +215,7 @@ def _count_flipped_normal_triangles(evaluated_mesh) -> int:
     evaluated_mesh.calc_loop_triangles()
     vertex_coordinates = [vertex.co[:] for vertex in evaluated_mesh.vertices]
     triangles = [
-        tuple(loop_triangle.vertices)
-        for loop_triangle in evaluated_mesh.loop_triangles
+        tuple(loop_triangle.vertices) for loop_triangle in evaluated_mesh.loop_triangles
     ]
     if not triangles:
         return 0
@@ -286,9 +276,7 @@ def _point_strictly_inside_triangle(point_uv, triangle_uvs) -> bool:
     )
 
 
-def _segments_properly_cross(
-    first_start, first_end, second_start, second_end
-) -> bool:
+def _segments_properly_cross(first_start, first_end, second_start, second_end) -> bool:
     """True when two segments cross at an interior point of both.
 
     Shared endpoints (mesh adjacency in UV space) are not a crossing.
@@ -390,7 +378,7 @@ def _count_overlapping_uv_triangle_pairs(triangle_uv_corners) -> int:
     overlapping_pair_count = 0
     for bucket_triangles in buckets.values():
         for position, first_index in enumerate(bucket_triangles):
-            for second_index in bucket_triangles[position + 1:]:
+            for second_index in bucket_triangles[position + 1 :]:
                 pair_key = (
                     (first_index, second_index)
                     if first_index < second_index
@@ -399,9 +387,9 @@ def _count_overlapping_uv_triangle_pairs(triangle_uv_corners) -> int:
                 if pair_key in checked_pairs:
                     continue
                 checked_pairs.add(pair_key)
-                first_low_u, first_high_u, first_low_v, first_high_v = (
-                    triangle_bounds[pair_key[0]]
-                )
+                first_low_u, first_high_u, first_low_v, first_high_v = triangle_bounds[
+                    pair_key[0]
+                ]
                 second_low_u, second_high_u, second_low_v, second_high_v = (
                     triangle_bounds[pair_key[1]]
                 )
@@ -474,8 +462,7 @@ def _measure_uvs(working_mesh) -> dict:
     for face in working_mesh.faces:
         face_uvs = [tuple(loop[uv_layer].uv) for loop in face.loops]
         if any(
-            component < -UV_BOUNDS_EPSILON
-            or component > 1.0 + UV_BOUNDS_EPSILON
+            component < -UV_BOUNDS_EPSILON or component > 1.0 + UV_BOUNDS_EPSILON
             for uv in face_uvs
             for component in uv
         ):
@@ -495,9 +482,7 @@ def _measure_uvs(working_mesh) -> dict:
         [uv_vertex_coordinates[vertex_index][:2] for vertex_index in triangle]
         for triangle in uv_triangles
     ]
-    overlapping_pair_count = _count_overlapping_uv_triangle_pairs(
-        triangle_uv_corners
-    )
+    overlapping_pair_count = _count_overlapping_uv_triangle_pairs(triangle_uv_corners)
 
     return {
         "uv_island_count": _count_uv_islands(working_mesh, uv_layer),
@@ -525,9 +510,7 @@ def analyze_object(blender_object) -> MeshReport:
         working_mesh = bmesh.new()
         working_mesh.from_mesh(evaluated_mesh)
         try:
-            triangle_count = sum(
-                len(face.verts) - 2 for face in working_mesh.faces
-            )
+            triangle_count = sum(len(face.verts) - 2 for face in working_mesh.faces)
             non_manifold_edge_count = sum(
                 1 for edge in working_mesh.edges if len(edge.link_faces) > 2
             )
@@ -545,23 +528,21 @@ def analyze_object(blender_object) -> MeshReport:
                 for coordinate in vertex.co
                 if not math.isfinite(coordinate)
             )
-            connected_component_count = _count_connected_components(
-                working_mesh
-            )
+            connected_component_count = _count_connected_components(working_mesh)
             duplicate_search = bmesh.ops.find_doubles(
                 working_mesh,
                 verts=list(working_mesh.verts),
                 dist=DUPLICATE_VERTEX_DISTANCE_M,
             )
             duplicate_vertex_pair_count = len(duplicate_search["targetmap"])
-            self_intersecting_face_pair_count = (
-                _count_self_intersecting_pairs(evaluated_mesh)
+            self_intersecting_face_pair_count = _count_self_intersecting_pairs(
+                evaluated_mesh
             )
             # Parity is only meaningful on closed manifold geometry;
             # open/non-manifold meshes already fail their own checks.
             if boundary_edge_count == 0 and non_manifold_edge_count == 0:
-                flipped_normal_triangle_count = (
-                    _count_flipped_normal_triangles(evaluated_mesh)
+                flipped_normal_triangle_count = _count_flipped_normal_triangles(
+                    evaluated_mesh
                 )
             else:
                 flipped_normal_triangle_count = 0
@@ -588,8 +569,6 @@ def analyze_object(blender_object) -> MeshReport:
         uv_overlapping_face_pair_count=uv_measurements[
             "uv_overlapping_face_pair_count"
         ],
-        uv_out_of_bounds_face_count=uv_measurements[
-            "uv_out_of_bounds_face_count"
-        ],
+        uv_out_of_bounds_face_count=uv_measurements["uv_out_of_bounds_face_count"],
         uv_coverage_fraction=uv_measurements["uv_coverage_fraction"],
     )

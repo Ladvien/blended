@@ -1,1 +1,19 @@
+# Build artifacts
 dist/
+build/
+*.egg-info/
+
+# Python bytecode
+__pycache__/
+*.py[cod]
+
+# Tooling caches
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+
+# Virtualenv
+.venv/
+
+# Scratch dumping ground
+_to_delete/

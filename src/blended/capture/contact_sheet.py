@@ -43,8 +43,7 @@ def compose_contact_sheet(
 
     view_names = list(view_paths)
     view_images = [
-        Image.open(view_paths[view_name]).convert("RGB")
-        for view_name in view_names
+        Image.open(view_paths[view_name]).convert("RGB") for view_name in view_names
     ]
     cell_width_px, cell_height_px = view_images[0].size
     column_count = 2
@@ -72,14 +71,10 @@ def compose_contact_sheet(
             (SHEET_MARGIN_PX, 20), " | ".join(verdict_lines), fill=verdict_color
         )
 
-    for view_index, (view_name, view_image) in enumerate(
-        zip(view_names, view_images)
-    ):
+    for view_index, (view_name, view_image) in enumerate(zip(view_names, view_images)):
         column_index = view_index % column_count
         row_index = view_index // column_count
-        cell_x_px = SHEET_MARGIN_PX + column_index * (
-            cell_width_px + SHEET_MARGIN_PX
-        )
+        cell_x_px = SHEET_MARGIN_PX + column_index * (cell_width_px + SHEET_MARGIN_PX)
         cell_y_px = SHEET_HEADER_HEIGHT_PX + row_index * (
             cell_height_px + LABEL_HEIGHT_PX + SHEET_MARGIN_PX
         )

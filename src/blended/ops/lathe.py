@@ -71,9 +71,7 @@ def add_lathe(
 
         # Cap both ends with triangle fans to a pole vertex.
         for ring_vertices, is_bottom in ((rings[0], True), (rings[-1], False)):
-            pole_vertex = working_mesh.verts.new(
-                (0.0, 0.0, ring_vertices[0].co.z)
-            )
+            pole_vertex = working_mesh.verts.new((0.0, 0.0, ring_vertices[0].co.z))
             for segment_index in range(segment_count):
                 next_index = (segment_index + 1) % segment_count
                 if is_bottom:

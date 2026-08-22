@@ -105,9 +105,7 @@ def _gate_capture_export(
         from blended.export import export_glb
 
         export_report = export_glb(blender_object, settings.export_glb_path)
-        export_failures = tuple(
-            export_report.round_trip_failures(settings.budget)
-        )
+        export_failures = tuple(export_report.round_trip_failures(settings.budget))
         export_path = export_report.export_path
         export_file_size_bytes = export_report.file_size_bytes
         if export_failures:
@@ -167,8 +165,7 @@ def run_chunk(
         session_log=session_log,
     )
     execution_summary = (
-        f"{outcome.attempt_count} attempt(s), "
-        f"{outcome.final_result.summary()}"
+        f"{outcome.attempt_count} attempt(s), {outcome.final_result.summary()}"
     )
     if not outcome.ok:
         return HarnessResult(
@@ -204,6 +201,4 @@ def run_builder(
                 f"{traceback.format_exc()}"
             ),
         )
-    return _gate_capture_export(
-        built_object, settings, execution_summary="builder ok"
-    )
+    return _gate_capture_export(built_object, settings, execution_summary="builder ok")

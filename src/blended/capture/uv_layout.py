@@ -16,8 +16,14 @@ UV_SQUARE_COLOR = (70, 70, 76)
 UV_EDGE_WIDTH_PX = 1
 # Distinct hues so adjacent islands never share a color by accident.
 ISLAND_PALETTE = (
-    (122, 176, 255), (255, 176, 122), (150, 220, 150), (230, 150, 220),
-    (240, 220, 130), (140, 220, 220), (220, 140, 140), (180, 180, 240),
+    (122, 176, 255),
+    (255, 176, 122),
+    (150, 220, 150),
+    (230, 150, 220),
+    (240, 220, 130),
+    (140, 220, 220),
+    (220, 140, 140),
+    (180, 180, 240),
 )
 
 
@@ -42,9 +48,7 @@ def render_uv_layout(
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
-    image = Image.new(
-        "RGB", (image_size_px, image_size_px), UV_BACKGROUND_COLOR
-    )
+    image = Image.new("RGB", (image_size_px, image_size_px), UV_BACKGROUND_COLOR)
     drawing = ImageDraw.Draw(image)
     drawing.rectangle(
         [0, 0, image_size_px - 1, image_size_px - 1], outline=UV_SQUARE_COLOR
@@ -103,9 +107,7 @@ def render_uv_layout(
                 )
                 for loop in face.loops
             ]
-            drawing.polygon(
-                pixel_points, outline=face_color, width=UV_EDGE_WIDTH_PX
-            )
+            drawing.polygon(pixel_points, outline=face_color, width=UV_EDGE_WIDTH_PX)
     finally:
         working_mesh.free()
 

@@ -21,9 +21,7 @@ SOURCE_HASH_LENGTH = 12
 
 
 def _source_digest(source_code: str) -> str:
-    return hashlib.sha256(source_code.encode("utf-8")).hexdigest()[
-        :SOURCE_HASH_LENGTH
-    ]
+    return hashlib.sha256(source_code.encode("utf-8")).hexdigest()[:SOURCE_HASH_LENGTH]
 
 
 class SessionLog:

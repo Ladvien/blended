@@ -50,17 +50,11 @@ class PalletParameters:
     @property
     def deck_board_pitch_m(self) -> float:
         """Center-to-center spacing placing first/last boards at the ends."""
-        return (self.length_m - self.deck_board_width_m) / (
-            self.deck_board_count - 1
-        )
+        return (self.length_m - self.deck_board_width_m) / (self.deck_board_count - 1)
 
     @property
     def total_height_m(self) -> float:
-        return (
-            self.stringer_height_m
-            + self.deck_board_thickness_m
-            - BOOLEAN_EMBED_M
-        )
+        return self.stringer_height_m + self.deck_board_thickness_m - BOOLEAN_EMBED_M
 
 
 class PalletBuilder:
@@ -104,9 +98,7 @@ class PalletBuilder:
             0.0,
             parameters.width_m / 2.0 - parameters.stringer_width_m / 2.0,
         )
-        for stringer_index, stringer_center_y_m in enumerate(
-            stringer_center_ys_m
-        ):
+        for stringer_index, stringer_center_y_m in enumerate(stringer_center_ys_m):
             stringer_object = add_box(
                 f"{parameters.name}_stringer_{stringer_index}",
                 width_m=parameters.length_m,

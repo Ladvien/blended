@@ -106,9 +106,9 @@ def capture_views(
                 camera_data.type = "PERSP"
                 camera_distance_m = radius_m * PERSPECTIVE_DISTANCE_FACTOR
             camera_object.location = center + view_direction * camera_distance_m
-            camera_object.rotation_euler = (
-                view_direction.to_track_quat("Z", "Y").to_euler()
-            )
+            camera_object.rotation_euler = view_direction.to_track_quat(
+                "Z", "Y"
+            ).to_euler()
 
             output_path = output_directory / f"{view_name}.png"
             scene.render.filepath = str(output_path)

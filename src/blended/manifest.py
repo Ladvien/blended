@@ -105,8 +105,7 @@ def build_manifest(include_drift_catalog: bool = True) -> str:
 
     sections.append("\n## What the gate measures\n")
     sections.append(
-        "Your mesh is analyzed and checked against a budget. The report "
-        "fields are:"
+        "Your mesh is analyzed and checked against a budget. The report fields are:"
     )
     from blended.analyze.mesh_checks import MeshReport
 
@@ -118,16 +117,13 @@ def build_manifest(include_drift_catalog: bool = True) -> str:
     default_budget = MeshBudget()
     for budget_field in fields(MeshBudget):
         sections.append(
-            f"- `{budget_field.name}` "
-            f"({getattr(default_budget, budget_field.name)})"
+            f"- `{budget_field.name}` ({getattr(default_budget, budget_field.name)})"
         )
 
     if include_drift_catalog:
         from blended.drift.catalog import DRIFT_ENTRIES
 
-        sections.append(
-            "\n## Known API traps (measured — do not rediscover these)\n"
-        )
+        sections.append("\n## Known API traps (measured — do not rediscover these)\n")
         for entry in DRIFT_ENTRIES:
             sections.append(f"- **{entry.symbol}** — {entry.fix}")
 

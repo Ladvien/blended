@@ -50,10 +50,7 @@ class ExportReport:
                 f"re-imported file fails the gate even after welding: "
                 f"{'; '.join(welded_gate_failures)}"
             )
-        if (
-            self.reimported_welded.triangle_count
-            != self.pre_export.triangle_count
-        ):
+        if self.reimported_welded.triangle_count != self.pre_export.triangle_count:
             found_failures.append(
                 f"triangle count drifted through export: "
                 f"{self.pre_export.triangle_count} -> "

@@ -45,8 +45,7 @@ class RunResult:
         if self.ok:
             return f"ok in {self.duration_s:.2f}s (Blender {self.blender_version})"
         drift_notes = "".join(
-            f"\n  drift[{entry.symbol}]: {entry.fix}"
-            for entry in self.matched_drift
+            f"\n  drift[{entry.symbol}]: {entry.fix}" for entry in self.matched_drift
         )
         return (
             f"FAILED in {self.duration_s:.2f}s: {self.error_type}: "

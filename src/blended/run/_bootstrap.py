@@ -14,7 +14,7 @@ def main() -> None:
     import bpy
 
     argument_separator_index = sys.argv.index("--")
-    script_path, result_json_path = sys.argv[argument_separator_index + 1:][:2]
+    script_path, result_json_path = sys.argv[argument_separator_index + 1 :][:2]
 
     result = {
         "ok": True,

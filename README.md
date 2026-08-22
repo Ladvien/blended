@@ -18,7 +18,7 @@ result = run_builder(
     BarrelBuilder(BarrelParameters()),
     HarnessSettings(export_glb_path="out/barrel.glb"),
 )
-print(result.summary())   # execute -> gate -> contact sheet -> verified export
+print(result.summary())  # execute -> gate -> contact sheet -> verified export
 ```
 
 `run_chunk(source, object_name, fix_source=...)` is the same loop for

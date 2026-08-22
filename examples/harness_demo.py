@@ -41,7 +41,5 @@ working = bmesh.new(); working.from_mesh(box.data)
 working.faces.ensure_lookup_table(); working.faces.remove(working.faces[0])
 working.to_mesh(box.data); working.free()
 """
-chunk_result = run_chunk(
-    DEFECTIVE_CHUNK, object_name="DemoDefect", settings=settings
-)
+chunk_result = run_chunk(DEFECTIVE_CHUNK, object_name="DemoDefect", settings=settings)
 print(chunk_result.summary())

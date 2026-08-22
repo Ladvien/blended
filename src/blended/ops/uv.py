@@ -76,7 +76,9 @@ def unwrap_uvs(
     from blended.analyze.mesh_checks import analyze_object
 
     if method not in UNWRAP_METHODS:
-        raise ValueError(f"Unknown unwrap method {method!r}; use one of {UNWRAP_METHODS}.")
+        raise ValueError(
+            f"Unknown unwrap method {method!r}; use one of {UNWRAP_METHODS}."
+        )
     if blender_object.type != "MESH":
         raise ValueError(f"{blender_object.name} is not a mesh.")
     if blender_object.name not in bpy.context.scene.objects:

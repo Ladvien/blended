@@ -46,16 +46,12 @@ def test_run_chunk_retries_and_logs(empty_scene, tmp_path):
         BROKEN_SMOOTH_CRATE_SOURCE,
         object_name="RetryCrate",
         fix_source=lambda source, run_result: FIXED_SMOOTH_CRATE_SOURCE,
-        settings=HarnessSettings(
-            output_directory=tmp_path, session_log_path=log_path
-        ),
+        settings=HarnessSettings(output_directory=tmp_path, session_log_path=log_path),
         chunk_label="retry_crate",
     )
     assert result.ok, result.summary()
     assert "2 attempt(s)" in result.execution_summary
-    log_records = [
-        json.loads(line) for line in log_path.read_text().splitlines()
-    ]
+    log_records = [json.loads(line) for line in log_path.read_text().splitlines()]
     assert len(log_records) == 2
     assert log_records[0]["ok"] is False and log_records[1]["ok"] is True
 

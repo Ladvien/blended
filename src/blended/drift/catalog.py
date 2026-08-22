@@ -20,11 +20,11 @@ from dataclasses import dataclass
 class DriftEntry:
     """One known API change: how it fails, and what to do instead."""
 
-    symbol: str                # the API the old code reaches for
-    changed_in: str            # Blender series where behavior changed
-    error_signature: str       # distinctive substring of the traceback
-    fix: str                   # what current code should do
-    source: str                # provenance tag
+    symbol: str  # the API the old code reaches for
+    changed_in: str  # Blender series where behavior changed
+    error_signature: str  # distinctive substring of the traceback
+    fix: str  # what current code should do
+    source: str  # provenance tag
 
 
 DRIFT_ENTRIES: tuple[DriftEntry, ...] = (
@@ -199,13 +199,6 @@ DRIFT_ENTRIES: tuple[DriftEntry, ...] = (
 )
 
 
-
-
-
-
-
-
-
 def validate_catalog() -> list[str]:
     """Return a list of schema problems (empty list = healthy catalog)."""
     problems: list[str] = []
@@ -215,7 +208,10 @@ def validate_catalog() -> list[str]:
             problems.append(f"{entry.symbol}: empty error_signature")
         if not entry.fix.strip():
             problems.append(f"{entry.symbol}: empty fix")
-        if not (entry.source.startswith("[measured]") or entry.source.startswith("[3DCodeBench]")):
+        if not (
+            entry.source.startswith("[measured]")
+            or entry.source.startswith("[3DCodeBench]")
+        ):
             problems.append(f"{entry.symbol}: untagged source {entry.source!r}")
         if entry.symbol in seen_symbols:
             problems.append(f"duplicate symbol: {entry.symbol}")
@@ -230,8 +226,4 @@ def match_traceback(traceback_text: str) -> list[DriftEntry]:
     entries are appended to the retry prompt so known drift is fixed on
     the first retry instead of rediscovered.
     """
-    return [
-        entry
-        for entry in DRIFT_ENTRIES
-        if entry.error_signature in traceback_text
-    ]
+    return [entry for entry in DRIFT_ENTRIES if entry.error_signature in traceback_text]

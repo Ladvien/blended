@@ -3,10 +3,13 @@ name = "blended"
 version = "0.1.0"
 description = "A Blender-based harness for agentic modeling of game assets."
 requires-python = ">=3.11"
+dependencies = []
 
 [project.optional-dependencies]
-dev = ["pytest>=8.0", "pillow"]
 capture = ["pillow"]
+
+[dependency-groups]
+dev = ["mypy>=2.3.1", "pytest>=8.0", "ruff>=0.16.4"]
 
 [build-system]
 requires = ["setuptools>=68"]
@@ -15,8 +18,28 @@ build-backend = "setuptools.build_meta"
 [tool.setuptools.packages.find]
 where = ["src"]
 
+[tool.setuptools.package-data]
+blended = ["py.typed"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 markers = [
     "blender: requires a working bpy (Blender-as-module or a live Blender).",
 ]
+
+[tool.mypy]
+python_version = "3.11"
+
+# src layout: map src/blended/x.py to `blended.x`, and tests/blender/y.py to
+# `tests.blender.y` (test_harness imports test_retry by that dotted path).
+# Without this mypy names the same test file two ways and bails.
+mypy_path = "src"
+explicit_package_bases = true
+
+# bpy, bmesh and mathutils are compiled C modules that only exist inside a
+# Blender runtime, and they ship no stubs. numpy is bundled by Blender;
+# Pillow is the optional `capture` extra. None are importable from the dev
+# venv, so mypy treats them as Any instead of erroring at every import site.
+[[tool.mypy.overrides]]
+module = ["bpy.*", "bmesh.*", "mathutils.*", "numpy.*", "PIL.*"]
+ignore_missing_imports = true
