@@ -277,8 +277,7 @@ def dispatch_tool(
         lines = []
         for scene_object in mesh_objects[:MAXIMUM_SCENE_OBJECTS_LISTED]:
             triangle_count = sum(
-                len(polygon.vertices) - 2
-                for polygon in scene_object.data.polygons
+                len(polygon.vertices) - 2 for polygon in scene_object.data.polygons
             )
             dimensions = scene_object.dimensions
             lines.append(

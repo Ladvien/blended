@@ -138,7 +138,7 @@ def _build_session(preferences):
     from blended.agent.loop import AgentSession, ModelConfig, OllamaClient
     import blended.agent.loop as loop_module
 
-    config = ModelConfig(
+    config = ModelConfig.from_environment(
         model=preferences.model_name,
         endpoint=preferences.endpoint,
         api_key=preferences.api_key,
@@ -215,6 +215,34 @@ class BLENDED_OT_send(bpy.types.Operator):
         return {"FINISHED"}
 
 
+class BLENDED_OT_test_connection(bpy.types.Operator):
+    bl_idname = "blended.test_connection"
+    bl_label = "Test Connection"
+    bl_description = "Verify the model is reachable before you start chatting"
+
+    def execute(self, context):
+        preferences = context.preferences.addons[__name__].preferences
+        import_error = _ensure_blended_importable(preferences.repository_path)
+        if import_error:
+            self.report({"ERROR"}, import_error)
+            return {"CANCELLED"}
+
+        from blended.agent.loop import ModelConfig, OllamaClient
+
+        client = OllamaClient(
+            ModelConfig.from_environment(
+                model=preferences.model_name,
+                endpoint=preferences.endpoint,
+                api_key=preferences.api_key,
+            )
+        )
+        status = client.check_connection()
+        self.report({"INFO"} if status.ok else {"ERROR"}, status.summary())
+        _STATE.log("result" if status.ok else "error", status.summary())
+        _redraw_sidebars()
+        return {"FINISHED"}
+
+
 class BLENDED_OT_reset(bpy.types.Operator):
     bl_idname = "blended.reset_session"
     bl_label = "New Session"
@@ -288,32 +316,83 @@ class BLENDED_Preferences(bpy.types.AddonPreferences):
         description="Path to the blended repo (the folder containing src/)",
         default="",
     )
-    model_name: bpy.props.StringProperty(
+    model_name: bpy.props.EnumProperty(
         name="Model",
-        default="kimi-k2.7-code",
-        description=(
-            "Coding-tuned vision+tools model. Alternatives: kimi-k3 "
-            "(strongest), minimax-m3 (1M context), qwen3.5:27b (local 24GB)"
-        ),
+        description="Which model drives the agent",
+        items=[
+            ("minimax-m3:cloud", "MiniMax M3 (subscription, best)",
+             "High Usage tier. Native multimodal, 1M context. Recommended."),
+            ("kimi-k2.7-code:cloud", "Kimi K2.7 Code (subscription, fast)",
+             "High Usage tier. Coding-tuned, ~30% fewer thinking tokens."),
+            ("qwen3.5:397b-cloud", "Qwen 3.5 397B (subscription, light)",
+             "Medium Usage tier — lightest against your weekly limit."),
+            ("kimi-k3:cloud", "Kimi K3 (METERED — $3/$15 per 1M)",
+             "Strongest VLM available, but billed separately from your "
+             "subscription. Opt in deliberately."),
+            ("qwen3.5:27b", "Qwen 3.5 27B (local)",
+             "Runs on a 24 GB card. No cloud usage."),
+        ],
+        default="minimax-m3:cloud",
     )
     endpoint: bpy.props.StringProperty(
         name="Endpoint",
         default="http://localhost:11434",
-        description="Ollama endpoint. Use https://ollama.com for Cloud.",
+        description=(
+            "Local daemon proxies cloud models once you have run "
+            "`ollama signin`. Falls back to https://ollama.com if a key "
+            "is available."
+        ),
     )
     api_key: bpy.props.StringProperty(
-        name="API key",
+        name="API key (optional)",
         default="",
         subtype="PASSWORD",
-        description="Only needed for Ollama Cloud.",
+        description=(
+            "Leave empty when signed in via `ollama signin`. Only needed "
+            "if OLLAMA_API_KEY is not visible to Blender — which is the "
+            "case when Blender is launched from Finder on macOS."
+        ),
     )
 
     def draw(self, context):
+        import os
+
         layout = self.layout
         layout.prop(self, "repository_path")
         layout.prop(self, "model_name")
+
+        billing_box = layout.box()
+        if self.model_name == "kimi-k3:cloud":
+            billing_box.label(
+                text="Metered: $3/$15 per 1M tokens, billed on top of your "
+                     "subscription.",
+                icon="ERROR",
+            )
+        elif self.model_name.endswith("-cloud") or ":cloud" in self.model_name:
+            billing_box.label(
+                text="Covered by your Ollama subscription (usage limits apply).",
+                icon="CHECKMARK",
+            )
+        else:
+            billing_box.label(text="Runs locally — no cloud usage.", icon="DESKTOP")
+
         layout.prop(self, "endpoint")
+        environment_key = os.environ.get("OLLAMA_API_KEY", "")
+        auth_row = layout.row()
+        if environment_key:
+            auth_row.label(
+                text=f"OLLAMA_API_KEY found in environment "
+                     f"(…{environment_key[-4:]})",
+                icon="CHECKMARK",
+            )
+        else:
+            auth_row.label(
+                text="No OLLAMA_API_KEY in environment — fine if you ran "
+                     "`ollama signin`.",
+                icon="INFO",
+            )
         layout.prop(self, "api_key")
+        layout.operator(BLENDED_OT_test_connection.bl_idname, icon="URL")
 
 
 class BLENDED_ChatProperties(bpy.types.PropertyGroup):
@@ -326,6 +405,7 @@ class BLENDED_ChatProperties(bpy.types.PropertyGroup):
 
 
 _CLASSES = (
+    BLENDED_OT_test_connection,
     BLENDED_Preferences,
     BLENDED_ChatProperties,
     BLENDED_OT_send,

@@ -94,17 +94,12 @@ def build_system_prompt(include_operations: bool = True) -> str:
 
         sections.append("\n## Conventions\n")
         sections.append(
-            "\n".join(
-                f"{index}. {rule}"
-                for index, rule in enumerate(CONVENTIONS, 1)
-            )
+            "\n".join(f"{index}. {rule}" for index, rule in enumerate(CONVENTIONS, 1))
         )
         # The operation list and drift traps, minus the one-shot
         # "return only Python" contract, which does not apply in chat.
         manifest_text = build_manifest()
         operations_start = manifest_text.find("## Available operations")
         output_contract_start = manifest_text.find("## Your output")
-        sections.append(
-            "\n" + manifest_text[operations_start:output_contract_start]
-        )
+        sections.append("\n" + manifest_text[operations_start:output_contract_start])
     return "\n".join(sections)
