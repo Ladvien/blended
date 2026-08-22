@@ -497,10 +497,40 @@ class BLENDED_OT_reset(bpy.types.Operator):
 
 
 def _wrap_for_region(body_text: str, region_width_px: float, ui_scale: float):
-    """Wrap text to the panel's real width (see blended.agent.wrapping)."""
-    from blended.agent.wrapping import wrap_for_region
+    """Wrap text to the panel's real width.
 
-    return wrap_for_region(body_text, region_width_px, ui_scale)
+    Prefers the library implementation (which is unit-tested), but MUST
+    NOT depend on it: Blender calls draw() as soon as the panel is
+    visible, which can be before anything has put `blended` on sys.path
+    — and an exception inside draw() makes Blender silently abandon the
+    rest of the panel, so the user sees a half-rendered UI with no error.
+    The fallback is the same algorithm inline.
+    """
+    try:
+        from blended.agent.wrapping import wrap_for_region
+
+        return wrap_for_region(body_text, region_width_px, ui_scale)
+    except Exception:  # noqa: BLE001 — draw() must never raise
+        import textwrap
+
+        characters_per_line = max(
+            24, int((region_width_px - 34) / (7.0 * max(ui_scale, 0.1)))
+        )
+        wrapped_lines: list[str] = []
+        for paragraph in body_text.splitlines() or [""]:
+            if not paragraph.strip():
+                wrapped_lines.append("")
+                continue
+            wrapped_lines.extend(
+                textwrap.wrap(
+                    paragraph,
+                    width=characters_per_line,
+                    break_long_words=True,
+                    break_on_hyphens=False,
+                )
+                or [""]
+            )
+        return wrapped_lines
 
 
 _KIND_SPEAKERS = {
@@ -1004,6 +1034,15 @@ _CLASSES = (
 def register():
     for class_object in _CLASSES:
         bpy.utils.register_class(class_object)
+    # Put the library on sys.path NOW rather than lazily on first use, so
+    # the panel can rely on it from its very first draw.
+    try:
+        preferences = bpy.context.preferences.addons[__name__].preferences
+        _ensure_blended_importable(
+            preferences.repository_path, preferences.developer_mode
+        )
+    except (KeyError, AttributeError):
+        _ensure_blended_importable("")
     bpy.types.Scene.blended_chat = bpy.props.PointerProperty(
         type=BLENDED_ChatProperties
     )
