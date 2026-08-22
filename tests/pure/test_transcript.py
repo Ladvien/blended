@@ -1,0 +1,67 @@
+"""Transcript logging: pure, no bpy."""
+
+import json
+
+from blended.agent.transcript import ChatTranscript, default_log_directory
+
+
+def test_writes_both_formats_with_a_header(tmp_path):
+    transcript = ChatTranscript(tmp_path, session_name="s1", routing="w/e")
+    assert transcript.jsonl_path.exists()
+    assert transcript.markdown_path.exists()
+    header = transcript.markdown_path.read_text()
+    assert "blended session — s1" in header
+    assert "Routing: w/e" in header
+
+
+def test_events_append_to_both_files(tmp_path):
+    transcript = ChatTranscript(tmp_path, session_name="s2")
+    transcript.record("user", "make a crate")
+    transcript.record("tool", "run_python({...})")
+    transcript.record("answer", "Built it.")
+
+    events = transcript.read_events()
+    kinds = [event["kind"] for event in events]
+    assert kinds == ["session", "user", "tool", "answer"]
+    assert [event["index"] for event in events] == [1, 2, 3, 4]
+
+    markdown = transcript.markdown_path.read_text()
+    assert "make a crate" in markdown
+    assert "Built it." in markdown
+    assert "```" in markdown  # tool events are fenced
+
+
+def test_jsonl_keeps_full_text_while_markdown_truncates(tmp_path):
+    transcript = ChatTranscript(tmp_path, session_name="s3")
+    long_result = "x" * 5000
+    transcript.record("result", long_result)
+
+    stored = transcript.read_events()[-1]["text"]
+    assert stored == long_result, "JSONL must keep full fidelity"
+
+    markdown = transcript.markdown_path.read_text()
+    assert "more characters in s3.jsonl" in markdown
+    assert len(markdown) < len(long_result)
+
+
+def test_images_are_referenced_not_embedded(tmp_path):
+    transcript = ChatTranscript(tmp_path, session_name="s4")
+    transcript.record("result", "rendered", ("/tmp/sheet.png",))
+    assert "![sheet.png](/tmp/sheet.png)" in transcript.markdown_path.read_text()
+    assert transcript.read_events()[-1]["images"] == ["/tmp/sheet.png"]
+
+
+def test_append_survives_reopening_the_same_session(tmp_path):
+    first = ChatTranscript(tmp_path, session_name="s5")
+    first.record("user", "one")
+    second = ChatTranscript(tmp_path, session_name="s5")
+    second.record("user", "two")
+
+    texts = [event["text"] for event in second.read_events()]
+    assert "one" in texts and "two" in texts
+
+
+def test_default_log_directory_prefers_the_repository(tmp_path):
+    assert default_log_directory(tmp_path) == tmp_path / "logs"
+    fallback = default_log_directory(None)
+    assert fallback.parts[-2:] == (".blended", "logs")

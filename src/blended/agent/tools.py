@@ -203,9 +203,11 @@ def dispatch_tool(
                 for entry in run_result.matched_drift
             )
             return (
-                f"FAILED: {run_result.error_type}: {run_result.error_message}\n"
-                f"{run_result.traceback_text[:MAXIMUM_TRACEBACK_CHARACTERS]}"
-                f"{drift_notes}",
+                (
+                    f"FAILED: {run_result.error_type}: {run_result.error_message}\n"
+                    f"{run_result.traceback_text[:MAXIMUM_TRACEBACK_CHARACTERS]}"
+                    f"{drift_notes}"
+                ),
                 [],
             )
         harness_result = run_chunk(
@@ -249,14 +251,17 @@ def dispatch_tool(
             report=report,
         )
         return (
-            f"Rendered {object_name} ({'x-ray' if arguments.get('xray') else 'solid'}). "
-            f"Look at the attached contact sheet.",
+            (
+                f"Rendered {object_name} ({'x-ray' if arguments.get('xray') else 'solid'}). "
+                f"Look at the attached contact sheet."
+            ),
             [sheet_path],
         )
 
     if tool_name == "search_ops":
-        from blended.manifest import OP_MODULE_NAMES, _public_functions
         import importlib
+
+        from blended.manifest import OP_MODULE_NAMES, _public_functions
 
         query = arguments["query"].lower()
         matches: list[str] = []
@@ -270,8 +275,10 @@ def dispatch_tool(
                     )
         if not matches:
             return (
-                f"No operation matches {arguments['query']!r}. "
-                f"Available modules: {', '.join(OP_MODULE_NAMES)}.",
+                (
+                    f"No operation matches {arguments['query']!r}. "
+                    f"Available modules: {', '.join(OP_MODULE_NAMES)}."
+                ),
                 [],
             )
         return "\n".join(matches[:MAXIMUM_SEARCH_RESULTS]), []
@@ -288,8 +295,7 @@ def dispatch_tool(
         lines = []
         for scene_object in mesh_objects[:MAXIMUM_SCENE_OBJECTS_LISTED]:
             triangle_count = sum(
-                len(polygon.vertices) - 2
-                for polygon in scene_object.data.polygons
+                len(polygon.vertices) - 2 for polygon in scene_object.data.polygons
             )
             dimensions = scene_object.dimensions
             lines.append(
@@ -314,9 +320,11 @@ def dispatch_tool(
         if failures:
             return "EXPORT VERIFICATION FAILED:\n" + "\n".join(failures), []
         return (
-            f"Exported and verified: {export_report.export_path} "
-            f"({export_report.file_size_bytes} bytes, "
-            f"{export_report.reimported_welded.triangle_count} tris round-tripped).",
+            (
+                f"Exported and verified: {export_report.export_path} "
+                f"({export_report.file_size_bytes} bytes, "
+                f"{export_report.reimported_welded.triangle_count} tris round-tripped)."
+            ),
             [],
         )
 

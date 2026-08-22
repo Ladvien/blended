@@ -48,30 +48,40 @@ HOST_ENVIRONMENT_VARIABLE = "OLLAMA_HOST"
 RECOMMENDED_MODELS = {
     "writer": (
         "deepseek-v4-flash:cloud",
-        "Medium Usage tier. 284B MoE with 13B activated, 1M context, "
-        "tools + thinking, TEXT ONLY. Drives every turn: writes bpy, "
-        "calls tools, reads gate reports. Default writer.",
+        (
+            "Medium Usage tier. 284B MoE with 13B activated, 1M context, "
+            "tools + thinking, TEXT ONLY. Drives every turn: writes bpy, "
+            "calls tools, reads gate reports. Default writer."
+        ),
     ),
     "eye": (
         "minimax-m3:cloud",
-        "High Usage tier. Native multimodal — called ONLY when a tool "
-        "returns an image, to describe it back as text. Default eye.",
+        (
+            "High Usage tier. Native multimodal — called ONLY when a tool "
+            "returns an image, to describe it back as text. Default eye."
+        ),
     ),
     "single_model_subscription": (
         "minimax-m3:cloud",
-        "Drives everything itself, images included. Simpler, but spends "
-        "High Usage on every turn instead of only on renders.",
+        (
+            "Drives everything itself, images included. Simpler, but spends "
+            "High Usage on every turn instead of only on renders."
+        ),
     ),
     "single_model_fast": (
         "kimi-k2.7-code:cloud",
-        "High Usage tier, vision + coding-tuned, ~30% fewer thinking "
-        "tokens. Good one-model compromise.",
+        (
+            "High Usage tier, vision + coding-tuned, ~30% fewer thinking "
+            "tokens. Good one-model compromise."
+        ),
     ),
     "best_overall_metered": (
         "kimi-k3:cloud",
-        "2.81T params, text/image/video, 1M context — the strongest VLM "
-        "available. NOT subscription-covered: $3/$15 per 1M tokens, "
-        "billed separately. Opt in deliberately.",
+        (
+            "2.81T params, text/image/video, 1M context — the strongest VLM "
+            "available. NOT subscription-covered: $3/$15 per 1M tokens, "
+            "billed separately. Opt in deliberately."
+        ),
     ),
     "local_24gb": (
         "qwen3.5:27b",
@@ -122,7 +132,7 @@ class ModelConfig:
         endpoint: str = "",
         api_key: str = "",
         **overrides,
-    ) -> "ModelConfig":
+    ) -> ModelConfig:
         """Resolve endpoint and auth, preferring the LOCAL daemon.
 
         With an Ollama subscription, `ollama signin` authenticates the
@@ -141,9 +151,7 @@ class ModelConfig:
 
         resolved_key = api_key or os.environ.get(API_KEY_ENVIRONMENT_VARIABLE, "")
         resolved_endpoint = (
-            endpoint
-            or os.environ.get(HOST_ENVIRONMENT_VARIABLE, "")
-            or LOCAL_ENDPOINT
+            endpoint or os.environ.get(HOST_ENVIRONMENT_VARIABLE, "") or LOCAL_ENDPOINT
         )
         return cls(
             model=model or RECOMMENDED_MODELS["writer"][0],
@@ -152,7 +160,7 @@ class ModelConfig:
             **overrides,
         )
 
-    def with_endpoint(self, endpoint: str) -> "ModelConfig":
+    def with_endpoint(self, endpoint: str) -> ModelConfig:
         from dataclasses import replace
 
         return replace(self, endpoint=endpoint)
@@ -295,7 +303,7 @@ class VisionDescriber:
     that actually contain a render, instead of on every turn.
     """
 
-    def __init__(self, client: "OllamaClient", vision_model: str) -> None:
+    def __init__(self, client: OllamaClient, vision_model: str) -> None:
         self.client = client
         self.vision_model = vision_model
 
@@ -336,9 +344,7 @@ class AgentSession:
         if not self.messages:
             from blended.agent.system_prompt import build_system_prompt
 
-            self.messages.append(
-                {"role": "system", "content": build_system_prompt()}
-            )
+            self.messages.append({"role": "system", "content": build_system_prompt()})
 
     def send(self, user_text: str, on_event=None) -> str:
         """Run one user turn to completion, executing tool calls.

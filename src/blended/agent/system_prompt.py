@@ -82,11 +82,13 @@ def build_system_prompt(include_operations: bool = True) -> str:
     from blended.version import TARGET_BLENDER_SERIES
 
     sections = [
-        f"You are a 3D modeling agent working inside Blender "
-        f"{TARGET_BLENDER_SERIES[0]}.{TARGET_BLENDER_SERIES[1]}, "
-        f"collaborating with a game artist on production assets.\n"
-        f"\nYou have a live Blender session and a set of tools. The user "
-        f"can see the viewport; you see what your tools return.",
+        (
+            f"You are a 3D modeling agent working inside Blender "
+            f"{TARGET_BLENDER_SERIES[0]}.{TARGET_BLENDER_SERIES[1]}, "
+            f"collaborating with a game artist on production assets.\n"
+            f"\nYou have a live Blender session and a set of tools. The user "
+            f"can see the viewport; you see what your tools return."
+        ),
         WORKING_AGREEMENT,
     ]
     if include_operations:

@@ -252,6 +252,7 @@ class _SessionState:
         self.session = None
         self.worker = None
         self.transcript: list[tuple[str, str]] = []
+        self.transcript_path = None  # Markdown log on disk, if enabled
         self.busy = False
 
     def log(self, kind: str, text: str):
@@ -276,6 +277,23 @@ def _build_session(preferences):
         client=OllamaClient(config),
         output_directory=Path(bpy.app.tempdir) / "blended_agent",
     )
+
+    if preferences.log_chat:
+        from blended.agent.transcript import ChatTranscript, default_log_directory
+
+        log_directory = (
+            Path(bpy.path.abspath(preferences.log_directory))
+            if preferences.log_directory
+            else default_log_directory(
+                bpy.path.abspath(preferences.repository_path)
+                if preferences.repository_path
+                else None
+            )
+        )
+        session.transcript = ChatTranscript(
+            log_directory, routing=config.describe_routing()
+        )
+        _STATE.transcript_path = session.transcript.markdown_path
 
     # Route every tool call through the main thread.
     import blended.agent.tools as tools_module
@@ -392,6 +410,46 @@ class BLENDED_OT_test_connection(bpy.types.Operator):
         return {"FINISHED"}
 
 
+class BLENDED_OT_open_transcript(bpy.types.Operator):
+    bl_idname = "blended.open_transcript"
+    bl_label = "Open Transcript"
+    bl_description = (
+        "Open this session's Markdown transcript in a Text Editor — a "
+        "full-width, scrollable, selectable view of the whole conversation"
+    )
+
+    def execute(self, context):
+        if _STATE.transcript_path is None:
+            self.report({"WARNING"}, "No transcript yet — send a message first.")
+            return {"CANCELLED"}
+        transcript_path = str(_STATE.transcript_path)
+        existing = next(
+            (
+                text_block
+                for text_block in bpy.data.texts
+                if text_block.filepath == transcript_path
+            ),
+            None,
+        )
+        if existing is None:
+            existing = bpy.data.texts.load(transcript_path)
+        else:
+            # Reload so the view reflects everything written since.
+            with bpy.context.temp_override(edit_text=existing):
+                bpy.ops.text.reload()
+
+        for area in context.screen.areas:
+            if area.type == "TEXT_EDITOR":
+                area.spaces.active.text = existing
+                self.report({"INFO"}, f"Opened {Path(transcript_path).name}")
+                return {"FINISHED"}
+        self.report(
+            {"INFO"},
+            f"Loaded {Path(transcript_path).name} — open a Text Editor to read it.",
+        )
+        return {"FINISHED"}
+
+
 class BLENDED_OT_reload(bpy.types.Operator):
     bl_idname = "blended.reload_library"
     bl_label = "Reload Library"
@@ -437,6 +495,24 @@ class BLENDED_OT_reset(bpy.types.Operator):
 
 # --- UI --------------------------------------------------------------------
 
+def _wrap_for_region(body_text: str, region_width_px: float, ui_scale: float):
+    """Wrap text to the panel's real width (see blended.agent.wrapping)."""
+    from blended.agent.wrapping import wrap_for_region
+
+    return wrap_for_region(body_text, region_width_px, ui_scale)
+
+
+_KIND_SPEAKERS = {
+    "user": "You",
+    "answer": "Agent",
+    "vision": "Agent looked at the render",
+    "error": "Error",
+    "reload": "Reloaded",
+    "result": "Tool result",
+    "tool": "Tool call",
+    "thinking": "Thinking",
+}
+
 _KIND_ICONS = {
     "user": "USER",
     "answer": "OUTLINER_OB_LIGHT",
@@ -457,19 +533,46 @@ class BLENDED_PT_chat(bpy.types.Panel):
     bl_region_type = "UI"
     bl_category = "blended"
 
+    def _draw_message(self, layout, kind, body_text, region_width, ui_scale):
+        """One chat bubble: a titled box with wrapped body text."""
+        speaker = _KIND_SPEAKERS.get(kind)
+        if speaker is None:
+            return
+        bubble = layout.box()
+        header = bubble.row()
+        header.label(text=speaker, icon=_KIND_ICONS.get(kind, "DOT"))
+
+        body_column = bubble.column(align=True)
+        body_column.scale_y = 0.72  # tighten line spacing so it reads as prose
+        for line in _wrap_for_region(body_text, region_width, ui_scale):
+            body_column.label(text=line if line else " ")
+
     def draw(self, context):
         layout = self.layout
         scene_properties = context.scene.blended_chat
-
         preferences = context.preferences.addons[__name__].preferences
+        region_width = context.region.width
+        ui_scale = context.preferences.system.ui_scale
 
-        status_row = layout.row()
+        # --- status ---------------------------------------------------
+        status_row = layout.row(align=True)
         status_row.label(
             text="Working…" if _STATE.busy else "Ready",
             icon="SORTTIME" if _STATE.busy else "CHECKMARK",
         )
+        status_row.operator(
+            BLENDED_OT_open_transcript.bl_idname, text="", icon="TEXT"
+        )
         status_row.operator(BLENDED_OT_reset.bl_idname, text="", icon="TRASH")
 
+        if region_width < 300:
+            hint_row = layout.row()
+            hint_row.label(
+                text="Drag the sidebar edge left for a wider chat.",
+                icon="AREA_SWAP",
+            )
+
+        # --- settings (collapsed) ---------------------------------------
         settings_box = layout.box()
         settings_header = settings_box.row(align=True)
         settings_header.prop(
@@ -483,16 +586,14 @@ class BLENDED_PT_chat(bpy.types.Panel):
         if scene_properties.show_settings:
             settings_box.prop(preferences, "model_name")
             settings_box.prop(preferences, "vision_model_name")
+            settings_box.prop(scene_properties, "show_tool_detail")
             settings_box.prop(preferences, "developer_mode")
             if preferences.developer_mode:
                 settings_box.prop(preferences, "repository_path")
                 settings_box.prop(preferences, "auto_reload")
+            settings_box.prop(preferences, "log_directory")
             settings_box.operator(
                 BLENDED_OT_test_connection.bl_idname, icon="URL"
-            )
-            settings_box.label(
-                text="Full options: Preferences > Add-ons > blended",
-                icon="INFO",
             )
 
         if preferences.developer_mode:
@@ -506,20 +607,52 @@ class BLENDED_PT_chat(bpy.types.Panel):
                 icon="TIME" if preferences.auto_reload else "HANDLETYPE_VECTOR_VEC",
             )
 
-        transcript_box = layout.box()
+        # --- conversation ------------------------------------------------
+        conversation = layout.column()
         if not _STATE.transcript:
-            transcript_box.label(text="Ask for an asset to get started.", icon="INFO")
-        for kind, text in _STATE.transcript[-scene_properties.visible_lines:]:
-            for line_index, line in enumerate(text.splitlines() or [""]):
-                if not line.strip():
-                    continue
-                transcript_box.label(
-                    text=line[:_PREVIEW_CHARACTERS],
-                    icon=_KIND_ICONS.get(kind, "DOT") if line_index == 0 else "BLANK1",
-                )
+            empty_box = conversation.box()
+            empty_box.label(
+                text="Ask for an asset to get started.", icon="INFO"
+            )
+            for example in (
+                '"Build a wooden crate, 0.8 m, and show me the renders."',
+                '"Make the legs thinner and re-check it."',
+            ):
+                for line in _wrap_for_region(example, region_width, ui_scale):
+                    empty_box.label(text=line)
 
-        layout.prop(scene_properties, "prompt", text="")
-        send_row = layout.row()
+        visible = _STATE.transcript[-scene_properties.visible_messages:]
+        pending_tool_calls: list[str] = []
+        for kind, body_text in visible:
+            # Tool traffic is collapsed to a compact activity line unless
+            # you ask for detail — otherwise a single turn floods the panel
+            # and buries the actual conversation.
+            if kind in ("tool", "result", "thinking") and not scene_properties.show_tool_detail:
+                if kind == "tool":
+                    pending_tool_calls.append(body_text.split("(")[0])
+                continue
+            if pending_tool_calls:
+                activity_row = conversation.row()
+                activity_row.label(
+                    text=" · ".join(pending_tool_calls[-6:]),
+                    icon="TOOL_SETTINGS",
+                )
+                pending_tool_calls = []
+            self._draw_message(
+                conversation, kind, body_text, region_width, ui_scale
+            )
+        if pending_tool_calls:
+            activity_row = conversation.row()
+            activity_row.label(
+                text=" · ".join(pending_tool_calls[-6:]), icon="TOOL_SETTINGS"
+            )
+
+        # --- composer ------------------------------------------------------
+        layout.separator()
+        composer = layout.column(align=True)
+        composer.prop(scene_properties, "prompt", text="")
+        send_row = composer.row()
+        send_row.scale_y = 1.3
         send_row.enabled = not _STATE.busy
         send_row.operator(BLENDED_OT_send.bl_idname, icon="PLAY")
 
@@ -604,6 +737,23 @@ class BLENDED_Preferences(bpy.types.AddonPreferences):
         ),
         default=True,
     )
+    log_chat: bpy.props.BoolProperty(
+        name="Log chat to disk",
+        description=(
+            "Write each session to a Markdown transcript and a JSONL "
+            "record. Development artifacts — the repo gitignores them"
+        ),
+        default=True,
+    )
+    log_directory: bpy.props.StringProperty(
+        name="Log directory",
+        subtype="DIR_PATH",
+        description=(
+            "Where transcripts go. Empty means <repository>/logs, or "
+            "~/.blended/logs when no repository is set"
+        ),
+        default="",
+    )
     api_key: bpy.props.StringProperty(
         name="API key (optional)",
         default="",
@@ -678,6 +828,15 @@ class BLENDED_Preferences(bpy.types.AddonPreferences):
                 icon="ERROR",
             )
 
+        logging_box = layout.box()
+        logging_box.prop(self, "log_chat")
+        if self.log_chat:
+            logging_box.prop(self, "log_directory")
+            logging_box.label(
+                text="Transcripts are gitignored — safe to keep in the repo.",
+                icon="INFO",
+            )
+
         layout.prop(self, "endpoint")
         environment_key = os.environ.get("OLLAMA_API_KEY", "")
         auth_row = layout.row()
@@ -701,8 +860,20 @@ class BLENDED_ChatProperties(bpy.types.PropertyGroup):
     prompt: bpy.props.StringProperty(
         name="Message", description="What should the agent build?", default=""
     )
-    visible_lines: bpy.props.IntProperty(
-        name="Visible lines", default=30, min=5, max=200
+    visible_messages: bpy.props.IntProperty(
+        name="Visible messages",
+        description="How many recent messages to show",
+        default=24,
+        min=4,
+        max=200,
+    )
+    show_tool_detail: bpy.props.BoolProperty(
+        name="Show tool detail",
+        description=(
+            "Show every tool call and result in full. Off by default so "
+            "the conversation stays readable"
+        ),
+        default=False,
     )
     show_settings: bpy.props.BoolProperty(
         name="Show settings",
@@ -718,6 +889,7 @@ _CLASSES = (
     BLENDED_OT_send,
     BLENDED_OT_reset,
     BLENDED_OT_reload,
+    BLENDED_OT_open_transcript,
     BLENDED_PT_chat,
 )
 
