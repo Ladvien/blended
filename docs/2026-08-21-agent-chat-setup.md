@@ -102,3 +102,59 @@ here: a planter that passed every structural check with its drainage
 hole sealed shut. That third check is yours and the agent's, from the
 renders. Which is exactly why `render_views` exists and why the prompt
 insists on it.
+
+
+---
+
+## Developing the library without restarting Blender
+
+Blender caches every import in `sys.modules`, so editing
+`blended/ops/primitives.py` and running again silently gets you the OLD
+code. Blender's own "Reload Scripts" does not help — it reloads
+registered addons, not a package sitting on `sys.path` — and neither
+does disabling and re-enabling the addon, because the submodules
+survive in the cache.
+
+### Setup
+
+1. Clone the repo somewhere you'll edit it.
+2. Install the addon **either** way — packaged zip or by pointing
+   Blender at `blender_addon/__init__.py`.
+3. In addon preferences, tick **Developer mode** and set **blended
+   repository** to your repo root.
+4. Leave **Auto-reload on file change** on.
+
+In developer mode the repository sources are placed *first* on
+`sys.path`, so they win over the vendored copy inside a packaged
+install. You can develop against a zip-installed plugin without
+reinstalling it.
+
+### How it behaves
+
+Save a file → within a second the panel logs
+`Reloaded 12 modules; changed: ops/primitives.py`. The next thing the
+agent does uses your new code.
+
+- **Your conversation is preserved.** The session object holds
+  instances of the old classes so it is rebuilt, but the messages are
+  plain dicts and carry across. You can fix an op mid-conversation and
+  keep going.
+- **The system prompt is regenerated**, so edits to
+  `agent/system_prompt.py` or to the manifest take effect on reload
+  too.
+- **It never fires mid-turn.** Purging modules while the worker thread
+  is executing library code would pull the floor out from under it, so
+  auto-reload is skipped while the agent is working and resumes after.
+- **Manual reload** is the **Reload** button in the panel (developer
+  mode only), or turn auto-reload off and use it exclusively.
+
+### What still needs a restart
+
+Only the addon's own `__init__.py` — operators, panels and preferences
+are registered Blender classes, and re-registering them live is not
+worth the fragility. Everything under `src/blended/` hot-reloads: ops,
+builders, the analyzer, capture, the agent loop, the system prompt, the
+tool surface, the drift catalog.
+
+So the loop is: edit ops and prompts freely with Blender open; restart
+only when you change the panel UI itself.

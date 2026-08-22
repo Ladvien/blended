@@ -47,10 +47,28 @@ import bpy
 _TOOL_REQUESTS: "queue.Queue" = queue.Queue()
 _TIMER_INTERVAL_SECONDS = 0.15
 _MAXIMUM_TRANSCRIPT_LINES = 400
+# Fingerprinting ~40 files at the tool-timer's 0.15s would be wasteful,
+# so auto-reload checks on its own slower cadence.
+_AUTO_RELOAD_INTERVAL_SECONDS = 1.0
+_LAST_FINGERPRINT: dict = {}
+_LAST_FINGERPRINT_CHECK = [0.0]
 
 
-def _ensure_blended_importable(repository_root: str) -> str:
-    """Make `blended` importable. Returns '' on success, else an error."""
+def _ensure_blended_importable(repository_root: str, prefer_repository: bool = False) -> str:
+    """Make `blended` importable. Returns '' on success, else an error.
+
+    In developer mode the repository sources are put FIRST so edits take
+    effect, even when a vendored copy is also present.
+    """
+    if prefer_repository and repository_root:
+        source_directory = Path(bpy.path.abspath(repository_root)) / "src"
+        if (source_directory / "blended").is_dir():
+            if str(source_directory) in sys.path:
+                sys.path.remove(str(source_directory))
+            sys.path.insert(0, str(source_directory))
+            return ""
+        return f"Developer mode: no `blended` package under {source_directory}."
+
     # 1. Vendored inside the installed addon — the packaged-plugin case.
     vendored_root = Path(__file__).parent
     if (vendored_root / "blended").is_dir():
@@ -71,6 +89,88 @@ def _ensure_blended_importable(repository_root: str) -> str:
     if str(source_directory) not in sys.path:
         sys.path.insert(0, str(source_directory))
     return ""
+
+
+def _reload_library(preferences) -> str:
+    """Purge and re-import `blended`, carrying the conversation across.
+
+    Returns a human-readable summary. The live session holds instances
+    of the OLD classes, so it is rebuilt — but its messages are plain
+    dicts and survive, which is what lets you fix an op mid-conversation
+    without losing context.
+    """
+    from blended import devreload
+
+    source_root = devreload.library_source_root()
+    previous_fingerprint = (
+        devreload.source_fingerprint(source_root) if source_root else {}
+    )
+    conversation = devreload.snapshot_conversation(_STATE.session)
+
+    result = devreload.purge_library_modules()
+
+    import_error = _ensure_blended_importable(
+            preferences.repository_path, preferences.developer_mode
+        )
+    if import_error:
+        return f"Reload FAILED: {import_error}"
+
+    from blended import devreload as reloaded_devreload
+
+    new_root = reloaded_devreload.library_source_root()
+    changed = ()
+    if new_root and previous_fingerprint:
+        changed = reloaded_devreload.changed_files(
+            previous_fingerprint, reloaded_devreload.source_fingerprint(new_root)
+        )
+    global _LAST_FINGERPRINT
+    _LAST_FINGERPRINT = (
+        reloaded_devreload.source_fingerprint(new_root) if new_root else {}
+    )
+
+    if _STATE.session is not None:
+        try:
+            _STATE.session = _build_session(preferences)
+            # Restore history minus the system prompt, which the rebuilt
+            # session regenerates (so prompt edits take effect too).
+            _STATE.session.messages.extend(
+                message
+                for message in conversation
+                if message.get("role") != "system"
+            )
+        except Exception as rebuild_error:  # noqa: BLE001
+            _STATE.session = None
+            return f"Reloaded, but the session could not be rebuilt: {rebuild_error}"
+
+    summary = reloaded_devreload.ReloadResult(
+        purged_modules=result.purged_modules, changed_files=changed
+    ).summary()
+    if conversation:
+        summary += f" Conversation kept ({len(conversation)} messages)."
+    return summary
+
+
+def _auto_reload_if_changed(preferences) -> str:
+    """Reload when any library source file has changed on disk."""
+    import time
+
+    from blended import devreload
+
+    now = time.monotonic()
+    if now - _LAST_FINGERPRINT_CHECK[0] < _AUTO_RELOAD_INTERVAL_SECONDS:
+        return ""
+    _LAST_FINGERPRINT_CHECK[0] = now
+
+    source_root = devreload.library_source_root()
+    if source_root is None:
+        return ""
+    current = devreload.source_fingerprint(source_root)
+    if not _LAST_FINGERPRINT:
+        globals()["_LAST_FINGERPRINT"] = current
+        return ""
+    if not devreload.changed_files(_LAST_FINGERPRINT, current):
+        return ""
+    return _reload_library(preferences)
 
 
 # --- Main-thread tool bridge -----------------------------------------------
@@ -109,6 +209,19 @@ def _drain_tool_requests():
             )
         finally:
             request.completed.set()
+
+    # Auto-reload runs on the main thread here, and never mid-turn:
+    # purging modules while a worker is executing library code would
+    # pull the floor out from under it.
+    if not _STATE.busy:
+        try:
+            preferences = bpy.context.preferences.addons[__name__].preferences
+            if preferences.developer_mode and preferences.auto_reload:
+                summary = _auto_reload_if_changed(preferences)
+                if summary:
+                    _STATE.log("reload", summary)
+        except Exception:  # noqa: BLE001 — dev convenience must never break the timer
+            pass
 
     _redraw_sidebars()
     return _TIMER_INTERVAL_SECONDS
@@ -191,7 +304,9 @@ class BLENDED_OT_send(bpy.types.Operator):
         scene_properties = context.scene.blended_chat
         preferences = context.preferences.addons[__name__].preferences
 
-        import_error = _ensure_blended_importable(preferences.repository_path)
+        import_error = _ensure_blended_importable(
+            preferences.repository_path, preferences.developer_mode
+        )
         if import_error:
             self.report({"ERROR"}, import_error)
             return {"CANCELLED"}
@@ -238,7 +353,9 @@ class BLENDED_OT_test_connection(bpy.types.Operator):
 
     def execute(self, context):
         preferences = context.preferences.addons[__name__].preferences
-        import_error = _ensure_blended_importable(preferences.repository_path)
+        import_error = _ensure_blended_importable(
+            preferences.repository_path, preferences.developer_mode
+        )
         if import_error:
             self.report({"ERROR"}, import_error)
             return {"CANCELLED"}
@@ -275,6 +392,34 @@ class BLENDED_OT_test_connection(bpy.types.Operator):
         return {"FINISHED"}
 
 
+class BLENDED_OT_reload(bpy.types.Operator):
+    bl_idname = "blended.reload_library"
+    bl_label = "Reload Library"
+    bl_description = (
+        "Re-import the blended library from disk without restarting "
+        "Blender. Keeps the current conversation"
+    )
+
+    def execute(self, context):
+        if _STATE.busy:
+            self.report({"WARNING"}, "The agent is still working.")
+            return {"CANCELLED"}
+        preferences = context.preferences.addons[__name__].preferences
+        import_error = _ensure_blended_importable(
+            preferences.repository_path, preferences.developer_mode
+        )
+        if import_error:
+            self.report({"ERROR"}, import_error)
+            return {"CANCELLED"}
+        summary = _reload_library(preferences)
+        self.report(
+            {"ERROR"} if summary.startswith("Reload FAILED") else {"INFO"}, summary
+        )
+        _STATE.log("reload", summary)
+        _redraw_sidebars()
+        return {"FINISHED"}
+
+
 class BLENDED_OT_reset(bpy.types.Operator):
     bl_idname = "blended.reset_session"
     bl_label = "New Session"
@@ -299,6 +444,7 @@ _KIND_ICONS = {
     "result": "CHECKMARK",
     "thinking": "SORTTIME",
     "vision": "HIDE_OFF",
+    "reload": "FILE_REFRESH",
     "error": "ERROR",
 }
 _PREVIEW_CHARACTERS = 90
@@ -315,12 +461,25 @@ class BLENDED_PT_chat(bpy.types.Panel):
         layout = self.layout
         scene_properties = context.scene.blended_chat
 
+        preferences = context.preferences.addons[__name__].preferences
+
         status_row = layout.row()
         status_row.label(
             text="Working…" if _STATE.busy else "Ready",
             icon="SORTTIME" if _STATE.busy else "CHECKMARK",
         )
-        status_row.operator(BLENDED_OT_reset.bl_idname, text="", icon="FILE_REFRESH")
+        status_row.operator(BLENDED_OT_reset.bl_idname, text="", icon="TRASH")
+
+        if preferences.developer_mode:
+            developer_row = layout.row(align=True)
+            developer_row.enabled = not _STATE.busy
+            developer_row.operator(
+                BLENDED_OT_reload.bl_idname, text="Reload", icon="FILE_REFRESH"
+            )
+            developer_row.label(
+                text="auto" if preferences.auto_reload else "manual",
+                icon="TIME" if preferences.auto_reload else "HANDLETYPE_VECTOR_VEC",
+            )
 
         transcript_box = layout.box()
         if not _STATE.transcript:
@@ -405,6 +564,22 @@ class BLENDED_Preferences(bpy.types.AddonPreferences):
             "is available."
         ),
     )
+    developer_mode: bpy.props.BoolProperty(
+        name="Developer mode",
+        description=(
+            "Load the library from the repository instead of the vendored "
+            "copy, and show hot-reload controls"
+        ),
+        default=False,
+    )
+    auto_reload: bpy.props.BoolProperty(
+        name="Auto-reload on file change",
+        description=(
+            "Watch the library sources and reload automatically when you "
+            "save. Never fires mid-turn"
+        ),
+        default=True,
+    )
     api_key: bpy.props.StringProperty(
         name="API key (optional)",
         default="",
@@ -431,8 +606,23 @@ class BLENDED_Preferences(bpy.types.AddonPreferences):
             ),
             icon="CHECKMARK" if vendored else "INFO",
         )
-        if not vendored:
-            layout.prop(self, "repository_path")
+
+        developer_box = layout.box()
+        developer_box.prop(self, "developer_mode")
+        if self.developer_mode or not vendored:
+            developer_box.prop(self, "repository_path")
+        if self.developer_mode:
+            developer_box.prop(self, "auto_reload")
+            developer_box.label(
+                text="Edits to the library reload without restarting Blender.",
+                icon="FILE_REFRESH",
+            )
+            if vendored:
+                developer_box.label(
+                    text="Repository sources take precedence over the "
+                         "vendored copy.",
+                    icon="INFO",
+                )
         layout.prop(self, "model_name")
 
         layout.prop(self, "vision_model_name")
@@ -498,6 +688,7 @@ _CLASSES = (
     BLENDED_ChatProperties,
     BLENDED_OT_send,
     BLENDED_OT_reset,
+    BLENDED_OT_reload,
     BLENDED_PT_chat,
 )
 
