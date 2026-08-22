@@ -79,8 +79,10 @@ TOOL_SCHEMAS = [
             "name": "render_views",
             "description": (
                 "Render an object from front, right, top and three-quarter "
-                "into one contact sheet, and return the image so you can SEE "
-                "it. Use X-ray to look through geometry when debugging "
+                "into one contact sheet. If you cannot see images yourself, "
+                "a vision model describes the render back to you in words. "
+                "Use `look_for` to aim that description at a specific "
+                "question. Use X-ray to look through geometry when debugging "
                 "overlaps or hidden parts. Always look before declaring done."
             ),
             "parameters": {
@@ -92,6 +94,15 @@ TOOL_SCHEMAS = [
                         "description": (
                             "Semi-transparent shading — reveals interpenetration "
                             "and hidden interior geometry."
+                        ),
+                    },
+                    "look_for": {
+                        "type": "string",
+                        "description": (
+                            "What you specifically want checked in the render, "
+                            "e.g. 'are all four legs the same length?' or 'is "
+                            "the drainage hole open?'. Aims the description at "
+                            "your actual question."
                         ),
                     },
                 },
@@ -277,7 +288,8 @@ def dispatch_tool(
         lines = []
         for scene_object in mesh_objects[:MAXIMUM_SCENE_OBJECTS_LISTED]:
             triangle_count = sum(
-                len(polygon.vertices) - 2 for polygon in scene_object.data.polygons
+                len(polygon.vertices) - 2
+                for polygon in scene_object.data.polygons
             )
             dimensions = scene_object.dimensions
             lines.append(

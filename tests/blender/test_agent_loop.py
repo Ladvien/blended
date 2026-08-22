@@ -19,11 +19,25 @@ link_into_scene(crate)
 
 
 class ScriptedClient:
-    """Replays a fixed list of assistant messages."""
+    """Replays a fixed list of assistant messages.
+
+    Configured single-model (no separate eye) so these tests exercise
+    the direct image-attachment path; the writer/eye split has its own
+    tests below.
+    """
 
     def __init__(self, replies):
+        import dataclasses
+
+        from blended.agent import ModelConfig
+
         self.replies = list(replies)
         self.seen_messages = []
+        self.config = dataclasses.replace(
+            ModelConfig.from_environment(),
+            model="vision-writer",
+            vision_model="",
+        )
 
     def chat(self, messages, tools=None):
         self.seen_messages.append(list(messages))
@@ -162,3 +176,125 @@ def test_export_tool_verifies_the_written_file(empty_scene, tmp_path):
     )
     assert "Exported and verified" in result_text
     assert (tmp_path / "crate.glb").exists()
+
+
+# --- the writer/eye split --------------------------------------------------
+
+
+class TwoModelClient:
+    """Records which model each call went to, so routing is verifiable."""
+
+    def __init__(self, config, writer_replies, eye_reply="A wooden crate, evenly proportioned."):
+        self.config = config
+        self.writer_replies = list(writer_replies)
+        self.eye_reply = eye_reply
+        self.calls: list[tuple[str, bool]] = []  # (model, had_images)
+
+    def chat(self, messages, tools=None):
+        had_images = any("images" in message for message in messages)
+        self.calls.append((self.config.model, had_images))
+        if self.config.model == "eye-model":
+            return {"role": "assistant", "content": self.eye_reply}
+        return self.writer_replies.pop(0)
+
+
+def _split_config():
+    from blended.agent import ModelConfig
+    import dataclasses
+
+    return dataclasses.replace(
+        ModelConfig.from_environment(),
+        model="writer-model",
+        vision_model="eye-model",
+    )
+
+
+def test_writer_never_receives_raw_images(empty_scene, tmp_path, monkeypatch):
+    """deepseek-v4-flash is text-only — handing it image bytes is a bug."""
+    from blended.agent import AgentSession
+    import blended.agent.loop as loop_module
+
+    config = _split_config()
+    client = TwoModelClient(config, [
+        {"role": "assistant", "content": "", "tool_calls": [
+            {"function": {"name": "run_python", "arguments": {
+                "source": BUILD_SOURCE, "object_name": "ChatCrate"}}}
+        ]},
+        {"role": "assistant", "content": "", "tool_calls": [
+            {"function": {"name": "render_views", "arguments": {
+                "object_name": "ChatCrate", "look_for": "is it square?"}}}
+        ]},
+        {"role": "assistant", "content": "Built and checked."},
+    ])
+    # The eye builds its own client from the same config; point it here.
+    monkeypatch.setattr(loop_module, "OllamaClient", lambda cfg: TwoModelClient(
+        cfg, [], eye_reply="A cube-shaped crate, square in all views."
+    ))
+
+    session = AgentSession(client=client, output_directory=tmp_path)
+    session.send("Make a crate and look at it.")
+
+    # No message anywhere in the writer's history carries image data.
+    assert not any("images" in message for message in session.messages), (
+        "raw images leaked into a text-only writer's context"
+    )
+    # But the description DID reach it.
+    tool_messages = [m for m in session.messages if m.get("role") == "tool"]
+    assert "what the render shows" in tool_messages[-1]["content"]
+    assert "square in all views" in tool_messages[-1]["content"]
+
+
+def test_eye_failure_degrades_without_killing_the_turn(empty_scene, tmp_path, monkeypatch):
+    from blended.agent import AgentSession
+    import blended.agent.loop as loop_module
+
+    def exploding_client(cfg):
+        raise RuntimeError("eye endpoint unreachable")
+
+    config = _split_config()
+    client = TwoModelClient(config, [
+        {"role": "assistant", "content": "", "tool_calls": [
+            {"function": {"name": "run_python", "arguments": {
+                "source": BUILD_SOURCE, "object_name": "ChatCrate"}}}
+        ]},
+        {"role": "assistant", "content": "", "tool_calls": [
+            {"function": {"name": "render_views",
+                          "arguments": {"object_name": "ChatCrate"}}}
+        ]},
+        {"role": "assistant", "content": "Gate passed; could not see the render."},
+    ])
+    monkeypatch.setattr(loop_module, "OllamaClient", exploding_client)
+
+    session = AgentSession(client=client, output_directory=tmp_path)
+    answer = session.send("Make a crate and look at it.")
+
+    assert answer  # the turn still completed
+    tool_messages = [m for m in session.messages if m.get("role") == "tool"]
+    assert "working blind" in tool_messages[-1]["content"]
+
+
+def test_single_model_mode_still_attaches_images(empty_scene, tmp_path):
+    """With a vision-capable writer and no separate eye, images go
+    straight into the conversation as before."""
+    from blended.agent import AgentSession, ModelConfig
+    import dataclasses
+
+    config = dataclasses.replace(
+        ModelConfig.from_environment(), model="vision-writer", vision_model=""
+    )
+    client = TwoModelClient(config, [
+        {"role": "assistant", "content": "", "tool_calls": [
+            {"function": {"name": "run_python", "arguments": {
+                "source": BUILD_SOURCE, "object_name": "ChatCrate"}}}
+        ]},
+        {"role": "assistant", "content": "", "tool_calls": [
+            {"function": {"name": "render_views",
+                          "arguments": {"object_name": "ChatCrate"}}}
+        ]},
+        {"role": "assistant", "content": "Looks right."},
+    ])
+    session = AgentSession(client=client, output_directory=tmp_path)
+    session.send("Make a crate and look.")
+
+    tool_messages = [m for m in session.messages if m.get("role") == "tool"]
+    assert "images" in tool_messages[-1]

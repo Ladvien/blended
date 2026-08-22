@@ -16,7 +16,7 @@ import base64
 import json
 import urllib.error
 import urllib.request
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 LOCAL_ENDPOINT = "http://localhost:11434"
@@ -46,22 +46,26 @@ HOST_ENVIRONMENT_VARIABLE = "OLLAMA_HOST"
 # $3/$15 per 1M tokens. Everything defaulted to below is
 # subscription-covered.
 RECOMMENDED_MODELS = {
-    "best_subscription": (
+    "writer": (
+        "deepseek-v4-flash:cloud",
+        "Medium Usage tier. 284B MoE with 13B activated, 1M context, "
+        "tools + thinking, TEXT ONLY. Drives every turn: writes bpy, "
+        "calls tools, reads gate reports. Default writer.",
+    ),
+    "eye": (
         "minimax-m3:cloud",
-        "High Usage tier — the strongest VLM the subscription covers. "
-        "Native multimodality, tools + thinking, 1M context (512K "
-        "guaranteed on Ollama Cloud), coding/agentic frontier. Default.",
+        "High Usage tier. Native multimodal — called ONLY when a tool "
+        "returns an image, to describe it back as text. Default eye.",
     ),
-    "fast_subscription": (
+    "single_model_subscription": (
+        "minimax-m3:cloud",
+        "Drives everything itself, images included. Simpler, but spends "
+        "High Usage on every turn instead of only on renders.",
+    ),
+    "single_model_fast": (
         "kimi-k2.7-code:cloud",
-        "High Usage tier. Coding-tuned with ~30% lower thinking-token "
-        "usage — noticeably snappier in chat, and lighter on your weekly "
-        "limit, at some capability cost.",
-    ),
-    "light_subscription": (
-        "qwen3.5:397b-cloud",
-        "Medium Usage tier — cheapest against your limits. Vision + "
-        "tools, 256K context. Good when iterating a lot on simple props.",
+        "High Usage tier, vision + coding-tuned, ~30% fewer thinking "
+        "tokens. Good one-model compromise.",
     ),
     "best_overall_metered": (
         "kimi-k3:cloud",
@@ -71,14 +75,41 @@ RECOMMENDED_MODELS = {
     ),
     "local_24gb": (
         "qwen3.5:27b",
-        "Vision + tools, fits a 24 GB card at 4-bit. No cloud usage at all.",
+        "Vision + tools, fits a 24 GB card at 4-bit. No cloud usage.",
     ),
 }
+
+# What the eye is asked when a tool hands back a render. It describes;
+# it does not adjudicate. The analyzer already returned a hard verdict on
+# structure, and the measured failure mode of VLM critics is a bias
+# toward accepting — so asking one to "check if this is correct" invites
+# a rubber stamp. Asking it to REPORT lets the writer do the judging.
+VISION_DESCRIBE_PROMPT = """\
+You are the eyes for another agent that cannot see. It is building a 3D
+game asset in Blender and has just rendered it.
+
+Describe what is actually in these views, concretely and literally:
+- What object does this appear to be? Does it read as the intended thing?
+- Proportions: anything too thick, thin, tall, short, or misplaced?
+- Parts: are the expected pieces present, and positioned sensibly?
+- Anything visibly wrong, missing, floating, intersecting, or duplicated?
+
+Report what you SEE. Do not say whether it passes or fails — a separate
+analyzer already measured the geometry. Do not speculate about topology,
+normals, or manifoldness; you cannot see those. If something looks
+right, say so plainly rather than inventing problems.
+
+Be specific and brief: 3-6 sentences."""
 
 
 @dataclass(frozen=True)
 class ModelConfig:
-    model: str = RECOMMENDED_MODELS["best_subscription"][0]
+    model: str = RECOMMENDED_MODELS["writer"][0]
+    # The eye. Set to "" to make the writer handle images itself, which
+    # only works if the writer is vision-capable — deepseek-v4-flash is
+    # not, so leaving this empty with the default writer means renders
+    # are never actually looked at.
+    vision_model: str = RECOMMENDED_MODELS["eye"][0]
     endpoint: str = LOCAL_ENDPOINT
     temperature: float = 0.3  # low: this is engineering, not brainstorming
     context_length: int = 32768
@@ -115,7 +146,7 @@ class ModelConfig:
             or LOCAL_ENDPOINT
         )
         return cls(
-            model=model or RECOMMENDED_MODELS["best_subscription"][0],
+            model=model or RECOMMENDED_MODELS["writer"][0],
             endpoint=resolved_endpoint,
             api_key=resolved_key,
             **overrides,
@@ -129,6 +160,19 @@ class ModelConfig:
     @property
     def is_cloud_endpoint(self) -> bool:
         return CLOUD_ENDPOINT in self.endpoint
+
+    @property
+    def uses_separate_eye(self) -> bool:
+        """True when a distinct vision model handles images."""
+        return bool(self.vision_model) and self.vision_model != self.model
+
+    def describe_routing(self) -> str:
+        if self.uses_separate_eye:
+            return (
+                f"writer={self.model} (text/tools), "
+                f"eye={self.vision_model} (images only)"
+            )
+        return f"{self.model} handles text and images"
 
 
 @dataclass(frozen=True)
@@ -241,6 +285,35 @@ class OllamaClient:
         return body.get("message", {})
 
 
+class VisionDescriber:
+    """Turns rendered images into text for a writer that cannot see.
+
+    Kept as a separate one-shot call rather than a second conversation:
+    the eye gets the images plus a focused question and returns a
+    description. It holds no history, makes no tool calls, and never
+    decides anything — so a High Usage model is spent only on the turns
+    that actually contain a render, instead of on every turn.
+    """
+
+    def __init__(self, client: "OllamaClient", vision_model: str) -> None:
+        self.client = client
+        self.vision_model = vision_model
+
+    def describe(self, image_paths: list[Path], question: str = "") -> str:
+        prompt = VISION_DESCRIBE_PROMPT
+        if question:
+            prompt += f"\n\nThe agent specifically wants to know: {question}"
+        message = {
+            "role": "user",
+            "content": prompt,
+            "images": _encode_images(image_paths),
+        }
+        eye_config = replace(self.client.config, model=self.vision_model)
+        eye_client = OllamaClient(eye_config)
+        reply = eye_client.chat([message])
+        return (reply.get("content") or "").strip()
+
+
 def _encode_images(image_paths: list[Path]) -> list[str]:
     """Base64-encode images for the chat API."""
     encoded: list[str] = []
@@ -326,7 +399,32 @@ class AgentSession:
                     "tool_name": tool_name,
                 }
                 if image_paths:
-                    tool_message["images"] = _encode_images(image_paths)
+                    if self.client.config.uses_separate_eye:
+                        # The writer is text-only: hand it a DESCRIPTION,
+                        # never raw image data it cannot decode.
+                        describer = VisionDescriber(
+                            self.client, self.client.config.vision_model
+                        )
+                        try:
+                            description = describer.describe(
+                                image_paths, arguments.get("look_for", "")
+                            )
+                        except Exception as eye_error:  # noqa: BLE001
+                            description = (
+                                f"(The vision model could not be reached: "
+                                f"{eye_error}. You are working blind on this "
+                                f"render — rely on the gate report and ask "
+                                f"the user to look.)"
+                            )
+                        emit("vision", description)
+                        tool_message["content"] = (
+                            f"{result_text}\n\n"
+                            f"--- what the render shows "
+                            f"({self.client.config.vision_model}) ---\n"
+                            f"{description}"
+                        )
+                    else:
+                        tool_message["images"] = _encode_images(image_paths)
                 self.messages.append(tool_message)
 
         exhausted = (

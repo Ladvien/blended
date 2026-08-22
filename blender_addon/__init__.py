@@ -32,13 +32,17 @@ import queue
 import sys
 import threading
 import traceback
+from dataclasses import replace
 from pathlib import Path
 
 import bpy
 
 # --- Locating the `blended` package ----------------------------------------
-# The addon ships beside the repo rather than inside site-packages, so the
-# user points at the repo root once and we put its `src` on sys.path.
+# Two install shapes, both supported:
+#   1. Packaged plugin (dist/blended_agent.zip) — the library is VENDORED
+#      inside the addon folder, so nothing needs configuring.
+#   2. Development — the addon is loaded from the repo and points at
+#      <repo>/src, so edits to the library take effect on reload.
 
 _TOOL_REQUESTS: "queue.Queue" = queue.Queue()
 _TIMER_INTERVAL_SECONDS = 0.15
@@ -46,13 +50,24 @@ _MAXIMUM_TRANSCRIPT_LINES = 400
 
 
 def _ensure_blended_importable(repository_root: str) -> str:
-    """Put <repo>/src on sys.path. Returns '' on success, else an error."""
+    """Make `blended` importable. Returns '' on success, else an error."""
+    # 1. Vendored inside the installed addon — the packaged-plugin case.
+    vendored_root = Path(__file__).parent
+    if (vendored_root / "blended").is_dir():
+        if str(vendored_root) not in sys.path:
+            sys.path.insert(0, str(vendored_root))
+        return ""
+
+    # 2. Development: point at the repo's src/.
+    if not repository_root:
+        return (
+            "No vendored `blended` package found and no repository path set. "
+            "Either install dist/blended_agent.zip, or set the repository "
+            "path in this addon's preferences."
+        )
     source_directory = Path(bpy.path.abspath(repository_root)) / "src"
     if not (source_directory / "blended").is_dir():
-        return (
-            f"No `blended` package under {source_directory}. "
-            f"Set the repository path in the panel."
-        )
+        return f"No `blended` package under {source_directory}."
     if str(source_directory) not in sys.path:
         sys.path.insert(0, str(source_directory))
     return ""
@@ -142,6 +157,7 @@ def _build_session(preferences):
         model=preferences.model_name,
         endpoint=preferences.endpoint,
         api_key=preferences.api_key,
+        vision_model=preferences.vision_model_name,
     )
     session = AgentSession(
         client=OllamaClient(config),
@@ -229,16 +245,32 @@ class BLENDED_OT_test_connection(bpy.types.Operator):
 
         from blended.agent.loop import ModelConfig, OllamaClient
 
-        client = OllamaClient(
-            ModelConfig.from_environment(
-                model=preferences.model_name,
-                endpoint=preferences.endpoint,
-                api_key=preferences.api_key,
-            )
+        config = ModelConfig.from_environment(
+            model=preferences.model_name,
+            endpoint=preferences.endpoint,
+            api_key=preferences.api_key,
+            vision_model=preferences.vision_model_name,
         )
+        client = OllamaClient(config)
         status = client.check_connection()
         self.report({"INFO"} if status.ok else {"ERROR"}, status.summary())
         _STATE.log("result" if status.ok else "error", status.summary())
+
+        # The eye is a separate model on the same endpoint — verify it too,
+        # or a broken eye only surfaces mid-conversation.
+        if status.ok and config.uses_separate_eye:
+            eye_status = OllamaClient(
+                replace(config, model=config.vision_model)
+            ).check_connection()
+            self.report(
+                {"INFO"} if eye_status.ok else {"WARNING"},
+                f"Eye: {eye_status.summary()}",
+            )
+            _STATE.log(
+                "result" if eye_status.ok else "error",
+                f"Eye: {eye_status.summary()}",
+            )
+        _STATE.log("result", f"Routing: {config.describe_routing()}")
         _redraw_sidebars()
         return {"FINISHED"}
 
@@ -266,6 +298,7 @@ _KIND_ICONS = {
     "tool": "TOOL_SETTINGS",
     "result": "CHECKMARK",
     "thinking": "SORTTIME",
+    "vision": "HIDE_OFF",
     "error": "ERROR",
 }
 _PREVIEW_CHARACTERS = 90
@@ -313,24 +346,53 @@ class BLENDED_Preferences(bpy.types.AddonPreferences):
     repository_path: bpy.props.StringProperty(
         name="blended repository",
         subtype="DIR_PATH",
-        description="Path to the blended repo (the folder containing src/)",
+        description=(
+            "Only needed for development installs. Leave empty when you "
+            "installed the packaged blended_agent.zip — the library is "
+            "vendored inside it."
+        ),
         default="",
     )
     model_name: bpy.props.EnumProperty(
-        name="Model",
+        name="Writer",
         description="Which model drives the agent",
+        description="Writes bpy, calls tools, reads gate reports",
         items=[
-            ("minimax-m3:cloud", "MiniMax M3 (subscription, best)",
-             "High Usage tier. Native multimodal, 1M context. Recommended."),
-            ("kimi-k2.7-code:cloud", "Kimi K2.7 Code (subscription, fast)",
-             "High Usage tier. Coding-tuned, ~30% fewer thinking tokens."),
-            ("qwen3.5:397b-cloud", "Qwen 3.5 397B (subscription, light)",
-             "Medium Usage tier — lightest against your weekly limit."),
+            ("deepseek-v4-flash:cloud", "DeepSeek V4 Flash (Medium Usage)",
+             "284B MoE / 13B active, 1M context, tools + thinking. "
+             "TEXT ONLY — pair it with an eye. Recommended writer."),
+            ("minimax-m3:cloud", "MiniMax M3 (High Usage)",
+             "Native multimodal — can drive everything alone, but spends "
+             "High Usage on every turn."),
+            ("kimi-k2.7-code:cloud", "Kimi K2.7 Code (High Usage)",
+             "Vision + coding-tuned, ~30% fewer thinking tokens."),
+            ("qwen3.5:397b-cloud", "Qwen 3.5 397B (Medium Usage)",
+             "Vision + tools, 256K context."),
             ("kimi-k3:cloud", "Kimi K3 (METERED — $3/$15 per 1M)",
-             "Strongest VLM available, but billed separately from your "
+             "Strongest VLM available, billed separately from your "
              "subscription. Opt in deliberately."),
             ("qwen3.5:27b", "Qwen 3.5 27B (local)",
              "Runs on a 24 GB card. No cloud usage."),
+        ],
+        default="deepseek-v4-flash:cloud",
+    )
+    vision_model_name: bpy.props.EnumProperty(
+        name="Eye",
+        description=(
+            "Called ONLY when a tool returns a render, to describe it back "
+            "as text. Required when the writer is text-only."
+        ),
+        items=[
+            ("minimax-m3:cloud", "MiniMax M3 (High Usage)",
+             "Native multimodal. Recommended eye — fires only on renders."),
+            ("kimi-k2.7-code:cloud", "Kimi K2.7 Code (High Usage)",
+             "Vision, fewer thinking tokens."),
+            ("qwen3.5:397b-cloud", "Qwen 3.5 397B (Medium Usage)",
+             "Lightest against your weekly limit."),
+            ("kimi-k3:cloud", "Kimi K3 (METERED — $3/$15 per 1M)",
+             "Best vision available, billed separately."),
+            ("", "None — writer sees for itself",
+             "Only valid if the writer is vision-capable."),
         ],
         default="minimax-m3:cloud",
     )
@@ -358,23 +420,49 @@ class BLENDED_Preferences(bpy.types.AddonPreferences):
         import os
 
         layout = self.layout
-        layout.prop(self, "repository_path")
+
+        vendored = (Path(__file__).parent / "blended").is_dir()
+        install_row = layout.row()
+        install_row.label(
+            text=(
+                "Packaged install — library vendored, nothing to configure."
+                if vendored
+                else "Development install — set the repository path below."
+            ),
+            icon="CHECKMARK" if vendored else "INFO",
+        )
+        if not vendored:
+            layout.prop(self, "repository_path")
         layout.prop(self, "model_name")
 
-        billing_box = layout.box()
-        if self.model_name == "kimi-k3:cloud":
-            billing_box.label(
-                text="Metered: $3/$15 per 1M tokens, billed on top of your "
-                     "subscription.",
+        layout.prop(self, "vision_model_name")
+
+        routing_box = layout.box()
+        text_only_writers = ("deepseek-v4-flash:cloud",)
+        if self.model_name in text_only_writers and not self.vision_model_name:
+            routing_box.label(
+                text="This writer cannot see. Pick an Eye, or it will never "
+                     "look at its own renders.",
                 icon="ERROR",
             )
-        elif self.model_name.endswith("-cloud") or ":cloud" in self.model_name:
-            billing_box.label(
-                text="Covered by your Ollama subscription (usage limits apply).",
+        elif self.vision_model_name and self.vision_model_name != self.model_name:
+            routing_box.label(
+                text=f"Writer {self.model_name} drives every turn; "
+                     f"{self.vision_model_name} is called only on renders.",
                 icon="CHECKMARK",
             )
         else:
-            billing_box.label(text="Runs locally — no cloud usage.", icon="DESKTOP")
+            routing_box.label(
+                text=f"{self.model_name} handles text and images.",
+                icon="INFO",
+            )
+        if "kimi-k3" in (self.model_name, self.vision_model_name) or \
+           self.model_name == "kimi-k3:cloud" or self.vision_model_name == "kimi-k3:cloud":
+            routing_box.label(
+                text="Kimi K3 is METERED at $3/$15 per 1M — billed on top of "
+                     "your subscription.",
+                icon="ERROR",
+            )
 
         layout.prop(self, "endpoint")
         environment_key = os.environ.get("OLLAMA_API_KEY", "")
