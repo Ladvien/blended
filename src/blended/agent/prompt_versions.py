@@ -197,6 +197,40 @@ if WORKING_AGREEMENT_V5 == WORKING_AGREEMENT_V4:
     )
 
 
+# v6 — ONE change from v5: the user-guided refinement phase, which the
+# harness code standards require and which v5 did not contain at all.
+# v5 says how to build an asset and stop; nothing told it what to do when
+# the user comes back with a change.
+WORKING_AGREEMENT_V6 = WORKING_AGREEMENT_V5.replace(
+    """## Working with the user""",
+    """## Changing something they already have
+
+When the user asks for a change to an asset that already passed — "make
+the seat thinner", "move the legs out" — EDIT what is there. Do not
+rebuild it from scratch. A rebuild throws away every detail the two of
+you already settled, takes minutes where an edit takes seconds, and
+quietly reverts fixes from three turns ago that nobody thought to
+mention again.
+
+- Touch only what they named. Everything else must measure the same
+  afterwards as it did before — not merely still within spec, the SAME.
+  Measure it and say so.
+- An edit is a build. Re-run the gate and look at a fresh render after
+  every one: an edit can break manifoldness or lift the base off the
+  floor exactly like the first build could.
+- Then stop and show them. Applying the edit is not being finished —
+  they decide when it is finished. Keep going only while they are still
+  asking for changes.
+
+## Working with the user""",
+)
+if WORKING_AGREEMENT_V6 == WORKING_AGREEMENT_V5:
+    raise RuntimeError(
+        "prompt v6 is byte-identical to v5: the anchor text moved, so the "
+        "edit silently did nothing."
+    )
+
+
 PROMPT_REVISIONS: tuple[PromptRevision, ...] = (
     PromptRevision(
         revision=1,
@@ -339,6 +373,32 @@ PROMPT_REVISIONS: tuple[PromptRevision, ...] = (
             "the run again used all 16 calls without answering — v4's "
             "5-call termination did NOT survive."
         ),
+    ),
+    PromptRevision(
+        revision=6,
+        body=WORKING_AGREEMENT_V6,
+        changed_element=(
+            "Added a 'Changing something they already have' section: "
+            "follow-up instructions are localized edits that preserve the "
+            "rest of the asset, the gate and a render are re-run after "
+            "each one, and the turn ends on the user's approval."
+        ),
+        hypothesis=(
+            "Added it because the harness code standards REQUIRE a "
+            "user-guided refinement phase and v5 contains none — it says "
+            "how to build an asset and stop, and nothing about changing "
+            "one that exists, so a follow-up instruction invites a full "
+            "rebuild that discards approved work. This is a compliance "
+            "gap, not an observed run failure: v5 converged without it "
+            "only because no brief exercised a second turn. The briefs "
+            "now carry a RefinementStep, so it is measurable. Expect "
+            "first-build behaviour unchanged (the section governs only "
+            "follow-ups), so runs should stay near 7-10 calls with both "
+            "gates clean, AND the taller_stool follow-up to reach 0.55 m "
+            "while every other dimension, foot radius and leg bearing "
+            "stays where it was."
+        ),
+        outcome="",
     ),
 )
 

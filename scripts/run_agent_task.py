@@ -66,7 +66,11 @@ def main(argv) -> int:
     from blended.agent.system_prompt import build_system_prompt
     from blended.analyze import analyze_object
     from blended.capture import CaptureSettings, capture_contact_sheet
-    from blended.evaluate.acceptance import evaluate_brief
+    from blended.evaluate.acceptance import (
+        RefinementOutcome,
+        evaluate_brief,
+        refine_brief,
+    )
     from blended.evaluate.briefs import get_brief
     from blended.evaluate.iteration_log import IterationLog, IterationRecord
     from blended.export.gltf import export_glb
@@ -161,6 +165,46 @@ def main(argv) -> int:
         for failure in export_report.round_trip_failures(brief.budget):
             print(f"   - {failure}", flush=True)
 
+    # --- USER-GUIDED REFINEMENT: a second turn, gated exactly like the
+    # first. The standard requires follow-up instructions to be applied
+    # as LOCALIZED edits that preserve the rest of the asset, so the
+    # measurement is not "does it still satisfy the brief" (a rebuild
+    # does too) but "did anything the user did not name move".
+    refinement_summaries: list[str] = []
+    refinement_failures: list[str] = []
+    refinement_passed = True
+    if brief.refinements and not form_failures and structural_passed:
+        for step in brief.refinements:
+            print(f"\n[refine] {step.instruction_text}", flush=True)
+            before_report = form_report
+            session.send(step.instruction_text, on_event=on_event)
+            bpy.context.view_layer.update()
+            after_report = evaluate_brief(refine_brief(brief, step))
+            outcome = RefinementOutcome(
+                step=step, before=before_report, after=after_report
+            )
+            step_failures = outcome.failures(brief)
+            refinement_failures.extend(step_failures)
+            refinement_summaries.append(outcome.summary(brief))
+            refinement_passed = refinement_passed and not step_failures
+            print(outcome.summary(brief), flush=True)
+            refined_object = bpy.data.objects.get(brief.object_name)
+            if refined_object is not None and (
+                refined_object.name in bpy.context.scene.objects
+            ):
+                capture_contact_sheet(
+                    refined_object,
+                    render_directory / f"refined_{step.name}",
+                    settings=CaptureSettings(),
+                )
+            form_report = after_report
+    elif brief.refinements:
+        # Refining an asset that already failed measures nothing.
+        refinement_summaries.append(
+            "REFINEMENT SKIPPED: the first build did not pass both gates"
+        )
+        refinement_passed = False
+
     record = IterationRecord(
         iteration=arguments.iteration,
         brief_name=brief.name,
@@ -179,6 +223,9 @@ def main(argv) -> int:
         form_summary=form_report.summary(brief),
         render_path=render_path,
         glb_path=glb_path,
+        refinement_gate_passed=refinement_passed,
+        refinement_failures=tuple(refinement_failures),
+        refinement_summary="\n".join(refinement_summaries),
     )
     IterationLog(Path(arguments.log)).append(record)
 
@@ -205,8 +252,14 @@ def main(argv) -> int:
     print(form_report.summary(brief), flush=True)
     print(f"render     : {render_path or '(none — nothing to render)'}", flush=True)
     print(f"glb        : {glb_path or '(none)'}", flush=True)
+    for summary in refinement_summaries:
+        print(summary, flush=True)
     print("=================================================", flush=True)
-    return 0 if (structural_passed and not form_failures) else 1
+    return (
+        0
+        if (structural_passed and not form_failures and refinement_passed)
+        else 1
+    )
 
 
 extra_arguments = sys.argv[sys.argv.index("--") + 1 :] if "--" in sys.argv else []

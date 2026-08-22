@@ -599,3 +599,103 @@ def test_correct_spacing_measures_the_specified_bearings(empty_scene):
     for measurement in report.ground_contacts:
         assert measurement.radius_ok, measurement.describe()
         assert measurement.angle_ok, measurement.describe()
+
+
+# What a rebuild-instead-of-edit looks like in measurements: the stool
+# comes back at the requested height and satisfies the brief in every
+# way, but its legs landed somewhere else. 24 degrees is a rebuild that
+# simply started its leg loop at a different offset.
+REBUILT_LEG_ANGLES_DEG = (24.0, 144.0, 264.0)
+
+
+def _refined_outcome(before_report, brief, *, rebuild: bool):
+    """Apply the refinement either as an edit or as a full rebuild."""
+    from blended.evaluate.acceptance import (
+        RefinementOutcome,
+        evaluate_brief,
+        refine_brief,
+    )
+    from blended.evaluate import briefs as brief_module
+    from blended.ops.primitives import remove_object_and_mesh
+    from blended.ops.transforms import apply_object_transform
+
+    step = brief.refinements[0]
+    target_height_m = step.changed[0].expected_m
+
+    if rebuild:
+        # Throw it away and build again — at the right height, but from
+        # scratch, so nothing the user already approved is preserved.
+        remove_object_and_mesh(brief.object_name)
+        original = brief_module.STOOL_TOTAL_HEIGHT_Z_M
+        brief_module.STOOL_TOTAL_HEIGHT_Z_M = target_height_m
+        try:
+            _build_reference_stool(leg_angles_deg=REBUILT_LEG_ANGLES_DEG)
+        finally:
+            brief_module.STOOL_TOTAL_HEIGHT_Z_M = original
+    else:
+        # A localized edit: stretch what is there along Z only.
+        stool = bpy.data.objects[brief.object_name]
+        bpy.context.view_layer.update()
+        current_height_m = max(
+            (stool.matrix_world @ v.co).z for v in stool.data.vertices
+        )
+        stool.scale = (1.0, 1.0, target_height_m / current_height_m)
+        apply_object_transform(stool)
+    bpy.context.view_layer.update()
+    return RefinementOutcome(
+        step=step,
+        before=before_report,
+        after=evaluate_brief(refine_brief(brief, step)),
+    )
+
+
+def test_a_localized_edit_passes_the_refinement_gate(empty_scene):
+    from blended.evaluate.acceptance import evaluate_brief
+    from blended.evaluate.briefs import get_brief
+
+    brief = get_brief("three_leg_stool")
+    _build_reference_stool()
+    before = evaluate_brief(brief)
+    assert before.passes(brief), before.summary(brief)
+
+    outcome = _refined_outcome(before, brief, rebuild=False)
+    assert outcome.passes(brief), outcome.summary(brief)
+    assert outcome.preservation_failures(brief) == []
+
+
+def test_a_rebuild_trips_the_preservation_check(empty_scene):
+    """The failure the standard exists to prevent.
+
+    A rebuild satisfies the ORIGINAL spec and the new height. Only
+    comparing against what the asset measured BEFORE the instruction
+    catches that the user's approved work was discarded.
+    """
+    from blended.evaluate.acceptance import evaluate_brief
+    from blended.evaluate.briefs import get_brief
+
+    brief = get_brief("three_leg_stool")
+    _build_reference_stool()
+    before = evaluate_brief(brief)
+
+    outcome = _refined_outcome(before, brief, rebuild=True)
+
+    # It hit the height it was asked for — a spec check alone is fooled.
+    refined = outcome.refined_brief(brief)
+    assert all(m.ok for m in outcome.after.dimensions), outcome.after.summary(refined)
+
+    # Preservation is not fooled: the feet are somewhere else.
+    disturbed = outcome.preservation_failures(brief)
+    assert disturbed, outcome.summary(brief)
+    assert any("swung" in failure for failure in disturbed), disturbed
+    assert not outcome.passes(brief)
+
+
+def test_the_refinement_step_is_reachable_from_the_brief(empty_scene):
+    """A phase the briefs cannot exercise is a phase nobody tests."""
+    from blended.evaluate.briefs import get_brief
+
+    brief = get_brief("three_leg_stool")
+    assert brief.refinements, "the stool brief must carry a follow-up step"
+    step = brief.refinements[0]
+    assert step.instruction_text.strip()
+    assert step.changed, "a refinement that changes nothing measures nothing"

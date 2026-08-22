@@ -71,6 +71,12 @@ class IterationRecord:
     # show spacing at all and the human could only answer "Unclear".
     # The .glb can be turned.
     glb_path: str = ""
+    # USER-GUIDED REFINEMENT: the follow-up turn, gated like the
+    # first. A localized edit is only localized if what the user did
+    # NOT name still measures what it measured before.
+    refinement_gate_passed: bool = True
+    refinement_failures: tuple[str, ...] = field(default_factory=tuple)
+    refinement_summary: str = ""
     # EXAMINE (b) — visual, only meaningful once (a) passed
     visual_deviations: tuple[str, ...] = field(default_factory=tuple)
     visual_inspected: bool = False
@@ -97,6 +103,11 @@ class IterationRecord:
         return (
             self.structural_gate_passed
             and self.form_gate_passed
+            # The refinement turn is a gate, not a bonus: the standards
+            # require a user-guided refinement phase, so a run whose
+            # follow-up edit rebuilt the asset instead of editing it has
+            # not passed, however clean the first build was.
+            and self.refinement_gate_passed
             and self.visual_inspected
             and not self.visual_deviations
         )
