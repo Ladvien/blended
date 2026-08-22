@@ -9,13 +9,13 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
-import bpy  # noqa: E402
+import bpy
 
 bpy.ops.wm.read_factory_settings(use_empty=True)
 
-from blended.builders import BarrelBuilder, BarrelParameters  # noqa: E402
-from blended.harness import HarnessSettings, run_builder, run_chunk  # noqa: E402
-from blended.version import assert_supported_blender  # noqa: E402
+from blended.builders import BarrelBuilder, BarrelParameters
+from blended.harness import HarnessSettings, run_builder, run_chunk
+from blended.version import assert_supported_blender
 
 assert_supported_blender()
 settings = HarnessSettings(

@@ -8,18 +8,18 @@ TASK = AgentTask(object_name="Widget", description="Build a widget.")
 
 
 def _report(**overrides):
-    base = dict(
-        object_name="Widget",
-        triangle_count=100,
-        non_manifold_edge_count=0,
-        boundary_edge_count=0,
-        zero_area_face_count=0,
-        non_finite_coordinate_count=0,
-        connected_component_count=1,
-        duplicate_vertex_pair_count=0,
-        self_intersecting_face_pair_count=0,
-        flipped_normal_triangle_count=0,
-    )
+    base = {
+        "object_name": "Widget",
+        "triangle_count": 100,
+        "non_manifold_edge_count": 0,
+        "boundary_edge_count": 0,
+        "zero_area_face_count": 0,
+        "non_finite_coordinate_count": 0,
+        "connected_component_count": 1,
+        "duplicate_vertex_pair_count": 0,
+        "self_intersecting_face_pair_count": 0,
+        "flipped_normal_triangle_count": 0,
+    }
     base.update(overrides)
     return MeshReport(**base)
 

@@ -43,3 +43,27 @@ explicit_package_bases = true
 [[tool.mypy.overrides]]
 module = ["bpy.*", "bmesh.*", "mathutils.*", "numpy.*", "PIL.*"]
 ignore_missing_imports = true
+
+[tool.ruff.lint.flake8-bugbear]
+# Every one of these is @dataclass(frozen=True), so a shared default instance
+# cannot be mutated by a caller. B008/RUF009 assume mutability; rewriting to a
+# None sentinel would add a second code path through every one of these
+# functions to defend against a bug the frozen dataclass already prevents.
+extend-immutable-calls = [
+    "blended.analyze.mesh_checks.MeshBudget",
+    "blended.capture.views.CaptureSettings",
+    "blended.harness.HarnessSettings",
+    "blended.ingest.cleanup.CleanupSettings",
+]
+
+[tool.ruff.lint.per-file-ignores]
+# The example scripts MUST defer their imports: sys.path has to be
+# extended before `blended` is importable at all, and the factory reset
+# has to run before importing modules that touch bpy state. Both are
+# structural requirements of running standalone against bpy, not
+# untidiness, so E402 is silenced for examples only.
+"examples/*.py" = ["E402"]
+# Blender requires the bl_info dict to appear before any import, so the
+# addon's imports are necessarily below it. Same structural constraint,
+# not untidiness.
+"blender_addon/__init__.py" = ["E402"]

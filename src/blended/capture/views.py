@@ -115,7 +115,7 @@ def capture_views(
             try:
                 scene.render.engine = settings.preferred_engine
                 bpy.ops.render.render(write_still=True)
-            except Exception:
+            except Exception:  # noqa: BLE001 - bpy.ops raises bare RuntimeError
                 scene.render.engine = settings.fallback_engine
                 scene.cycles.samples = settings.fallback_cycles_samples
                 bpy.ops.render.render(write_still=True)

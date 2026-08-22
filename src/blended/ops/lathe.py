@@ -8,6 +8,7 @@ Deterministic, context-free, idempotent by name.
 
 from __future__ import annotations
 
+import itertools
 import math
 
 MINIMUM_PROFILE_POINTS = 2
@@ -57,7 +58,7 @@ def add_lathe(
             rings.append(ring_vertices)
 
         # Side wall quads between consecutive rings.
-        for lower_ring, upper_ring in zip(rings, rings[1:]):
+        for lower_ring, upper_ring in itertools.pairwise(rings):
             for segment_index in range(segment_count):
                 next_index = (segment_index + 1) % segment_count
                 working_mesh.faces.new(

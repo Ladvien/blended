@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from blended.run.executor import RunResult
@@ -41,7 +41,7 @@ class SessionLog:
         """Append one attempt; return the record that was written."""
         record = {
             "schema_version": LOG_SCHEMA_VERSION,
-            "logged_at": datetime.now(timezone.utc).isoformat(),
+            "logged_at": datetime.now(UTC).isoformat(),
             "chunk_label": chunk_label,
             "attempt_index": attempt_index,
             "source_sha256": _source_digest(source_code),

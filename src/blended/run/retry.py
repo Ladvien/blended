@@ -13,8 +13,8 @@ seam: in production it is the agent rewriting the source given
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Callable
 
 from blended.run.executor import RunResult
 

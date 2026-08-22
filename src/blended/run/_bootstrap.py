@@ -27,7 +27,8 @@ def main() -> None:
         with open(script_path, "r", encoding="utf-8") as script_file:
             source_code = script_file.read()
         compiled = compile(source_code, script_path, "exec")
-        exec(compiled, {"__name__": "__main__"})
+        # Executing agent-authored source is the whole point of the executor.
+        exec(compiled, {"__name__": "__main__"})  # noqa: S102
     except Exception as error:  # noqa: BLE001
         result.update(
             ok=False,

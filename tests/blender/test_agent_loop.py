@@ -53,13 +53,26 @@ def empty_scene():
 def test_loop_runs_a_tool_then_answers(empty_scene, tmp_path):
     from blended.agent import AgentSession
 
-    client = ScriptedClient([
-        {"role": "assistant", "content": "", "tool_calls": [
-            {"function": {"name": "run_python", "arguments": {
-                "source": BUILD_SOURCE, "object_name": "ChatCrate"}}}
-        ]},
-        {"role": "assistant", "content": "Built ChatCrate — gate passed."},
-    ])
+    client = ScriptedClient(
+        [
+            {
+                "role": "assistant",
+                "content": "",
+                "tool_calls": [
+                    {
+                        "function": {
+                            "name": "run_python",
+                            "arguments": {
+                                "source": BUILD_SOURCE,
+                                "object_name": "ChatCrate",
+                            },
+                        }
+                    }
+                ],
+            },
+            {"role": "assistant", "content": "Built ChatCrate — gate passed."},
+        ]
+    )
     session = AgentSession(client=client, output_directory=tmp_path)
 
     answer = session.send("Make me a crate.")
@@ -69,23 +82,47 @@ def test_loop_runs_a_tool_then_answers(empty_scene, tmp_path):
     # The tool result was fed back to the model as a tool message.
     tool_messages = [m for m in session.messages if m.get("role") == "tool"]
     assert len(tool_messages) == 1
-    assert "GATE: PASS" in tool_messages[0]["content"] or "gate: PASS" in tool_messages[0]["content"]
+    assert (
+        "GATE: PASS" in tool_messages[0]["content"]
+        or "gate: PASS" in tool_messages[0]["content"]
+    )
 
 
 def test_render_result_attaches_an_image_the_model_can_see(empty_scene, tmp_path):
     from blended.agent import AgentSession
 
-    client = ScriptedClient([
-        {"role": "assistant", "content": "", "tool_calls": [
-            {"function": {"name": "run_python", "arguments": {
-                "source": BUILD_SOURCE, "object_name": "ChatCrate"}}}
-        ]},
-        {"role": "assistant", "content": "", "tool_calls": [
-            {"function": {"name": "render_views",
-                          "arguments": {"object_name": "ChatCrate"}}}
-        ]},
-        {"role": "assistant", "content": "Looks like a crate."},
-    ])
+    client = ScriptedClient(
+        [
+            {
+                "role": "assistant",
+                "content": "",
+                "tool_calls": [
+                    {
+                        "function": {
+                            "name": "run_python",
+                            "arguments": {
+                                "source": BUILD_SOURCE,
+                                "object_name": "ChatCrate",
+                            },
+                        }
+                    }
+                ],
+            },
+            {
+                "role": "assistant",
+                "content": "",
+                "tool_calls": [
+                    {
+                        "function": {
+                            "name": "render_views",
+                            "arguments": {"object_name": "ChatCrate"},
+                        }
+                    }
+                ],
+            },
+            {"role": "assistant", "content": "Looks like a crate."},
+        ]
+    )
     session = AgentSession(client=client, output_directory=tmp_path)
     session.send("Make a crate and show me.")
 
@@ -108,13 +145,26 @@ w = bmesh.new(); w.from_mesh(box.data)
 w.faces.ensure_lookup_table(); w.faces.remove(w.faces[0])
 w.to_mesh(box.data); w.free()
 """
-    client = ScriptedClient([
-        {"role": "assistant", "content": "", "tool_calls": [
-            {"function": {"name": "run_python", "arguments": {
-                "source": open_box_source, "object_name": "BadCrate"}}}
-        ]},
-        {"role": "assistant", "content": "The gate rejected it — it's open."},
-    ])
+    client = ScriptedClient(
+        [
+            {
+                "role": "assistant",
+                "content": "",
+                "tool_calls": [
+                    {
+                        "function": {
+                            "name": "run_python",
+                            "arguments": {
+                                "source": open_box_source,
+                                "object_name": "BadCrate",
+                            },
+                        }
+                    }
+                ],
+            },
+            {"role": "assistant", "content": "The gate rejected it — it's open."},
+        ]
+    )
     session = AgentSession(client=client, output_directory=tmp_path)
     session.send("Make a crate.")
 
@@ -125,13 +175,23 @@ w.to_mesh(box.data); w.free()
 def test_tool_exception_is_surfaced_not_swallowed(empty_scene, tmp_path):
     from blended.agent import AgentSession
 
-    client = ScriptedClient([
-        {"role": "assistant", "content": "", "tool_calls": [
-            {"function": {"name": "inspect_object",
-                          "arguments": {"object_name": "DoesNotExist"}}}
-        ]},
-        {"role": "assistant", "content": "That object isn't in the scene."},
-    ])
+    client = ScriptedClient(
+        [
+            {
+                "role": "assistant",
+                "content": "",
+                "tool_calls": [
+                    {
+                        "function": {
+                            "name": "inspect_object",
+                            "arguments": {"object_name": "DoesNotExist"},
+                        }
+                    }
+                ],
+            },
+            {"role": "assistant", "content": "That object isn't in the scene."},
+        ]
+    )
     session = AgentSession(client=client, output_directory=tmp_path)
     session.send("Inspect DoesNotExist.")
 
@@ -142,9 +202,11 @@ def test_tool_exception_is_surfaced_not_swallowed(empty_scene, tmp_path):
 def test_runaway_tool_calling_is_capped(empty_scene, tmp_path):
     from blended.agent import AgentSession
 
-    looping_reply = {"role": "assistant", "content": "", "tool_calls": [
-        {"function": {"name": "list_scene", "arguments": {}}}
-    ]}
+    looping_reply = {
+        "role": "assistant",
+        "content": "",
+        "tool_calls": [{"function": {"name": "list_scene", "arguments": {}}}],
+    }
     client = ScriptedClient([looping_reply] * 30)
     session = AgentSession(
         client=client, output_directory=tmp_path, maximum_tool_calls_per_turn=4
@@ -184,7 +246,9 @@ def test_export_tool_verifies_the_written_file(empty_scene, tmp_path):
 class TwoModelClient:
     """Records which model each call went to, so routing is verifiable."""
 
-    def __init__(self, config, writer_replies, eye_reply="A wooden crate, evenly proportioned."):
+    def __init__(
+        self, config, writer_replies, eye_reply="A wooden crate, evenly proportioned."
+    ):
         self.config = config
         self.writer_replies = list(writer_replies)
         self.eye_reply = eye_reply
@@ -199,8 +263,9 @@ class TwoModelClient:
 
 
 def _split_config():
-    from blended.agent import ModelConfig
     import dataclasses
+
+    from blended.agent import ModelConfig
 
     return dataclasses.replace(
         ModelConfig.from_environment(),
@@ -211,25 +276,54 @@ def _split_config():
 
 def test_writer_never_receives_raw_images(empty_scene, tmp_path, monkeypatch):
     """deepseek-v4-flash is text-only — handing it image bytes is a bug."""
-    from blended.agent import AgentSession
     import blended.agent.loop as loop_module
+    from blended.agent import AgentSession
 
     config = _split_config()
-    client = TwoModelClient(config, [
-        {"role": "assistant", "content": "", "tool_calls": [
-            {"function": {"name": "run_python", "arguments": {
-                "source": BUILD_SOURCE, "object_name": "ChatCrate"}}}
-        ]},
-        {"role": "assistant", "content": "", "tool_calls": [
-            {"function": {"name": "render_views", "arguments": {
-                "object_name": "ChatCrate", "look_for": "is it square?"}}}
-        ]},
-        {"role": "assistant", "content": "Built and checked."},
-    ])
+    client = TwoModelClient(
+        config,
+        [
+            {
+                "role": "assistant",
+                "content": "",
+                "tool_calls": [
+                    {
+                        "function": {
+                            "name": "run_python",
+                            "arguments": {
+                                "source": BUILD_SOURCE,
+                                "object_name": "ChatCrate",
+                            },
+                        }
+                    }
+                ],
+            },
+            {
+                "role": "assistant",
+                "content": "",
+                "tool_calls": [
+                    {
+                        "function": {
+                            "name": "render_views",
+                            "arguments": {
+                                "object_name": "ChatCrate",
+                                "look_for": "is it square?",
+                            },
+                        }
+                    }
+                ],
+            },
+            {"role": "assistant", "content": "Built and checked."},
+        ],
+    )
     # The eye builds its own client from the same config; point it here.
-    monkeypatch.setattr(loop_module, "OllamaClient", lambda cfg: TwoModelClient(
-        cfg, [], eye_reply="A cube-shaped crate, square in all views."
-    ))
+    monkeypatch.setattr(
+        loop_module,
+        "OllamaClient",
+        lambda cfg: TwoModelClient(
+            cfg, [], eye_reply="A cube-shaped crate, square in all views."
+        ),
+    )
 
     session = AgentSession(client=client, output_directory=tmp_path)
     session.send("Make a crate and look at it.")
@@ -244,25 +338,49 @@ def test_writer_never_receives_raw_images(empty_scene, tmp_path, monkeypatch):
     assert "square in all views" in tool_messages[-1]["content"]
 
 
-def test_eye_failure_degrades_without_killing_the_turn(empty_scene, tmp_path, monkeypatch):
-    from blended.agent import AgentSession
+def test_eye_failure_degrades_without_killing_the_turn(
+    empty_scene, tmp_path, monkeypatch
+):
     import blended.agent.loop as loop_module
+    from blended.agent import AgentSession
 
     def exploding_client(cfg):
         raise RuntimeError("eye endpoint unreachable")
 
     config = _split_config()
-    client = TwoModelClient(config, [
-        {"role": "assistant", "content": "", "tool_calls": [
-            {"function": {"name": "run_python", "arguments": {
-                "source": BUILD_SOURCE, "object_name": "ChatCrate"}}}
-        ]},
-        {"role": "assistant", "content": "", "tool_calls": [
-            {"function": {"name": "render_views",
-                          "arguments": {"object_name": "ChatCrate"}}}
-        ]},
-        {"role": "assistant", "content": "Gate passed; could not see the render."},
-    ])
+    client = TwoModelClient(
+        config,
+        [
+            {
+                "role": "assistant",
+                "content": "",
+                "tool_calls": [
+                    {
+                        "function": {
+                            "name": "run_python",
+                            "arguments": {
+                                "source": BUILD_SOURCE,
+                                "object_name": "ChatCrate",
+                            },
+                        }
+                    }
+                ],
+            },
+            {
+                "role": "assistant",
+                "content": "",
+                "tool_calls": [
+                    {
+                        "function": {
+                            "name": "render_views",
+                            "arguments": {"object_name": "ChatCrate"},
+                        }
+                    }
+                ],
+            },
+            {"role": "assistant", "content": "Gate passed; could not see the render."},
+        ],
+    )
     monkeypatch.setattr(loop_module, "OllamaClient", exploding_client)
 
     session = AgentSession(client=client, output_directory=tmp_path)
@@ -276,23 +394,46 @@ def test_eye_failure_degrades_without_killing_the_turn(empty_scene, tmp_path, mo
 def test_single_model_mode_still_attaches_images(empty_scene, tmp_path):
     """With a vision-capable writer and no separate eye, images go
     straight into the conversation as before."""
-    from blended.agent import AgentSession, ModelConfig
     import dataclasses
+
+    from blended.agent import AgentSession, ModelConfig
 
     config = dataclasses.replace(
         ModelConfig.from_environment(), model="vision-writer", vision_model=""
     )
-    client = TwoModelClient(config, [
-        {"role": "assistant", "content": "", "tool_calls": [
-            {"function": {"name": "run_python", "arguments": {
-                "source": BUILD_SOURCE, "object_name": "ChatCrate"}}}
-        ]},
-        {"role": "assistant", "content": "", "tool_calls": [
-            {"function": {"name": "render_views",
-                          "arguments": {"object_name": "ChatCrate"}}}
-        ]},
-        {"role": "assistant", "content": "Looks right."},
-    ])
+    client = TwoModelClient(
+        config,
+        [
+            {
+                "role": "assistant",
+                "content": "",
+                "tool_calls": [
+                    {
+                        "function": {
+                            "name": "run_python",
+                            "arguments": {
+                                "source": BUILD_SOURCE,
+                                "object_name": "ChatCrate",
+                            },
+                        }
+                    }
+                ],
+            },
+            {
+                "role": "assistant",
+                "content": "",
+                "tool_calls": [
+                    {
+                        "function": {
+                            "name": "render_views",
+                            "arguments": {"object_name": "ChatCrate"},
+                        }
+                    }
+                ],
+            },
+            {"role": "assistant", "content": "Looks right."},
+        ],
+    )
     session = AgentSession(client=client, output_directory=tmp_path)
     session.send("Make a crate and look.")
 

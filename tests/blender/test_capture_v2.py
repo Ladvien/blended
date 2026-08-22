@@ -82,9 +82,9 @@ def test_numpy_compositor_matches_pillow_dimensions(empty_scene, tmp_path):
 def test_contact_sheet_falls_back_when_pillow_is_absent(
     empty_scene, tmp_path, monkeypatch
 ):
+    import blended.capture.compose as compose_module
     from blended.builders import CrateBuilder, CrateParameters
     from blended.capture import capture_contact_sheet
-    import blended.capture.compose as compose_module
 
     monkeypatch.setattr(compose_module, "pillow_available", lambda: False)
     crate_object = CrateBuilder(CrateParameters()).build()

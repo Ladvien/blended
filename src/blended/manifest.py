@@ -30,24 +30,40 @@ OP_MODULE_NAMES = (
 )
 
 CONVENTIONS = (
-    "Build with `blended.ops`, NOT raw bpy. The ops are context-free, "
-    "version-drift-resistant, and idempotent by name; raw bpy.ops is "
-    "none of those.",
-    "Never call bpy.ops primitives (primitive_cube_add etc). Their "
-    "keyword arguments drift between versions.",
-    "Objects must be linked into the scene (`link_into_scene`) or the "
-    "depsgraph has no instance and measurements silently return stored "
-    "values instead of evaluated ones.",
-    "Dimensions are in METERS and variable names carry the unit suffix "
-    "(`width_m`, `height_m`).",
-    "No magic numbers. Every constant is module-level, named, and "
-    "carries the reason for its value.",
-    "Parts that will be unioned must OVERLAP slightly first; booleans "
-    "on exactly-coplanar faces are the EXACT solver's worst case.",
-    "An applied array is N disconnected islands until something bridges "
-    "them. Union the connector in, or the gate fails on component count.",
-    "Build the object with the EXACT name you were asked for. The "
-    "harness looks it up by name after your code runs.",
+    (
+        "Build with `blended.ops`, NOT raw bpy. The ops are context-free, "
+        "version-drift-resistant, and idempotent by name; raw bpy.ops is "
+        "none of those."
+    ),
+    (
+        "Never call bpy.ops primitives (primitive_cube_add etc). Their "
+        "keyword arguments drift between versions."
+    ),
+    (
+        "Objects must be linked into the scene (`link_into_scene`) or the "
+        "depsgraph has no instance and measurements silently return stored "
+        "values instead of evaluated ones."
+    ),
+    (
+        "Dimensions are in METERS and variable names carry the unit suffix "
+        "(`width_m`, `height_m`)."
+    ),
+    (
+        "No magic numbers. Every constant is module-level, named, and "
+        "carries the reason for its value."
+    ),
+    (
+        "Parts that will be unioned must OVERLAP slightly first; booleans "
+        "on exactly-coplanar faces are the EXACT solver's worst case."
+    ),
+    (
+        "An applied array is N disconnected islands until something bridges "
+        "them. Union the connector in, or the gate fails on component count."
+    ),
+    (
+        "Build the object with the EXACT name you were asked for. The "
+        "harness looks it up by name after your code runs."
+    ),
 )
 
 

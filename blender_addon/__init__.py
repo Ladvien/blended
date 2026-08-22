@@ -54,7 +54,9 @@ _LAST_FINGERPRINT: dict = {}
 _LAST_FINGERPRINT_CHECK = [0.0]
 
 
-def _ensure_blended_importable(repository_root: str, prefer_repository: bool = False) -> str:
+def _ensure_blended_importable(
+    repository_root: str, prefer_repository: bool = False
+) -> str:
     """Make `blended` importable. Returns '' on success, else an error.
 
     In developer mode the repository sources are put FIRST so edits take
@@ -110,8 +112,8 @@ def _reload_library(preferences) -> str:
     result = devreload.purge_library_modules()
 
     import_error = _ensure_blended_importable(
-            preferences.repository_path, preferences.developer_mode
-        )
+        preferences.repository_path, preferences.developer_mode
+    )
     if import_error:
         return f"Reload FAILED: {import_error}"
 
@@ -134,9 +136,7 @@ def _reload_library(preferences) -> str:
             # Restore history minus the system prompt, which the rebuilt
             # session regenerates (so prompt edits take effect too).
             _STATE.session.messages.extend(
-                message
-                for message in conversation
-                if message.get("role") != "system"
+                message for message in conversation if message.get("role") != "system"
             )
         except Exception as rebuild_error:  # noqa: BLE001
             _STATE.session = None
@@ -495,6 +495,7 @@ class BLENDED_OT_reset(bpy.types.Operator):
 
 # --- UI --------------------------------------------------------------------
 
+
 def _wrap_for_region(body_text: str, region_width_px: float, ui_scale: float):
     """Wrap text to the panel's real width (see blended.agent.wrapping)."""
     from blended.agent.wrapping import wrap_for_region
@@ -554,27 +555,74 @@ class BLENDED_PT_chat(bpy.types.Panel):
         region_width = context.region.width
         ui_scale = context.preferences.system.ui_scale
 
-        # --- status ---------------------------------------------------
-        status_row = layout.row(align=True)
+        # LAYOUT ORDER IS DELIBERATE: the conversation is drawn FIRST and
+        # every control is clustered BELOW it. A Blender panel flows
+        # top-to-bottom and the region scrolls, so putting controls above a
+        # growing transcript means hunting upward past the whole history to
+        # reach them. With one control cluster pinned after the history,
+        # scrolling to the bottom always lands on everything actionable.
+
+        # --- conversation ------------------------------------------------
+        conversation = layout.column()
+        if not _STATE.transcript:
+            empty_box = conversation.box()
+            empty_box.label(text="Ask for an asset to get started.", icon="INFO")
+            for example in (
+                '"Build a wooden crate, 0.8 m, and show me the renders."',
+                '"Make the legs thinner and re-check it."',
+            ):
+                for line in _wrap_for_region(example, region_width, ui_scale):
+                    empty_box.label(text=line)
+
+        visible = _STATE.transcript[-scene_properties.visible_messages :]
+        pending_tool_calls: list[str] = []
+        for kind, body_text in visible:
+            # Tool traffic collapses to a compact activity line unless you
+            # ask for detail — otherwise one turn floods the panel and
+            # buries the actual conversation.
+            if (
+                kind in ("tool", "result", "thinking")
+                and not scene_properties.show_tool_detail
+            ):
+                if kind == "tool":
+                    pending_tool_calls.append(body_text.split("(")[0])
+                continue
+            if pending_tool_calls:
+                conversation.row().label(
+                    text=" · ".join(pending_tool_calls[-6:]), icon="TOOL_SETTINGS"
+                )
+                pending_tool_calls = []
+            self._draw_message(conversation, kind, body_text, region_width, ui_scale)
+        if pending_tool_calls:
+            conversation.row().label(
+                text=" · ".join(pending_tool_calls[-6:]), icon="TOOL_SETTINGS"
+            )
+
+        # --- control cluster, everything actionable in one place ---------
+        layout.separator()
+        controls = layout.box()
+
+        composer = controls.column(align=True)
+        composer.prop(scene_properties, "prompt", text="")
+        send_row = composer.row(align=True)
+        send_row.scale_y = 1.3
+        send_row.enabled = not _STATE.busy
+        send_row.operator(BLENDED_OT_send.bl_idname, icon="PLAY")
+
+        status_row = controls.row(align=True)
         status_row.label(
             text="Working…" if _STATE.busy else "Ready",
             icon="SORTTIME" if _STATE.busy else "CHECKMARK",
         )
-        status_row.operator(
-            BLENDED_OT_open_transcript.bl_idname, text="", icon="TEXT"
-        )
+        status_row.operator(BLENDED_OT_open_transcript.bl_idname, text="", icon="TEXT")
         status_row.operator(BLENDED_OT_reset.bl_idname, text="", icon="TRASH")
 
         if region_width < 300:
-            hint_row = layout.row()
-            hint_row.label(
-                text="Drag the sidebar edge left for a wider chat.",
-                icon="AREA_SWAP",
+            controls.label(
+                text="Drag the sidebar edge for a wider chat.", icon="AREA_SWAP"
             )
 
-        # --- settings (collapsed) ---------------------------------------
-        settings_box = layout.box()
-        settings_header = settings_box.row(align=True)
+        settings_header = controls.row(align=True)
         settings_header.prop(
             scene_properties,
             "show_settings",
@@ -584,20 +632,21 @@ class BLENDED_PT_chat(bpy.types.Panel):
         )
         settings_header.label(text=preferences.model_name.split(":")[0])
         if scene_properties.show_settings:
-            settings_box.prop(preferences, "model_name")
-            settings_box.prop(preferences, "vision_model_name")
-            settings_box.prop(scene_properties, "show_tool_detail")
-            settings_box.prop(preferences, "developer_mode")
+            settings_column = controls.column()
+            settings_column.prop(preferences, "model_name")
+            settings_column.prop(preferences, "vision_model_name")
+            settings_column.prop(preferences, "send_on_enter")
+            settings_column.prop(scene_properties, "show_tool_detail")
+            settings_column.prop(scene_properties, "visible_messages")
+            settings_column.prop(preferences, "developer_mode")
             if preferences.developer_mode:
-                settings_box.prop(preferences, "repository_path")
-                settings_box.prop(preferences, "auto_reload")
-            settings_box.prop(preferences, "log_directory")
-            settings_box.operator(
-                BLENDED_OT_test_connection.bl_idname, icon="URL"
-            )
+                settings_column.prop(preferences, "repository_path")
+                settings_column.prop(preferences, "auto_reload")
+            settings_column.prop(preferences, "log_directory")
+            settings_column.operator(BLENDED_OT_test_connection.bl_idname, icon="URL")
 
         if preferences.developer_mode:
-            developer_row = layout.row(align=True)
+            developer_row = controls.row(align=True)
             developer_row.enabled = not _STATE.busy
             developer_row.operator(
                 BLENDED_OT_reload.bl_idname, text="Reload", icon="FILE_REFRESH"
@@ -606,55 +655,6 @@ class BLENDED_PT_chat(bpy.types.Panel):
                 text="auto" if preferences.auto_reload else "manual",
                 icon="TIME" if preferences.auto_reload else "HANDLETYPE_VECTOR_VEC",
             )
-
-        # --- conversation ------------------------------------------------
-        conversation = layout.column()
-        if not _STATE.transcript:
-            empty_box = conversation.box()
-            empty_box.label(
-                text="Ask for an asset to get started.", icon="INFO"
-            )
-            for example in (
-                '"Build a wooden crate, 0.8 m, and show me the renders."',
-                '"Make the legs thinner and re-check it."',
-            ):
-                for line in _wrap_for_region(example, region_width, ui_scale):
-                    empty_box.label(text=line)
-
-        visible = _STATE.transcript[-scene_properties.visible_messages:]
-        pending_tool_calls: list[str] = []
-        for kind, body_text in visible:
-            # Tool traffic is collapsed to a compact activity line unless
-            # you ask for detail — otherwise a single turn floods the panel
-            # and buries the actual conversation.
-            if kind in ("tool", "result", "thinking") and not scene_properties.show_tool_detail:
-                if kind == "tool":
-                    pending_tool_calls.append(body_text.split("(")[0])
-                continue
-            if pending_tool_calls:
-                activity_row = conversation.row()
-                activity_row.label(
-                    text=" · ".join(pending_tool_calls[-6:]),
-                    icon="TOOL_SETTINGS",
-                )
-                pending_tool_calls = []
-            self._draw_message(
-                conversation, kind, body_text, region_width, ui_scale
-            )
-        if pending_tool_calls:
-            activity_row = conversation.row()
-            activity_row.label(
-                text=" · ".join(pending_tool_calls[-6:]), icon="TOOL_SETTINGS"
-            )
-
-        # --- composer ------------------------------------------------------
-        layout.separator()
-        composer = layout.column(align=True)
-        composer.prop(scene_properties, "prompt", text="")
-        send_row = composer.row()
-        send_row.scale_y = 1.3
-        send_row.enabled = not _STATE.busy
-        send_row.operator(BLENDED_OT_send.bl_idname, icon="PLAY")
 
 
 class BLENDED_Preferences(bpy.types.AddonPreferences):
@@ -674,21 +674,39 @@ class BLENDED_Preferences(bpy.types.AddonPreferences):
         name="Writer",
         description="Drives every turn: writes bpy, calls tools, reads gate reports",
         items=[
-            ("deepseek-v4-flash:cloud", "DeepSeek V4 Flash (Medium Usage)",
-             "284B MoE / 13B active, 1M context, tools + thinking. "
-             "TEXT ONLY — pair it with an eye. Recommended writer."),
-            ("minimax-m3:cloud", "MiniMax M3 (High Usage)",
-             "Native multimodal — can drive everything alone, but spends "
-             "High Usage on every turn."),
-            ("kimi-k2.7-code:cloud", "Kimi K2.7 Code (High Usage)",
-             "Vision + coding-tuned, ~30% fewer thinking tokens."),
-            ("qwen3.5:397b-cloud", "Qwen 3.5 397B (Medium Usage)",
-             "Vision + tools, 256K context."),
-            ("kimi-k3:cloud", "Kimi K3 (METERED — $3/$15 per 1M)",
-             "Strongest VLM available, billed separately from your "
-             "subscription. Opt in deliberately."),
-            ("qwen3.5:27b", "Qwen 3.5 27B (local)",
-             "Runs on a 24 GB card. No cloud usage."),
+            (
+                "deepseek-v4-flash:cloud",
+                "DeepSeek V4 Flash (Medium Usage)",
+                "284B MoE / 13B active, 1M context, tools + thinking. "
+                "TEXT ONLY — pair it with an eye. Recommended writer.",
+            ),
+            (
+                "minimax-m3:cloud",
+                "MiniMax M3 (High Usage)",
+                "Native multimodal — can drive everything alone, but spends "
+                "High Usage on every turn.",
+            ),
+            (
+                "kimi-k2.7-code:cloud",
+                "Kimi K2.7 Code (High Usage)",
+                "Vision + coding-tuned, ~30% fewer thinking tokens.",
+            ),
+            (
+                "qwen3.5:397b-cloud",
+                "Qwen 3.5 397B (Medium Usage)",
+                "Vision + tools, 256K context.",
+            ),
+            (
+                "kimi-k3:cloud",
+                "Kimi K3 (METERED — $3/$15 per 1M)",
+                "Strongest VLM available, billed separately from your "
+                "subscription. Opt in deliberately.",
+            ),
+            (
+                "qwen3.5:27b",
+                "Qwen 3.5 27B (local)",
+                "Runs on a 24 GB card. No cloud usage.",
+            ),
         ],
         default="deepseek-v4-flash:cloud",
     )
@@ -699,16 +717,31 @@ class BLENDED_Preferences(bpy.types.AddonPreferences):
             "as text. Required when the writer is text-only."
         ),
         items=[
-            ("minimax-m3:cloud", "MiniMax M3 (High Usage)",
-             "Native multimodal. Recommended eye — fires only on renders."),
-            ("kimi-k2.7-code:cloud", "Kimi K2.7 Code (High Usage)",
-             "Vision, fewer thinking tokens."),
-            ("qwen3.5:397b-cloud", "Qwen 3.5 397B (Medium Usage)",
-             "Lightest against your weekly limit."),
-            ("kimi-k3:cloud", "Kimi K3 (METERED — $3/$15 per 1M)",
-             "Best vision available, billed separately."),
-            ("", "None — writer sees for itself",
-             "Only valid if the writer is vision-capable."),
+            (
+                "minimax-m3:cloud",
+                "MiniMax M3 (High Usage)",
+                "Native multimodal. Recommended eye — fires only on renders.",
+            ),
+            (
+                "kimi-k2.7-code:cloud",
+                "Kimi K2.7 Code (High Usage)",
+                "Vision, fewer thinking tokens.",
+            ),
+            (
+                "qwen3.5:397b-cloud",
+                "Qwen 3.5 397B (Medium Usage)",
+                "Lightest against your weekly limit.",
+            ),
+            (
+                "kimi-k3:cloud",
+                "Kimi K3 (METERED — $3/$15 per 1M)",
+                "Best vision available, billed separately.",
+            ),
+            (
+                "",
+                "None — writer sees for itself",
+                "Only valid if the writer is vision-capable.",
+            ),
         ],
         default="minimax-m3:cloud",
     )
@@ -734,6 +767,14 @@ class BLENDED_Preferences(bpy.types.AddonPreferences):
         description=(
             "Watch the library sources and reload automatically when you "
             "save. Never fires mid-turn"
+        ),
+        default=True,
+    )
+    send_on_enter: bpy.props.BoolProperty(
+        name="Enter sends",
+        description=(
+            "Send as soon as you confirm the message field. Turn off if "
+            "you would rather always click Send"
         ),
         default=True,
     )
@@ -793,8 +834,7 @@ class BLENDED_Preferences(bpy.types.AddonPreferences):
             )
             if vendored:
                 developer_box.label(
-                    text="Repository sources take precedence over the "
-                         "vendored copy.",
+                    text="Repository sources take precedence over the vendored copy.",
                     icon="INFO",
                 )
         layout.prop(self, "model_name")
@@ -806,13 +846,13 @@ class BLENDED_Preferences(bpy.types.AddonPreferences):
         if self.model_name in text_only_writers and not self.vision_model_name:
             routing_box.label(
                 text="This writer cannot see. Pick an Eye, or it will never "
-                     "look at its own renders.",
+                "look at its own renders.",
                 icon="ERROR",
             )
         elif self.vision_model_name and self.vision_model_name != self.model_name:
             routing_box.label(
                 text=f"Writer {self.model_name} drives every turn; "
-                     f"{self.vision_model_name} is called only on renders.",
+                f"{self.vision_model_name} is called only on renders.",
                 icon="CHECKMARK",
             )
         else:
@@ -820,11 +860,14 @@ class BLENDED_Preferences(bpy.types.AddonPreferences):
                 text=f"{self.model_name} handles text and images.",
                 icon="INFO",
             )
-        if "kimi-k3" in (self.model_name, self.vision_model_name) or \
-           self.model_name == "kimi-k3:cloud" or self.vision_model_name == "kimi-k3:cloud":
+        if (
+            "kimi-k3" in (self.model_name, self.vision_model_name)
+            or self.model_name == "kimi-k3:cloud"
+            or self.vision_model_name == "kimi-k3:cloud"
+        ):
             routing_box.label(
                 text="Kimi K3 is METERED at $3/$15 per 1M — billed on top of "
-                     "your subscription.",
+                "your subscription.",
                 icon="ERROR",
             )
 
@@ -842,23 +885,56 @@ class BLENDED_Preferences(bpy.types.AddonPreferences):
         auth_row = layout.row()
         if environment_key:
             auth_row.label(
-                text=f"OLLAMA_API_KEY found in environment "
-                     f"(…{environment_key[-4:]})",
+                text=f"OLLAMA_API_KEY found in environment (…{environment_key[-4:]})",
                 icon="CHECKMARK",
             )
         else:
             auth_row.label(
                 text="No OLLAMA_API_KEY in environment — fine if you ran "
-                     "`ollama signin`.",
+                "`ollama signin`.",
                 icon="INFO",
             )
         layout.prop(self, "api_key")
         layout.operator(BLENDED_OT_test_connection.bl_idname, icon="URL")
 
 
+def _on_prompt_confirmed(self, context):
+    """Fires when the prompt field is confirmed — i.e. you pressed Enter.
+
+    This is the only path that can deliver "Enter sends" from INSIDE the
+    field: while a Blender text field has focus it swallows keyboard
+    input, so no keymap entry receives the keystroke. Confirming the
+    field is the event we actually get.
+
+    The operator is deferred to a one-shot timer rather than called
+    inline, because invoking an operator from within a property-update
+    callback is not safe in every context Blender may be in.
+    """
+    try:
+        preferences = context.preferences.addons[__name__].preferences
+    except (KeyError, AttributeError):
+        return
+    if not preferences.send_on_enter:
+        return
+    if _STATE.busy or not self.prompt.strip():
+        return
+
+    def _fire_send():
+        try:
+            bpy.ops.blended.send_message()
+        except Exception:  # noqa: BLE001 — a failed send must not kill the timer
+            pass
+        return None  # one-shot
+
+    bpy.app.timers.register(_fire_send, first_interval=0.0)
+
+
 class BLENDED_ChatProperties(bpy.types.PropertyGroup):
     prompt: bpy.props.StringProperty(
-        name="Message", description="What should the agent build?", default=""
+        name="Message",
+        description="What should the agent build? Press Enter to send",
+        default="",
+        update=_on_prompt_confirmed,
     )
     visible_messages: bpy.props.IntProperty(
         name="Visible messages",
@@ -882,6 +958,37 @@ class BLENDED_ChatProperties(bpy.types.PropertyGroup):
     )
 
 
+# Cmd+Enter (macOS) / Ctrl+Enter elsewhere, for when focus is NOT in the
+# message field — e.g. you clicked into the viewport and want to resend.
+# Inside the field these never fire, because Blender's text field
+# consumes keyboard events; `_on_prompt_confirmed` covers that case.
+_KEYMAP_ENTRIES: list = []
+
+
+def _register_keymaps():
+    key_configuration = bpy.context.window_manager.keyconfigs.addon
+    if key_configuration is None:
+        return  # background mode has no addon keyconfig
+    keymap = key_configuration.keymaps.new(name="3D View", space_type="VIEW_3D")
+    for modifier in ("oskey", "ctrl"):
+        keymap_item = keymap.keymap_items.new(
+            BLENDED_OT_send.bl_idname,
+            type="RET",
+            value="PRESS",
+            **{modifier: True},
+        )
+        _KEYMAP_ENTRIES.append((keymap, keymap_item))
+
+
+def _unregister_keymaps():
+    for keymap, keymap_item in _KEYMAP_ENTRIES:
+        try:
+            keymap.keymap_items.remove(keymap_item)
+        except (RuntimeError, ReferenceError):
+            pass
+    _KEYMAP_ENTRIES.clear()
+
+
 _CLASSES = (
     BLENDED_OT_test_connection,
     BLENDED_Preferences,
@@ -902,9 +1009,11 @@ def register():
     )
     if not bpy.app.timers.is_registered(_drain_tool_requests):
         bpy.app.timers.register(_drain_tool_requests, persistent=True)
+    _register_keymaps()
 
 
 def unregister():
+    _unregister_keymaps()
     if bpy.app.timers.is_registered(_drain_tool_requests):
         bpy.app.timers.unregister(_drain_tool_requests)
     del bpy.types.Scene.blended_chat

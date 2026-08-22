@@ -15,6 +15,7 @@ from the mesh-repair literature (Attene et al.) are load-bearing:
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+
 from blended.analyze.mesh_checks import (
     DUPLICATE_VERTEX_DISTANCE_M,
     MeshBudget,
@@ -79,7 +80,6 @@ def cleanup_mesh(
 ) -> CleanupReport:
     """Run the bounded cleanup pass; return before/after reports."""
     import bmesh
-    import bpy
 
     before_report = analyze_object(blender_object)
     actions: list[str] = []

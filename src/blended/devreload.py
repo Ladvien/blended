@@ -39,9 +39,7 @@ class ReloadResult:
         if not self.purged_modules:
             return "Nothing to reload (library was not imported yet)."
         changed = (
-            f"; changed: {', '.join(self.changed_files)}"
-            if self.changed_files
-            else ""
+            f"; changed: {', '.join(self.changed_files)}" if self.changed_files else ""
         )
         return f"Reloaded {len(self.purged_modules)} modules{changed}."
 
@@ -68,9 +66,12 @@ def purge_library_modules() -> ReloadResult:
 def library_source_root() -> Path | None:
     """Directory the library is currently imported from, if any."""
     module = sys.modules.get(PACKAGE_NAME)
-    if module is None or not getattr(module, "__file__", None):
+    if module is None:
         return None
-    return Path(module.__file__).parent
+    module_file = getattr(module, "__file__", None)
+    if not module_file:
+        return None
+    return Path(module_file).parent
 
 
 def source_fingerprint(source_root: Path) -> dict[str, float]:
@@ -85,11 +86,7 @@ def changed_files(
     previous: dict[str, float], current: dict[str, float]
 ) -> tuple[str, ...]:
     """Files added, removed, or modified between two fingerprints."""
-    changed = {
-        name
-        for name, mtime in current.items()
-        if previous.get(name) != mtime
-    }
+    changed = {name for name, mtime in current.items() if previous.get(name) != mtime}
     changed |= set(previous) - set(current)
     return tuple(sorted(changed))
 

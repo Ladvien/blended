@@ -1,7 +1,5 @@
 """Transcript logging: pure, no bpy."""
 
-import json
-
 from blended.agent.transcript import ChatTranscript, default_log_directory
 
 

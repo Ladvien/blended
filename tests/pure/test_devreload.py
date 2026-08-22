@@ -1,12 +1,13 @@
 """Hot-reload machinery: pure, no bpy required."""
 
 import sys
+from typing import ClassVar
 
 from blended import devreload
 
 
 def test_purge_removes_library_modules_and_reports_them():
-    import blended.ops.primitives  # noqa: F401 — ensure something is cached
+    import blended.ops.primitives
 
     assert any(name.startswith("blended.") for name in sys.modules)
     result = devreload.purge_library_modules()
@@ -26,7 +27,6 @@ def test_purge_removes_library_modules_and_reports_them():
 
 
 def test_purge_never_touches_unrelated_modules():
-    import json
 
     before = sys.modules["json"]
     devreload.purge_library_modules()
@@ -56,7 +56,10 @@ def test_fingerprint_covers_the_real_package():
 
 def test_snapshot_conversation_survives_a_purge():
     class FakeSession:
-        messages = [{"role": "user", "content": "hi"}, {"role": "assistant", "content": "yo"}]
+        messages: ClassVar[list[dict[str, str]]] = [
+            {"role": "user", "content": "hi"},
+            {"role": "assistant", "content": "yo"},
+        ]
 
     snapshot = devreload.snapshot_conversation(FakeSession())
     devreload.purge_library_modules()

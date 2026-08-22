@@ -18,9 +18,8 @@ escalates to a human with the contact sheet attached.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from pathlib import Path
-from typing import Callable
 
 from blended.analyze.mesh_checks import MeshBudget
 from blended.harness import HarnessResult, HarnessSettings, run_chunk
