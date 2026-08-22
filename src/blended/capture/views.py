@@ -23,9 +23,17 @@ VIEW_DIRECTIONS: dict[str, tuple[float, float, float]] = {
     "front": (0.0, -1.0, 0.0),
     "right": (1.0, 0.0, 0.0),
     "top": (0.0, 0.0, 1.0),
+    # Looking UP. Measured 2026-08-22 (iterations 10 and 11): for a
+    # three-legged stool NO other view can show how the legs are placed.
+    # `top` is blind to them — the 0.16 m seat covers feet at 0.14 m —
+    # and `front` projects the 120 and 240 degree legs to the SAME world
+    # x, so they overlap into what reads as one leg and the sheet looks
+    # wrong while the geometry is right. A human reviewer called it out
+    # twice. From below there is no occluder and the spacing is direct.
+    "bottom": (0.0, 0.0, -1.0),
     "three_quarter": (1.0, -1.0, 0.8),
 }
-ORTHOGRAPHIC_VIEWS = ("front", "right", "top")
+ORTHOGRAPHIC_VIEWS = ("front", "right", "top", "bottom")
 
 # How much breathing room around the object's bounding sphere.
 FRAME_MARGIN_FACTOR = 1.2

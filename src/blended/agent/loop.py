@@ -16,6 +16,7 @@ import base64
 import json
 import urllib.error
 import urllib.request
+from collections.abc import Callable
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 
@@ -24,7 +25,14 @@ CLOUD_ENDPOINT = "https://ollama.com"
 CHAT_PATH = "/api/chat"
 TAGS_PATH = "/api/tags"
 REQUEST_TIMEOUT_SECONDS = 300
-PREFLIGHT_TIMEOUT_SECONDS = 10
+# The preflight sends a real one-token chat, so it pays whatever the
+# model's cold start costs. Measured 2026-08-22: a cloud model proxied
+# through a local daemon answered `ping` in 23.3 s from cold, against a
+# 10 s preflight — so the harness refused to score a run on a backend
+# that was working. Generous relative to a cold start, still far short
+# of REQUEST_TIMEOUT_SECONDS, so a genuinely dead endpoint is reported
+# rather than waited on.
+PREFLIGHT_TIMEOUT_SECONDS = 90
 
 API_KEY_ENVIRONMENT_VARIABLE = "OLLAMA_API_KEY"
 HOST_ENVIRONMENT_VARIABLE = "OLLAMA_HOST"
@@ -331,6 +339,26 @@ def _encode_images(image_paths: list[Path]) -> list[str]:
     return encoded
 
 
+# Where a tool call is executed. The loop runs on a worker thread (the
+# model call blocks for seconds to minutes) but `bpy` is main-thread
+# only, so the live-Blender frontend has to move execution somewhere
+# else. That seam is a CONSTRUCTOR ARGUMENT, never a patched module
+# attribute: `send` resolves its tools by local import, so a patch on
+# this module is invisible to it. When the seam was a patch, every tool
+# call ran bpy on the worker thread and Blender segfaulted inside its
+# own draw loop with nothing in any traceback.
+ToolDispatch = Callable[[str, dict, Path], tuple[str, list[Path]]]
+
+
+def dispatch_here(
+    tool_name: str, arguments: dict, output_directory: Path
+) -> tuple[str, list[Path]]:
+    """Execute the tool on the CALLING thread. Main thread only."""
+    from blended.agent.tools import dispatch_tool
+
+    return dispatch_tool(tool_name, arguments, output_directory)
+
+
 @dataclass
 class AgentSession:
     """A multi-turn modeling conversation against a live Blender scene."""
@@ -339,6 +367,10 @@ class AgentSession:
     output_directory: Path = Path("_renders/agent")
     maximum_tool_calls_per_turn: int = 12
     messages: list[dict] = field(default_factory=list)
+    # A plain function as a dataclass default: __init__ assigns it to the
+    # INSTANCE, so `self.dispatch(...)` calls it unbound — no phantom
+    # `self` argument. Frontends override it; nothing patches it.
+    dispatch: ToolDispatch = dispatch_here
 
     def __post_init__(self) -> None:
         if not self.messages:
@@ -353,7 +385,7 @@ class AgentSession:
         kind in {"thinking", "tool", "result", "answer"}. Returns the
         assistant's final text.
         """
-        from blended.agent.tools import TOOL_SCHEMAS, dispatch_tool
+        from blended.agent.tools import TOOL_SCHEMAS
 
         def emit(kind: str, text: str) -> None:
             if on_event is not None:
@@ -361,7 +393,14 @@ class AgentSession:
 
         self.messages.append({"role": "user", "content": user_text})
 
-        for _ in range(self.maximum_tool_calls_per_turn):
+        # Count the tool calls actually EXECUTED, not the assistant
+        # messages that carried them. One message can hold several calls,
+        # so counting messages made the field name, the driver's
+        # --max-tool-calls flag and the exhaustion report three different
+        # claims. Measured 2026-08-22 (iteration 4): the run reported
+        # "Stopped after 16 tool calls" having executed 20.
+        executed_tool_call_count = 0
+        while executed_tool_call_count < self.maximum_tool_calls_per_turn:
             assistant_message = self.client.chat(self.messages, TOOL_SCHEMAS)
             self.messages.append(assistant_message)
 
@@ -384,9 +423,19 @@ class AgentSession:
                     if isinstance(raw_arguments, str)
                     else raw_arguments
                 )
-                emit("tool", f"{tool_name}({json.dumps(arguments)[:200]})")
+                # The WHOLE call, not a preview. Truncating here is what
+                # display layers are for, and they already do it — the
+                # driver prints 400 characters. Measured 2026-08-22
+                # (iteration 5): every run_python source in the iteration
+                # log was clipped at 200 characters, so the run that
+                # crashed could not be replayed from its own record.
+                emit("tool", f"{tool_name}({json.dumps(arguments)})")
+                # Counted before dispatch: a call that raises still cost
+                # the turn it took, and a budget that only charges for
+                # successes lets a failing loop run forever.
+                executed_tool_call_count += 1
                 try:
-                    result_text, image_paths = dispatch_tool(
+                    result_text, image_paths = self.dispatch(
                         tool_name, arguments, self.output_directory
                     )
                 except Exception as tool_error:  # noqa: BLE001 — reported to the model
@@ -433,9 +482,14 @@ class AgentSession:
                         tool_message["images"] = _encode_images(image_paths)
                 self.messages.append(tool_message)
 
+        # Every call in an assistant message is executed once the message
+        # arrives — answering half of them would leave tool_call ids
+        # dangling — so the final count can overshoot the budget. It is
+        # reported as measured, not as configured.
         exhausted = (
-            f"Stopped after {self.maximum_tool_calls_per_turn} tool calls in "
-            f"one turn without reaching an answer. Tell me how to narrow this."
+            f"Stopped after {executed_tool_call_count} tool calls in one turn "
+            f"(budget {self.maximum_tool_calls_per_turn}) without reaching an "
+            f"answer. Tell me how to narrow this."
         )
         emit("answer", exhausted)
         return exhausted

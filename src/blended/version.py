@@ -12,7 +12,7 @@ import os
 
 # The Blender series this repo is written against. Bump deliberately,
 # and grow drift/catalog.py in the same commit.
-TARGET_BLENDER_SERIES: tuple[int, int] = (5, 0)
+TARGET_BLENDER_SERIES: tuple[int, int] = (5, 2)
 
 # Set to "1" to run against a different series anyway (e.g. a CI
 # container that only has an older bpy wheel). Skew is allowed, silence

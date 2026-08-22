@@ -7,7 +7,6 @@ tools, attach rendered images, feed results back, and terminate.
 import pytest
 
 bpy = pytest.importorskip("bpy", reason="requires Blender-as-module (pip install bpy)")
-pytest.importorskip("PIL.Image", reason="contact sheets require Pillow")
 
 pytestmark = pytest.mark.blender
 
@@ -213,6 +212,75 @@ def test_runaway_tool_calling_is_capped(empty_scene, tmp_path):
     )
     answer = session.send("Loop forever.")
     assert "Stopped after 4 tool calls" in answer
+
+
+def test_the_recorded_call_is_replayable(empty_scene, tmp_path):
+    """A run you cannot replay is a run you cannot diagnose.
+
+    Measured 2026-08-22 (iteration 5): the loop emitted the first 200
+    characters of each call, so the iteration log held a preview of the
+    run_python source that crashed and not the source itself.
+    """
+    from blended.agent import AgentSession
+
+    long_source = BUILD_SOURCE + "\n# padding\n" + ("# " + "x" * 78 + "\n") * 6
+    assert len(long_source) > 400
+    client = ScriptedClient(
+        [
+            {
+                "role": "assistant",
+                "content": "",
+                "tool_calls": [
+                    {
+                        "function": {
+                            "name": "run_python",
+                            "arguments": {"source": long_source},
+                        }
+                    }
+                ],
+            },
+            {"role": "assistant", "content": "Built."},
+        ]
+    )
+    session = AgentSession(client=client, output_directory=tmp_path)
+    recorded = []
+    session.send("Build it.", on_event=lambda kind, text: (
+        recorded.append(text) if kind == "tool" else None
+    ))
+
+    assert len(recorded) == 1
+    assert long_source.strip().splitlines()[-1] in recorded[0]
+
+
+def test_the_budget_counts_calls_not_messages(empty_scene, tmp_path):
+    """One assistant message can carry several tool calls.
+
+    Measured 2026-08-22 (iteration 4): the loop counted MESSAGES while
+    its field, the driver's --max-tool-calls flag and its own exhaustion
+    report all said CALLS, so a run that executed 20 calls reported
+    "Stopped after 16 tool calls". The count is now what was executed.
+    """
+    from blended.agent import AgentSession
+
+    three_calls_at_once = {
+        "role": "assistant",
+        "content": "",
+        "tool_calls": [
+            {"function": {"name": "list_scene", "arguments": {}}} for _ in range(3)
+        ],
+    }
+    client = ScriptedClient([three_calls_at_once] * 30)
+    session = AgentSession(
+        client=client, output_directory=tmp_path, maximum_tool_calls_per_turn=4
+    )
+    answer = session.send("Loop forever, three at a time.")
+
+    executed = len([m for m in session.messages if m.get("role") == "tool"])
+    # Two messages of three: the budget is checked between messages, and
+    # a message's calls are never half-answered.
+    assert executed == 6
+    assert f"Stopped after {executed} tool calls" in answer
+    assert "budget 4" in answer
 
 
 def test_search_ops_finds_operations_without_guessing(empty_scene, tmp_path):
@@ -439,3 +507,20 @@ def test_single_model_mode_still_attaches_images(empty_scene, tmp_path):
 
     tool_messages = [m for m in session.messages if m.get("role") == "tool"]
     assert "images" in tool_messages[-1]
+
+
+# Measured 2026-08-22: a cloud model proxied through a local daemon
+# answered a one-token ping in 23.3 s from cold.
+OBSERVED_COLD_START_SECONDS = 23.3
+
+
+def test_preflight_timeout_allows_a_cold_start():
+    """A preflight shorter than a cold start reports a working backend
+    as dead, and the driver then refuses to score the run."""
+    from blended.agent.loop import (
+        PREFLIGHT_TIMEOUT_SECONDS,
+        REQUEST_TIMEOUT_SECONDS,
+    )
+
+    assert PREFLIGHT_TIMEOUT_SECONDS > OBSERVED_COLD_START_SECONDS
+    assert PREFLIGHT_TIMEOUT_SECONDS < REQUEST_TIMEOUT_SECONDS

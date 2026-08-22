@@ -3,7 +3,6 @@
 import pytest
 
 bpy = pytest.importorskip("bpy", reason="requires Blender-as-module (pip install bpy)")
-pytest.importorskip("PIL.Image", reason="contact sheets require Pillow")
 
 pytestmark = pytest.mark.blender
 

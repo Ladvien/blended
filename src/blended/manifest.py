@@ -20,6 +20,7 @@ from dataclasses import fields
 
 OP_MODULE_NAMES = (
     "primitives",
+    "materials",
     "booleans",
     "lathe",
     "arrays",

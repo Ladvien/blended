@@ -264,8 +264,12 @@ _STATE = _SessionState()
 
 
 def _build_session(preferences):
-    from blended.agent.loop import AgentSession, ModelConfig, OllamaClient
-    import blended.agent.loop as loop_module
+    from blended.agent.loop import (
+        AgentSession,
+        ModelConfig,
+        OllamaClient,
+        dispatch_here,
+    )
 
     config = ModelConfig.from_environment(
         model=preferences.model_name,
@@ -273,9 +277,23 @@ def _build_session(preferences):
         api_key=preferences.api_key,
         vision_model=preferences.vision_model_name,
     )
+
+    def main_thread_dispatch(tool_name, arguments, output_directory):
+        """Every bpy-touching tool call, executed on the main thread.
+
+        The turn itself runs on a worker thread, so the normal path is
+        the queue-and-wait handoff below. The main-thread branch is for
+        a turn driven synchronously: parking a request the timer cannot
+        service until the main thread returns would deadlock.
+        """
+        if threading.current_thread() is threading.main_thread():
+            return dispatch_here(tool_name, arguments, output_directory)
+        return _dispatch_on_main_thread(tool_name, arguments, output_directory)
+
     session = AgentSession(
         client=OllamaClient(config),
         output_directory=Path(bpy.app.tempdir) / "blended_agent",
+        dispatch=main_thread_dispatch,
     )
 
     if preferences.log_chat:
@@ -295,18 +313,6 @@ def _build_session(preferences):
         )
         _STATE.transcript_path = session.transcript.markdown_path
 
-    # Route every tool call through the main thread.
-    import blended.agent.tools as tools_module
-
-    original_dispatch = tools_module.dispatch_tool
-
-    def main_thread_dispatch(tool_name, arguments, output_directory):
-        if threading.current_thread() is threading.main_thread():
-            return original_dispatch(tool_name, arguments, output_directory)
-        return _dispatch_on_main_thread(tool_name, arguments, output_directory)
-
-    loop_module.dispatch_tool = main_thread_dispatch
-    session._dispatch_override = main_thread_dispatch
     return session
 
 

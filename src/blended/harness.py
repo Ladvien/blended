@@ -164,6 +164,8 @@ def run_chunk(
         script_name=chunk_label,
         session_log=session_log,
     )
+    # final_result.summary() already carries the chunk's printed output;
+    # that is the agent's only observation channel into the scene.
     execution_summary = (
         f"{outcome.attempt_count} attempt(s), {outcome.final_result.summary()}"
     )

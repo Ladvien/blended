@@ -17,3 +17,15 @@ __pycache__/
 
 # Scratch dumping ground
 _to_delete/
+
+# Convergence-loop evidence. The iteration log, the verdicts and the
+# signed-off golden snapshots ARE committed — the golden tests replay
+# from the log, so it is source, not output. The per-iteration renders
+# and exports are not: 30 MB of PNG that `make replay ITERATION=n`
+# regenerates from the log on demand. Transcripts and the exact system
+# prompt each run saw stay, because they are provenance and they are text.
+_evaluate/renders/**/*.png
+_evaluate/renders/**/*.glb
+
+# Editor/tool caches
+.serena/
