@@ -20,6 +20,7 @@ from dataclasses import fields
 
 OP_MODULE_NAMES = (
     "primitives",
+    "materials",
     "booleans",
     "lathe",
     "arrays",
@@ -30,24 +31,40 @@ OP_MODULE_NAMES = (
 )
 
 CONVENTIONS = (
-    "Build with `blended.ops`, NOT raw bpy. The ops are context-free, "
-    "version-drift-resistant, and idempotent by name; raw bpy.ops is "
-    "none of those.",
-    "Never call bpy.ops primitives (primitive_cube_add etc). Their "
-    "keyword arguments drift between versions.",
-    "Objects must be linked into the scene (`link_into_scene`) or the "
-    "depsgraph has no instance and measurements silently return stored "
-    "values instead of evaluated ones.",
-    "Dimensions are in METERS and variable names carry the unit suffix "
-    "(`width_m`, `height_m`).",
-    "No magic numbers. Every constant is module-level, named, and "
-    "carries the reason for its value.",
-    "Parts that will be unioned must OVERLAP slightly first; booleans "
-    "on exactly-coplanar faces are the EXACT solver's worst case.",
-    "An applied array is N disconnected islands until something bridges "
-    "them. Union the connector in, or the gate fails on component count.",
-    "Build the object with the EXACT name you were asked for. The "
-    "harness looks it up by name after your code runs.",
+    (
+        "Build with `blended.ops`, NOT raw bpy. The ops are context-free, "
+        "version-drift-resistant, and idempotent by name; raw bpy.ops is "
+        "none of those."
+    ),
+    (
+        "Never call bpy.ops primitives (primitive_cube_add etc). Their "
+        "keyword arguments drift between versions."
+    ),
+    (
+        "Objects must be linked into the scene (`link_into_scene`) or the "
+        "depsgraph has no instance and measurements silently return stored "
+        "values instead of evaluated ones."
+    ),
+    (
+        "Dimensions are in METERS and variable names carry the unit suffix "
+        "(`width_m`, `height_m`)."
+    ),
+    (
+        "No magic numbers. Every constant is module-level, named, and "
+        "carries the reason for its value."
+    ),
+    (
+        "Parts that will be unioned must OVERLAP slightly first; booleans "
+        "on exactly-coplanar faces are the EXACT solver's worst case."
+    ),
+    (
+        "An applied array is N disconnected islands until something bridges "
+        "them. Union the connector in, or the gate fails on component count."
+    ),
+    (
+        "Build the object with the EXACT name you were asked for. The "
+        "harness looks it up by name after your code runs."
+    ),
 )
 
 
@@ -105,8 +122,7 @@ def build_manifest(include_drift_catalog: bool = True) -> str:
 
     sections.append("\n## What the gate measures\n")
     sections.append(
-        "Your mesh is analyzed and checked against a budget. The report "
-        "fields are:"
+        "Your mesh is analyzed and checked against a budget. The report fields are:"
     )
     from blended.analyze.mesh_checks import MeshReport
 
@@ -118,16 +134,13 @@ def build_manifest(include_drift_catalog: bool = True) -> str:
     default_budget = MeshBudget()
     for budget_field in fields(MeshBudget):
         sections.append(
-            f"- `{budget_field.name}` "
-            f"({getattr(default_budget, budget_field.name)})"
+            f"- `{budget_field.name}` ({getattr(default_budget, budget_field.name)})"
         )
 
     if include_drift_catalog:
         from blended.drift.catalog import DRIFT_ENTRIES
 
-        sections.append(
-            "\n## Known API traps (measured — do not rediscover these)\n"
-        )
+        sections.append("\n## Known API traps (measured — do not rediscover these)\n")
         for entry in DRIFT_ENTRIES:
             sections.append(f"- **{entry.symbol}** — {entry.fix}")
 

@@ -1,3 +1,3 @@
-from blended.drift.catalog import DriftEntry, DRIFT_ENTRIES, match_traceback
+from blended.drift.catalog import DRIFT_ENTRIES, DriftEntry, match_traceback
 
-__all__ = ["DriftEntry", "DRIFT_ENTRIES", "match_traceback"]
+__all__ = ["DRIFT_ENTRIES", "DriftEntry", "match_traceback"]

@@ -37,7 +37,9 @@ def _shattered_report(triangle_count=100):
     )
 
 
-def _export_report(pre, post, pre_dims=(1.0, 1.0, 1.0), post_dims=(1.0, 1.0, 1.0), raw=None):
+def _export_report(
+    pre, post, pre_dims=(1.0, 1.0, 1.0), post_dims=(1.0, 1.0, 1.0), raw=None
+):
     return ExportReport(
         export_path=Path("/tmp/thing.glb"),
         file_size_bytes=1234,
@@ -61,8 +63,10 @@ def test_triangle_drift_is_flagged():
 def test_dimension_drift_is_flagged_as_axis_error():
     swapped_dims = (1.0, 0.5, 2.0)  # the classic y/z swap signature
     report = _export_report(
-        _clean_report(), _clean_report(),
-        pre_dims=(1.0, 2.0, 0.5), post_dims=swapped_dims,
+        _clean_report(),
+        _clean_report(),
+        pre_dims=(1.0, 2.0, 0.5),
+        post_dims=swapped_dims,
     )
     failures = report.round_trip_failures()
     assert any("axis-convention" in f for f in failures)
@@ -70,10 +74,15 @@ def test_dimension_drift_is_flagged_as_axis_error():
 
 def test_pre_export_gate_failure_is_reported_first():
     dirty = MeshReport(
-        object_name="Dirty", triangle_count=100, non_manifold_edge_count=3,
-        boundary_edge_count=0, zero_area_face_count=0,
-        non_finite_coordinate_count=0, connected_component_count=1,
-        duplicate_vertex_pair_count=0, self_intersecting_face_pair_count=0,
+        object_name="Dirty",
+        triangle_count=100,
+        non_manifold_edge_count=3,
+        boundary_edge_count=0,
+        zero_area_face_count=0,
+        non_finite_coordinate_count=0,
+        connected_component_count=1,
+        duplicate_vertex_pair_count=0,
+        self_intersecting_face_pair_count=0,
         flipped_normal_triangle_count=0,
     )
     report = _export_report(dirty, _clean_report())
@@ -83,7 +92,5 @@ def test_pre_export_gate_failure_is_reported_first():
 def test_shattered_raw_reimport_is_fine_when_welded_is_clean():
     """The glTF vertex-split lesson: raw re-import topology is
     informational; only the welded report judges the file."""
-    report = _export_report(
-        _clean_report(), _clean_report(), raw=_shattered_report()
-    )
+    report = _export_report(_clean_report(), _clean_report(), raw=_shattered_report())
     assert report.passes()

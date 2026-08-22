@@ -18,9 +18,8 @@ escalates to a human with the contact sheet attached.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from pathlib import Path
-from typing import Callable
 
 from blended.analyze.mesh_checks import MeshBudget
 from blended.harness import HarnessResult, HarnessSettings, run_chunk
@@ -51,9 +50,7 @@ class AgentTask:
         )
         if self.requirements:
             sections.append("\nRequirements:")
-            sections.extend(
-                f"- {requirement}" for requirement in self.requirements
-            )
+            sections.extend(f"- {requirement}" for requirement in self.requirements)
         sections.append(
             f"\nBudget: at most {self.budget.maximum_triangle_count} triangles, "
             f"at most {self.budget.maximum_component_count} connected "
@@ -87,8 +84,7 @@ def build_gate_feedback(
     ]
     if result.stage_reached == "execute":
         lines.append(
-            "The code did not run. Full execution detail:\n"
-            f"{result.execution_summary}"
+            f"The code did not run. Full execution detail:\n{result.execution_summary}"
         )
     elif result.stage_reached == "locate":
         lines.append(
@@ -124,8 +120,7 @@ def build_gate_feedback(
         )
         lines.append(build_manifest())
     lines.append(
-        "\nReturn the COMPLETE corrected Python source. No markdown fences, "
-        "no prose."
+        "\nReturn the COMPLETE corrected Python source. No markdown fences, no prose."
     )
     return "\n".join(lines)
 
@@ -173,10 +168,7 @@ class TaskResult:
 
     def summary(self) -> str:
         verdict = "SUCCEEDED" if self.ok else "ESCALATE TO HUMAN"
-        return (
-            f"{verdict} after {self.rounds_used} round(s)\n"
-            f"{self.final.summary()}"
-        )
+        return f"{verdict} after {self.rounds_used} round(s)\n{self.final.summary()}"
 
 
 def run_agent_task(
@@ -224,13 +216,15 @@ def run_agent_task(
         if round_index < maximum_rounds:
             # Structural failures mean the agent needs the capability
             # list, not just the diagnosis.
-            structural = result.stage_reached == "gate" and result.report is not None and (
-                result.report.connected_component_count > 1
-                or result.report.self_intersecting_face_pair_count > 0
+            structural = (
+                result.stage_reached == "gate"
+                and result.report is not None
+                and (
+                    result.report.connected_component_count > 1
+                    or result.report.self_intersecting_face_pair_count > 0
+                )
             )
-            prompt = build_gate_feedback(
-                result, task, include_manifest=structural
-            )
+            prompt = build_gate_feedback(result, task, include_manifest=structural)
             feedback_given.append(prompt)
 
     return TaskResult(

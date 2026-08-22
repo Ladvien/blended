@@ -43,9 +43,7 @@ class BarrelParameters:
     def radius_at_height(self, height_z_m: float) -> float:
         """Sine-bulged radius: end_radius at the ends, peak at mid-height."""
         height_fraction = height_z_m / self.height_m
-        bulge_amount = (self.bulge_factor - 1.0) * math.sin(
-            math.pi * height_fraction
-        )
+        bulge_amount = (self.bulge_factor - 1.0) * math.sin(math.pi * height_fraction)
         return self.end_radius_m * (1.0 + bulge_amount)
 
 
@@ -73,9 +71,7 @@ class BarrelBuilder:
             )
             for ring_index in range(parameters.ring_count + 1)
         ]
-        barrel_object = add_lathe(
-            parameters.name, profile, parameters.segment_count
-        )
+        barrel_object = add_lathe(parameters.name, profile, parameters.segment_count)
         link_into_scene(barrel_object)
         self.created_objects.append(barrel_object)
 

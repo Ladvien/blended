@@ -36,6 +36,46 @@ def apply_object_transform(blender_object) -> None:
     blender_object.matrix_world = Matrix.Identity(4)
 
 
+def rotate_object_euler(
+    blender_object,
+    x_rad: float = 0.0,
+    y_rad: float = 0.0,
+    z_rad: float = 0.0,
+    order: str = "XYZ",
+):
+    """Set the object's Euler rotation, in radians, about its own origin.
+
+    Exists because the whitelisted vocabulary had no way to rotate
+    anything — measured 2026-08-22: an agent asked for a stool with
+    splayed legs spent three search_ops calls and a dir() probe before
+    concluding "There's no rotate op", then improvised with raw
+    attribute writes. Rotation is not an exotic operation; a facade that
+    omits it is not a facade.
+
+    The rotation is SET, not accumulated, so re-running a chunk is
+    idempotent. The depsgraph is refreshed afterwards so the very next
+    read of matrix_world is truthful — the trap that once collapsed
+    three splayed legs into a central post.
+    """
+    from mathutils import Euler
+
+    blender_object.rotation_mode = order
+    blender_object.rotation_euler = Euler((x_rad, y_rad, z_rad), order)
+    _refresh_dependency_graph()
+    return blender_object
+
+
+def move_object_to(blender_object, location_m: tuple[float, float, float]):
+    """Set the object's world location in metres, then refresh.
+
+    Same reason as rotate_object_euler: placement is half of assembly,
+    and it shares the stale-matrix_world trap.
+    """
+    blender_object.location = location_m
+    _refresh_dependency_graph()
+    return blender_object
+
+
 def snap_base_to_ground(blender_object) -> float:
     """Move the object so its lowest point sits exactly at z=0.
 

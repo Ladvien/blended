@@ -1,12 +1,20 @@
+from blended.agent.loop import (
+    RECOMMENDED_MODELS,
+    AgentSession,
+    ConnectionStatus,
+    ModelConfig,
+    OllamaClient,
+)
 from blended.agent.system_prompt import build_system_prompt
 from blended.agent.tools import TOOL_SCHEMAS, dispatch_tool
-from blended.agent.loop import AgentSession, OllamaClient, ModelConfig
 
 __all__ = [
-    "build_system_prompt",
+    "RECOMMENDED_MODELS",
     "TOOL_SCHEMAS",
-    "dispatch_tool",
     "AgentSession",
-    "OllamaClient",
+    "ConnectionStatus",
     "ModelConfig",
+    "OllamaClient",
+    "build_system_prompt",
+    "dispatch_tool",
 ]

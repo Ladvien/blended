@@ -9,14 +9,14 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
-import bpy  # noqa: E402
+import bpy
 
 bpy.ops.wm.read_factory_settings(use_empty=True)
 
-from blended.analyze import MeshBudget, analyze_object  # noqa: E402
-from blended.builders import CrateBuilder, CrateParameters  # noqa: E402
-from blended.capture import capture_contact_sheet  # noqa: E402
-from blended.version import assert_supported_blender  # noqa: E402
+from blended.analyze import MeshBudget, analyze_object
+from blended.builders import CrateBuilder, CrateParameters
+from blended.capture import capture_contact_sheet
+from blended.version import assert_supported_blender
 
 assert_supported_blender()
 crate_object = CrateBuilder(CrateParameters()).build()

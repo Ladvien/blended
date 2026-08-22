@@ -52,11 +52,24 @@ def weld_and_dissolve(blender_object) -> dict:
                 for face in working_mesh.faces
                 if face.calc_area() < ZERO_AREA_EPSILON_M2
             ]
+            # Every edge is chosen BEFORE anything is collapsed, and they
+            # are collapsed in one call. Collapsing per face while
+            # holding a list of faces frees the neighbours still in that
+            # list: measured 2026-08-22 (iteration 5), two slivers
+            # sharing an edge raised 'ReferenceError: BMesh data of type
+            # BMFace has been removed' from inside boolean_union.
+            # Adjacent slivers can also nominate the SAME edge, so the
+            # set is deduplicated by index rather than passed twice.
+            sliver_edges_by_index = {}
             for sliver_face in zero_area_faces:
                 shortest_edge = min(
                     sliver_face.edges, key=lambda edge: edge.calc_length()
                 )
-                bmesh.ops.collapse(working_mesh, edges=[shortest_edge])
+                sliver_edges_by_index[shortest_edge.index] = shortest_edge
+            if sliver_edges_by_index:
+                bmesh.ops.collapse(
+                    working_mesh, edges=list(sliver_edges_by_index.values())
+                )
             welded_this_pass = vertex_count_before - len(working_mesh.verts)
             welded_vertex_total += max(welded_this_pass, 0)
             removed_face_total += len(zero_area_faces)

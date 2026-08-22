@@ -24,8 +24,7 @@ def test_barrel_passes_the_gate(empty_scene):
     # Hoops were unioned in, not left as separate objects.
     assert report.connected_component_count == 1
     assert not any(
-        scene_object.name.startswith("Barrel_hoop")
-        for scene_object in bpy.data.objects
+        scene_object.name.startswith("Barrel_hoop") for scene_object in bpy.data.objects
     )
 
 

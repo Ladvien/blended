@@ -3,7 +3,6 @@
 import pytest
 
 bpy = pytest.importorskip("bpy", reason="requires Blender-as-module (pip install bpy)")
-pytest.importorskip("PIL.Image", reason="UV layout render requires Pillow")
 
 pytestmark = pytest.mark.blender
 
@@ -95,12 +94,9 @@ def test_out_of_bounds_uvs_are_detected(empty_scene):
 
     report = analyze_object(box_object)
     assert report.uv_out_of_bounds_face_count > 0
-    strict_budget = MeshBudget(
-        require_uv_layer=True, allow_uv_out_of_bounds=False
-    )
+    strict_budget = MeshBudget(require_uv_layer=True, allow_uv_out_of_bounds=False)
     assert any(
-        "outside the 0-1 UV" in failure
-        for failure in report.failures(strict_budget)
+        "outside the 0-1 UV" in failure for failure in report.failures(strict_budget)
     )
 
 
@@ -113,15 +109,26 @@ def test_island_budget_catches_seam_heavy_layouts(empty_scene):
     smart_unwrap(barrel_object)
     report = analyze_object(barrel_object)
 
-    tight_budget = MeshBudget(
-        require_uv_layer=True, maximum_uv_island_count=1
-    )
+    tight_budget = MeshBudget(require_uv_layer=True, maximum_uv_island_count=1)
     assert any(
         "UV islands exceeds budget" in failure
         for failure in report.failures(tight_budget)
     )
 
 
+def _pillow_available():
+    from blended.capture.compose import pillow_available
+
+    return pillow_available()
+
+
+@pytest.mark.skipif(
+    not _pillow_available(),
+    reason=(
+        "render_uv_layout genuinely needs Pillow, which Blender does not "
+        "bundle — see test_uv_layout_render_reports_the_missing_dependency"
+    ),
+)
 def test_uv_layout_render_produces_an_image(empty_scene, tmp_path):
     from blended.builders import BarrelBuilder, BarrelParameters
     from blended.capture import render_uv_layout
@@ -138,6 +145,28 @@ def test_uv_layout_render_produces_an_image(empty_scene, tmp_path):
     assert layout_image.size == (512, 512)
     # Islands were actually drawn: more than the background + border colors.
     assert len(layout_image.convert("RGB").getcolors(maxcolors=100000)) > 3
+
+
+def test_uv_layout_render_reports_the_missing_dependency(
+    empty_scene, tmp_path, monkeypatch
+):
+    """Pillow-free is the PRODUCTION case, so pin what happens there.
+
+    render_uv_layout is the one capture path Pillow is load-bearing
+    for. It must say so plainly instead of failing somewhere obscure —
+    and this test runs everywhere, including where Pillow exists.
+    """
+    import blended.capture.compose as compose_module
+    from blended.builders import BarrelBuilder, BarrelParameters
+    from blended.capture import render_uv_layout
+    from blended.ops import smart_unwrap
+
+    monkeypatch.setattr(compose_module, "pillow_available", lambda: False)
+    barrel_object = BarrelBuilder(BarrelParameters()).build()
+    smart_unwrap(barrel_object)
+
+    with pytest.raises(RuntimeError, match="Pillow"):
+        render_uv_layout(barrel_object, tmp_path / "uv.png")
 
 
 def test_default_unwrap_is_clean_on_curved_geometry(empty_scene):

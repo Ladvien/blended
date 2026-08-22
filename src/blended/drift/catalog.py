@@ -20,11 +20,11 @@ from dataclasses import dataclass
 class DriftEntry:
     """One known API change: how it fails, and what to do instead."""
 
-    symbol: str                # the API the old code reaches for
-    changed_in: str            # Blender series where behavior changed
-    error_signature: str       # distinctive substring of the traceback
-    fix: str                   # what current code should do
-    source: str                # provenance tag
+    symbol: str  # the API the old code reaches for
+    changed_in: str  # Blender series where behavior changed
+    error_signature: str  # distinctive substring of the traceback
+    fix: str  # what current code should do
+    source: str  # provenance tag
 
 
 DRIFT_ENTRIES: tuple[DriftEntry, ...] = (
@@ -196,14 +196,120 @@ DRIFT_ENTRIES: tuple[DriftEntry, ...] = (
         ),
         source="[measured] blended agent stool run, 2026-08-21",
     ),
+    DriftEntry(
+        symbol="version pin lags the installed Blender",
+        changed_in="5.2",
+        error_signature="BlenderVersionError",
+        fix=(
+            "The pin is what the system prompt tells the model it is "
+            "coding against, so a stale pin is not just a red test - it "
+            "hands the agent the wrong API contract. Measured 2026-08-22: "
+            "the repo was pinned to (5, 0) on a Blender 5.2.0 LTS install, "
+            "so build_system_prompt() opened every session with 'working "
+            "inside Blender 5.0'. The full blender suite (72 tests) passed "
+            "unchanged on 5.2, so no ops-vocabulary drift exists between "
+            "the two series; the only defect was the lie in the prompt. "
+            "Bump TARGET_BLENDER_SERIES deliberately and re-run the suite "
+            "in the same commit - never set BLENDED_ALLOW_VERSION_SKEW to "
+            "silence it, which keeps the wrong series in the prompt."
+        ),
+        source="[measured] blended prompt-convergence phase 0, 2026-08-22",
+    ),
+    DriftEntry(
+        symbol="boolean modifier leaves an EMPTY material slot",
+        changed_in="all",
+        error_signature="materials",
+        fix=(
+            "Applying a boolean modifier appends a material slot to the "
+            "target even when neither operand has a material - measured "
+            "2026-08-22: len(mesh.materials) went 0 -> 1 with contents "
+            "[None]. So len(mesh.materials) counts SLOTS, not materials, "
+            "and 'has a material' checked that way passes on any mesh that "
+            "has ever been through a boolean. Count slots whose contents "
+            "are not None."
+        ),
+        source="[measured] blended acceptance-gate fixtures, 2026-08-22",
+    ),
+    DriftEntry(
+        symbol="Material.use_nodes",
+        changed_in="5.2",
+        error_signature="use_nodes",
+        fix=(
+            "Deprecated, removal expected in Blender 6.0: "
+            "DeprecationWarning on every read or write. A material "
+            "created with bpy.data.materials.new() already has its "
+            "node_tree and already reports use_nodes True, so setting it "
+            "is a no-op that only emits a warning. Drop the assignment "
+            "and use material.node_tree directly."
+        ),
+        source="[measured] blended materials op, 2026-08-22",
+    ),
+    DriftEntry(
+        symbol="Workbench ignores the Principled BSDF base colour",
+        changed_in="all",
+        error_signature="diffuse_color",
+        fix=(
+            "Every inspection render here uses Workbench, which shades "
+            "from material.diffuse_color (the viewport display colour) "
+            "and never reads the shader graph. Measured 2026-08-22: a "
+            "material with Base Color (0.72, 0.35, 0.22) rendered at "
+            "(0.604, 0.608, 0.612) grey, because diffuse_color was still "
+            "the default (0.8, 0.8, 0.8) - the vision model then reported "
+            "'gray, not terracotta' as a real deviation and the agent "
+            "chased it. Set BOTH fields; ops.materials.assign_material "
+            "does, and is the only sanctioned way to make a material."
+        ),
+        source="[measured] blended iteration 1, 2026-08-22",
+    ),
+    DriftEntry(
+        symbol="parity probe cannot see a blind recess",
+        changed_in="all",
+        error_signature="ray_cast",
+        fix=(
+            "A single ray answers only about the half-space in front of "
+            "it. Measured 2026-08-22: a planter whose drainage hole was "
+            "cut from the cavity DOWN into the floor but not out the "
+            "bottom counted zero upward crossings from inside the recess "
+            "- identical to a real through-hole - while the top-down "
+            "render showed solid material on the same axis. To assert a "
+            "hole passes through, sweep the WHOLE axis from beyond one "
+            "side and require no hit at all (ClearAxisProbe), never "
+            "inside/outside parity at a point."
+        ),
+        source="[measured] blended iteration 1, 2026-08-22",
+    ),
+    DriftEntry(
+        symbol="object.dimensions ignores rotation",
+        changed_in="all",
+        error_signature="dimensions",
+        fix=(
+            "object.dimensions is the LOCAL bounding box times scale: it "
+            "does not account for rotation at all. Measured 2026-08-22: a "
+            "0.1 x 0.1 x 1.0 m box rotated a quarter turn about Y still "
+            "reports dimensions (0.1, 0.1, 1.0) while occupying 1.0 m on "
+            "world X. So verifying a stated size with obj.dimensions "
+            "silently measures the wrong thing on any rotated part. "
+            "Measure world extents instead: transform the eight "
+            "bound_box corners by matrix_world and take max-min per axis "
+            "(after view_layer.update())."
+        ),
+        source="[measured] blended transform ops, 2026-08-22",
+    ),
+    DriftEntry(
+        symbol="bpy.mathutils",
+        changed_in="all",
+        error_signature="module 'bpy' has no attribute 'mathutils'",
+        fix=(
+            "mathutils is a TOP-LEVEL module, not an attribute of bpy: "
+            "`from mathutils import Vector`, never `bpy.mathutils.Vector`. "
+            "Measured 2026-08-22: the same AttributeError cost a tool call "
+            "in both iteration 5 and iteration 6 of the convergence loop, "
+            "in the middle of the verification chunk each time — so it "
+            "burns budget at the point where a run is trying to finish."
+        ),
+        source="[measured] blended iterations 5 and 6, 2026-08-22",
+    ),
 )
-
-
-
-
-
-
-
 
 
 def validate_catalog() -> list[str]:
@@ -215,7 +321,10 @@ def validate_catalog() -> list[str]:
             problems.append(f"{entry.symbol}: empty error_signature")
         if not entry.fix.strip():
             problems.append(f"{entry.symbol}: empty fix")
-        if not (entry.source.startswith("[measured]") or entry.source.startswith("[3DCodeBench]")):
+        if not (
+            entry.source.startswith("[measured]")
+            or entry.source.startswith("[3DCodeBench]")
+        ):
             problems.append(f"{entry.symbol}: untagged source {entry.source!r}")
         if entry.symbol in seen_symbols:
             problems.append(f"duplicate symbol: {entry.symbol}")
@@ -230,8 +339,4 @@ def match_traceback(traceback_text: str) -> list[DriftEntry]:
     entries are appended to the retry prompt so known drift is fixed on
     the first retry instead of rediscovered.
     """
-    return [
-        entry
-        for entry in DRIFT_ENTRIES
-        if entry.error_signature in traceback_text
-    ]
+    return [entry for entry in DRIFT_ENTRIES if entry.error_signature in traceback_text]

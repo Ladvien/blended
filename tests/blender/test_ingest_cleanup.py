@@ -25,9 +25,7 @@ def _messy_sphere(name, punch_face_count=3):
     mesh_data = bpy.data.meshes.new(name)
     working_mesh = bmesh.new()
     try:
-        bmesh.ops.create_icosphere(
-            working_mesh, subdivisions=5, radius=0.5
-        )
+        bmesh.ops.create_icosphere(working_mesh, subdivisions=5, radius=0.5)
         working_mesh.faces.ensure_lookup_table()
         for face in list(working_mesh.faces[:punch_face_count]):
             working_mesh.faces.remove(face)
@@ -42,9 +40,7 @@ def _messy_sphere(name, punch_face_count=3):
         degenerate_anchor = working_mesh.verts.new((0.9, 0.0, 0.0))
         degenerate_twin = working_mesh.verts.new((0.9, 0.0, 0.0))
         degenerate_third = working_mesh.verts.new((0.95, 0.05, 0.0))
-        working_mesh.faces.new(
-            (degenerate_anchor, degenerate_twin, degenerate_third)
-        )
+        working_mesh.faces.new((degenerate_anchor, degenerate_twin, degenerate_third))
 
         working_mesh.to_mesh(mesh_data)
     finally:
@@ -83,9 +79,7 @@ def test_oversized_hole_is_left_open_and_reported(empty_scene):
     from blended.ingest import CleanupSettings, cleanup_mesh
 
     BIG_HOLE_FACE_COUNT = 200
-    messy_object = _messy_sphere(
-        "BigHoleSphere", punch_face_count=BIG_HOLE_FACE_COUNT
-    )
+    messy_object = _messy_sphere("BigHoleSphere", punch_face_count=BIG_HOLE_FACE_COUNT)
     tight_settings = CleanupSettings(maximum_hole_perimeter_m=0.05)
     cleanup_report = cleanup_mesh(messy_object, tight_settings)
 

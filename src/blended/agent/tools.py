@@ -17,11 +17,17 @@ choice here:
 from __future__ import annotations
 
 import json
+import re
+import threading
 from pathlib import Path
 
 # Bounded observation windows.
 MAXIMUM_SCENE_OBJECTS_LISTED = 40
 MAXIMUM_SEARCH_RESULTS = 8
+# Anything that is not a letter or a digit is a word separator, so an
+# underscore in `assign_material` and a space in 'assign material' are
+# the same thing to a searcher.
+_SEARCH_WORD_PATTERN = re.compile(r"[^a-z0-9]+")
 MAXIMUM_TRACEBACK_CHARACTERS = 1500
 
 TOOL_SCHEMAS = [
@@ -32,9 +38,11 @@ TOOL_SCHEMAS = [
             "description": (
                 "Execute a Python chunk in the live Blender session, then "
                 "measure the named object against the analyzer gate. "
-                "Returns execution status, any traceback with known API-drift "
-                "fixes attached, and the full gate report. This is your "
-                "primary tool — build by running small chunks."
+                "Returns execution status, anything the chunk PRINTED, any "
+                "traceback with known API-drift fixes attached, and the full "
+                "gate report. print() is how you ask the scene a question — "
+                "print the value you want to check and read it back here. "
+                "This is your primary tool — build by running small chunks."
             ),
             "parameters": {
                 "type": "object",
@@ -79,8 +87,10 @@ TOOL_SCHEMAS = [
             "name": "render_views",
             "description": (
                 "Render an object from front, right, top and three-quarter "
-                "into one contact sheet, and return the image so you can SEE "
-                "it. Use X-ray to look through geometry when debugging "
+                "into one contact sheet. If you cannot see images yourself, "
+                "a vision model describes the render back to you in words. "
+                "Use `look_for` to aim that description at a specific "
+                "question. Use X-ray to look through geometry when debugging "
                 "overlaps or hidden parts. Always look before declaring done."
             ),
             "parameters": {
@@ -92,6 +102,15 @@ TOOL_SCHEMAS = [
                         "description": (
                             "Semi-transparent shading — reveals interpenetration "
                             "and hidden interior geometry."
+                        ),
+                    },
+                    "look_for": {
+                        "type": "string",
+                        "description": (
+                            "What you specifically want checked in the render, "
+                            "e.g. 'are all four legs the same length?' or 'is "
+                            "the drainage hole open?'. Aims the description at "
+                            "your actual question."
                         ),
                     },
                 },
@@ -113,7 +132,12 @@ TOOL_SCHEMAS = [
                 "properties": {
                     "query": {
                         "type": "string",
-                        "description": "e.g. 'boolean', 'unwrap', 'array', 'ground'",
+                        "description": (
+                            "Words to match, in any order: 'boolean union', "
+                            "'assign material', 'unwrap', 'snap ground'. "
+                            "Every word must appear, so fewer words match "
+                            "more broadly."
+                        ),
                     },
                 },
                 "required": ["query"],
@@ -170,7 +194,22 @@ def dispatch_tool(
     Image paths are returned separately so the caller can attach them to
     the model's next message as actual images — a contact sheet the
     model cannot see is worthless.
+
+    MAIN THREAD ONLY. Everything below touches bpy.
     """
+    # Touching bpy off the main thread does not raise. Blender corrupts
+    # quietly and segfaults later, usually inside its own draw loop,
+    # with nothing in any traceback pointing back here. So say it out
+    # loud: a catchable error the agent loop reports as a tool failure
+    # beats a dead application every time.
+    if threading.current_thread() is not threading.main_thread():
+        raise RuntimeError(
+            f"dispatch_tool({tool_name!r}) ran on thread "
+            f"{threading.current_thread().name!r}, not the main thread. "
+            f"bpy is not thread-safe. Frontends must pass a main-thread "
+            f"dispatcher: AgentSession(dispatch=...)."
+        )
+
     import bpy
 
     from blended.analyze import MeshBudget, analyze_object
@@ -186,15 +225,30 @@ def dispatch_tool(
         if not object_name:
             run_result = run_source_in_process(source_code, "<chat>")
             if run_result.ok:
-                return f"Executed OK in {run_result.duration_s:.2f}s.", []
+                printed = (
+                    f"\nprinted:\n{run_result.stdout_text}"
+                    if run_result.stdout_text
+                    else "\n(nothing printed)"
+                )
+                return (
+                    f"Executed OK in {run_result.duration_s:.2f}s.{printed}",
+                    [],
+                )
             drift_notes = "".join(
                 f"\n  KNOWN TRAP [{entry.symbol}]: {entry.fix}"
                 for entry in run_result.matched_drift
             )
+            printed = (
+                f"\nprinted before failing:\n{run_result.stdout_text}"
+                if run_result.stdout_text
+                else ""
+            )
             return (
-                f"FAILED: {run_result.error_type}: {run_result.error_message}\n"
-                f"{run_result.traceback_text[:MAXIMUM_TRACEBACK_CHARACTERS]}"
-                f"{drift_notes}",
+                (
+                    f"FAILED: {run_result.error_type}: {run_result.error_message}\n"
+                    f"{run_result.traceback_text[:MAXIMUM_TRACEBACK_CHARACTERS]}"
+                    f"{printed}{drift_notes}"
+                ),
                 [],
             )
         harness_result = run_chunk(
@@ -238,29 +292,56 @@ def dispatch_tool(
             report=report,
         )
         return (
-            f"Rendered {object_name} ({'x-ray' if arguments.get('xray') else 'solid'}). "
-            f"Look at the attached contact sheet.",
+            (
+                f"Rendered {object_name} ({'x-ray' if arguments.get('xray') else 'solid'}). "
+                f"Look at the attached contact sheet."
+            ),
             [sheet_path],
         )
 
     if tool_name == "search_ops":
-        from blended.manifest import OP_MODULE_NAMES, _public_functions
         import importlib
 
-        query = arguments["query"].lower()
+        from blended.manifest import OP_MODULE_NAMES, _public_functions
+
+        # Match WORDS, not the raw string. Measured 2026-08-22
+        # (iteration 4): 3 of 16 turns were spent on 'boolean union',
+        # 'material assign' and 'assign material', all answered "No
+        # operation matches" — while `boolean_union` and
+        # `assign_material` both exist. A whole-string test cannot span
+        # the underscore, and cannot survive word order. Punctuation is
+        # flattened on both sides so `_` and ` ` are the same character
+        # to a searcher.
+        query_tokens = [
+            token for token in _SEARCH_WORD_PATTERN.split(arguments["query"].lower())
+            if token
+        ]
+        if not query_tokens:
+            return (
+                (
+                    f"Query {arguments['query']!r} contains no searchable "
+                    f"words. Search for an operation by name or purpose, "
+                    f"e.g. 'boolean union' or 'assign material'."
+                ),
+                [],
+            )
         matches: list[str] = []
         for module_name in OP_MODULE_NAMES:
             module = importlib.import_module(f"blended.ops.{module_name}")
             for signature, summary in _public_functions(module):
-                haystack = f"{module_name} {signature} {summary}".lower()
-                if query in haystack:
+                haystack = _SEARCH_WORD_PATTERN.sub(
+                    " ", f"{module_name} {signature} {summary}".lower()
+                )
+                if all(token in haystack for token in query_tokens):
                     matches.append(
                         f"blended.ops.{module_name}: {signature}\n    {summary}"
                     )
         if not matches:
             return (
-                f"No operation matches {arguments['query']!r}. "
-                f"Available modules: {', '.join(OP_MODULE_NAMES)}.",
+                (
+                    f"No operation matches all of {query_tokens}. "
+                    f"Available modules: {', '.join(OP_MODULE_NAMES)}."
+                ),
                 [],
             )
         return "\n".join(matches[:MAXIMUM_SEARCH_RESULTS]), []
@@ -277,8 +358,7 @@ def dispatch_tool(
         lines = []
         for scene_object in mesh_objects[:MAXIMUM_SCENE_OBJECTS_LISTED]:
             triangle_count = sum(
-                len(polygon.vertices) - 2
-                for polygon in scene_object.data.polygons
+                len(polygon.vertices) - 2 for polygon in scene_object.data.polygons
             )
             dimensions = scene_object.dimensions
             lines.append(
@@ -303,9 +383,11 @@ def dispatch_tool(
         if failures:
             return "EXPORT VERIFICATION FAILED:\n" + "\n".join(failures), []
         return (
-            f"Exported and verified: {export_report.export_path} "
-            f"({export_report.file_size_bytes} bytes, "
-            f"{export_report.reimported_welded.triangle_count} tris round-tripped).",
+            (
+                f"Exported and verified: {export_report.export_path} "
+                f"({export_report.file_size_bytes} bytes, "
+                f"{export_report.reimported_welded.triangle_count} tris round-tripped)."
+            ),
             [],
         )
 

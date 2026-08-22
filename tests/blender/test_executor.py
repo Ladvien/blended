@@ -28,12 +28,10 @@ def test_drift_catalog_matches_in_failure():
     from blended.run import run_source_in_process
 
     source_using_removed_api = (
-        "import bpy\n"
-        "mesh = bpy.data.meshes.new('m')\n"
-        "mesh.use_auto_smooth = True\n"
+        "import bpy\nmesh = bpy.data.meshes.new('m')\nmesh.use_auto_smooth = True\n"
     )
     result = run_source_in_process(source_using_removed_api)
     assert not result.ok
-    assert any(
-        "use_auto_smooth" in entry.symbol for entry in result.matched_drift
-    ), f"drift not matched; traceback: {result.traceback_text}"
+    assert any("use_auto_smooth" in entry.symbol for entry in result.matched_drift), (
+        f"drift not matched; traceback: {result.traceback_text}"
+    )

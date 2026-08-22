@@ -15,6 +15,7 @@ from the mesh-repair literature (Attene et al.) are load-bearing:
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+
 from blended.analyze.mesh_checks import (
     DUPLICATE_VERTEX_DISTANCE_M,
     MeshBudget,
@@ -54,9 +55,7 @@ class CleanupReport:
 def _boundary_hole_groups(working_mesh):
     """Group boundary edges into connected components ('holes'), each
     with its total perimeter in meters."""
-    boundary_edges = [
-        edge for edge in working_mesh.edges if len(edge.link_faces) == 1
-    ]
+    boundary_edges = [edge for edge in working_mesh.edges if len(edge.link_faces) == 1]
     unvisited_edges = set(boundary_edges)
     hole_groups = []
     while unvisited_edges:
@@ -76,10 +75,11 @@ def _boundary_hole_groups(working_mesh):
     return hole_groups
 
 
-def cleanup_mesh(blender_object, settings: CleanupSettings = CleanupSettings()) -> CleanupReport:
+def cleanup_mesh(
+    blender_object, settings: CleanupSettings = CleanupSettings()
+) -> CleanupReport:
     """Run the bounded cleanup pass; return before/after reports."""
     import bmesh
-    import bpy
 
     before_report = analyze_object(blender_object)
     actions: list[str] = []
@@ -106,9 +106,7 @@ def cleanup_mesh(blender_object, settings: CleanupSettings = CleanupSettings()) 
             dist=DEGENERATE_DISSOLVE_DISTANCE_M,
             edges=list(working_mesh.edges),
         )
-        dissolved_face_count = face_count_before_dissolve - len(
-            working_mesh.faces
-        )
+        dissolved_face_count = face_count_before_dissolve - len(working_mesh.faces)
         if dissolved_face_count:
             actions.append(f"dissolved {dissolved_face_count} degenerate faces")
 
@@ -132,9 +130,7 @@ def cleanup_mesh(blender_object, settings: CleanupSettings = CleanupSettings()) 
                     f"threshold {settings.maximum_hole_perimeter_m} m"
                 )
 
-        bmesh.ops.recalc_face_normals(
-            working_mesh, faces=list(working_mesh.faces)
-        )
+        bmesh.ops.recalc_face_normals(working_mesh, faces=list(working_mesh.faces))
         actions.append("recalculated face normals outward")
         working_mesh.to_mesh(blender_object.data)
     finally:

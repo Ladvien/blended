@@ -20,7 +20,9 @@ def _failed_result_with_drift() -> RunResult:
 
 
 def test_prompt_contains_source_traceback_and_drift_fix():
-    prompt = build_retry_prompt("mesh.use_auto_smooth = True", _failed_result_with_drift())
+    prompt = build_retry_prompt(
+        "mesh.use_auto_smooth = True", _failed_result_with_drift()
+    )
     assert "mesh.use_auto_smooth = True" in prompt
     assert "AttributeError" in prompt
     assert "known API drift" in prompt

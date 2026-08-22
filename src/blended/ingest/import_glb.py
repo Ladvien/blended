@@ -36,9 +36,7 @@ def import_glb(glb_path: Path, object_name: str):
         if scene_object not in objects_before
     ]
     imported_meshes = [
-        scene_object
-        for scene_object in imported_objects
-        if scene_object.type == "MESH"
+        scene_object for scene_object in imported_objects if scene_object.type == "MESH"
     ]
     if not imported_meshes:
         raise ValueError(f"{glb_path} contained no mesh objects.")
