@@ -15,6 +15,7 @@ MAIN THREAD ONLY: everything below touches bpy.
 
 from __future__ import annotations
 
+import dataclasses
 import math
 from dataclasses import dataclass, field
 
@@ -23,6 +24,7 @@ from blended.evaluate.briefs import (
     ClearAxisProbe,
     DimensionSpec,
     GroundContactProbe,
+    RefinementStep,
     SolidityProbe,
 )
 
@@ -538,3 +540,139 @@ def evaluate_brief(brief: AssetBrief) -> AcceptanceReport:
         ),
         stray_object_names=stray_object_names,
     )
+
+
+# What a measurement may drift by and still count as "untouched" by a
+# localized edit. Tight on purpose: this is not a build tolerance, it is
+# the claim that the edit did not disturb the value at all, and the
+# numbers being compared came out of the same measurement code minutes
+# apart. A rebuild lands well outside it.
+PRESERVED_DIMENSION_TOLERANCE_M = 0.001
+PRESERVED_SOLE_BEARING_TOLERANCE_DEG = 1.0
+
+
+def refine_brief(brief: AssetBrief, step: RefinementStep) -> AssetBrief:
+    """The brief as it stands AFTER the instruction.
+
+    The changed dimensions and their derived probes replace their
+    originals; everything else — clear axes, ground contacts, budget —
+    carries over untouched, because the user changed one thing.
+
+    Measure the refined asset against THIS, not against the original.
+    A DimensionMeasurement carries the spec it was measured with, so
+    judging an old measurement against a new brief silently changes
+    nothing: the numbers still answer the question they were asked.
+    """
+    replacements = {spec.name: spec for spec in step.changed}
+    probe_replacements = {probe.name: probe for probe in step.changed_probes}
+    return dataclasses.replace(
+        brief,
+        dimensions=tuple(
+            replacements.get(spec.name, spec) for spec in brief.dimensions
+        ),
+        probes=tuple(
+            probe_replacements.get(probe.name, probe) for probe in brief.probes
+        ),
+    )
+
+
+@dataclasses.dataclass(frozen=True)
+class RefinementOutcome:
+    """Did the follow-up edit change what it should and nothing else?"""
+
+    step: RefinementStep
+    before: AcceptanceReport
+    after: AcceptanceReport
+
+    def refined_brief(self, brief: AssetBrief) -> AssetBrief:
+        return refine_brief(brief, self.step)
+
+    def _measured(self, report: AcceptanceReport, name: str) -> float:
+        for measurement in report.dimensions:
+            if measurement.spec.name == name:
+                return measurement.measured_m
+        raise KeyError(f"no dimension named {name!r}")
+
+    def preservation_failures(self, brief: AssetBrief) -> list[str]:
+        """Everything the instruction did NOT name must not have moved.
+
+        Compared against what it measured BEFORE, not against the spec.
+        A full rebuild can satisfy the spec again while quietly landing
+        on different numbers — that is exactly the failure this catches.
+        """
+        changed_names = {spec.name for spec in self.step.changed}
+        found: list[str] = []
+        for measurement in self.after.dimensions:
+            if measurement.spec.name in changed_names:
+                continue
+            was = self._measured(self.before, measurement.spec.name)
+            drift_m = measurement.measured_m - was
+            if abs(drift_m) > PRESERVED_DIMENSION_TOLERANCE_M:
+                found.append(
+                    f"{measurement.spec.name} was not part of the "
+                    f"instruction but moved {drift_m:+.4f} m "
+                    f"({was:.4f} -> {measurement.measured_m:.4f})"
+                )
+        before_by_name = {m.probe.name: m for m in self.before.ground_contacts}
+        for measurement in self.after.ground_contacts:
+            was = before_by_name.get(measurement.probe.name)
+            if was is None:
+                continue
+            radius_drift_m = measurement.measured_radius_m - was.measured_radius_m
+            if abs(radius_drift_m) > PRESERVED_DIMENSION_TOLERANCE_M:
+                found.append(
+                    f"{measurement.probe.name} moved {radius_drift_m:+.4f} m "
+                    f"off its circle ({was.measured_radius_m:.4f} -> "
+                    f"{measurement.measured_radius_m:.4f})"
+                )
+            bearing_drift_deg = (
+                measurement.measured_angle_deg - was.measured_angle_deg
+            )
+            if abs(bearing_drift_deg) > PRESERVED_SOLE_BEARING_TOLERANCE_DEG:
+                found.append(
+                    f"{measurement.probe.name} swung "
+                    f"{bearing_drift_deg:+.1f} deg "
+                    f"({was.measured_angle_deg:.1f} -> "
+                    f"{measurement.measured_angle_deg:.1f})"
+                )
+        return found
+
+    def failures(self, brief: AssetBrief) -> list[str]:
+        """The edit must land AND leave the rest alone."""
+        return self.after.failures(self.refined_brief(brief)) + [
+            f"{failure} -> {self.step.why}"
+            for failure in self.preservation_failures(brief)
+        ]
+
+    def passes(self, brief: AssetBrief) -> bool:
+        return not self.failures(brief)
+
+    def summary(self, brief: AssetBrief) -> str:
+        failures = self.failures(brief)
+        head = (
+            f"REFINEMENT {'PASS' if not failures else 'FAIL'}: "
+            f"{self.step.name}"
+        )
+        lines = [head]
+        for spec in self.step.changed:
+            was = self._measured(self.before, spec.name)
+            now = self._measured(self.after, spec.name)
+            lines.append(
+                f"  {spec.name}: {was:.4f} -> {now:.4f} m, asked for "
+                f"{spec.expected_m:.4f} +/- {spec.tolerance_m:.4f}"
+            )
+        preserved = self.preservation_failures(brief)
+        lines.append(
+            f"  preserved: {len(self.after.dimensions) - len(self.step.changed)} "
+            f"dimension(s) + {len(self.after.ground_contacts)} foot "
+            f"placement(s), {len(preserved)} disturbed"
+        )
+        lines.extend(f"  {failure}" for failure in preserved)
+        # The refined brief's own failures belong here too. Printing only
+        # the preservation half would report REFINEMENT FAIL beside a list
+        # of everything that went right.
+        lines.extend(
+            f"  {failure}"
+            for failure in self.after.failures(self.refined_brief(brief))
+        )
+        return "\n".join(lines)

@@ -132,9 +132,3 @@ def unwrap_uvs(
         overlapping_face_pair_count=report.uv_overlapping_face_pair_count,
         coverage_fraction=report.uv_coverage_fraction,
     )
-
-
-def smart_unwrap(blender_object, **keyword_arguments) -> int:
-    """Backwards-compatible shim: unwrap with the default method and
-    return the island count."""
-    return unwrap_uvs(blender_object, **keyword_arguments).island_count

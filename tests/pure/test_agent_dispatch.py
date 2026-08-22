@@ -165,3 +165,31 @@ def test_iteration_record_carries_the_models_that_ran():
     )
     assert record.writer_model == "deepseek-v4-pro:cloud"
     assert record.vision_model == "minimax-m3:cloud"
+
+
+def test_a_rebuilt_refinement_does_not_count_as_passed():
+    """The refinement turn is a gate, not a bonus.
+
+    A run whose follow-up instruction triggered a full rebuild can still
+    satisfy the brief — that is exactly why preservation is measured
+    against the BEFORE values rather than against the spec — so the
+    iteration must not read as clean.
+    """
+    from blended.evaluate.iteration_log import IterationRecord
+
+    base = dict(
+        iteration=1,
+        brief_name="three_leg_stool",
+        prompt_identity="v6:deadbeef",
+        prompt_revision=6,
+        started_at="2026-08-22T00:00:00+00:00",
+        structural_gate_passed=True,
+        form_gate_passed=True,
+        visual_inspected=True,
+    )
+    assert IterationRecord(**base).passed
+    assert not IterationRecord(
+        **base,
+        refinement_gate_passed=False,
+        refinement_failures=("seat_diameter_x moved +0.0180 m",),
+    ).passed

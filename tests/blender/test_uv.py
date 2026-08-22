@@ -16,12 +16,12 @@ def empty_scene():
 def test_unwrapped_mesh_reports_uvs(empty_scene):
     from blended.analyze import analyze_object
     from blended.builders import CrateBuilder, CrateParameters
-    from blended.ops import smart_unwrap
+    from blended.ops import unwrap_uvs
 
     crate_object = CrateBuilder(CrateParameters()).build()
     assert analyze_object(crate_object).uv_layer_count == 0
 
-    island_count = smart_unwrap(crate_object)
+    island_count = unwrap_uvs(crate_object).island_count
     report = analyze_object(crate_object)
     assert report.uv_layer_count == 1
     assert report.uv_island_count == island_count >= 1
@@ -32,7 +32,7 @@ def test_unwrapped_mesh_reports_uvs(empty_scene):
 def test_require_uv_budget_fails_without_unwrap(empty_scene):
     from blended.analyze import MeshBudget, analyze_object
     from blended.builders import CrateBuilder, CrateParameters
-    from blended.ops import smart_unwrap
+    from blended.ops import unwrap_uvs
 
     textured_budget = MeshBudget(require_uv_layer=True)
     crate_object = CrateBuilder(CrateParameters()).build()
@@ -40,7 +40,7 @@ def test_require_uv_budget_fails_without_unwrap(empty_scene):
     failures_before = analyze_object(crate_object).failures(textured_budget)
     assert any("no UV layer" in failure for failure in failures_before)
 
-    smart_unwrap(crate_object)
+    unwrap_uvs(crate_object)
     assert analyze_object(crate_object).failures(textured_budget) == []
 
 
@@ -58,11 +58,11 @@ def test_stacked_uvs_are_detected_as_overlaps(empty_scene):
     """Two islands occupying the same UV space share texels — detected,
     and gated when the budget forbids it."""
     from blended.analyze import MeshBudget, analyze_object
-    from blended.ops import add_box, link_into_scene, smart_unwrap
+    from blended.ops import add_box, link_into_scene, unwrap_uvs
 
     box_object = add_box("StackedUVs", 1.0, 1.0, 1.0)
     link_into_scene(box_object)
-    smart_unwrap(box_object)
+    unwrap_uvs(box_object)
 
     # Collapse every island onto the same square: guaranteed overlaps.
     uv_layer = box_object.data.uv_layers.active
@@ -83,11 +83,11 @@ def test_stacked_uvs_are_detected_as_overlaps(empty_scene):
 
 def test_out_of_bounds_uvs_are_detected(empty_scene):
     from blended.analyze import MeshBudget, analyze_object
-    from blended.ops import add_box, link_into_scene, smart_unwrap
+    from blended.ops import add_box, link_into_scene, unwrap_uvs
 
     box_object = add_box("OutOfBoundsUVs", 1.0, 1.0, 1.0)
     link_into_scene(box_object)
-    smart_unwrap(box_object)
+    unwrap_uvs(box_object)
     uv_layer = box_object.data.uv_layers.active
     for uv_datum in uv_layer.data:
         uv_datum.uv[0] += 2.0  # shove the whole atlas out of the 0-1 square
@@ -103,10 +103,10 @@ def test_out_of_bounds_uvs_are_detected(empty_scene):
 def test_island_budget_catches_seam_heavy_layouts(empty_scene):
     from blended.analyze import MeshBudget, analyze_object
     from blended.builders import BarrelBuilder, BarrelParameters
-    from blended.ops import smart_unwrap
+    from blended.ops import unwrap_uvs
 
     barrel_object = BarrelBuilder(BarrelParameters()).build()
-    smart_unwrap(barrel_object)
+    unwrap_uvs(barrel_object)
     report = analyze_object(barrel_object)
 
     tight_budget = MeshBudget(require_uv_layer=True, maximum_uv_island_count=1)
@@ -132,10 +132,10 @@ def _pillow_available():
 def test_uv_layout_render_produces_an_image(empty_scene, tmp_path):
     from blended.builders import BarrelBuilder, BarrelParameters
     from blended.capture import render_uv_layout
-    from blended.ops import smart_unwrap
+    from blended.ops import unwrap_uvs
 
     barrel_object = BarrelBuilder(BarrelParameters()).build()
-    smart_unwrap(barrel_object)
+    unwrap_uvs(barrel_object)
     layout_path = render_uv_layout(barrel_object, tmp_path / "uv.png")
 
     assert layout_path.exists()
@@ -159,11 +159,11 @@ def test_uv_layout_render_reports_the_missing_dependency(
     import blended.capture.compose as compose_module
     from blended.builders import BarrelBuilder, BarrelParameters
     from blended.capture import render_uv_layout
-    from blended.ops import smart_unwrap
+    from blended.ops import unwrap_uvs
 
     monkeypatch.setattr(compose_module, "pillow_available", lambda: False)
     barrel_object = BarrelBuilder(BarrelParameters()).build()
-    smart_unwrap(barrel_object)
+    unwrap_uvs(barrel_object)
 
     with pytest.raises(RuntimeError, match="Pillow"):
         render_uv_layout(barrel_object, tmp_path / "uv.png")

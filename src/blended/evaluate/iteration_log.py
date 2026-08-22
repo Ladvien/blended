@@ -20,16 +20,36 @@ from pathlib import Path
 DEFAULT_LOG_PATH = Path("_evaluate/iterations.jsonl")
 DEFAULT_VERDICT_PATH = Path("_evaluate/verdicts.jsonl")
 
-# The three causes an iteration failure can have. Exactly one applies,
+# The four causes an iteration failure can have. Exactly one applies,
 # and only the first permits a prompt edit — the discipline that keeps
 # the loop from "fixing" a code bug by rewording the prompt until the
 # bug is hidden.
+#
+# HARNESS_CRITIQUE is the fourth because the critique is itself a
+# fallible instrument, and its failures look exactly like the other
+# three from the outside. LL3M measured a critic VLM that missed
+# spatial errors a human caught in 3-4 follow-ups; the TikZ study
+# measured visual verification at imperfect precision AND recall. So a
+# run can fail two ways that are not about the asset at all: the
+# critique answered "Yes" to a question the render answers "No" (a
+# missed deviation), or it reported a deviation that is not there (a
+# false positive). Either way the artifact to fix is the critique — the
+# eye's question set, the render that feeds it, or the gate that should
+# have measured the thing instead of asking about it. Tuning the
+# working agreement to satisfy a blind critic tunes the wrong artifact
+# and bakes the blindness in. This project has already paid for the
+# distinction once: see the mistake memory entry
+# "the-critique-explained-away-its-own-evidence", where the critique
+# held both the evidence and the verdict, answered Yes, and the human
+# caught the angled sole by eye at iteration 4.
 CLASSIFICATION_PROMPT = "prompt"
 CLASSIFICATION_HARNESS_CODE = "harness_code"
+CLASSIFICATION_HARNESS_CRITIQUE = "harness_critique"
 CLASSIFICATION_BAD_BRIEF = "bad_brief"
 CLASSIFICATIONS = (
     CLASSIFICATION_PROMPT,
     CLASSIFICATION_HARNESS_CODE,
+    CLASSIFICATION_HARNESS_CRITIQUE,
     CLASSIFICATION_BAD_BRIEF,
 )
 
@@ -71,6 +91,18 @@ class IterationRecord:
     # show spacing at all and the human could only answer "Unclear".
     # The .glb can be turned.
     glb_path: str = ""
+    # USER-GUIDED REFINEMENT: the follow-up turn, gated like the
+    # first. A localized edit is only localized if what the user did
+    # NOT name still measures what it measured before.
+    refinement_gate_passed: bool = True
+    refinement_failures: tuple[str, ...] = field(default_factory=tuple)
+    refinement_summary: str = ""
+    # HOW the follow-up reached its result: edited in place, or rebuilt.
+    # Evidence, never a gate — see evaluate/object_identity.py. Kept in
+    # the record because it is the only place the edit-vs-rebuild cost
+    # is visible once the render is forgotten, and no measurement of the
+    # finished mesh can recover it after the fact.
+    refinement_locality: tuple[str, ...] = field(default_factory=tuple)
     # EXAMINE (b) — visual, only meaningful once (a) passed
     visual_deviations: tuple[str, ...] = field(default_factory=tuple)
     visual_inspected: bool = False
@@ -97,6 +129,18 @@ class IterationRecord:
         return (
             self.structural_gate_passed
             and self.form_gate_passed
+            # The refinement turn is a gate, not a bonus: the standards
+            # require a user-guided refinement phase, so a run whose
+            # follow-up moved something the user did not name has not
+            # passed, however clean the first build was.
+            #
+            # What this gate does NOT decide is whether the follow-up
+            # edited the asset or rebuilt it. Ruled 2026-08-22, on
+            # iteration 14: a rebuild that lands on every preserved
+            # number is an acceptable way to satisfy a follow-up. That
+            # is measured and recorded in `refinement_locality`, and
+            # deliberately not consulted here.
+            and self.refinement_gate_passed
             and self.visual_inspected
             and not self.visual_deviations
         )

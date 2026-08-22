@@ -16,7 +16,7 @@ from blended.ops.transforms import (
     rotate_object_euler,
     snap_base_to_ground,
 )
-from blended.ops.uv import UnwrapReport, smart_unwrap, unwrap_uvs
+from blended.ops.uv import UnwrapReport, unwrap_uvs
 
 __all__ = [
     "UnwrapReport",
@@ -35,7 +35,6 @@ __all__ = [
     "link_into_scene",
     "remove_object_and_mesh",
     "rotate_object_euler",
-    "smart_unwrap",
     "snap_base_to_ground",
     "unwrap_uvs",
     "weld_and_dissolve",

@@ -83,6 +83,9 @@ PLANTER_FLOOR_PROBE_X_M = PLANTER_WIDTH_X_M * 0.3
 # --- Brief 2: three-legged stool ---------------------------------------
 STOOL_SEAT_DIAMETER_M = 0.32
 STOOL_TOTAL_HEIGHT_Z_M = 0.45
+# What the follow-up instruction asks for. Far enough from the
+# original that no tolerance could absorb the difference.
+STOOL_REFINED_HEIGHT_Z_M = 0.55
 STOOL_SEAT_THICKNESS_M = 0.04
 STOOL_LEG_COUNT = 3
 # Feet sit on a circle of this radius; the splay is what made this brief
@@ -181,6 +184,29 @@ class GroundContactProbe:
 
 
 @dataclass(frozen=True)
+class RefinementStep:
+    """A follow-up instruction, and what it may and may not change.
+
+    The user-guided refinement phase is only real if "localized" is
+    measurable. It is: after the edit, the named dimensions must hit
+    their NEW targets, and every other measurement must still match what
+    it measured BEFORE the edit — not merely still satisfy the original
+    spec, which a full rebuild would also do. Preservation is the whole
+    claim, so preservation is what is asserted.
+    """
+
+    name: str
+    instruction_text: str  # what the user says next
+    changed: tuple[DimensionSpec, ...]  # what must now measure differently
+    why: str  # what a failure here means, in the user's terms
+    # Probes whose point is DERIVED from a changed dimension have to move
+    # with it. A stool asked to grow from 0.45 to 0.55 m still has a seat;
+    # it is no longer at z=0.43, and a spec that did not move its probe
+    # would report the seat missing and blame the edit.
+    changed_probes: tuple[SolidityProbe, ...] = ()
+
+
+@dataclass(frozen=True)
 class AssetBrief:
     """A prompt plus its executable acceptance spec."""
 
@@ -191,6 +217,7 @@ class AssetBrief:
     probes: tuple[SolidityProbe, ...]
     clear_axes: tuple[ClearAxisProbe, ...] = ()
     ground_contacts: tuple[GroundContactProbe, ...] = ()
+    refinements: tuple[RefinementStep, ...] = ()
     budget: MeshBudget = field(default_factory=MeshBudget)
     require_base_at_ground: bool = True
     grounding_tolerance_m: float = GROUNDING_TOLERANCE_M
@@ -357,6 +384,45 @@ THREE_LEG_STOOL_BRIEF = AssetBrief(
         ),
     ),
     ground_contacts=_stool_ground_contacts(),
+    refinements=(
+        RefinementStep(
+            name="taller_stool",
+            instruction_text=(
+                f"Make the stool {STOOL_REFINED_HEIGHT_Z_M} m tall instead "
+                f"of {STOOL_TOTAL_HEIGHT_Z_M} m. Leave everything else "
+                f"exactly as it is."
+            ),
+            changed=(
+                DimensionSpec(
+                    "total_height_z", "z", STOOL_REFINED_HEIGHT_Z_M
+                ),
+            ),
+            changed_probes=(
+                SolidityProbe(
+                    name="seat_is_solid",
+                    point_m=(
+                        0.0,
+                        0.0,
+                        STOOL_REFINED_HEIGHT_Z_M
+                        - (STOOL_SEAT_THICKNESS_M / 2.0),
+                    ),
+                    expect_inside=True,
+                    why="there is no seat at the new height",
+                ),
+                SolidityProbe(
+                    name="no_central_post",
+                    point_m=(0.0, 0.0, STOOL_REFINED_HEIGHT_Z_M * 0.4),
+                    expect_inside=False,
+                    why="the legs collapsed to the central axis",
+                ),
+            ),
+            why=(
+                "a height change is a localized edit: the seat size, the "
+                "foot circle and the leg bearings must come through it "
+                "unchanged, and a rebuild would move them"
+            ),
+        ),
+    ),
 )
 
 BRIEFS: dict[str, AssetBrief] = {

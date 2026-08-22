@@ -1,9 +1,17 @@
-"""Golden snapshots of the runs that converged prompt v5.
+"""Golden snapshots of the runs that converged prompt v9.
 
 Sign-off stores the render, the parameter snapshot and the regression
 test together, and the harness detects drift against them. These are
 the three runs that met the convergence rule on 2026-08-22 — human
-verified, both deterministic gates clean, no prompt change between them.
+verified, both deterministic gates clean, no prompt change between them:
+iteration 20 (planter_box), 21 (three_leg_stool), 22 (planter_box).
+
+The v5 snapshots this file used to hold were replaced, not kept beside
+these. v5 converged on a harness without `blended.ops.legs`, so its
+numbers are not reproducible by a replay against today's code, and a
+golden test that cannot run is not evidence. The v5 sign-off survives
+where it belongs: in the append-only iteration log, and in
+`prompt_versions`, where v5 still carries its measured outcome.
 
 Each is rebuilt by REPLAYING the run's own recorded chunks, so this
 suite needs no model, no network and no lucky generation. Replay rather
@@ -33,16 +41,25 @@ GOLDEN_DIRECTORY = REPOSITORY_ROOT / "_evaluate" / "golden"
 ITERATION_LOG = REPOSITORY_ROOT / "_evaluate" / "iterations.jsonl"
 
 # The three runs that met the convergence rule, and the brief each built.
-CONVERGING_ITERATIONS = {"three_leg_stool": 13, "planter_box": 12}
+CONVERGING_ITERATIONS = {"three_leg_stool": 21, "planter_box": 22}
+PINNED_REVISION = 9
+
+# A brief carrying a RefinementStep is judged at its TERMINAL state.
+# `replay_record` re-runs every recorded chunk, follow-up included, so
+# the stool it rebuilds is the 0.55 m one the user last asked for —
+# scoring that against the original 0.45 m brief would fail a run that
+# passed. `_expected_brief` applies the refinements the same way the
+# driver did.
 
 # Measured off the converging runs. Every number here was produced by the
 # agent and confirmed by the human; none was chosen to make a test pass.
 STOOL_SNAPSHOT = {
     "seat_diameter_x": 0.3200,
     "seat_diameter_y": 0.3200,
-    "total_height_z": 0.4500,
+    # The refined height: iteration 21 ended with the taller stool.
+    "total_height_z": 0.5500,
     "base_z": 0.0000,
-    "sole_contact_area_m2": 0.001228,
+    "sole_contact_area_m2": 0.001201,
     "sole_radius_m": 0.1400,
     "sole_bearings_deg": (0.0, 120.0, 240.0),
 }
@@ -66,6 +83,19 @@ def empty_scene():
     yield
 
 
+def _expected_brief(brief):
+    """The brief the replayed asset should be judged against.
+
+    Every refinement applied in order, because the replay re-runs the
+    follow-up chunks too and ends where the run ended.
+    """
+    from blended.evaluate.acceptance import refine_brief
+
+    for step in brief.refinements:
+        brief = refine_brief(brief, step)
+    return brief
+
+
 def _measure(brief_name: str):
     """Rebuild the converging run for this brief and score it."""
     from blended.evaluate.acceptance import evaluate_brief
@@ -75,9 +105,10 @@ def _measure(brief_name: str):
     brief = get_brief(brief_name)
     record = load_record(ITERATION_LOG, CONVERGING_ITERATIONS[brief_name])
     assert record["brief_name"] == brief_name, record["brief_name"]
-    assert record["prompt_revision"] == 5, record["prompt_revision"]
+    assert record["prompt_revision"] == PINNED_REVISION, record["prompt_revision"]
     replay_record(record, brief.object_name)
-    return brief, evaluate_brief(brief)
+    expected = _expected_brief(brief)
+    return expected, evaluate_brief(expected)
 
 
 def _dimension(report, name: str) -> float:
@@ -153,10 +184,15 @@ def test_golden_planter_drain_still_goes_through(empty_scene):
 def test_golden_evidence_is_stored_beside_the_tests():
     """A snapshot without its render and its asset is not a sign-off."""
     for name in (
-        "three_leg_stool_v5_sheet.png",
-        "planter_box_v5_sheet.png",
-        "three_leg_stool_v5.glb",
-        "planter_box_v5.glb",
+        # The stool sheet is its TERMINAL state, the refined 0.55 m
+        # stool the snapshot numbers describe. Its .glb is the
+        # first-build export: the driver exports before the follow-up
+        # turn, so the asset on disk is the 0.45 m one. Named so nobody
+        # turns it and concludes the snapshot drifted.
+        "three_leg_stool_v9_sheet.png",
+        "three_leg_stool_v9_first_build.glb",
+        "planter_box_v9_sheet.png",
+        "planter_box_v9.glb",
     ):
         evidence = GOLDEN_DIRECTORY / name
         assert evidence.exists(), f"missing sign-off evidence {evidence}"
@@ -172,6 +208,6 @@ def test_the_pinned_prompt_is_the_one_that_converged():
     )
     pinned = prompt_versions.get_revision(prompt_versions.PINNED_PROMPT_REVISION)
     # The hash proves the TEXT did not drift after sign-off.
-    assert pinned.identity == "v5:6eadb9526276"
+    assert pinned.identity == "v9:2e5d0dab1033"
     assert len(prompt_versions.CONVERGENCE_RUNS) == 3
     assert pinned.outcome, "a pinned revision must carry its measured outcome"
