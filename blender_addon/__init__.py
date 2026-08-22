@@ -470,6 +470,31 @@ class BLENDED_PT_chat(bpy.types.Panel):
         )
         status_row.operator(BLENDED_OT_reset.bl_idname, text="", icon="TRASH")
 
+        settings_box = layout.box()
+        settings_header = settings_box.row(align=True)
+        settings_header.prop(
+            scene_properties,
+            "show_settings",
+            icon="TRIA_DOWN" if scene_properties.show_settings else "TRIA_RIGHT",
+            text="Settings",
+            emboss=False,
+        )
+        settings_header.label(text=preferences.model_name.split(":")[0])
+        if scene_properties.show_settings:
+            settings_box.prop(preferences, "model_name")
+            settings_box.prop(preferences, "vision_model_name")
+            settings_box.prop(preferences, "developer_mode")
+            if preferences.developer_mode:
+                settings_box.prop(preferences, "repository_path")
+                settings_box.prop(preferences, "auto_reload")
+            settings_box.operator(
+                BLENDED_OT_test_connection.bl_idname, icon="URL"
+            )
+            settings_box.label(
+                text="Full options: Preferences > Add-ons > blended",
+                icon="INFO",
+            )
+
         if preferences.developer_mode:
             developer_row = layout.row(align=True)
             developer_row.enabled = not _STATE.busy
@@ -514,8 +539,7 @@ class BLENDED_Preferences(bpy.types.AddonPreferences):
     )
     model_name: bpy.props.EnumProperty(
         name="Writer",
-        description="Which model drives the agent",
-        description="Writes bpy, calls tools, reads gate reports",
+        description="Drives every turn: writes bpy, calls tools, reads gate reports",
         items=[
             ("deepseek-v4-flash:cloud", "DeepSeek V4 Flash (Medium Usage)",
              "284B MoE / 13B active, 1M context, tools + thinking. "
@@ -679,6 +703,11 @@ class BLENDED_ChatProperties(bpy.types.PropertyGroup):
     )
     visible_lines: bpy.props.IntProperty(
         name="Visible lines", default=30, min=5, max=200
+    )
+    show_settings: bpy.props.BoolProperty(
+        name="Show settings",
+        description="Model and developer options, inline in this panel",
+        default=False,
     )
 
 
