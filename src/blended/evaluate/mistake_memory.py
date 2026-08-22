@@ -716,6 +716,44 @@ MISTAKES: tuple[MistakeRecord, ...] = (
         ),
         recorded_on="2026-08-22",
     ),
+    MistakeRecord(
+        identifier="a-runtime-dependency-the-addon-could-not-install",
+        scope="harness_code",
+        failure=(
+            "Moving the prompts into Jinja templates added jinja2 as a "
+            "RUNTIME dependency of blended.agent.system_prompt. "
+            "AgentSession.__post_init__ builds the system prompt and "
+            "blender_addon/__init__.py builds an AgentSession, so the "
+            "addon reaches that import on its first turn — and measured "
+            "2026-08-22, jinja2 is absent from Blender's bundled Python, "
+            "which has no pip. Shipped unguarded, the addon would have "
+            "installed cleanly and then failed in someone else's Blender."
+        ),
+        cause=(
+            "The driver scripts prepend the venv's site-packages to "
+            "sys.path, so a venv-only dependency works there and hides "
+            "the problem completely. The addon lane gets no venv. Two "
+            "lanes into the same code, one of which is never exercised "
+            "by `make test-blender-app`, because that runs from the repo."
+        ),
+        fix=(
+            "package_addon.py vendors jinja2 and markupsafe into the zip "
+            "beside the library, and refuses to build with a named error "
+            "if either is missing from the venv rather than producing a "
+            "zip that is broken in a way nobody sees until install. The "
+            "prompt templates are vendored the same way — package data "
+            "is the classic thing to leave behind, where the code "
+            "imports fine and then cannot find its own text."
+        ),
+        guarded_by=(
+            "tests/pure/test_addon_packaging.py (5 assertions: the "
+            "library, every registered template, each vendored "
+            "dependency, and no __pycache__). Verified end to end by "
+            "unpacking the zip and rendering the prompt inside Blender "
+            "with ONLY the addon on sys.path."
+        ),
+        recorded_on="2026-08-22",
+    ),
 )
 
 

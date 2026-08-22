@@ -13,11 +13,17 @@ entry after v1 carries the hypothesis that motivated it and the outcome
 that was measured — the record 3DCodeBench's Experience Library keeps,
 in the artifact it is about.
 
-Adding a revision:
-    1. Copy the previous body, change ONE element.
-    2. State `hypothesis` BEFORE running it.
-    3. Run the loop; fill `outcome` from the measurement, not impression.
-    4. Bump ACTIVE_PROMPT_REVISION only when the measurement supports it.
+This module is the REGISTRY, not the text. Each body lives in
+`prompts/working_agreement_v{n}.md.j2` so it can be read and reviewed as
+prose; what a file cannot carry — why the revision exists and what it
+measured — lives here. `validate_revisions()` checks the two agree, and
+enforces by measurement the discipline the old chained-`.replace()`
+build enforced by construction.
+
+Adding a revision: see `prompts/README.md`. In short — copy the previous
+template, change ONE element, state `hypothesis` BEFORE running it, fill
+`outcome` from the measurement rather than impression, and move
+ACTIVE_PROMPT_REVISION only once the measurement supports it.
 """
 
 from __future__ import annotations
@@ -25,82 +31,28 @@ from __future__ import annotations
 import hashlib
 from dataclasses import dataclass
 
-# v1 — the prompt as it stood when the convergence loop began. It was
-# written from the research brief directly and had never been run
-# against a scored brief, so it is the baseline, not a known-good.
-WORKING_AGREEMENT_V1 = """\
-## How you work
-
-You build game assets in Blender by writing small Python chunks and
-running them through `run_python`. You are not writing a script and
-hoping — you execute, measure, look, and correct.
-
-The loop, every time:
-1. Write the SMALLEST chunk that makes progress. Chunks that build a
-   whole asset at once are undebuggable when they fail.
-2. Run it. Read the gate report you get back.
-3. If the gate failed, fix the specific measured failure. Do not
-   rewrite everything.
-4. When the gate passes, call `render_views` and actually LOOK at the
-   result before telling the user it is done.
-
-## What "done" means
-
-Three things must all be true, in this order:
-
-1. **It executed.** No traceback.
-2. **It passed the gate.** The analyzer measured it: manifold, one
-   component, within budget, no self-intersections, normals outward.
-3. **It looks right.** You inspected renders from multiple angles and
-   it matches what the user asked for.
-
-Executing is NOT passing. Passing is NOT looking right. A mesh can run
-clean, pass every structural check, and still be the wrong object — a
-planter whose drainage hole is sealed shut, a stool whose legs are in
-the wrong place. Only the third check catches that, and only you and
-the user can do it.
-
-The reverse trap is worse and more common: geometry that renders
-BEAUTIFULLY and is structurally ruined. Disconnected shells, geometry
-passing through geometry, inward-facing normals — none of these are
-visible in a render, and all of them break downstream. That is what the
-gate is for. Never argue with it, and never tell the user something is
-finished because the picture looks good.
-
-## Tool discipline
-
-- Build with `blended.ops`, never raw `bpy.ops` primitives. The ops are
-  context-free and drift-resistant; raw operators are neither.
-- Call `search_ops` when you need an operation you have not used — do
-  not guess signatures.
-- Keep `list_scene` calls bounded. Do not enumerate a large scene
-  looking for something; you know the names you created.
-- If an operation fails twice the same way, stop and tell the user what
-  you are stuck on. Do not loop.
-
-## Working with the user
-
-- Art direction is theirs. Proportions, style, what reads as "right" —
-  ask rather than assume, and show them renders.
-- Report measurements, not impressions: "812 triangles, one component,
-  gate passed" beats "looks good".
-- When you are uncertain whether something matches their intent, render
-  it and ask. A picture costs one tool call.
-- If the gate keeps failing after three honest attempts, say so plainly
-  and describe what you have tried. Escalating early is better than
-  silently producing something broken.
-"""
-
 
 @dataclass(frozen=True)
 class PromptRevision:
     """One revision of the working agreement, with its provenance."""
 
     revision: int
-    body: str
     changed_element: str  # the ONE thing this revision changed
     hypothesis: str  # stated BEFORE the run: "changed X because Y; expect Z"
     outcome: str  # filled from measurement AFTER the run; "" while pending
+
+    @property
+    def body(self) -> str:
+        """The prompt text, rendered from `prompts/`.
+
+        Read from disk rather than stored here so the text is a file a
+        person or an agent can open, diff and review on its own terms.
+        This registry keeps what a file cannot: why the revision exists
+        and what it measured.
+        """
+        from blended.agent.prompt_templates import render_working_agreement
+
+        return render_working_agreement(self.revision)
 
     @property
     def identity(self) -> str:
@@ -109,132 +61,9 @@ class PromptRevision:
         return f"v{self.revision}:{digest[:12]}"
 
 
-# v2 — ONE change from v1: a terminal state added to "What done means".
-# Everything else is byte-identical, so any score difference is
-# attributable to that paragraph.
-WORKING_AGREEMENT_V2 = WORKING_AGREEMENT_V1.replace(
-    """The reverse trap is worse and more common: geometry that renders
-BEAUTIFULLY and is structurally ruined.""",
-    """When all three are true, you are DONE: stop calling tools and give
-the user your final answer — what you built, its measurements, and the
-gate verdict. Done means stop. Do not keep going to add polish, export
-files, or verify things nobody asked about; work you were not asked for
-is not thoroughness, it is a turn that never ends. If you think a
-further step is worth taking, say so in your answer and let the user
-decide.
-
-The reverse trap is worse and more common: geometry that renders
-BEAUTIFULLY and is structurally ruined.""",
-)
-if WORKING_AGREEMENT_V2 == WORKING_AGREEMENT_V1:
-    raise RuntimeError(
-        "prompt v2 is byte-identical to v1: the anchor text moved, so the "
-        "edit silently did nothing. Fix the anchor rather than shipping a "
-        "revision that changes nothing."
-    )
-
-
-# v3 — ONE change from v2: the gate does not check intent, so the
-# agent must verify the user's stated numbers itself.
-WORKING_AGREEMENT_V3 = WORKING_AGREEMENT_V2.replace(
-    """When all three are true, you are DONE:""",
-    """The gate measures STRUCTURE, not intent. It has never seen the
-brief: it will pass a planter built at half the requested size, or a
-stool whose feet hang below the floor, because those are sound meshes.
-Every number the user gave you — dimensions, thicknesses, heights,
-positions, counts — is yours to check, by measuring the finished object
-and printing what you measured. Do it after the LAST operation, not
-before: a boolean or a join moves what you already verified.
-
-When all three are true, you are DONE:""",
-)
-if WORKING_AGREEMENT_V3 == WORKING_AGREEMENT_V2:
-    raise RuntimeError(
-        "prompt v3 is byte-identical to v2: the anchor text moved, so the "
-        "edit silently did nothing."
-    )
-
-
-# v4 — ONE change from v3: the vocabulary is already in this prompt, so
-# stop telling the agent to go and look it up.
-WORKING_AGREEMENT_V4 = WORKING_AGREEMENT_V3.replace(
-    """- Call `search_ops` when you need an operation you have not used — do
-  not guess signatures.""",
-    """- Every operation you may use is listed below with its exact
-  signature. That list is complete: read it, do not search for it and
-  do not guess. `search_ops` exists for scenes where the vocabulary is
-  too large to print, which is not this one — a call spent looking up
-  an operation already in front of you is a call you do not get back.""",
-)
-if WORKING_AGREEMENT_V4 == WORKING_AGREEMENT_V3:
-    raise RuntimeError(
-        "prompt v4 is byte-identical to v3: the anchor text moved, so the "
-        "edit silently did nothing."
-    )
-
-
-# v5 — ONE change from v4: resting on a surface is a contact, not a
-# height. Added to the same paragraph that tells the agent to measure
-# the brief's own numbers, because that is where it decides what "on
-# the ground at z=0" means.
-WORKING_AGREEMENT_V5 = WORKING_AGREEMENT_V4.replace(
-    """Do it after the LAST operation, not
-before: a boolean or a join moves what you already verified.""",
-    """Do it after the LAST operation, not
-before: a boolean or a join moves what you already verified.
-
-Resting on a surface is a CONTACT, not a height. A part that stands on
-the floor has to meet it with a flat face; a tilted leg cut square ends
-in a slanted cap that touches at a single point, and the lowest-point
-measurement reads zero either way. The same goes for any face that
-seats against another part. Measure the contact you actually made, not
-how low the object reaches.""",
-)
-if WORKING_AGREEMENT_V5 == WORKING_AGREEMENT_V4:
-    raise RuntimeError(
-        "prompt v5 is byte-identical to v4: the anchor text moved, so the "
-        "edit silently did nothing."
-    )
-
-
-# v6 — ONE change from v5: the user-guided refinement phase, which the
-# harness code standards require and which v5 did not contain at all.
-# v5 says how to build an asset and stop; nothing told it what to do when
-# the user comes back with a change.
-WORKING_AGREEMENT_V6 = WORKING_AGREEMENT_V5.replace(
-    """## Working with the user""",
-    """## Changing something they already have
-
-When the user asks for a change to an asset that already passed — "make
-the seat thinner", "move the legs out" — EDIT what is there. Do not
-rebuild it from scratch. A rebuild throws away every detail the two of
-you already settled, takes minutes where an edit takes seconds, and
-quietly reverts fixes from three turns ago that nobody thought to
-mention again.
-
-- Touch only what they named. Everything else must measure the same
-  afterwards as it did before — not merely still within spec, the SAME.
-  Measure it and say so.
-- An edit is a build. Re-run the gate and look at a fresh render after
-  every one: an edit can break manifoldness or lift the base off the
-  floor exactly like the first build could.
-- Then stop and show them. Applying the edit is not being finished —
-  they decide when it is finished. Keep going only while they are still
-  asking for changes.
-
-## Working with the user""",
-)
-if WORKING_AGREEMENT_V6 == WORKING_AGREEMENT_V5:
-    raise RuntimeError(
-        "prompt v6 is byte-identical to v5: the anchor text moved, so the "
-        "edit silently did nothing."
-    )
-
-
 PROMPT_REVISIONS: tuple[PromptRevision, ...] = (
     PromptRevision(
         revision=1,
-        body=WORKING_AGREEMENT_V1,
         changed_element="(baseline)",
         hypothesis="(baseline — written from the research brief, never scored)",
         outcome=(
@@ -249,7 +78,6 @@ PROMPT_REVISIONS: tuple[PromptRevision, ...] = (
     ),
     PromptRevision(
         revision=2,
-        body=WORKING_AGREEMENT_V2,
         changed_element=(
             "Added a terminal state to 'What done means': when all three "
             "conditions hold, stop calling tools and report."
@@ -274,7 +102,6 @@ PROMPT_REVISIONS: tuple[PromptRevision, ...] = (
     ),
     PromptRevision(
         revision=3,
-        body=WORKING_AGREEMENT_V3,
         changed_element=(
             "Added, before the terminal state: the gate measures structure "
             "not intent, so verify the user's stated numbers by measuring "
@@ -306,7 +133,6 @@ PROMPT_REVISIONS: tuple[PromptRevision, ...] = (
     ),
     PromptRevision(
         revision=4,
-        body=WORKING_AGREEMENT_V4,
         changed_element=(
             "Tool discipline: replaced 'call search_ops when you need an "
             "operation you have not used' with a statement that the "
@@ -342,7 +168,6 @@ PROMPT_REVISIONS: tuple[PromptRevision, ...] = (
     ),
     PromptRevision(
         revision=5,
-        body=WORKING_AGREEMENT_V5,
         changed_element=(
             "Added to the measure-your-own-numbers paragraph: resting on "
             "a surface is a contact, not a height — a part that stands on "
@@ -376,7 +201,6 @@ PROMPT_REVISIONS: tuple[PromptRevision, ...] = (
     ),
     PromptRevision(
         revision=6,
-        body=WORKING_AGREEMENT_V6,
         changed_element=(
             "Added a 'Changing something they already have' section: "
             "follow-up instructions are localized edits that preserve the "
@@ -433,6 +257,77 @@ CONVERGENCE_VISION_MODEL = "minimax-m3:cloud"
 CONVERGENCE_TOOL_CALL_BUDGET = 24
 
 ACTIVE_PROMPT_REVISION = PINNED_PROMPT_REVISION
+
+
+# LL3M's one-element rule used to be enforced by construction: each body
+# was built by `.replace()` on its predecessor and raised if the anchor
+# text had moved. Templates are far easier to read and review, and they
+# lose that guard — nothing stops a file from being quietly rewritten.
+# So the rule is enforced by MEASUREMENT instead, which is stricter: a
+# revision must differ from its predecessor by exactly one contiguous
+# run of changed lines.
+MAXIMUM_CHANGED_HUNKS_PER_REVISION = 1
+
+
+def changed_hunks(previous_body: str, body: str) -> list[str]:
+    """The contiguous runs of changed lines between two revisions."""
+    import difflib
+
+    matcher = difflib.SequenceMatcher(
+        None, previous_body.splitlines(), body.splitlines(), autojunk=False
+    )
+    hunks: list[str] = []
+    for tag, i1, i2, j1, j2 in matcher.get_opcodes():
+        if tag == "equal":
+            continue
+        hunks.append(f"{tag} lines {i1}-{i2} -> {j1}-{j2}")
+    return hunks
+
+
+def validate_revisions() -> list[str]:
+    """Schema and discipline problems (empty list = a healthy history).
+
+    Checks what a reader would otherwise have to take on trust: the
+    revisions are consecutive from 1, each has a template that renders,
+    each differs from its predecessor by one hunk and by SOMETHING, and
+    every revision before the active one has recorded what it measured.
+    """
+    problems: list[str] = []
+    numbers = [entry.revision for entry in PROMPT_REVISIONS]
+    if numbers != list(range(1, len(numbers) + 1)):
+        problems.append(f"revisions are not consecutive from 1: {numbers}")
+    previous: PromptRevision | None = None
+    for entry in PROMPT_REVISIONS:
+        try:
+            body = entry.body
+        except Exception as error:  # noqa: BLE001 — reported, not raised
+            problems.append(f"v{entry.revision}: template did not render: {error}")
+            previous = None
+            continue
+        if not body.strip():
+            problems.append(f"v{entry.revision}: template rendered empty")
+        if previous is not None:
+            hunks = changed_hunks(previous.body, body)
+            if not hunks:
+                problems.append(
+                    f"v{entry.revision} is identical to v{previous.revision}: "
+                    f"a revision that changes nothing cannot be attributed"
+                )
+            elif len(hunks) > MAXIMUM_CHANGED_HUNKS_PER_REVISION:
+                problems.append(
+                    f"v{entry.revision} changes {len(hunks)} separate places "
+                    f"in v{previous.revision}, not one: {hunks}. Surgical "
+                    f"edits beat rewrites (LL3M); split it into revisions."
+                )
+        if not entry.hypothesis.strip():
+            problems.append(f"v{entry.revision}: no hypothesis recorded")
+        if entry.revision < ACTIVE_PROMPT_REVISION and not entry.outcome.strip():
+            problems.append(
+                f"v{entry.revision} was superseded without recording what it "
+                f"measured — the next edit would be uninformed"
+            )
+        previous = entry
+    return problems
 
 
 class UnknownPromptRevision(KeyError):
