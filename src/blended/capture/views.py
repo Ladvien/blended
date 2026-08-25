@@ -71,10 +71,30 @@ def _world_bounds_center_and_radius(blender_object):
     return center, radius_m
 
 
+def _assembly_bounds_center_and_radius(blender_object, extra_objects):
+    """Frame the object AND the extra objects together.
+
+    An assembly sheet must show every part; framing by the first part
+    alone would crop the rest out of view.
+    """
+    from mathutils import Vector
+
+    all_objects = (blender_object, *extra_objects)
+    world_corners = [
+        blender_object.matrix_world @ Vector(corner)
+        for blender_object in all_objects
+        for corner in blender_object.bound_box
+    ]
+    center = sum(world_corners, Vector()) / len(world_corners)
+    radius_m = max((corner - center).length for corner in world_corners)
+    return center, radius_m
+
+
 def capture_views(
     blender_object,
     output_directory: Path,
     settings: CaptureSettings = CaptureSettings(),
+    extra_objects: tuple = (),
 ) -> dict[str, Path]:
     """Render every named view to PNG; return {view_name: path}."""
     import bpy
@@ -84,7 +104,12 @@ def capture_views(
     output_directory.mkdir(parents=True, exist_ok=True)
 
     scene = bpy.context.scene
-    center, radius_m = _world_bounds_center_and_radius(blender_object)
+    if extra_objects:
+        center, radius_m = _assembly_bounds_center_and_radius(
+            blender_object, extra_objects
+        )
+    else:
+        center, radius_m = _world_bounds_center_and_radius(blender_object)
 
     camera_data = bpy.data.cameras.new(CAPTURE_CAMERA_NAME)
     camera_object = bpy.data.objects.new(CAPTURE_CAMERA_NAME, camera_data)

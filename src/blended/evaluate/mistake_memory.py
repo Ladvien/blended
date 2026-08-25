@@ -805,63 +805,582 @@ MISTAKES: tuple[MistakeRecord, ...] = (
         recorded_on="2026-08-22",
     ),
     MistakeRecord(
-        identifier="a-geometry-trap-was-taught-as-prose-not-built-into-an-op",
+        identifier="multi-step-refinement-was-scored-against-the-original-brief",
         scope="harness_code",
         failure=(
-            "Iteration 17: all three sole centres measured r=0.1281 m "
-            "against a specified 0.1400 +/- 0.0100. The loop classified "
-            "it a prompt failure and answered with v8, a sentence "
-            "telling the agent that a specified position belongs to the "
-            "contact patch rather than the axis. It WORKED — iteration "
-            "18 measured r=0.1400 exactly on all three feet in 7 tool "
-            "calls, the shortest run the suite has produced. It was "
-            "still the wrong fix: the same trap had already been solved "
-            "once, with arithmetic, in this suite's own reference "
-            "stool, and the sentence left the trigonometry to be "
-            "re-derived by a model on every future run."
+            "Iteration 23, the first run with three refinement steps: "
+            "the FIRST build passed both gates, but all three "
+            "REFINEMENT steps failed — wider_seat failed for still "
+            "having a 0.40 m seat (expected 0.32), thicker_legs failed "
+            "for having the 0.40 m seat and 0.55 m height the previous "
+            "steps had correctly produced. The agent's build was "
+            "right; the scorer was wrong."
         ),
         cause=(
-            "Inside a prompt-convergence loop every failure looks like "
-            "a prompt failure, because the prompt is the artifact being "
-            "tuned. The classification question is not 'could a "
-            "sentence fix this' — a sentence can fix almost anything "
-            "once — but 'where does the fix belong so that it stays "
-            "fixed'. A geometric fact that is constant across every "
-            "run belongs in the builder API. Prose that reminds the "
-            "model of trigonometry will keep needing more prose, and "
-            "each sentence is re-derived, re-tested and re-paid for on "
-            "every run."
+            "The driver scored every step against "
+            "refine_brief(ORIGINAL_brief, step) instead of the brief "
+            "refined by its predecessors. A multi-step sequence is "
+            "cumulative: step N's spec is the original brief with steps "
+            "1..N applied, and scoring step N against the original "
+            "reports every earlier step's change as a failure."
         ),
         fix=(
-            "blended/ops/legs.py owns the placement arithmetic: drop = "
-            "leg_radius/cos(splay) + margin so the whole tilted cap "
-            "clears the cut plane, base_radius = foot_radius + "
-            "drop*tan(splay) so the axis crosses z=0 exactly on the "
-            "foot circle, length = hypot(rise, run) + drop so the leg "
-            "regains what the drop spent. No argument combination "
-            "reproduces the trap. The reference stool fixture was "
-            "rewritten to call the op, and its duplicate constants "
-            "deleted, so the numbers exist once. The manifest is "
-            "generated from live code, so add_splayed_leg, "
-            "splayed_leg_ring and trim_soles_flat reached the agent's "
-            "vocabulary without touching a prompt template — and a new "
-            "OP_CONFIG_DATACLASSES section documents SplayedLegSpec's "
-            "fields, because a signature reading 'spec: SplayedLegSpec' "
-            "documents nothing an agent can construct. v9 reverts v8's "
-            "sentence and is byte-identical to v7, which is how the log "
-            "can tell the op apart from the prose."
+            "The driver accumulates step_brief = refine_brief(step_brief, "
+            "step) per step and scores each outcome against it; replay "
+            "and the golden tests apply exactly the steps the record "
+            "carries in refinement_locality (evaluate/replay.py::"
+            "steps_applied), so records from before the suite gained "
+            "steps are not graded against steps they never ran."
         ),
         guarded_by=(
-            "tests/blender/test_leg_ops.py::"
-            "test_the_naive_placement_still_lands_inboard — builds the "
-            "leg the way iteration 17 did and asserts the sole STILL "
-            "misses by more than the gate's tolerance, so deleting the "
-            "outboard offset breaks a test instead of quietly "
-            "returning. Plus tests/pure/test_splayed_leg_spec.py::"
-            "test_the_axis_crosses_the_floor_exactly_on_the_foot_circle, "
-            "which asserts the identity itself with no Blender needed."
+            "tests/blender/test_golden_convergence.py::"
+            "test_golden_stool_measures_the_signed_off_numbers — the "
+            "v10 stool snapshot pins the 0.40 m seat, which only "
+            "measures correctly when all three steps are composed"
         ),
         recorded_on="2026-08-22",
+    ),
+    MistakeRecord(
+        identifier="a-boolean-that-changed-nothing-returned-normally",
+        scope="harness_code",
+        failure=(
+            "Iteration 33, planter_box: the agent's cavity sat 0.01 m "
+            "short of the box top, boolean_difference RETURNED NORMALLY "
+            "with the mesh unchanged, the gate caught 2 disconnected "
+            "components, and the agent spent 21 tool calls debugging an "
+            "op that was never wrong — reading its source, trying "
+            "FAST/MANIFOLD solvers, wiping the scene — before "
+            "exhausting its budget with no object at all."
+        ),
+        cause=(
+            "_apply_boolean verified the operands were linked (the "
+            "iteration-8 lesson) but never verified the boolean had "
+            "DONE anything. A cutter that does not intersect the target "
+            "applies as a silent no-op, and the agent cannot tell 'the "
+            "op failed' from 'my geometry was wrong' — so it "
+            "investigated the op."
+        ),
+        fix=(
+            "BooleanNoOp: after applying, the op compares vertex "
+            "positions (rounded to 1e-6) before and after and raises "
+            "when nothing moved. Counts are NOT compared — the EXACT "
+            "solver cuts a tilted cap flat while preserving counts "
+            "exactly (measured: 136 verts / 76 polys before and after "
+            "trim_soles_flat, z range -0.0269 -> 0.0000), so a "
+            "count-based guard fires falsely on legitimate trims."
+        ),
+        guarded_by=(
+            "tests/blender/test_csg_ops.py::"
+            "test_non_intersecting_cutter_raises_instead_of_silently_"
+            "no_oping — a cutter outside the target must raise and "
+            "leave both objects intact. Plus the full Blender suite: "
+            "every trim_soles_flat call exercises the guard against "
+            "false positives."
+        ),
+        recorded_on="2026-08-22",
+    ),
+    MistakeRecord(
+        identifier="assign-material-destroyed-a-shared-datablock",
+        scope="harness_code",
+        failure=(
+            "Iteration 46, crate_with_lid: the agent assigned "
+            "'CrateWood' to the crate body, then assigned the same "
+            "name to the lid. The assembly failed the material gate "
+            "with CrateBody 0 assigned in 1 slot — everything else "
+            "passed. The agent used the documented op correctly."
+        ),
+        cause=(
+            "assign_material was idempotent by REMOVING the existing "
+            "datablock and creating a fresh one. A material name is a "
+            "shared resource across parts: removing it dangles every "
+            "other object's slot to None. Single-object briefs never "
+            "hit it; the assembly brief exposed it on its first run."
+        ),
+        fix=(
+            "assign_material reuses the existing datablock in place — "
+            "updates the colours, reassigns to the caller — so "
+            "references from other objects survive. Idempotency is "
+            "preserved (one datablock, one slot per object), only the "
+            "destruction is gone."
+        ),
+        guarded_by=(
+            "tests/blender/test_material_op.py::"
+            "test_a_shared_material_name_survives_reassignment — two "
+            "objects sharing a name must both keep their assignment "
+            "and reference the SAME datablock"
+        ),
+        recorded_on="2026-08-22",
+    ),
+    MistakeRecord(
+        identifier="the-vision-model-cannot-yet-guard-visible-defects",
+        scope="process",
+        failure=(
+            "Stage-7 measurement, 2026-08-22, scripts/measure_eye.py: "
+            "7 fixtures x 2 conditions against minimax-m3:cloud. NoRef "
+            "recall 3/5 (0.60) with 2/2 false positives; Ref recall 2/5 "
+            "(0.40) with 2/2 false positives. The defect class that "
+            "started the loop — sealed_drain — was missed in BOTH "
+            "conditions: the eye noticed the hole difference and "
+            "dismissed it as 'rendering/opacity'. floating_seat was "
+            "caught WITHOUT the reference and missed WITH it: the eye "
+            "wrote 'I cannot identify any meaningful visual "
+            "differences... they appear essentially identical' — the "
+            "reference invited rationalization. The controls drew "
+            "false-positive defect language in every condition."
+        ),
+        cause=(
+            "An unmeasured instrument was assumed to be a gate. The "
+            "TikZ study's finding held: a VLM critic is biased toward "
+            "accepting, and a reference image does not fix the bias — "
+            "it reframes the task as 'explain why these match' and the "
+            "eye complies. The sealed_drain miss matters most: it is "
+            "the exact wrong-object failure the whole loop exists to "
+            "catch, and no render-based instrument caught it."
+        ),
+        fix=(
+            "None. The pre-decided branch applied: Ref recall (0.40) "
+            "did not beat NoRef (0.60) by >= 0.2, so no reference "
+            "wiring was added to VisionDescriber and no critique code "
+            "changed. The measurement is the outcome: the human gate "
+            "stays, and the eye stays advisory. The deterministic "
+            "gates are the only pass/fail authority until a future "
+            "measurement beats this one."
+        ),
+        guarded_by=(
+            "_evaluate/eye_measurement.jsonl holds the raw replies, but "
+            "its NUMBERS are void: the scorer that produced them "
+            "counted denials as sightings (see "
+            "the-eye-scorer-counted-a-denial-as-a-sighting). The live "
+            "guard is now `make calibrate-eye`, whose "
+            "_evaluate/eye_calibration.json must license a machine "
+            "verdict before the loop will accept one — "
+            "tests/pure/test_examiner.py::"
+            "test_calibration_problems_are_loud asserts an examiner "
+            "under threshold is refused."
+        ),
+        recorded_on="2026-08-22",
+    ),
+    MistakeRecord(
+        identifier="the-eye-scorer-counted-a-denial-as-a-sighting",
+        scope="harness_code",
+        failure=(
+            "In _evaluate/eye_measurement.jsonl both clean controls "
+            "scored false_positive=true in BOTH conditions, and "
+            "floating_seat/NoRef scored hit=true, off replies that "
+            "said the opposite: \"I don't see any missing, misplaced, "
+            'floating, or duplicated parts" and "no floating, '
+            'intersecting, or duplicated parts". The recorded numbers '
+            "(NoRef 3/5 hits with 2/2 false positives, Ref 2/5 with "
+            "2/2) were instrument artifacts, not measurements of the "
+            "eye."
+        ),
+        cause=(
+            "scripts/measure_eye.py::is_hit did case-insensitive "
+            "SUBSTRING matching over a flat defect vocabulary, so a "
+            "denial containing the defect word matched as a sighting — "
+            "negation was invisible to the scorer. Worse, control "
+            'scoring called it with part_words=("",), and '
+            'any("" in text) is always true, so any defect word '
+            "anywhere in a reply was a false positive by construction."
+        ),
+        fix=(
+            "The eye now answers in a CLOSED TAG VOCABULARY "
+            "(evaluate/examiner.py: DEVIATION_TAGS + no_deviation + "
+            "cannot_tell) inside a JSON contract, and scoring is exact "
+            "tag comparison — so negation is not a scoring surface at "
+            "all. A reply that is not the contract raises rather than "
+            "being pattern-matched, and every view is examined in both "
+            "image orders with only order-consistent tags surviving. "
+            "scripts/measure_eye.py is gone; scripts/calibrate_examiner.py "
+            "replaces it and writes _evaluate/eye_calibration.json, "
+            "which must license a machine verdict before the loop will "
+            "accept one."
+        ),
+        guarded_by=(
+            "tests/pure/test_examiner.py::"
+            "test_a_denial_is_not_a_deviation — the exact denial string "
+            "from the bad measurement, which must yield zero deviations"
+        ),
+        recorded_on="2026-08-22",
+    ),
+    MistakeRecord(
+        identifier="the-convergence-rule-was-never-executable",
+        scope="process",
+        failure=(
+            "evaluate/iteration_log.py::consecutive_clean_runs had no "
+            "caller anywhere in the repository (repo-wide grep: the "
+            "definition only), and it required every brief to appear "
+            "under the SAME iteration number. On iterations 47-51 — "
+            "the very cycle that earned the v10 pin, one brief per "
+            "iteration — it returns 0. The convergence claim was "
+            "verified by hand while the executable rule disagreed with "
+            "it."
+        ),
+        cause=(
+            "The rule was written against a two-brief suite where one "
+            "iteration held every brief. The five-brief protocol runs "
+            "ONE brief per iteration, and because nothing ever called "
+            "the function, no test and no run noticed the shape change."
+        ),
+        fix=(
+            "converged_suite_cycles builds a cycle from the NEWEST "
+            "record per brief, walking iterations downwards, and "
+            "returns (trailing clean cycles, the one prompt identity "
+            "they ran). The orchestrator calls it every round, so the "
+            "rule is executed on the same evidence a person would "
+            "read."
+        ),
+        guarded_by=(
+            "tests/pure/test_convergence_rule.py::"
+            "test_the_v10_cycle_is_one_converged_cycle — reads the real "
+            "_evaluate logs and requires the recorded v10 cycle to "
+            "count, plus cases for mixed identities, abstention, "
+            "deviations and an unexamined run"
+        ),
+        recorded_on="2026-08-22",
+    ),
+    MistakeRecord(
+        identifier="two-same-size-images-fused-so-the-examiner-was-blind",
+        scope="harness_code",
+        failure=(
+            "The first live examiner call, 2026-08-22 against "
+            "qwen3-vl:8b on native ollama 0.32.14, answered "
+            "'The reference image (first image) is not provided' and "
+            "tagged cannot_tell. Probing the wire: two 512x512 renders "
+            "in one /api/chat message cost 1055 prompt tokens — the "
+            "same as ONE image (1047) — the model answered '1' to 'how "
+            "many distinct images did you receive?', and sending "
+            "[planter, stool] made it describe the planter and ignore "
+            "the stool. The examiner had never been shown the render "
+            "under review; it was comparing the reference to itself."
+        ),
+        cause=(
+            "Two layers compounding. Ollama's renderer prepends "
+            "[img-0][img-1]... back to back for a message that carries "
+            "images and no explicit placeholders "
+            "(model/renderers/image_tags.go), and llama.cpp's mtmd "
+            "tokenizer merges CONSECUTIVE same-size bitmaps into video "
+            "frames for the qwen-vl family "
+            "(clip_model_n_temporal_merge == 2). Reported as "
+            "ollama/ollama#17321 and ggml-org/llama.cpp#24303, both "
+            "open. Every render this harness makes comes out of the "
+            "same CaptureSettings, so every examiner pair is the same "
+            "size: the merge case was not an edge case, it was the "
+            "only case. Nothing logged a warning at any layer."
+        ),
+        fix=(
+            "loop.py::_image_placeholders emits one labelled `[img]` "
+            "per image with text between them, so the renderer "
+            "substitutes them in order and no two bitmaps are "
+            "consecutive parts. Prompt tokens for the same pair went "
+            "1055 -> 2089; the identical pair then scored "
+            "no_deviation and stool-vs-planter scored missing_part. "
+            "VisionDescriber.describe is the only place images are "
+            "built for the eye, and it is now unconditional: the "
+            "writer's path sends ONE contact sheet (render_views "
+            "composites five views into a single PNG) so it was never "
+            "bitten, but it carries a placeholder too, so a caller that "
+            "ever attaches several images cannot silently lose them."
+        ),
+        guarded_by=(
+            "tests/pure/test_vision_transport.py::"
+            "test_no_two_placeholders_are_adjacent and "
+            "::test_every_image_gets_its_own_placeholder — asserted on "
+            "the payload at the _request boundary, because describe() "
+            "builds its own client and the wire is the only honest "
+            "place to see what the model will be shown"
+        ),
+        recorded_on="2026-08-22",
+    ),
+    MistakeRecord(
+        identifier="a-local-8b-eye-scored-0.20-and-may-not-judge",
+        scope="process",
+        failure=(
+            "First real calibration, 2026-08-22: `make calibrate-eye` "
+            "against qwen3-vl:8b-instruct on big (native ollama "
+            "0.32.14, one RTX 3090), 100 eye calls over 10 fixtures x "
+            "5 views x 2 orders in 228 s. sensitivity 0.20 (1/5), "
+            "control specificity 1.00 (5/5). Only lid_offset was "
+            "caught. missing_leg scored detected=True in a --only run "
+            "four minutes earlier and detected=False in the zoo — at "
+            "temperature 0.2 the bottom view's two orders disagreed, "
+            "and order-consistency correctly dropped it. sealed_drain "
+            "drew material_missing where missing_feature was expected: "
+            "a sighting under the wrong name, which the tag "
+            "intersection does not credit. The thinking sibling "
+            "qwen3-vl:8b could not be used at all — on a "
+            "stool-vs-planter pair it emitted 30387 tokens into "
+            "`thinking`, hit done_reason=length against a 32k context "
+            "and returned EMPTY content after 331 s."
+        ),
+        cause=(
+            "An 8B eye at 512x512 is simply under-sensitive to the "
+            "defect classes this suite cares about, and the controls "
+            "prove it is not the opposite failure: 5/5 clean assets "
+            "drew zero deviations, so it is not trigger-happy, it does "
+            "not see. RESP's +0.49 recall from a reference is a delta, "
+            "not a floor — the absolute level is the model's."
+        ),
+        fix=(
+            "None, deliberately. MINIMUM_FIXTURE_SENSITIVITY (0.6) and "
+            "REQUIRED_CONTROL_SPECIFICITY (1.0) were NOT moved and "
+            "prompts/examiner.md.j2 was NOT softened; either would have "
+            "bought a licence by lowering the bar the licence exists to "
+            "certify. _evaluate/eye_calibration.json records the "
+            "measurement under identity "
+            "qwen3-vl:8b-instruct+examiner:60a9920cb938, machine "
+            "verdicts stay unlicensed, and --examiner none remains the "
+            "driver default. The next lever is a stronger eye, not more "
+            "prompt engineering — BlenderGym's finding that verifier "
+            "quality is the compute worth buying."
+        ),
+        guarded_by=(
+            "The driver itself: `run_agent_task.py --examiner auto` "
+            "against this calibration exits 1 in 0.7 s with "
+            "'sensitivity 0.20 < 0.6: not distinguishable from the "
+            "no-reference rubber stamp' and writes NO iteration row and "
+            "NO verdict row (run with --log/--verdicts under "
+            "_evaluate/local_eye/, both absent afterwards). "
+            "tests/pure/test_examiner.py::"
+            "test_calibration_problems_are_loud pins the refusal."
+        ),
+        recorded_on="2026-08-22",
+    ),
+    MistakeRecord(
+        identifier="installing-over-an-enabled-addon-ran-a-stale-build",
+        scope="harness_code",
+        failure=(
+            "Live session 2026-08-22 20:18, Blender 5.2: 'Make a low poly "
+            "human' SIGSEGV'd about 20 s into the fifth tool call, which "
+            "never produced a result row. TWO faults, both in the "
+            "depsgraph: a TBB worker in BKE_object_sync_to_original "
+            "(Blender's own blender.crash.txt) and the main thread in "
+            "DepsgraphRelationBuilder::build_copy_on_write_relations under "
+            "wm_event_do_notifiers (the OS .ips report). No Python frame in "
+            "either. The crash is STILL UNEXPLAINED, and it cannot be "
+            "replayed from the record: every tool event in that transcript "
+            "is exactly 212 characters = 'run_python(' + 200 + ')', the old "
+            "emit's [:200] slice — a line that does not exist on disk — so "
+            "the script that was running when it died was never written "
+            "down. Replaying the reconstructable part (six unlinked parts, "
+            "link all, union five) survives headless, live, and live with "
+            "the same emptied scene."
+        ),
+        cause=(
+            "`blended` is a TOP-LEVEL package on sys.path, not a submodule "
+            "of the addon. Installing dist/blended_agent.zip over an "
+            "ENABLED addon rewrites every file and reloads only "
+            "blended_agent/__init__.py ('module changed on disk ... "
+            "reloading'), while sys.modules keeps every blended.* module "
+            "from the previous install. Measured by installing a zip whose "
+            "REQUEST_TIMEOUT_SECONDS was 12345: on disk 12345, in memory "
+            "300, same module object. So the session was executing code "
+            "nobody had installed, and its own log described a build that "
+            "was no longer there."
+        ),
+        fix=(
+            "blender_addon::_stale_library_refusal compares the fingerprint "
+            "taken at register() against the library files on disk and "
+            "REFUSES the turn when they differ — before a model call is "
+            "spent — naming the count and telling the user to restart "
+            "Blender (or, in developer mode, to click Reload). It does NOT "
+            "silently purge and re-import: an automatic mid-session swap of "
+            "the code under a running conversation is the magic-result path, "
+            "and developer_mode already owns that behaviour explicitly."
+        ),
+        guarded_by=(
+            "tests/blender/test_addon_registration.py::"
+            "test_a_library_that_changed_on_disk_refuses_the_turn, plus the "
+            "matching-library, developer-mode and empty-baseline cases. "
+            "Proven live: after installing a different build over the "
+            "enabled addon, bpy.ops.blended.send_message() cancelled with "
+            "'58 library file(s) on disk no longer match'."
+        ),
+        recorded_on="2026-08-22",
+    ),
+    MistakeRecord(
+        identifier="open-meshes-were-never-normal-checked",
+        scope="harness_code",
+        failure=(
+            "Every open prop shipped with zero normals checking: the "
+            "parity-ray flipped-normal test only runs on closed manifold "
+            "meshes, and the analyzer recorded 0 flipped triangles for "
+            "every open mesh. scp measured the distinction: edge "
+            "contiguity passes an island wound inside-out, and decimation "
+            "and boolean work create inverted facets on open meshes too "
+            "(backpack 0 -> 15/164 facets, body 0 -> 5/749). Recalculating "
+            "normals does not fix them — the geometry has folded."
+        ),
+        cause=(
+            "The inverted-facet test asks whether a face agrees with "
+            "ITSELF (winding normal against its own stored corner "
+            "normals), which needs no closed solid, but the old code "
+            "gated every normals check on the closed-manifold branch."
+        ),
+        fix=(
+            "Added facet_disagrees_with_its_normals (pure arithmetic) and "
+            "_count_inverted_facets, called UNCONDITIONALLY in "
+            "analyze_object; MeshReport.inverted_facet_count and "
+            "MeshBudget.allow_inverted_facets gate it. Per-corner normals "
+            "match what glTF ships, so the file-level report reads the "
+            "same numbers back out of the .glb."
+        ),
+        guarded_by=(
+            "tests/blender/test_flipped_normals.py::"
+            "test_open_mesh_inverted_facet_is_counted"
+        ),
+        recorded_on="2026-08-23",
+    ),
+    MistakeRecord(
+        identifier="the-scene-is-not-the-shipped-file",
+        scope="harness_code",
+        failure=(
+            "Export verification re-imported the .glb into Blender, so "
+            "scene counts described geometry that never shipped: scp's "
+            "'5k' tier shipped 9,488 triangles, and a file report and a "
+            "raw bmesh disagreed 0 vs 6,196 boundary edges because one "
+            "welded by position and one counted UV seams."
+        ),
+        cause=(
+            "export_apply=True bakes modifiers, so scene polygon counts "
+            "drift from the artifact; the re-import is not the artifact."
+        ),
+        fix=(
+            "Added src/blended/export/glb_report.py (stdlib only): parses "
+            "the file's own bytes, counts POSITION-welded topology, "
+            "inverted facets from the stored NORMAL accessor, and root "
+            "node names. ExportReport.round_trip_failures now also gates "
+            "file triangle count vs pre-export, file boundary edges vs "
+            "the welded re-import, file inverted facets, root node names, "
+            "and file extents under the exporter's axis permutation."
+        ),
+        guarded_by=(
+            "tests/blender/test_glb_file_report.py::"
+            "test_file_and_welded_reimport_agree"
+        ),
+        recorded_on="2026-08-23",
+    ),
+    MistakeRecord(
+        identifier="nearest-vertex-is-not-the-surface",
+        scope="harness_code",
+        failure=(
+            "scp's palm-to-weapon distance read 60 mm against mesh "
+            "VERTICES and 6.5 mm against the mesh SURFACE: on box "
+            "geometry the nearest vertex is a far corner. Two wrong root "
+            "causes were announced off the vertex artifact."
+        ),
+        cause=(
+            "closest_point_on_mesh was measured against vertices; a "
+            "nearest-vertex implementation answers 'how far is a corner', "
+            "not 'how far is the surface'."
+        ),
+        fix=(
+            "Added src/blended/analyze/pair_checks.py: analyze_pair "
+            "measures interpenetration via BVH overlap with the narrow "
+            "phase _count_self_intersecting_pairs uses, and separation "
+            "via closest_point_on_mesh in the other object's local "
+            "space. NoInterpenetrationSpec is scored in "
+            "_measure_relations; crate_with_lid now asserts the lid does "
+            "not sink into the body."
+        ),
+        guarded_by=(
+            "tests/blender/test_pair_checks.py::"
+            "test_separation_is_measured_on_the_surface"
+        ),
+        recorded_on="2026-08-23",
+    ),
+    MistakeRecord(
+        identifier="a-hole-fill-can-cost-more-than-it-buys",
+        scope="harness_code",
+        failure=(
+            "scp measured hole filling on valkyrie_body and REJECTED it: "
+            "every ordering traded open edges for non-manifold edges and "
+            "inverted facets — 241 boundary / 0 non-manifold / 5 "
+            "inverted became 36 / 18 / 21. An inverted facet is a "
+            "wrongly-lit patch visible in normal gameplay; an open "
+            "boundary costs only gib caps."
+        ),
+        cause=(
+            "Filling a boundary shared by two shells creates non-manifold "
+            "edges; filling a folded boundary creates inverted facets."
+        ),
+        fix=(
+            "cleanup_mesh keeps the fill (props are closed solids) but "
+            "copies the mesh before the pass and reverts when "
+            "non_manifold_edge_count or inverted_facet_count rises — "
+            "CleanupReport.reverted_hole_fills reports the reversal and "
+            "the holes stay open, reported as remaining failures."
+        ),
+        guarded_by=(
+            "tests/blender/test_ingest_cleanup.py::"
+            "test_a_regressing_fill_is_reverted"
+        ),
+        recorded_on="2026-08-23",
+    ),
+    MistakeRecord(
+        identifier="a-guessed-visual-threshold-fails-good-assets",
+        scope="process",
+        failure=(
+            "scp's pre-calibration visual-gate guesses (IoU >= 0.980, "
+            "RMSE <= 0.030) failed all twelve views of a good asset. A "
+            "threshold is a measurement of the harness's own render "
+            "noise, not a number to copy."
+        ),
+        cause=(
+            "Thresholds copied from a different harness (a clothed "
+            "humanoid at 512x768 EEVEE with film_transparent alpha) do "
+            "not transfer to opaque 512x512 Workbench captures."
+        ),
+        fix=(
+            "scripts/calibrate_visual_gate.py measures: golden-vs-itself "
+            "control must read exactly IoU 1.0 / RMSE 0.0, clean replays "
+            "of the pinned iterations bound the thresholds with margins, "
+            "and a Decimate mutation must land outside them or the "
+            "calibration refuses to write. The gate refuses to run "
+            "without the calibration file."
+        ),
+        guarded_by=(
+            "tests/pure/test_visual_gate_verdict.py::"
+            "test_gate_refuses_to_run_uncalibrated"
+        ),
+        recorded_on="2026-08-23",
+    ),
+    MistakeRecord(
+        identifier="the-developer-lane-could-not-import-jinja2",
+        scope="harness_code",
+        failure=(
+            "Live session 2026-08-23: the first turn died with `No "
+            "module named 'jinja2'` the moment the prompt was set "
+            "(bpy.context.scene.blended_chat.prompt = ...). The addon "
+            "had installed cleanly and registered cleanly; only the "
+            "first real render of the system prompt reached the "
+            "dependency."
+        ),
+        cause=(
+            "The addon's dev lanes put <repo>/src on sys.path and "
+            "nothing else. jinja2 lives ONLY in the repo venv — "
+            "Blender's bundled Python has none and no pip, and the "
+            "packaged zip's vendored copy sits on a different path than "
+            "the repo sources. The driver scripts mask the hole by "
+            "prepending venv site-packages, and `make test-blender-app` "
+            "runs from the repo where that preamble is exactly what "
+            "makes the suite pass — so the lane that actually ships was "
+            "never exercised."
+        ),
+        fix=(
+            "_ensure_blended_importable's dev lanes now expose the "
+            "repository venv's site-packages via _dev_venv_site_packages "
+            "(the same glob the driver scripts use) with the repo "
+            "sources kept ahead, and the packaged lane is untouched."
+        ),
+        guarded_by=(
+            "tests/blender/test_addon_registration.py::"
+            "test_developer_mode_resolves_jinja2_from_the_repo_venv, "
+            "plus the non-developer repository lane in "
+            "test_repository_lane_without_developer_mode_also_"
+            "resolves_jinja2"
+        ),
+        recorded_on="2026-08-23",
     ),
 )
 

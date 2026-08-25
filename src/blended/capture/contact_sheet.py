@@ -81,29 +81,29 @@ def compose_contact_sheet(
         drawing.text((cell_x_px, cell_y_px), view_name, fill=TEXT_COLOR)
         sheet.paste(view_image, (cell_x_px, cell_y_px + LABEL_HEIGHT_PX))
 
-    output_path = Path(output_path)
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    sheet.save(output_path)
-    return output_path
-
-
 def capture_contact_sheet(
     blender_object,
     output_directory: Path,
     settings=None,
     report=None,
     budget=None,
+    extra_objects: tuple = (),
 ) -> Path:
     """Capture the standard views and compose them with the gate verdict.
 
     Pass the object's MeshReport (and optionally a MeshBudget) to stamp
     the verdict on the sheet; without a report the sheet is views-only.
+    `extra_objects` widens the framing bounds only — an assembly must
+    not be cropped to its first part. The default empty tuple leaves
+    the framing unchanged.
     """
     from blended.capture.views import CaptureSettings, capture_views
 
     settings = settings or CaptureSettings()
     output_directory = Path(output_directory)
-    view_paths = capture_views(blender_object, output_directory, settings)
+    view_paths = capture_views(
+        blender_object, output_directory, settings, extra_objects=extra_objects
+    )
 
     verdict_lines: tuple[str, ...] = ()
     verdict_passed: bool | None = None

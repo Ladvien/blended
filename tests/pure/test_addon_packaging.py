@@ -47,6 +47,15 @@ def test_the_prompt_templates_are_vendored(addon_names):
         )
         assert expected in templates, expected
 
+    # And every capability module. A subdirectory is the classic thing a
+    # packager walks past: the registry would validate, the lane would
+    # select, and the module would render empty inside Blender.
+    from blended.agent.skill_modules import SKILL_MODULES
+
+    for module in SKILL_MODULES:
+        expected = f"blended_agent/blended/agent/prompts/skills/{module.name}.md.j2"
+        assert expected in templates, expected
+
 
 @pytest.mark.parametrize("dependency", VENDORED_DEPENDENCIES)
 def test_runtime_dependencies_are_vendored(addon_names, dependency):

@@ -26,7 +26,7 @@ def pillow_available() -> bool:
     return importlib.util.find_spec("PIL") is not None
 
 
-def _load_image_as_array(image_path: Path):
+def load_image_as_array(image_path: Path):
     """Load a PNG through Blender's image API into an (h, w, 4) array.
 
     Blender stores pixels bottom-up; the array is returned in that same
@@ -56,7 +56,7 @@ def compose_grid_numpy(
     import bpy
     import numpy
 
-    view_arrays = [_load_image_as_array(path) for path in view_paths.values()]
+    view_arrays = [load_image_as_array(path) for path in view_paths.values()]
     cell_height_px, cell_width_px = view_arrays[0].shape[:2]
     row_count = (len(view_arrays) + column_count - 1) // column_count
 

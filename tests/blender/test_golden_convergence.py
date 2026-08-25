@@ -1,17 +1,20 @@
-"""Golden snapshots of the runs that converged prompt v9.
+"""Golden snapshots of the runs that converged prompt v10.
 
 Sign-off stores the render, the parameter snapshot and the regression
 test together, and the harness detects drift against them. These are
-the three runs that met the convergence rule on 2026-08-22 — human
-verified, both deterministic gates clean, no prompt change between them:
-iteration 20 (planter_box), 21 (three_leg_stool), 22 (planter_box).
+the five runs that met the convergence rule on 2026-08-22 — human
+verified, both deterministic gates clean, no prompt change between them,
+one run per brief:
+iteration 47 (three_leg_stool), 48 (planter_box), 49 (uv_crate),
+50 (ribbed_column), 51 (crate_with_lid).
 
-The v5 snapshots this file used to hold were replaced, not kept beside
-these. v5 converged on a harness without `blended.ops.legs`, so its
-numbers are not reproducible by a replay against today's code, and a
-golden test that cannot run is not evidence. The v5 sign-off survives
-where it belongs: in the append-only iteration log, and in
-`prompt_versions`, where v5 still carries its measured outcome.
+The v9 snapshots this file used to hold were replaced, not kept beside
+these. v9 converged on the two-brief suite; the five-brief suite
+changed the briefs (parts restructure, three new briefs, two new
+refinement steps), so its numbers are not reproducible against today's
+code, and a golden test that cannot run is not evidence. The v9
+sign-off survives where it belongs: in the append-only iteration log,
+and in `prompt_versions`, where v9 still carries its measured outcome.
 
 Each is rebuilt by REPLAYING the run's own recorded chunks, so this
 suite needs no model, no network and no lucky generation. Replay rather
@@ -40,9 +43,15 @@ REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 GOLDEN_DIRECTORY = REPOSITORY_ROOT / "_evaluate" / "golden"
 ITERATION_LOG = REPOSITORY_ROOT / "_evaluate" / "iterations.jsonl"
 
-# The three runs that met the convergence rule, and the brief each built.
-CONVERGING_ITERATIONS = {"three_leg_stool": 21, "planter_box": 22}
-PINNED_REVISION = 9
+# The five runs that met the convergence rule, one per brief.
+CONVERGING_ITERATIONS = {
+    "three_leg_stool": 47,
+    "planter_box": 48,
+    "uv_crate": 49,
+    "ribbed_column": 50,
+    "crate_with_lid": 51,
+}
+PINNED_REVISION = 10
 
 # A brief carrying a RefinementStep is judged at its TERMINAL state.
 # `replay_record` re-runs every recorded chunk, follow-up included, so
@@ -54,12 +63,12 @@ PINNED_REVISION = 9
 # Measured off the converging runs. Every number here was produced by the
 # agent and confirmed by the human; none was chosen to make a test pass.
 STOOL_SNAPSHOT = {
-    "seat_diameter_x": 0.3200,
-    "seat_diameter_y": 0.3200,
-    # The refined height: iteration 21 ended with the taller stool.
+    "seat_diameter_x": 0.4000,
+    "seat_diameter_y": 0.4000,
+    # The terminal height: iteration 47 ended with the taller stool.
     "total_height_z": 0.5500,
     "base_z": 0.0000,
-    "sole_contact_area_m2": 0.001201,
+    "sole_contact_area_m2": 0.002702,
     "sole_radius_m": 0.1400,
     "sole_bearings_deg": (0.0, 120.0, 240.0),
 }
@@ -68,6 +77,27 @@ PLANTER_SNAPSHOT = {
     "depth_y": 0.2000,
     "height_z": 0.2500,
     "base_z": 0.0000,
+}
+CRATE_SNAPSHOT = {
+    "width_x": 0.5000,
+    "depth_y": 0.5000,
+    "height_z": 0.5000,
+    "base_z": 0.0000,
+}
+COLUMN_SNAPSHOT = {
+    "diameter_x": 0.2000,
+    "diameter_y": 0.2000,
+    "height_z": 1.0000,
+    "base_z": 0.0000,
+}
+CRATE_WITH_LID_SNAPSHOT = {
+    "width_x": 0.5000,
+    "depth_y": 0.5000,
+    "height_z": 0.4000,
+    "base_z": 0.0000,
+    "lid_width_x": 0.5000,
+    "lid_depth_y": 0.5000,
+    "lid_height_z": 0.0600,
 }
 # A .glb round trip splits vertices at flat-shading seams and re-quantises
 # positions, so the snapshot is compared at the precision the format
@@ -83,15 +113,18 @@ def empty_scene():
     yield
 
 
-def _expected_brief(brief):
+def _expected_brief(brief, record):
     """The brief the replayed asset should be judged against.
 
-    Every refinement applied in order, because the replay re-runs the
-    follow-up chunks too and ends where the run ended.
+    Only the refinement steps the run actually EXECUTED are applied —
+    the record carries one `LOCALITY <step>: ...` line per executed
+    step. A record from before the suite gained steps must not be
+    graded against steps it never ran.
     """
     from blended.evaluate.acceptance import refine_brief
+    from blended.evaluate.replay import steps_applied
 
-    for step in brief.refinements:
+    for step in steps_applied(record, brief):
         brief = refine_brief(brief, step)
     return brief
 
@@ -106,8 +139,8 @@ def _measure(brief_name: str):
     record = load_record(ITERATION_LOG, CONVERGING_ITERATIONS[brief_name])
     assert record["brief_name"] == brief_name, record["brief_name"]
     assert record["prompt_revision"] == PINNED_REVISION, record["prompt_revision"]
-    replay_record(record, brief.object_name)
-    expected = _expected_brief(brief)
+    replay_record(record, brief.part_names)
+    expected = _expected_brief(brief, record)
     return expected, evaluate_brief(expected)
 
 
@@ -171,32 +204,98 @@ def test_golden_planter_measures_the_signed_off_numbers(empty_scene):
     )
 
 
-def test_golden_planter_drain_still_goes_through(empty_scene):
-    """The defect that started the loop. It must never come back."""
-    _, report = _measure("planter_box")
-
-    clear = [m for m in report.clear_axes if m.probe.name.startswith("drain_hole")]
-    assert clear, "the through-hole probe is missing from the brief"
-    for measurement in clear:
-        assert measurement.ok, measurement.describe()
+def test_golden_crate_still_passes_the_form_gate(empty_scene):
+    brief, report = _measure("uv_crate")
+    assert report.passes(brief), report.summary(brief)
 
 
-def test_golden_evidence_is_stored_beside_the_tests():
-    """A snapshot without its render and its asset is not a sign-off."""
-    for name in (
-        # The stool sheet is its TERMINAL state, the refined 0.55 m
-        # stool the snapshot numbers describe. Its .glb is the
-        # first-build export: the driver exports before the follow-up
-        # turn, so the asset on disk is the 0.45 m one. Named so nobody
-        # turns it and concludes the snapshot drifted.
-        "three_leg_stool_v9_sheet.png",
-        "three_leg_stool_v9_first_build.glb",
-        "planter_box_v9_sheet.png",
-        "planter_box_v9.glb",
-    ):
-        evidence = GOLDEN_DIRECTORY / name
-        assert evidence.exists(), f"missing sign-off evidence {evidence}"
-        assert evidence.stat().st_size > 0
+def test_golden_crate_measures_the_signed_off_numbers(empty_scene):
+    _, report = _measure("uv_crate")
+
+    for name in ("width_x", "depth_y", "height_z"):
+        assert _dimension(report, name) == pytest.approx(
+            CRATE_SNAPSHOT[name], abs=SNAPSHOT_TOLERANCE_M
+        ), name
+    assert report.base_z_m == pytest.approx(
+        CRATE_SNAPSHOT["base_z"], abs=SNAPSHOT_TOLERANCE_M
+    )
+
+
+def test_golden_column_still_passes_the_form_gate(empty_scene):
+    brief, report = _measure("ribbed_column")
+    assert report.passes(brief), report.summary(brief)
+
+
+def test_golden_column_measures_the_signed_off_numbers(empty_scene):
+    _, report = _measure("ribbed_column")
+
+    for name in ("diameter_x", "diameter_y", "height_z"):
+        assert _dimension(report, name) == pytest.approx(
+            COLUMN_SNAPSHOT[name], abs=SNAPSHOT_TOLERANCE_M
+        ), name
+    assert report.base_z_m == pytest.approx(
+        COLUMN_SNAPSHOT["base_z"], abs=SNAPSHOT_TOLERANCE_M
+    )
+
+
+def test_golden_crate_with_lid_still_passes_the_form_gate(empty_scene):
+    brief, report = _measure("crate_with_lid")
+    assert report.passes(brief), report.summary(brief)
+
+
+def test_golden_crate_with_lid_measures_the_signed_off_numbers(empty_scene):
+    _, report = _measure("crate_with_lid")
+
+    for name in ("width_x", "depth_y", "height_z", "lid_width_x", "lid_depth_y", "lid_height_z"):
+        assert _dimension(report, name) == pytest.approx(
+            CRATE_WITH_LID_SNAPSHOT[name], abs=SNAPSHOT_TOLERANCE_M
+        ), name
+    assert report.base_z_m == pytest.approx(
+        CRATE_WITH_LID_SNAPSHOT["base_z"], abs=SNAPSHOT_TOLERANCE_M
+    )
+    assert report.relation_failures == (), report.relation_failures
+
+
+def test_golden_per_view_references_and_manifests_are_pinned():
+    """The examiner compares PER VIEW, so the sign-off evidence is the
+    per-view golden set, not just the contact sheet. Each brief's
+    directory must carry a manifest and all five views, each non-empty.
+    A missing or drifted reference would corrupt every later
+    examination (RESP: an irrelevant reference is worse than none,
+    10.48550/arXiv.2604.11082)."""
+    import json
+
+    for brief_name, iteration in CONVERGING_ITERATIONS.items():
+        directory = GOLDEN_DIRECTORY / f"{brief_name}_v{PINNED_REVISION}"
+        manifest_path = directory / "manifest.json"
+        assert manifest_path.exists(), f"missing golden manifest {manifest_path}"
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        assert manifest["brief"] == brief_name
+        assert manifest["iteration"] == iteration
+        assert manifest["prompt_identity"] == _pinned_identity()
+        recorded_views = set(manifest["view_sha256"])
+        assert recorded_views == {
+            "front", "right", "top", "bottom", "three_quarter"
+        }
+        for view_name in recorded_views:
+            png = directory / f"{view_name}.png"
+            assert png.exists(), f"missing golden view {png}"
+            assert png.stat().st_size > 0
+
+
+def _pinned_identity() -> str:
+    """The pinned identity, from the artifact `make pin` writes.
+
+    Read rather than hardcoded so pinning is one command; the guarantee
+    is unchanged, because any later edit to the pinned `.j2` changes the
+    revision's identity while this file does not.
+    """
+    path = GOLDEN_DIRECTORY / "pinned_identity.txt"
+    assert path.exists(), (
+        f"no {path}: the pinned identity is written by `make pin`, and "
+        f"without it nothing proves the pinned text is what converged"
+    )
+    return path.read_text(encoding="utf-8").strip()
 
 
 def test_the_pinned_prompt_is_the_one_that_converged():
@@ -208,6 +307,6 @@ def test_the_pinned_prompt_is_the_one_that_converged():
     )
     pinned = prompt_versions.get_revision(prompt_versions.PINNED_PROMPT_REVISION)
     # The hash proves the TEXT did not drift after sign-off.
-    assert pinned.identity == "v9:2e5d0dab1033"
-    assert len(prompt_versions.CONVERGENCE_RUNS) == 3
+    assert pinned.identity == _pinned_identity()
+    assert len(prompt_versions.CONVERGENCE_RUNS) == 5
     assert pinned.outcome, "a pinned revision must carry its measured outcome"

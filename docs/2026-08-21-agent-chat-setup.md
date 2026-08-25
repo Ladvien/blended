@@ -18,8 +18,7 @@ dollar pricing* means it is metered and billed on top.
 | **Default** | `minimax-m3:cloud` | **High Usage — subscription** | Best VLM the subscription covers. Native multimodal, tools + thinking, 1M context (512K guaranteed on Cloud). |
 | Snappier | `kimi-k2.7-code:cloud` | High Usage — subscription | Coding-tuned, ~30% fewer thinking tokens. Lighter on your weekly limit, some capability cost. |
 | Lightest | `qwen3.5:397b-cloud` | Medium Usage — subscription | Cheapest against your limits. Vision + tools, 256K context. |
-| Strongest overall | `kimi-k3:cloud` | **METERED — $3/$15 per 1M** | 2.81T params, text/image/video, the best VLM on the platform. Billed *separately* from your subscription — opt in deliberately. |
-| Local | `qwen3.5:27b` | — | Fits a 24 GB card at 4-bit. No cloud usage. |
+| Strongest overall | `kimi-k3:cloud` | **METERED — $3/$15 per 1M** | 2.81T params, text/image/video, the best VLM on the platform. Billed *separately* from your subscription — opt in deliberately. *22|| Local | `qwen3.8-27b` on bmb | — | Writer AND eye on bmb's llama-swap (OpenAI protocol at 192.168.1.233:9292). No cloud usage. |
 
 Ruled out despite strong coding: `glm-5.2`, `deepseek-v4-pro`,
 `minimax-m2.7`, `nemotron-3-*`, `gpt-oss` — **no vision**, so the agent

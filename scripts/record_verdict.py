@@ -20,6 +20,7 @@ sys.path.insert(0, str(REPOSITORY_ROOT / "src"))
 
 from blended.evaluate.iteration_log import (  # noqa: E402
     DEFAULT_VERDICT_PATH,
+    HUMAN_EXAMINER,
     IterationVerdict,
     VerdictLog,
 )
@@ -36,6 +37,12 @@ def main() -> int:
     parser.add_argument("--prompt-change", default="")
     parser.add_argument("--notes", default="")
     parser.add_argument("--path", default=str(DEFAULT_VERDICT_PATH))
+    # A verdict names its author. `human` is the default because that
+    # is who reads a render; a machine examiner must also name the
+    # calibration that licensed it (enforced in IterationVerdict).
+    parser.add_argument("--examiner", default=HUMAN_EXAMINER)
+    parser.add_argument("--abstained", action="store_true")
+    parser.add_argument("--calibration-identity", default="")
     arguments = parser.parse_args()
 
     verdict = IterationVerdict(
@@ -47,12 +54,17 @@ def main() -> int:
         hypothesis=arguments.hypothesis,
         prompt_change=arguments.prompt_change,
         notes=arguments.notes,
+        examiner=arguments.examiner,
+        abstained=arguments.abstained,
+        calibration_identity=arguments.calibration_identity,
     )
     VerdictLog(Path(arguments.path)).append(verdict)
     print(
         f"recorded verdict: iteration {verdict.iteration} {verdict.brief_name} "
         f"inspected={verdict.visual_inspected} "
         f"deviations={len(verdict.visual_deviations)} "
+        f"abstained={verdict.abstained} "
+        f"examiner={verdict.examiner} "
         f"classification={verdict.classification or '(none)'}"
     )
     return 0

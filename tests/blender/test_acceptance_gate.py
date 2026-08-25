@@ -640,7 +640,7 @@ def _refined_outcome(before_report, brief, *, rebuild: bool):
     if rebuild:
         # Throw it away and build again — at the right height, but from
         # scratch, so nothing the user already approved is preserved.
-        remove_object_and_mesh(brief.object_name)
+        remove_object_and_mesh(brief.part_names[0])
         original = brief_module.STOOL_TOTAL_HEIGHT_Z_M
         brief_module.STOOL_TOTAL_HEIGHT_Z_M = target_height_m
         try:
@@ -649,7 +649,7 @@ def _refined_outcome(before_report, brief, *, rebuild: bool):
             brief_module.STOOL_TOTAL_HEIGHT_Z_M = original
     else:
         # A localized edit: stretch what is there along Z only.
-        stool = bpy.data.objects[brief.object_name]
+        stool = bpy.data.objects[brief.part_names[0]]
         bpy.context.view_layer.update()
         current_height_m = max(
             (stool.matrix_world @ v.co).z for v in stool.data.vertices

@@ -28,6 +28,9 @@ bl_info = {
     "category": "3D View",
 }
 
+import importlib
+import importlib.util
+import os
 import queue
 import sys
 import threading
@@ -52,6 +55,15 @@ _MAXIMUM_TRANSCRIPT_LINES = 400
 _AUTO_RELOAD_INTERVAL_SECONDS = 1.0
 _LAST_FINGERPRINT: dict = {}
 _LAST_FINGERPRINT_CHECK = [0.0]
+_LAST_ADDON_FINGERPRINT: tuple = ()
+# Re-entrancy guard for _hot_reload: the drain timer (0.15 s) can fire
+# while the Reload operator is mid-reload, and two concurrent teardowns
+# unregister classes twice / read them while unregistered — measured:
+# SIGSEGV in RNA_struct_find_property. Reloads serialize instead.
+_RELOAD_IN_PROGRESS = False
+# A manual reload is deferred (the operator must not unregister its own
+# class mid-frame): the timer must stand down until it has run.
+_RELOAD_PENDING = False
 
 
 def _ensure_blended_importable(
@@ -59,15 +71,19 @@ def _ensure_blended_importable(
 ) -> str:
     """Make `blended` importable. Returns '' on success, else an error.
 
-    In developer mode the repository sources are put FIRST so edits take
-    effect, even when a vendored copy is also present.
+    In developer mode the repository sources are put FIRST so edits
+    take effect, even when a vendored copy is also present. The dev
+    lanes ALSO expose the repository venv's site-packages: the only
+    jinja2 in a dev checkout lives in the venv, Blender's bundled
+    Python has none, and the packaged zip's vendored copy is on a
+    different path than the repo sources. Same mechanism the driver
+    scripts use; without it the first turn dies with `No module named
+    'jinja2'` (measured 2026-08-23).
     """
     if prefer_repository and repository_root:
         source_directory = Path(bpy.path.abspath(repository_root)) / "src"
         if (source_directory / "blended").is_dir():
-            if str(source_directory) in sys.path:
-                sys.path.remove(str(source_directory))
-            sys.path.insert(0, str(source_directory))
+            _expose_repo_and_venv(source_directory, repository_root)
             return ""
         return f"Developer mode: no `blended` package under {source_directory}."
 
@@ -78,7 +94,7 @@ def _ensure_blended_importable(
             sys.path.insert(0, str(vendored_root))
         return ""
 
-    # 2. Development: point at the repo's src/.
+    # 2. Development without developer mode: point at the repo's src/.
     if not repository_root:
         return (
             "No vendored `blended` package found and no repository path set. "
@@ -88,9 +104,74 @@ def _ensure_blended_importable(
     source_directory = Path(bpy.path.abspath(repository_root)) / "src"
     if not (source_directory / "blended").is_dir():
         return f"No `blended` package under {source_directory}."
-    if str(source_directory) not in sys.path:
-        sys.path.insert(0, str(source_directory))
+    _expose_repo_and_venv(source_directory, repository_root)
     return ""
+
+
+def _expose_repo_and_venv(source_directory, repository_root: str) -> None:
+    """Put the repo sources first, then the venv's site-packages.
+
+    The venv is the only place jinja2 lives in a dev checkout (the
+    driver scripts prepend it the same way). The repo stays ahead of
+    the venv so library edits take effect.
+    """
+    if str(source_directory) in sys.path:
+        sys.path.remove(str(source_directory))
+    sys.path.insert(0, str(source_directory))
+    dev_site_packages = _dev_venv_site_packages(repository_root)
+    if dev_site_packages:
+        if dev_site_packages in sys.path:
+            sys.path.remove(dev_site_packages)
+        sys.path.insert(0, dev_site_packages)
+        if str(source_directory) in sys.path:
+            sys.path.remove(str(source_directory))
+        sys.path.insert(0, str(source_directory))
+
+
+def _dev_venv_site_packages(repository_root: str) -> str:
+    """The dev venv's site-packages, or '' when there is none.
+
+    Mirrors the glob the driver scripts use. '' means the venv is
+    absent and the next jinja2 import fails with its own message —
+    loud, never a hardcoded path.
+    """
+    venv_root = Path(bpy.path.abspath(repository_root)) / ".venv" / "lib"
+    candidates = sorted(venv_root.glob("python3.*/site-packages"))
+    return str(candidates[-1]) if candidates else ""
+
+
+def _addon_source_path(preferences) -> Path:
+    """The addon module file hot-reload should re-import.
+
+    Developer mode with a repository path points at the repo copy — the
+    file the user actually edits — and falls through to the installed
+    copy only when the repo file does not exist. Non-developer installs
+    reload the installed copy itself, which is what the fingerprint must
+    watch in that case.
+    """
+    if (
+        preferences is not None
+        and getattr(preferences, "developer_mode", False)
+        and getattr(preferences, "repository_path", "")
+    ):
+        repository_copy = (
+            Path(bpy.path.abspath(preferences.repository_path))
+            / "blender_addon"
+            / "__init__.py"
+        )
+        if repository_copy.is_file():
+            return repository_copy
+    return Path(__file__)
+
+
+def _addon_fingerprint(preferences) -> tuple:
+    """(mtime, size) of the addon file, enough to notice any save."""
+    path = _addon_source_path(preferences)
+    try:
+        stat = path.stat()
+    except OSError:
+        return ()
+    return (stat.st_mtime, stat.st_size)
 
 
 def _reload_library(preferences) -> str:
@@ -150,27 +231,261 @@ def _reload_library(preferences) -> str:
     return summary
 
 
-def _auto_reload_if_changed(preferences) -> str:
-    """Reload when any library source file has changed on disk."""
+def _reload_if_changed(preferences) -> None:
+    """Hot-reload when the addon file or any library source changed.
+
+    Paced to _AUTO_RELOAD_INTERVAL_SECONDS like the old library-only
+    watcher; once a change is detected the fingerprint is advanced so
+    the next tick does not reload again. _hot_reload covers BOTH cases:
+    it re-imports the addon module AND purges the library.
+    """
     import time
 
     from blended import devreload
 
     now = time.monotonic()
     if now - _LAST_FINGERPRINT_CHECK[0] < _AUTO_RELOAD_INTERVAL_SECONDS:
-        return ""
+        return
     _LAST_FINGERPRINT_CHECK[0] = now
 
+    addon_fingerprint = _addon_fingerprint(preferences)
     source_root = devreload.library_source_root()
-    if source_root is None:
+    library_fingerprint = (
+        devreload.source_fingerprint(source_root) if source_root is not None else {}
+    )
+
+    addon_changed = _LAST_ADDON_FINGERPRINT != () and (
+        addon_fingerprint != _LAST_ADDON_FINGERPRINT
+    )
+    library_changed = bool(_LAST_FINGERPRINT) and (
+        not library_fingerprint
+        or devreload.changed_files(_LAST_FINGERPRINT, library_fingerprint)
+    )
+    if not addon_changed and not library_changed:
+        return
+    if _RELOAD_PENDING:
+        return  # a manual reload is queued; this tick must stand down
+    _hot_reload(preferences)
+
+
+def _hot_reload(preferences) -> str:
+    global _RELOAD_IN_PROGRESS, _RELOAD_PENDING
+    if _RELOAD_IN_PROGRESS:
+        return ""  # a reload is already running (timer vs operator)
+    _RELOAD_IN_PROGRESS = True
+    _RELOAD_PENDING = False  # a reload is starting; nothing queued behind it
+    try:
+        return _hot_reload_unlocked(preferences)
+    finally:
+        _RELOAD_IN_PROGRESS = False
+
+
+def _snapshot_preferences(preferences):
+    """Read the preference VALUES a reload needs off the RNA object.
+
+    The RNA object stays valid only while its class is registered. A
+    reload unregisters that class, so any later attribute read is a
+    dangling srna dereference (measured: SIGSEGV in
+    RNA_struct_find_property). Everything past a teardown must use
+    this plain snapshot — no RNA references cross the boundary.
+    """
+    import types
+
+    def plain_value(name, default):
+        try:
+            return getattr(preferences, name)
+        except Exception:  # noqa: BLE001 — stub preferences lack most fields
+            return default
+
+    return types.SimpleNamespace(
+        repository_path=(
+            bpy.path.abspath(plain_value("repository_path", ""))
+            if plain_value("repository_path", "")
+            else ""
+        ),
+        developer_mode=bool(plain_value("developer_mode", False)),
+        model_name=plain_value("model_name", ""),
+        endpoint=plain_value("endpoint", ""),
+        api_key=plain_value("api_key", ""),
+        vision_model_name=plain_value("vision_model_name", ""),
+        log_chat=plain_value("log_chat", False),
+        log_directory=plain_value("log_directory", ""),
+    )
+
+
+def _hot_reload_unlocked(preferences) -> str:
+    """Reload THIS addon module from disk, plus the library it uses.
+
+    The reinstall killer: editing blender_addon/__init__.py (the repo
+    copy in developer mode, the installed copy otherwise) and saving is
+    enough — the timer picks it up within a second, or the Reload
+    button triggers it. The UI classes are unregistered, the module is
+    re-imported from disk under its own name, the carried session state
+    is transplanted, and everything is re-registered. Returns a
+    human-readable summary; "" when the reload was skipped mid-turn.
+    """
+    from blended import devreload
+
+    # Everything the reload must carry across: a save must never cost
+    # the user their conversation, history, or session.
+    conversation = _STATE.transcript[:]
+    routing = _STATE.routing
+    prompt_history = _STATE.prompt_history[:]
+    history_index = _STATE.history_index
+    old_queue = _TOOL_REQUESTS
+    old_session = _STATE.session
+    old_library_fingerprint = (
+        devreload.source_fingerprint(devreload.library_source_root())
+        if devreload.library_source_root() is not None
+        else {}
+    )
+    old_addon_fingerprint = _LAST_ADDON_FINGERPRINT
+
+    # Preference VALUES, read NOW while the class is still registered:
+    # any attribute read after the teardown below is a dangling srna
+    # dereference (measured: SIGSEGV). The callers pass either the RNA
+    # object or a snapshot; normalize to plain data before teardown.
+    plain_preferences = _snapshot_preferences(preferences)
+
+    # 1. Tear down the live UI surface. The timer goes FIRST: a tick
+    # mid-teardown touches `addons[...].preferences`, and once the
+    # Preferences class is unregistered that dereference is a dangling
+    # RNA struct (measured: SIGSEGV in RNA_struct_find_property from
+    # py_timer_execute). Then the keymap, then the scene property, then
+    # the classes — the property deletion must happen while its
+    # PropertyGroup class is still registered.
+    #
+    # BLENDED_Preferences is NEVER unregistered or re-registered here:
+    # Blender caches the enabled addon's preferences RNA on first fetch,
+    # and swapping the class object mid-session leaves every later
+    # `addons[...].preferences` access pointing at freed memory
+    # (measured: SIGSEGV in RNA_struct_find_property on a FRESH fetch,
+    # backtrace plain_value -> _hot_reload_unlocked). The preferences
+    # panel keeps showing the original class — a reload of the UI
+    # surface must not invalidate the addon's own preferences.
+    if bpy.app.timers.is_registered(_drain_tool_requests):
+        bpy.app.timers.unregister(_drain_tool_requests)
+    _unregister_keymaps()
+    if hasattr(bpy.types.Scene, "blended_chat"):
+        del bpy.types.Scene.blended_chat
+    for class_object in reversed(_CLASSES):
+        if class_object is BLENDED_Preferences:
+            continue  # must stay registered — see above
+        try:
+            bpy.utils.unregister_class(class_object)
+        except Exception:  # noqa: BLE001 — keep tearing down
+            pass
+
+    # 2. Purge the library, then re-import this module under its own
+    # name; register() later re-seeds the library fingerprint.
+    result = devreload.purge_library_modules()
+    import_error = _ensure_blended_importable(
+        plain_preferences.repository_path, plain_preferences.developer_mode
+    )
+    if import_error:
+        # Never leave a torn-down UI behind.
+        try:
+            register()
+        except Exception:  # noqa: BLE001 — report, do not crash
+            pass
+        return f"Reload FAILED: {import_error}"
+
+    module_name = __name__
+    path = _addon_source_path(plain_preferences)
+    spec = importlib.util.spec_from_file_location(module_name, path)
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[module_name] = module
+    spec.loader.exec_module(module)
+
+    # 3. Transplant the carried state into the fresh module.
+    module._STATE.transcript = conversation
+    module._STATE.routing = routing
+    module._STATE.prompt_history = prompt_history
+    module._STATE.history_index = history_index
+    module._TOOL_REQUESTS = old_queue
+    module._LAST_ADDON_FINGERPRINT = old_addon_fingerprint
+
+    rebuild_error_text = ""
+    if old_session is not None:
+        try:
+            module._STATE.session = module._build_session(plain_preferences)
+            module._STATE.session.messages.extend(
+                message
+                for message in devreload.snapshot_conversation(old_session)
+                if message.get("role") != "system"
+            )
+        except Exception as rebuild_error:  # noqa: BLE001
+            module._STATE.session = None
+            rebuild_error_text = (
+                f"Reloaded, but the session could not be rebuilt: {rebuild_error}"
+            )
+
+    # 5. Register the fresh classes, keymap, and timer; advance the
+    # addon fingerprint so the next timer tick does not reload again.
+    module.register()
+    new_addon_fingerprint = module._addon_fingerprint(plain_preferences)
+    module._LAST_ADDON_FINGERPRINT = new_addon_fingerprint
+    module._redraw_sidebars()
+
+    new_library_fingerprint = (
+        devreload.source_fingerprint(devreload.library_source_root())
+        if devreload.library_source_root() is not None
+        else {}
+    )
+    changed_library = devreload.changed_files(
+        old_library_fingerprint, new_library_fingerprint
+    )
+    changed_parts = []
+    if old_addon_fingerprint != new_addon_fingerprint:
+        changed_parts.append("addon")
+    if changed_library:
+        changed_parts.append(f"library ({len(changed_library)} file(s))")
+    changed_text = f" — changed: {', '.join(changed_parts)}" if changed_parts else ""
+    summary = (
+        f"Reloaded {len(result.purged_modules)} module(s){changed_text}; "
+        f"conversation kept ({len(conversation)} messages)."
+        if conversation
+        else f"Reloaded {len(result.purged_modules)} module(s){changed_text}."
+    )
+    module._STATE.log("reload", summary)
+    if rebuild_error_text:
+        return rebuild_error_text
+    return summary
+
+
+def _stale_library_refusal(preferences) -> str:
+    """Refuse the turn when memory and disk hold different libraries.
+
+    Installing the zip over an ENABLED addon rewrites every file but does
+    NOT reload `blended.*`: it is a top-level package on sys.path, not a
+    submodule of this addon, so `sys.modules` keeps the previous build and
+    Blender never re-runs register(). Measured 2026-08-22 by installing a
+    zip whose REQUEST_TIMEOUT_SECONDS was 12345: on disk 12345, in memory
+    300, same module object.
+
+    That is not a cosmetic staleness. The session that crashed this box
+    logged every tool call capped at exactly 212 characters — the old
+    `emit` with `[:200]`, a line that does not exist on disk — so the
+    crashing script could not be read back, let alone replayed. Running a
+    build nobody installed is the "magic result" case: fail loudly.
+    """
+    from blended import devreload
+
+    source_root = devreload.library_source_root()
+    if source_root is None or not _LAST_FINGERPRINT:
         return ""
-    current = devreload.source_fingerprint(source_root)
-    if not _LAST_FINGERPRINT:
-        globals()["_LAST_FINGERPRINT"] = current
+    changed = devreload.changed_files(
+        _LAST_FINGERPRINT, devreload.source_fingerprint(source_root)
+    )
+    if not changed:
         return ""
-    if not devreload.changed_files(_LAST_FINGERPRINT, current):
-        return ""
-    return _reload_library(preferences)
+    remedy = "click Reload in the panel"
+    return (
+        f"{len(changed)} library file(s) on disk no longer match the "
+        f"`blended` loaded in this session (first: {changed[0]}). You are "
+        f"about to run a build that is not the one installed — {remedy} "
+        f"before sending, or the transcript will not describe what ran."
+    )
 
 
 # --- Main-thread tool bridge -----------------------------------------------
@@ -216,10 +531,8 @@ def _drain_tool_requests():
     if not _STATE.busy:
         try:
             preferences = bpy.context.preferences.addons[__name__].preferences
-            if preferences.developer_mode and preferences.auto_reload:
-                summary = _auto_reload_if_changed(preferences)
-                if summary:
-                    _STATE.log("reload", summary)
+            if preferences.auto_reload:
+                _reload_if_changed(preferences)
         except Exception:  # noqa: BLE001 — dev convenience must never break the timer
             pass
 
@@ -254,6 +567,10 @@ class _SessionState:
         self.transcript: list[tuple[str, str]] = []
         self.transcript_path = None  # Markdown log on disk, if enabled
         self.busy = False
+        self.routing = ""
+        self.prompt_history: list[str] = []
+        self.history_index: int | None = None
+        self.suppress_prompt_send = False
 
     def log(self, kind: str, text: str):
         self.transcript.append((kind, text))
@@ -295,6 +612,7 @@ def _build_session(preferences):
         output_directory=Path(bpy.app.tempdir) / "blended_agent",
         dispatch=main_thread_dispatch,
     )
+    _STATE.routing = config.describe_routing()
 
     if preferences.log_chat:
         from blended.agent.transcript import ChatTranscript, default_log_directory
@@ -335,6 +653,11 @@ class BLENDED_OT_send(bpy.types.Operator):
             self.report({"ERROR"}, import_error)
             return {"CANCELLED"}
 
+        stale = _stale_library_refusal(preferences)
+        if stale:
+            self.report({"ERROR"}, stale)
+            return {"CANCELLED"}
+
         user_text = scene_properties.prompt.strip()
         if not user_text:
             self.report({"WARNING"}, "Type a message first.")
@@ -351,6 +674,9 @@ class BLENDED_OT_send(bpy.types.Operator):
                 return {"CANCELLED"}
 
         _STATE.log("user", user_text)
+        if not _STATE.prompt_history or _STATE.prompt_history[-1] != user_text:
+            _STATE.prompt_history.append(user_text)
+        _STATE.history_index = None
         scene_properties.prompt = ""
         _STATE.busy = True
 
@@ -458,9 +784,9 @@ class BLENDED_OT_open_transcript(bpy.types.Operator):
 
 class BLENDED_OT_reload(bpy.types.Operator):
     bl_idname = "blended.reload_library"
-    bl_label = "Reload Library"
+    bl_label = "Reload"
     bl_description = (
-        "Re-import the blended library from disk without restarting "
+        "Reload the addon UI and library from disk without restarting "
         "Blender. Keeps the current conversation"
     )
 
@@ -468,19 +794,28 @@ class BLENDED_OT_reload(bpy.types.Operator):
         if _STATE.busy:
             self.report({"WARNING"}, "The agent is still working.")
             return {"CANCELLED"}
-        preferences = context.preferences.addons[__name__].preferences
-        import_error = _ensure_blended_importable(
-            preferences.repository_path, preferences.developer_mode
+        # The reload unregisters THIS operator's class, so it must not
+        # run inside its frame: `self.report` after the teardown touches
+        # the dead operator's RNA and segfaults (measured:
+        # Operator.__getattribute__ -> path_resolve on a freed struct).
+        # The preferences must be a PLAIN snapshot: the RNA object would
+        # be dangling by the time the deferred reload reads it.
+        global _RELOAD_PENDING
+        preferences = _snapshot_preferences(
+            context.preferences.addons[__name__].preferences
         )
-        if import_error:
-            self.report({"ERROR"}, import_error)
-            return {"CANCELLED"}
-        summary = _reload_library(preferences)
-        self.report(
-            {"ERROR"} if summary.startswith("Reload FAILED") else {"INFO"}, summary
-        )
-        _STATE.log("reload", summary)
-        _redraw_sidebars()
+        _RELOAD_PENDING = True  # the drain timer stands down until this runs
+        # the dead operator's RNA and segfaults (measured:
+        # Operator.__getattribute__ -> path_resolve on a freed struct).
+        # Defer to a one-shot timer that fires after execute() returns.
+        def _fire_reload():
+            # `_hot_reload` itself logs the summary on the fresh module's
+            # state; nothing else to do here but wake the UI.
+            _hot_reload(preferences)
+            _redraw_sidebars()
+            return None  # one-shot
+
+        bpy.app.timers.register(_fire_reload, first_interval=0.0)
         return {"FINISHED"}
 
 
@@ -561,6 +896,49 @@ _KIND_ICONS = {
     "error": "ERROR",
 }
 _PREVIEW_CHARACTERS = 90
+def _conversation_text() -> str:
+    """The whole session as plain text, ready to paste into a report.
+
+    The routing line is the first thing a debugging paste needs: the
+    same prompt behaves differently on different writers, and the
+    transcripts this session already lost to a 200-char truncation are
+    the reason every event is copied RAW — never wrapped, never capped.
+    """
+    blocks: list[str] = []
+    if _STATE.routing:
+        blocks.append(f"routing: {_STATE.routing}")
+    for kind, body_text in _STATE.transcript:
+        blocks.append(f"{_KIND_SPEAKERS.get(kind, kind)}:\n{body_text}")
+    return "\n\n".join(blocks)
+
+
+class BLENDED_OT_copy_message(bpy.types.Operator):
+    bl_idname = "blended.copy_message"
+    bl_label = "Copy message"
+    bl_description = "Copy this exact, unwrapped text to the clipboard"
+    index: bpy.props.IntProperty(default=-1)
+
+    def execute(self, context):
+        if 0 <= self.index < len(_STATE.transcript):
+            context.window_manager.clipboard = _STATE.transcript[self.index][1]
+            self.report({"INFO"}, "Copied to clipboard.")
+        else:
+            self.report({"WARNING"}, "That message is no longer in the session.")
+        return {"FINISHED"}
+
+
+class BLENDED_OT_copy_conversation(bpy.types.Operator):
+    bl_idname = "blended.copy_conversation"
+    bl_label = "Copy conversation"
+    bl_description = (
+        "Copy the whole conversation, with routing and tool traffic, "
+        "for pasting into a report"
+    )
+
+    def execute(self, context):
+        context.window_manager.clipboard = _conversation_text()
+        self.report({"INFO"}, "Conversation copied to clipboard.")
+        return {"FINISHED"}
 
 
 class BLENDED_PT_chat(bpy.types.Panel):
@@ -570,19 +948,47 @@ class BLENDED_PT_chat(bpy.types.Panel):
     bl_region_type = "UI"
     bl_category = "blended"
 
-    def _draw_message(self, layout, kind, body_text, region_width, ui_scale):
+    def _draw_message(self, layout, kind, body_text, region_width, ui_scale, index):
         """One chat bubble: a titled box with wrapped body text."""
         speaker = _KIND_SPEAKERS.get(kind)
         if speaker is None:
             return
         bubble = layout.box()
+        if kind == "error":
+            # The one per-widget emphasis Blender exposes: the theme's
+            # alert tint on the bubble border/labels. Errors should read
+            # at a glance, not as one more grey block.
+            bubble.alert = True
         header = bubble.row()
         header.label(text=speaker, icon=_KIND_ICONS.get(kind, "DOT"))
+        header.operator(
+            BLENDED_OT_copy_message.bl_idname,
+            text="",
+            icon="COPYDOWN",
+            emboss=False,
+        ).index = index
 
         body_column = bubble.column(align=True)
-        body_column.scale_y = 0.72  # tighten line spacing so it reads as prose
-        for line in _wrap_for_region(body_text, region_width, ui_scale):
-            body_column.label(text=line if line else " ")
+        body_column.scale_y = 0.8  # tighten line spacing so it reads as prose
+        # Tool calls carry ESCAPED text (the worker logs the raw JSON
+        # string): render the escapes so the code reads line-by-line,
+        # not as one long "sea of text". The copy button keeps the RAW
+        # text, so nothing is lost.
+        display_text = body_text
+        if kind == "tool":
+            display_text = body_text.replace("\\n", "\n").replace("\\t", "\t")
+        wrapped = _wrap_for_region(display_text, region_width, ui_scale)
+        for line in wrapped:
+            if not line.strip():
+                # A blank line is a paragraph separator, not a row: an
+                # empty label still occupies a full line height, which is
+                # what doubled every paragraph gap into an unreadable
+                # 2.0-spaced wall of text.
+                body_column.scale_y = 0.3
+                body_column.label(text=" ")
+                body_column.scale_y = 0.8
+                continue
+            body_column.label(text=line)
 
     def draw(self, context):
         layout = self.layout
@@ -591,14 +997,16 @@ class BLENDED_PT_chat(bpy.types.Panel):
         region_width = context.region.width
         ui_scale = context.preferences.system.ui_scale
 
-        # LAYOUT ORDER IS DELIBERATE: the conversation is drawn FIRST and
-        # every control is clustered BELOW it. A Blender panel flows
-        # top-to-bottom and the region scrolls, so putting controls above a
-        # growing transcript means hunting upward past the whole history to
-        # reach them. With one control cluster pinned after the history,
-        # scrolling to the bottom always lands on everything actionable.
+        # LAYOUT: the conversation is drawn FIRST, oldest at the top,
+        # and every control is clustered BELOW it — the composer sits at
+        # the bottom, like a chat. Blender panel regions cannot scroll
+        # programmatically (View2D is read-only through RNA; no scroll
+        # operator in 5.2), so "the newest stays reachable" is achieved
+        # by adjacency: scrolling to the bottom lands on the latest
+        # message with the input right beneath it. Each event is its own
+        # entry in the log — tool calls, results, and thinking included.
 
-        # --- conversation ------------------------------------------------
+        # --- conversation, oldest first ----------------------------------
         conversation = layout.column()
         if not _STATE.transcript:
             empty_box = conversation.box()
@@ -611,47 +1019,67 @@ class BLENDED_PT_chat(bpy.types.Panel):
                     empty_box.label(text=line)
 
         visible = _STATE.transcript[-scene_properties.visible_messages :]
-        pending_tool_calls: list[str] = []
-        for kind, body_text in visible:
-            # Tool traffic collapses to a compact activity line unless you
-            # ask for detail — otherwise one turn floods the panel and
-            # buries the actual conversation.
-            if (
-                kind in ("tool", "result", "thinking")
-                and not scene_properties.show_tool_detail
-            ):
-                if kind == "tool":
-                    pending_tool_calls.append(body_text.split("(")[0])
-                continue
-            if pending_tool_calls:
-                conversation.row().label(
-                    text=" · ".join(pending_tool_calls[-6:]), icon="TOOL_SETTINGS"
-                )
-                pending_tool_calls = []
-            self._draw_message(conversation, kind, body_text, region_width, ui_scale)
-        if pending_tool_calls:
-            conversation.row().label(
-                text=" · ".join(pending_tool_calls[-6:]), icon="TOOL_SETTINGS"
+        visible_offset = max(
+            0, len(_STATE.transcript) - scene_properties.visible_messages
+        )
+        for index, (kind, body_text) in enumerate(visible):
+            self._draw_message(
+                conversation,
+                kind,
+                body_text,
+                region_width,
+                ui_scale,
+                visible_offset + index,
             )
 
-        # --- control cluster, everything actionable in one place ---------
+        # --- control cluster, pinned AFTER the history --------------------
         layout.separator()
         controls = layout.box()
 
         composer = controls.column(align=True)
-        composer.prop(scene_properties, "prompt", text="")
+        composer.textbox(
+            scene_properties,
+            "prompt",
+            initial_visible_lines=2,
+            placeholder="Ask for an asset to build, or a change to make…",
+        )
         send_row = composer.row(align=True)
         send_row.scale_y = 1.3
         send_row.enabled = not _STATE.busy
         send_row.operator(BLENDED_OT_send.bl_idname, icon="PLAY")
+        hint_row = composer.row(align=True)
+        hint_row.scale_y = 0.8
+        hint_row.label(
+            text="Enter sends · Ctrl+Enter sends from the viewport",
+            icon="INFO",
+        )
 
+        # Status text on its own short line, event count on another —
+        # neither can be truncated at any sidebar width (a single
+        # "Working… — 10 events so far" label was cut mid-sentence).
         status_row = controls.row(align=True)
         status_row.label(
             text="Working…" if _STATE.busy else "Ready",
             icon="SORTTIME" if _STATE.busy else "CHECKMARK",
         )
+        status_row.operator(
+            BLENDED_OT_copy_conversation.bl_idname,
+            text="",
+            icon="COPYDOWN",
+            emboss=True,
+        )
         status_row.operator(BLENDED_OT_open_transcript.bl_idname, text="", icon="TEXT")
         status_row.operator(BLENDED_OT_reset.bl_idname, text="", icon="TRASH")
+
+        event_count_row = controls.row(align=True)
+        event_count_row.scale_y = 0.7
+        event_count_row.label(
+            text=(
+                f"{len(_STATE.transcript)} events so far"
+                if _STATE.busy
+                else f"{len(_STATE.transcript)} events"
+            )
+        )
 
         if region_width < 300:
             controls.label(
@@ -672,7 +1100,6 @@ class BLENDED_PT_chat(bpy.types.Panel):
             settings_column.prop(preferences, "model_name")
             settings_column.prop(preferences, "vision_model_name")
             settings_column.prop(preferences, "send_on_enter")
-            settings_column.prop(scene_properties, "show_tool_detail")
             settings_column.prop(scene_properties, "visible_messages")
             settings_column.prop(preferences, "developer_mode")
             if preferences.developer_mode:
@@ -681,16 +1108,15 @@ class BLENDED_PT_chat(bpy.types.Panel):
             settings_column.prop(preferences, "log_directory")
             settings_column.operator(BLENDED_OT_test_connection.bl_idname, icon="URL")
 
-        if preferences.developer_mode:
-            developer_row = controls.row(align=True)
-            developer_row.enabled = not _STATE.busy
-            developer_row.operator(
-                BLENDED_OT_reload.bl_idname, text="Reload", icon="FILE_REFRESH"
-            )
-            developer_row.label(
-                text="auto" if preferences.auto_reload else "manual",
-                icon="TIME" if preferences.auto_reload else "HANDLETYPE_VECTOR_VEC",
-            )
+        reload_row = controls.row(align=True)
+        reload_row.enabled = not _STATE.busy
+        reload_row.operator(
+            BLENDED_OT_reload.bl_idname, text="Reload", icon="FILE_REFRESH"
+        )
+        reload_row.label(
+            text="auto" if preferences.auto_reload else "manual",
+            icon="TIME" if preferences.auto_reload else "HANDLETYPE_VECTOR_VEC",
+        )
 
 
 class BLENDED_Preferences(bpy.types.AddonPreferences):
@@ -711,21 +1137,25 @@ class BLENDED_Preferences(bpy.types.AddonPreferences):
         description="Drives every turn: writes bpy, calls tools, reads gate reports",
         items=[
             (
+                "deepseek-v4-pro:cloud",
+                "DeepSeek V4 Pro (High Usage)",
+                "1.65T MoE. The writer the convergence loop CONVERGED on — "
+                "prompt v9's pin rests on runs scored with it. Default.",
+            ),
+            (
                 "deepseek-v4-flash:cloud",
                 "DeepSeek V4 Flash (Medium Usage)",
                 "284B MoE / 13B active, 1M context, tools + thinking. "
-                "TEXT ONLY — pair it with an eye. Recommended writer.",
-            ),
-            (
-                "minimax-m3:cloud",
-                "MiniMax M3 (High Usage)",
-                "Native multimodal — can drive everything alone, but spends "
-                "High Usage on every turn.",
+                "TEXT ONLY — pair it with an eye. Measured too weak to "
+                "place geometry on this suite's briefs (v1-v4); it is "
+                "here as a user choice, not a recommendation.",
             ),
             (
                 "kimi-k2.7-code:cloud",
                 "Kimi K2.7 Code (High Usage)",
-                "Vision + coding-tuned, ~30% fewer thinking tokens.",
+                "Vision + coding-tuned, ~30% fewer thinking tokens. "
+                "Calibrated 2026-08-24 as the LICENSED examiner eye "
+                "(0.80 sensitivity / 1.00 specificity).",
             ),
             (
                 "qwen3.5:397b-cloud",
@@ -739,12 +1169,23 @@ class BLENDED_Preferences(bpy.types.AddonPreferences):
                 "subscription. Opt in deliberately.",
             ),
             (
-                "qwen3.5:27b",
-                "Qwen 3.5 27B (local)",
-                "Runs on a 24 GB card. No cloud usage.",
+                "gpt-oss-20b",
+                "GPT-OSS 20B (bmb llama-swap)",
+                "20.9B MoE, tools + thinking, ~12 GB of VRAM, served by "
+                "bmb's llama-swap (OpenAI protocol at 192.168.1.233:9292, "
+                "no tunnel). TEXT ONLY — pair it with an eye. No cloud "
+                "usage, so it keeps working when the monthly cap is reached.",
+            ),
+            (
+                "qwen3.8-27b",
+                "Qwen 3.8 27B (bmb llama-swap)",
+                "Local writer served by bmb's llama-swap (OpenAI protocol "
+                "at 192.168.1.233:9292, no tunnel). Vision-capable on the "
+                "OpenAI wire — pick qwen3.8-27b as the Eye to see renders. "
+                "No cloud usage.",
             ),
         ],
-        default="deepseek-v4-flash:cloud",
+        default="deepseek-v4-pro:cloud",
     )
     vision_model_name: bpy.props.EnumProperty(
         name="Eye",
@@ -754,14 +1195,12 @@ class BLENDED_Preferences(bpy.types.AddonPreferences):
         ),
         items=[
             (
-                "minimax-m3:cloud",
-                "MiniMax M3 (High Usage)",
-                "Native multimodal. Recommended eye — fires only on renders.",
-            ),
-            (
                 "kimi-k2.7-code:cloud",
                 "Kimi K2.7 Code (High Usage)",
-                "Vision, fewer thinking tokens.",
+                "Calibrated 2026-08-24: sensitivity 0.80 (4/5), control "
+                "specificity 1.00 (5/5) — the LICENSED examiner. "
+                "minimax-m3:cloud was removed: it answers in thinking "
+                "and returns empty content, failing the examiner contract.",
             ),
             (
                 "qwen3.5:397b-cloud",
@@ -774,12 +1213,29 @@ class BLENDED_Preferences(bpy.types.AddonPreferences):
                 "Best vision available, billed separately.",
             ),
             (
+                "qwen3-vl:8b-instruct",
+                "Qwen3-VL 8B Instruct (local)",
+                "8.8B vision, ~7 GB of VRAM, no cloud usage. Measured "
+                "2026-08-22: 0.20 sensitivity on the examiner fixture zoo "
+                "with no false positives on 5 controls — good enough to "
+                "DESCRIBE a render, not to judge one. Pick the -instruct "
+                "build, not qwen3-vl:8b: the thinking build fills its whole "
+                "context deliberating and returns nothing.",
+            ),
+            (
+                "qwen3.8-27b",
+                "Qwen 3.8 27B (bmb llama-swap)",
+                "The bmb model as the eye: rides the same OpenAI lane as "
+                "the writer, no cloud usage. Pick this when the writer is "
+                "also qwen3.8-27b — one local model for text and vision.",
+            ),
+            (
                 "",
                 "None — writer sees for itself",
                 "Only valid if the writer is vision-capable.",
             ),
         ],
-        default="minimax-m3:cloud",
+        default="kimi-k2.7-code:cloud",
     )
     endpoint: bpy.props.StringProperty(
         name="Endpoint",
@@ -836,9 +1292,10 @@ class BLENDED_Preferences(bpy.types.AddonPreferences):
         default="",
         subtype="PASSWORD",
         description=(
-            "Leave empty when signed in via `ollama signin`. Only needed "
-            "if OLLAMA_API_KEY is not visible to Blender — which is the "
-            "case when Blender is launched from Finder on macOS."
+            "Required for the bmb llama-swap models (qwen3.8-27b, "
+            "gpt-oss-20b) — that key lives on bmb at ~/llm/.api-key. "
+            "Leave empty for the Ollama lanes when signed in via "
+            "`ollama signin`."
         ),
     )
 
@@ -878,7 +1335,10 @@ class BLENDED_Preferences(bpy.types.AddonPreferences):
         layout.prop(self, "vision_model_name")
 
         routing_box = layout.box()
-        text_only_writers = ("deepseek-v4-flash:cloud",)
+        text_only_writers = (
+            "deepseek-v4-flash:cloud",
+            "gpt-oss-20b",
+        )
         if self.model_name in text_only_writers and not self.vision_model_name:
             routing_box.label(
                 text="This writer cannot see. Pick an Eye, or it will never "
@@ -926,8 +1386,8 @@ class BLENDED_Preferences(bpy.types.AddonPreferences):
             )
         else:
             auth_row.label(
-                text="No OLLAMA_API_KEY in environment — fine if you ran "
-                "`ollama signin`.",
+                text="bmb models need the llama-swap key in API key below; "
+                "Ollama lanes work with `ollama signin` alone.",
                 icon="INFO",
             )
         layout.prop(self, "api_key")
@@ -951,6 +1411,9 @@ def _on_prompt_confirmed(self, context):
     except (KeyError, AttributeError):
         return
     if not preferences.send_on_enter:
+        return
+    if _STATE.suppress_prompt_send:
+        _STATE.suppress_prompt_send = False
         return
     if _STATE.busy or not self.prompt.strip():
         return
@@ -979,14 +1442,6 @@ class BLENDED_ChatProperties(bpy.types.PropertyGroup):
         min=4,
         max=200,
     )
-    show_tool_detail: bpy.props.BoolProperty(
-        name="Show tool detail",
-        description=(
-            "Show every tool call and result in full. Off by default so "
-            "the conversation stays readable"
-        ),
-        default=False,
-    )
     show_settings: bpy.props.BoolProperty(
         name="Show settings",
         description="Model and developer options, inline in this panel",
@@ -1000,12 +1455,69 @@ class BLENDED_ChatProperties(bpy.types.PropertyGroup):
 # consumes keyboard events; `_on_prompt_confirmed` covers that case.
 _KEYMAP_ENTRIES: list = []
 
+class BLENDED_OT_history(bpy.types.Operator):
+    """Walk the prompts you have sent, like a shell's history.
+
+    Up steps back through past prompts; Down (when walking) steps
+    forward again. Reaching either end returns you to the prompt you
+    were typing. Blender's text field swallows arrow keys while it has
+    focus, so these are wired to Ctrl+Up / Ctrl+Down — the same chord
+    the field does not consume and the user is most likely to discover.
+    """
+    bl_idname = "blended.history"
+    bl_label = "Recall previous prompt"
+    bl_description = (
+        "Step back (or forward) through the prompts you have sent. "
+        "Ctrl+Up / Ctrl+Down, since arrow keys are eaten by the text field"
+    )
+    direction: bpy.props.EnumProperty(
+        items=(
+            ("UP", "Up", "Earlier prompt"),
+            ("DOWN", "Down", "Later prompt"),
+        ),
+        default="UP",
+    )
+
+    def execute(self, context):
+        history = _STATE.prompt_history
+        if not history:
+            return {"CANCELLED"}
+        scene_properties = context.scene.blended_chat
+
+        if _STATE.history_index is None:
+            _STATE.history_index = len(history)
+        if self.direction == "UP":
+            _STATE.history_index = max(0, _STATE.history_index - 1)
+        else:
+            _STATE.history_index = min(len(history), _STATE.history_index + 1)
+
+        # Assigning `prompt` fires its update handler, which sends on
+        # Enter — recalling history must NOT send anything.
+        _STATE.suppress_prompt_send = True
+        scene_properties.prompt = (
+            history[_STATE.history_index]
+            if _STATE.history_index < len(history)
+            else ""
+        )
+        return {"FINISHED"}
+
 
 def _register_keymaps():
     key_configuration = bpy.context.window_manager.keyconfigs.addon
     if key_configuration is None:
         return  # background mode has no addon keyconfig
     keymap = key_configuration.keymaps.new(name="3D View", space_type="VIEW_3D")
+    # Heal orphans first: a crashed session skips unregister(), leaving
+    # our items in the keyconfig — re-adding them then raises
+    # RuntimeError("already registered"), which aborts register() and
+    # silently kills the whole panel (the "no blended tab" symptom).
+    # Removing pre-existing copies makes registration idempotent.
+    for existing in list(keymap.keymap_items):
+        if existing.idname in {
+            BLENDED_OT_send.bl_idname,
+            BLENDED_OT_history.bl_idname,
+        }:
+            keymap.keymap_items.remove(existing)
     for modifier in ("oskey", "ctrl"):
         keymap_item = keymap.keymap_items.new(
             BLENDED_OT_send.bl_idname,
@@ -1013,6 +1525,15 @@ def _register_keymaps():
             value="PRESS",
             **{modifier: True},
         )
+        _KEYMAP_ENTRIES.append((keymap, keymap_item))
+    for direction, key_type in (("UP", "UP_ARROW"), ("DOWN", "DOWN_ARROW")):
+        keymap_item = keymap.keymap_items.new(
+            BLENDED_OT_history.bl_idname,
+            type=key_type,
+            value="PRESS",
+            ctrl=True,
+        )
+        keymap_item.properties.direction = direction
         _KEYMAP_ENTRIES.append((keymap, keymap_item))
 
 
@@ -1033,12 +1554,21 @@ _CLASSES = (
     BLENDED_OT_reset,
     BLENDED_OT_reload,
     BLENDED_OT_open_transcript,
+    BLENDED_OT_history,
+    BLENDED_OT_copy_message,
+    BLENDED_OT_copy_conversation,
     BLENDED_PT_chat,
 )
 
 
 def register():
     for class_object in _CLASSES:
+        # A hot reload keeps BLENDED_Preferences registered (unregistering
+        # it invalidates the addon's cached preferences RNA — measured
+        # SIGSEGV); anything else already registered is a torn-down
+        # duplicate and must not be re-added.
+        if hasattr(bpy.types, class_object.__name__):
+            continue
         bpy.utils.register_class(class_object)
     # Put the library on sys.path NOW rather than lazily on first use, so
     # the panel can rely on it from its very first draw.
@@ -1048,7 +1578,24 @@ def register():
             preferences.repository_path, preferences.developer_mode
         )
     except (KeyError, AttributeError):
+        preferences = None
         _ensure_blended_importable("")
+    # The baseline the staleness gate compares against: what `blended`
+    # looked like on disk at the moment this session imported it.
+    global _LAST_FINGERPRINT
+    try:
+        from blended import devreload
+
+        source_root = devreload.library_source_root()
+        _LAST_FINGERPRINT = (
+            devreload.source_fingerprint(source_root) if source_root else {}
+        )
+    except Exception:  # noqa: BLE001 — a missing library is reported on use
+        _LAST_FINGERPRINT = {}
+    # The baseline the auto-reload watcher compares against: the addon
+    # file as it was when this session imported it.
+    global _LAST_ADDON_FINGERPRINT
+    _LAST_ADDON_FINGERPRINT = _addon_fingerprint(preferences)
     bpy.types.Scene.blended_chat = bpy.props.PointerProperty(
         type=BLENDED_ChatProperties
     )
@@ -1061,6 +1608,16 @@ def unregister():
     _unregister_keymaps()
     if bpy.app.timers.is_registered(_drain_tool_requests):
         bpy.app.timers.unregister(_drain_tool_requests)
-    del bpy.types.Scene.blended_chat
+    if hasattr(bpy.types.Scene, "blended_chat"):
+        del bpy.types.Scene.blended_chat
     for class_object in reversed(_CLASSES):
-        bpy.utils.unregister_class(class_object)
+        # A hot reload never re-registers BLENDED_Preferences (see
+        # register()), so its fresh counterpart is not registered here.
+        if class_object is BLENDED_Preferences and not hasattr(
+            bpy.types, class_object.__name__
+        ):
+            continue
+        try:
+            bpy.utils.unregister_class(class_object)
+        except (RuntimeError, ReferenceError):
+            pass

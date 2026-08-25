@@ -28,6 +28,10 @@ from pathlib import Path
 PROMPT_DIRECTORY = Path(__file__).resolve().parent / "prompts"
 TEMPLATE_SUFFIX = ".md.j2"
 WORKING_AGREEMENT_STEM = "working_agreement_v"
+# Skill modules live one level down so `available_revisions()` keeps its
+# flat glob and a new skill can never be mistaken for a revision.
+SKILL_SUBDIRECTORY = "skills"
+SKILL_DIRECTORY = PROMPT_DIRECTORY / SKILL_SUBDIRECTORY
 
 
 class TemplateNotFound(FileNotFoundError):
@@ -58,7 +62,12 @@ def _environment():
 def template_path(name: str) -> Path:
     path = PROMPT_DIRECTORY / f"{name}{TEMPLATE_SUFFIX}"
     if not path.exists():
-        available = ", ".join(sorted(p.name for p in PROMPT_DIRECTORY.glob("*.j2")))
+        available = ", ".join(
+            sorted(
+                str(p.relative_to(PROMPT_DIRECTORY))
+                for p in PROMPT_DIRECTORY.rglob("*.j2")
+            )
+        )
         raise TemplateNotFound(f"No template {path.name!r}. Available: {available}.")
     return path
 
@@ -81,3 +90,18 @@ def available_revisions() -> tuple[int, ...]:
         if stem.isdigit():
             found.append(int(stem))
     return tuple(sorted(found))
+
+
+def render_skill(name: str) -> str:
+    """Render one capability module by stem (no suffix, no directory)."""
+    return render(f"{SKILL_SUBDIRECTORY}/{name}")
+
+
+def available_skills() -> tuple[str, ...]:
+    """Skill module names that have a template on disk, sorted."""
+    return tuple(
+        sorted(
+            path.name[: -len(TEMPLATE_SUFFIX)]
+            for path in SKILL_DIRECTORY.glob(f"*{TEMPLATE_SUFFIX}")
+        )
+    )

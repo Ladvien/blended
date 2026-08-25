@@ -58,10 +58,15 @@ Classification decides the action, and only one of the four touches the prompt:
 
 ## Phase 3 — convergence
 
-3 consecutive runs passing deterministic gates with zero visual deviations and
-zero prompt changes. Then: pin `prompt_vN`, capture regression tests at builder
-/ assembly / scene level with parameter snapshot + golden render, record final
-version and evidence in the mistake memory.
+One clean human-verified run per brief, consecutive, with no prompt change
+between them — the rule the 2026-08-22 five-brief attempt used. A run is clean
+when the driver exits 0 and the human reports zero visual deviations. The
+earlier "3 consecutive runs" rule was a proxy for "the suite passes" when the
+suite was two briefs; with five briefs, the rule is one run per brief, so a
+prompt that fixes one brief by breaking another cannot earn the pin. Then: pin
+`prompt_vN`, capture regression tests at builder / assembly / scene level with
+parameter snapshot + golden render, record final version and evidence in the
+mistake memory.
 
 Abort at 10 iterations: stop, present the full log, state what blocks
 convergence. Never ship a degraded prompt.

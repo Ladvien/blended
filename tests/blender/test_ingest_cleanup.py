@@ -72,17 +72,84 @@ def test_cleanup_takes_messy_mesh_to_gate_pass(empty_scene):
     assert any("decimated" in action for action in cleanup_report.actions)
 
 
-def test_oversized_hole_is_left_open_and_reported(empty_scene):
-    """The Attene rule: never blind-fill. A hole beyond the threshold
-    survives cleanup and still fails the gate — honestly."""
-    from blended.analyze import MeshBudget
+def test_a_regressing_fill_is_reverted(empty_scene):
+    """A fill that costs more than it buys is undone.
+
+    scp measured every cap ordering on valkyrie_body trading open edges
+    for non-manifold edges and inverted facets (241 boundary / 0
+    non-manifold / 5 inverted -> 36 / 18 / 21). Here one rim vertex is
+    mirrored through the hole plane, so the fan folds: filling creates
+    an inverted facet and cleanup_mesh must revert, leaving the hole
+    open.
+    """
+    import bmesh
+    import mathutils
+
     from blended.ingest import CleanupSettings, cleanup_mesh
 
-    BIG_HOLE_FACE_COUNT = 200
-    messy_object = _messy_sphere("BigHoleSphere", punch_face_count=BIG_HOLE_FACE_COUNT)
-    tight_settings = CleanupSettings(maximum_hole_perimeter_m=0.05)
-    cleanup_report = cleanup_mesh(messy_object, tight_settings)
+    mesh_data = bpy.data.meshes.new("FoldedHole")
+    working_mesh = bmesh.new()
+    try:
+        bmesh.ops.create_icosphere(working_mesh, subdivisions=3, radius=0.15)
+        for face in working_mesh.faces:
+            face.smooth = True
+        working_mesh.faces.ensure_lookup_table()
+        working_mesh.faces.remove(working_mesh.faces[0])
+        working_mesh.faces.ensure_lookup_table()
+        rim_vertices = list(
+            {
+                vertex
+                for edge in working_mesh.edges
+                if len(edge.link_faces) == 1
+                for vertex in edge.verts
+            }
+        )
+        rim_centre = mathutils.Vector((0.0, 0.0, 0.0))
+        for vertex in rim_vertices:
+            rim_centre += mathutils.Vector(vertex.co)
+        rim_centre /= len(rim_vertices)
+        # Mirror one rim vertex through the hole plane: the fan cannot
+        # fill it without folding.
+        rim_vertices[0].co = (
+            rim_centre * 2.0 - mathutils.Vector(rim_vertices[0].co)
+        )
+        working_mesh.to_mesh(mesh_data)
+    finally:
+        working_mesh.free()
+    folded_object = bpy.data.objects.new("FoldedHole", mesh_data)
+    bpy.context.scene.collection.objects.link(folded_object)
 
-    assert any("LEFT OPEN" in action for action in cleanup_report.actions)
-    assert cleanup_report.after.boundary_edge_count > 0
-    assert not cleanup_report.after.passes(MeshBudget())
+    cleanup_report = cleanup_mesh(folded_object, CleanupSettings())
+    assert cleanup_report.reverted_hole_fills == 1
+    assert any("REVERTED" in action for action in cleanup_report.actions)
+    # The hole stays open: the original boundary count is intact.
+    assert cleanup_report.after.boundary_edge_count == (
+        cleanup_report.before.boundary_edge_count
+    )
+
+
+def test_a_plain_small_hole_is_still_filled(empty_scene):
+    """The revert guard must not switch the fill off: a plain single
+    hole on a closed prop is still filled and reports no revert."""
+    import bmesh
+
+    from blended.ingest import CleanupSettings, cleanup_mesh
+
+    mesh_data = bpy.data.meshes.new("PlainHole")
+    working_mesh = bmesh.new()
+    try:
+        bmesh.ops.create_icosphere(working_mesh, subdivisions=3, radius=0.05)
+        for face in working_mesh.faces:
+            face.smooth = True
+        working_mesh.faces.ensure_lookup_table()
+        working_mesh.faces.remove(working_mesh.faces[0])
+        working_mesh.to_mesh(mesh_data)
+    finally:
+        working_mesh.free()
+    plain_object = bpy.data.objects.new("PlainHole", mesh_data)
+    bpy.context.scene.collection.objects.link(plain_object)
+
+    cleanup_report = cleanup_mesh(plain_object, CleanupSettings())
+    assert cleanup_report.reverted_hole_fills == 0
+    assert cleanup_report.after.boundary_edge_count == 0
+    assert any("filled hole" in action for action in cleanup_report.actions)

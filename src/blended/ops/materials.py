@@ -31,16 +31,22 @@ def assign_material(
     """Create a material of `name` and assign it as the object's only slot.
 
     Idempotent by name, like the primitive constructors: re-running a
-    chunk replaces the material instead of stacking a second slot.
+    chunk updates the material instead of stacking a second slot.
     Returns the material.
+
+    The datablock is REUSED, never removed and recreated. Measured
+    2026-08-22 (iteration 46): the agent assigned "CrateWood" to the
+    crate body, then assigned the same name to the lid — the old
+    remove-and-recreate left the body's slot dangling to None, and the
+    assembly failed the material gate with 0 assigned in 1 slot. A
+    material name is a shared resource across parts; removing it
+    breaks every other object that references it.
     """
     import bpy
 
-    existing = bpy.data.materials.get(name)
-    if existing is not None:
-        bpy.data.materials.remove(existing)
-
-    material = bpy.data.materials.new(name)
+    material = bpy.data.materials.get(name)
+    if material is None:
+        material = bpy.data.materials.new(name)
     # No `use_nodes = True` here: in 5.2 a new material already has its
     # node tree and the property is deprecated (removal expected in 6.0).
     principled = material.node_tree.nodes.get(PRINCIPLED_NODE_NAME)

@@ -43,9 +43,9 @@ def main(argv) -> int:
     import bpy
 
     from blended.capture import CaptureSettings, capture_contact_sheet
-    from blended.evaluate.acceptance import evaluate_brief
+    from blended.evaluate.acceptance import evaluate_brief, refine_brief
     from blended.evaluate.briefs import get_brief
-    from blended.evaluate.replay import load_record, replay_record
+    from blended.evaluate.replay import load_record, replay_record, steps_applied
     from blended.export.gltf import export_glb
 
     arguments = parse_arguments(argv)
@@ -58,26 +58,40 @@ def main(argv) -> int:
         print(f"[replay] chunk {index}/{total}: "
               f"{'ok' if result.ok else 'FAILED'}", flush=True)
 
-    built = replay_record(record, brief.object_name, on_chunk=announce)
-    report = evaluate_brief(brief)
-    print(report.summary(brief), flush=True)
+    built = replay_record(record, brief.part_names, on_chunk=announce)
+    # The record's form_summary is the report scored against the brief
+    # WITH the refinement steps the run actually executed applied — the
+    # driver records the terminal state. Score the replay the same way,
+    # or a run that ended at 0.55 m reads as a failure against the
+    # 0.45 m brief. Which steps ran is recorded per step in
+    # `refinement_locality`, so steps the run never executed are not
+    # composed in.
+    expected_brief = brief
+    for step in steps_applied(record, brief):
+        expected_brief = refine_brief(expected_brief, step)
+    report = evaluate_brief(expected_brief)
+    print(report.summary(expected_brief), flush=True)
 
     render_directory = Path(record["render_path"]).parent
     sheet = capture_contact_sheet(
-        built, render_directory, settings=CaptureSettings()
+        built[0],
+        render_directory,
+        settings=CaptureSettings(),
+        extra_objects=tuple(built[1:]),
     )
     print(f"[replay] wrote {sheet}", flush=True)
 
-    destination = render_directory / f"{brief.object_name}.glb"
-    export_report = export_glb(built, destination)
-    print(
-        f"[replay] wrote {destination} "
-        f"({export_report.file_size_bytes} bytes), round trip "
-        f"{'OK' if export_report.passes(brief.budget) else 'FAILED'}",
-        flush=True,
-    )
-    for failure in export_report.round_trip_failures(brief.budget):
-        print(f"   - {failure}", flush=True)
+    for built_object in built:
+        destination = render_directory / f"{built_object.name}.glb"
+        export_report = export_glb(built_object, destination)
+        print(
+            f"[replay] wrote {destination} "
+            f"({export_report.file_size_bytes} bytes), round trip "
+            f"{'OK' if export_report.passes(brief.budget) else 'FAILED'}",
+            flush=True,
+        )
+        for failure in export_report.round_trip_failures(brief.budget):
+            print(f"   - {failure}", flush=True)
     return 0
 
 

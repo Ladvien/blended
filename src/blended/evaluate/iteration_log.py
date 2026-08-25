@@ -53,9 +53,17 @@ CLASSIFICATIONS = (
     CLASSIFICATION_BAD_BRIEF,
 )
 
+# The author of a verdict written by a person. Any other value names a
+# machine examiner and requires the calibration that licensed it.
+HUMAN_EXAMINER = "human"
+
 
 class InvalidClassification(ValueError):
     """Raised for a classification outside the closed set."""
+
+
+class InvalidVerdict(ValueError):
+    """Raised for a verdict that does not name a legitimate author."""
 
 
 @dataclass(frozen=True)
@@ -166,11 +174,36 @@ class IterationVerdict:
     hypothesis: str = ""
     prompt_change: str = ""
     notes: str = ""
+    # WHO JUDGED. The harness's whole discipline is that measurements
+    # and judgements have different authors and lifetimes; a machine
+    # judgement that is indistinguishable in the log from a human
+    # sign-off destroys that distinction, and the pin rests on it. So a
+    # verdict names its author: "human", or `examiner_identity()` for a
+    # machine verdict, which additionally must name the calibration
+    # that licensed it. The defaults keep every existing log line
+    # loadable — `VerdictLog.verdicts()` constructs with `**payload`.
+    examiner: str = "human"
+    # The examiner could not answer (order-consistent `cannot_tell`).
+    # Distinct from "no deviations": an instrument that could not see
+    # is not a pass, and the orchestrator halts on it.
+    abstained: bool = False
+    calibration_identity: str = ""
 
     def __post_init__(self) -> None:
         if self.classification and self.classification not in CLASSIFICATIONS:
             raise InvalidClassification(
                 f"classification {self.classification!r} not in {CLASSIFICATIONS}"
+            )
+        if not self.examiner.strip():
+            raise InvalidVerdict(
+                "a verdict must name its examiner: 'human', or the "
+                "examiner identity of the instrument that judged it"
+            )
+        if self.examiner != HUMAN_EXAMINER and not self.calibration_identity.strip():
+            raise InvalidVerdict(
+                f"machine verdict by {self.examiner!r} carries no "
+                f"calibration_identity — a machine verdict without the "
+                f"measurement that licensed it is not a verdict"
             )
 
 
@@ -234,54 +267,116 @@ class IterationLog:
         return 1 + max((record.iteration for record in existing), default=0)
 
 
-def consecutive_clean_runs(
+def fold_verdict(
+    record: IterationRecord, verdict: IterationVerdict | None
+) -> IterationRecord:
+    """The measured record with the examiner's judgement folded in.
+
+    Measurements and judgements are written separately and read
+    together; this is the one place they are combined, so the
+    convergence rule and any reporting agree by construction.
+    """
+    if verdict is None:
+        return record
+    return replace(
+        record,
+        visual_inspected=verdict.visual_inspected,
+        visual_deviations=verdict.visual_deviations,
+        classification=verdict.classification,
+        prompt_change=verdict.prompt_change,
+        hypothesis=verdict.hypothesis,
+    )
+
+
+def converged_suite_cycles(
     records: list[IterationRecord],
     brief_names: tuple[str, ...],
     verdicts: list[IterationVerdict] | None = None,
-) -> int:
-    """How many trailing iterations were clean across EVERY brief.
+) -> tuple[int, str]:
+    """Trailing complete suite cycles that are clean, and the prompt
+    identity they ran.
 
-    Convergence is a property of the suite, not of one brief: a prompt
-    that fixes the planter by breaking the stool has not converged. So
-    an iteration counts only when every brief in `brief_names` passed
-    it, and any brief failing resets the streak to zero.
+    Convergence is a property of the SUITE, not of one brief: a prompt
+    that fixes the planter by breaking the stool has not converged. The
+    protocol runs ONE brief per iteration, so a cycle is not an
+    iteration number — it is the newest record per brief, walking
+    iterations downwards until every brief has been seen once. (The
+    predecessor of this function grouped by iteration number and
+    therefore returned 0 on iterations 47-51, the very cycle that
+    earned the v10 pin; see mistake memory
+    "the-convergence-rule-was-never-executable".)
+
+    A cycle is converged when, for all its records: the folded verdict
+    was inspected, did not abstain and reported no deviations; the
+    record passed both deterministic gates and its refinement; no
+    verdict carries a prompt change; and every record ran ONE prompt
+    identity. Returns (cycle count, identity of the newest converged
+    cycle) — ("" when the count is zero).
     """
-    by_iteration: dict[int, dict[str, IterationRecord]] = {}
-    for record in records:
-        by_iteration.setdefault(record.iteration, {})[record.brief_name] = record
-
     verdict_by_key: dict[tuple[int, str], IterationVerdict] = {}
     for verdict in verdicts or []:
         verdict_by_key[(verdict.iteration, verdict.brief_name)] = verdict
 
-    def judged(record: IterationRecord) -> IterationRecord:
-        """Fold the examiner's verdict into the measured record."""
-        verdict = verdict_by_key.get((record.iteration, record.brief_name))
-        if verdict is None:
-            return record
-        return replace(
-            record,
-            visual_inspected=verdict.visual_inspected,
-            visual_deviations=verdict.visual_deviations,
-            classification=verdict.classification,
-            prompt_change=verdict.prompt_change,
-            hypothesis=verdict.hypothesis,
-        )
+    by_iteration: dict[int, list[IterationRecord]] = {}
+    for record in records:
+        by_iteration.setdefault(record.iteration, []).append(record)
 
-    streak = 0
+    wanted = set(brief_names)
+    if not wanted:
+        return 0, ""
+
+    cycles: list[tuple[bool, str]] = []
+    current: dict[str, IterationRecord] = {}
+    current_verdicts: dict[str, IterationVerdict | None] = {}
     for iteration in sorted(by_iteration, reverse=True):
-        present = {
-            name: judged(record) for name, record in by_iteration[iteration].items()
-        }
-        if not all(name in present for name in brief_names):
+        for record in by_iteration[iteration]:
+            if record.brief_name not in wanted:
+                continue
+            if record.brief_name in current:
+                # Older run of a brief already seen in this cycle: it
+                # belongs to the previous cycle, not this one.
+                continue
+            verdict = verdict_by_key.get((record.iteration, record.brief_name))
+            current[record.brief_name] = fold_verdict(record, verdict)
+            current_verdicts[record.brief_name] = verdict
+        if set(current) == wanted:
+            cycles.append(_cycle_verdict(current, current_verdicts))
+            current = {}
+            current_verdicts = {}
+
+    trailing = 0
+    identity = ""
+    for converged, cycle_identity in cycles:
+        if not converged:
             break
-        if not all(present[name].passed for name in brief_names):
-            break
-        if any(present[name].prompt_change for name in brief_names):
-            # A run that also changed the prompt is not a run of the
-            # converged prompt: the next iteration is the first that
+        if trailing == 0:
+            identity = cycle_identity
+        trailing += 1
+    return trailing, identity
+
+
+def _cycle_verdict(
+    folded: dict[str, IterationRecord],
+    verdicts: dict[str, IterationVerdict | None],
+) -> tuple[bool, str]:
+    """(is this cycle converged, the one prompt identity it ran)."""
+    identities = {record.prompt_identity for record in folded.values()}
+    identity = identities.pop() if len(identities) == 1 else ""
+    if not identity:
+        # A cycle spanning two prompt identities is not a cycle OF a
+        # prompt: the claim "this text converged" would name two texts.
+        return False, ""
+    for brief_name, record in folded.items():
+        verdict = verdicts.get(brief_name)
+        if verdict is None or not verdict.visual_inspected:
+            return False, identity
+        if verdict.abstained or verdict.visual_deviations:
+            return False, identity
+        if verdict.prompt_change:
+            # A run whose verdict also changed the prompt is not a run
+            # of the converged prompt: the next cycle is the first that
             # exercises the new text.
-            streak += 1
-            break
-        streak += 1
-    return streak
+            return False, identity
+        if not record.passed:
+            return False, identity
+    return True, identity

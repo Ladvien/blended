@@ -16,7 +16,6 @@ already failed a measurement is wasted tokens.
 
 import argparse
 import datetime as _datetime
-import json
 import os
 import sys
 from pathlib import Path
@@ -45,7 +44,13 @@ def parse_arguments(argv):
     parser.add_argument("--revision", type=int, required=True)
     parser.add_argument("--iteration", type=int, required=True)
     parser.add_argument("--log", default="_evaluate/iterations.jsonl")
+    parser.add_argument("--verdicts", default="_evaluate/verdicts.jsonl")
     parser.add_argument("--renders", default="_evaluate/renders")
+    # The visual pass. `none` keeps the manual protocol: the driver
+    # measures and renders, a human records the verdict afterwards.
+    # `auto` hands the verdict to the calibrated examiner, which refuses
+    # to run unless its calibration licenses it.
+    parser.add_argument("--examiner", choices=("none", "auto"), default="none")
     parser.add_argument("--model", default="")
     parser.add_argument("--vision-model", default="")
     # Measured, not guessed. three_leg_stool needs 17 calls to build and
@@ -61,8 +66,13 @@ def parse_arguments(argv):
 def main(argv) -> int:
     import bpy
 
-    from blended.agent.loop import AgentSession, ModelConfig, OllamaClient
-    from blended.agent.prompt_versions import get_revision
+    from blended.agent.loop import (
+        AgentSession,
+        ModelConfig,
+        OllamaClient,
+        VisionDescriber,
+    )
+    from blended.agent.prompt_versions import PINNED_PROMPT_REVISION, get_revision
     from blended.agent.system_prompt import build_system_prompt
     from blended.analyze import analyze_object
     from blended.capture import CaptureSettings, capture_contact_sheet
@@ -72,7 +82,9 @@ def main(argv) -> int:
         refine_brief,
     )
     from blended.evaluate.briefs import get_brief
+    from blended.evaluate.examiner import examiner_identity
     from blended.evaluate.iteration_log import IterationLog, IterationRecord
+    from blended.evaluate.visual_diff import VisualGateNotCalibrated
     from blended.evaluate.object_identity import (
         measure_locality,
         new_identity,
@@ -101,6 +113,33 @@ def main(argv) -> int:
     if arguments.vision_model:
         configuration_overrides["vision_model"] = arguments.vision_model
     client = OllamaClient(ModelConfig.from_environment(**configuration_overrides))
+
+    # If this run is to be examined by machine, establish the licence
+    # BEFORE spending anything on it — a local file read, so it costs
+    # nothing and comes first. Checking after the run would throw away a
+    # measured record because the instrument was not calibrated, and the
+    # measurement is the expensive part; it is not the examiner's to
+    # discard.
+    golden_directory = (
+        Path("_evaluate/golden") / f"{brief.name}_v{PINNED_PROMPT_REVISION}"
+    )
+    if arguments.examiner == "auto":
+        from blended.evaluate.examiner import load_calibration
+
+        licence_problems = load_calibration().problems(
+            examiner_identity(client.config.vision_model)
+        )
+        if not (golden_directory / "manifest.json").exists():
+            licence_problems.append(
+                f"no golden reference at {golden_directory}: run "
+                f"`make pin-golden-views REVISION={PINNED_PROMPT_REVISION}`"
+            )
+        if licence_problems:
+            raise SystemExit(
+                "--examiner auto but this examiner may not judge:\n  - "
+                + "\n  - ".join(licence_problems)
+            )
+
     status = client.check_connection()
     print(f"[connection] {status.summary()}", flush=True)
     if not status.ok:
@@ -129,18 +168,27 @@ def main(argv) -> int:
     final_text = session.send(brief.prompt_text, on_event=on_event)
 
     # --- EXAMINE (a): deterministic gates, both, before any render ----
+    # The structural gate runs per part: each part's object is analyzed
+    # against the brief-level budget, and failures are prefixed with the
+    # part name so a multi-part build names the part that failed.
     bpy.context.view_layer.update()
-    built_object = bpy.data.objects.get(brief.object_name)
-
-    if built_object is None:
-        structural_failures = (
-            f"no object named {brief.object_name!r} — nothing to analyze",
+    built_objects: list = []
+    structural_failures: list[str] = []
+    for part in brief.parts:
+        part_object = bpy.data.objects.get(part.name)
+        if part_object is None:
+            structural_failures.append(
+                f"{part.name}: no object named {part.name!r} — nothing to analyze"
+            )
+            continue
+        part_report = analyze_object(part_object)
+        structural_failures.extend(
+            f"{part.name}: {failure}"
+            for failure in part_report.failures(brief.budget)
         )
-        structural_passed = False
-    else:
-        structural_report = analyze_object(built_object)
-        structural_failures = tuple(structural_report.failures(brief.budget))
-        structural_passed = not structural_failures
+        built_objects.append(part_object)
+    structural_passed = not structural_failures
+    structural_failures = tuple(structural_failures)
 
     form_report = evaluate_brief(brief)
     form_failures = tuple(form_report.failures(brief))
@@ -149,26 +197,137 @@ def main(argv) -> int:
     # you will repeat.
     render_path = ""
     glb_path = ""
-    if built_object is not None and built_object.name in bpy.context.scene.objects:
+    built_objects_in_scene = [
+        built_object
+        for built_object in built_objects
+        if built_object.name in bpy.context.scene.objects
+    ]
+    if built_objects_in_scene:
         sheet = capture_contact_sheet(
-            built_object,
+            built_objects_in_scene[0],
             render_directory,
             settings=CaptureSettings(),
+            extra_objects=tuple(built_objects_in_scene[1:]),
         )
         render_path = str(sheet)
         # AFTER both gates: export_glb re-imports to verify the file, and
         # a temporary re-import in the scene would read as a stray object.
-        destination = render_directory / f"{brief.object_name}.glb"
-        export_report = export_glb(built_object, destination)
-        glb_path = str(destination)
-        print(
-            f"[export] {destination} ({export_report.file_size_bytes} bytes), "
-            f"round trip "
-            f"{'OK' if export_report.passes(brief.budget) else 'FAILED'}",
-            flush=True,
+        # One .glb per part, named for the part: the round-trip
+        # verification analyzes a single object, and keeping that
+        # contract per part preserves it. The first part's path is the
+        # record's glb_path, matching the pre-assembly convention.
+        exported: list[str] = []
+        for built_object in built_objects_in_scene:
+            destination = render_directory / f"{built_object.name}.glb"
+            export_report = export_glb(built_object, destination)
+            exported.append(destination.name)
+            print(
+                f"[export] {destination} ({export_report.file_size_bytes} "
+                f"bytes), round trip "
+                f"{'OK' if export_report.passes(brief.budget) else 'FAILED'}",
+                flush=True,
+            )
+            for failure in export_report.round_trip_failures(brief.budget):
+                print(f"   - {failure}", flush=True)
+        glb_path = str(render_directory / exported[0])
+
+    # --- VISUAL GATE: deterministic pixel check against the pinned
+    # golden. A different instrument from the examiner: it cannot judge
+    # brief-conformance, only whether the render moved. Runs whenever a
+    # pinned golden exists at the active revision AND the calibration
+    # file exists; absent calibration prints one line and skips, so
+    # this port never blocks the pending eye calibration. Failures join
+    # the driver's own failure list and exit non-zero. The gate never
+    # writes an IterationVerdict; verdict authorship stays with the
+    # human or a licensed examiner.
+    visual_gate_failures: list[str] = []
+    if built_objects_in_scene:
+        try:
+            from blended.evaluate.visual_diff import (
+                CALIBRATION_PATH,
+                compare_view_files,
+                gate_failures,
+                load_thresholds,
+            )
+
+            thresholds = load_thresholds(CALIBRATION_PATH)
+            comparisons = []
+            for view_name in (
+                "front",
+                "right",
+                "top",
+                "bottom",
+                "three_quarter",
+            ):
+                golden_view = golden_directory / f"{view_name}.png"
+                candidate_view = render_directory / f"{view_name}.png"
+                if not golden_view.exists() or not candidate_view.exists():
+                    continue
+                comparisons.append(
+                    compare_view_files(
+                        view_name, golden_view, candidate_view
+                    )
+                )
+            if comparisons:
+                print(
+                    "\n[visual gate] "
+                    + "  ".join(
+                        f"{comparison.view_name} "
+                        f"iou {comparison.silhouette_iou:.4f} "
+                        f"rmse {comparison.shading_rmse:.4f}"
+                        for comparison in comparisons
+                    ),
+                    flush=True,
+                )
+                visual_gate_failures.extend(gate_failures(comparisons, thresholds))
+        except VisualGateNotCalibrated:
+            print(
+                "[visual gate] uncalibrated — "
+                "run `make calibrate-visual-gate REVISION=10`; skipping",
+                flush=True,
+            )
+
+    # --- EXAMINE (b): the VISUAL pass, by a calibrated instrument.
+    # Only when both deterministic gates passed: a visual critique of a
+    # scene that already failed a measurement is wasted tokens (Voyager's
+    # ordering, 10.48550/arXiv.2305.16291), and an unexamined run is not
+    # a pass with no deviations — `IterationRecord.passed` already
+    # encodes that. The exit code below stays a function of the
+    # deterministic gates only; the examiner's output lives in the
+    # verdict log, where the convergence rule reads it.
+    if (
+        arguments.examiner == "auto"
+        and structural_passed
+        and not form_failures
+        and built_objects_in_scene
+    ):
+        from blended.evaluate.examiner import (
+            calibration_file_identity,
+            examine_asset,
         )
-        for failure in export_report.round_trip_failures(brief.budget):
-            print(f"   - {failure}", flush=True)
+        from blended.evaluate.iteration_log import IterationVerdict, VerdictLog
+
+        # The licence was established before the run; here the examiner
+        # only examines.
+        verdict = examine_asset(
+            VisionDescriber(client, client.config.vision_model),
+            golden_directory,
+            render_directory,
+            brief,
+            client.config.vision_model,
+        )
+        print(verdict.summary(), flush=True)
+        VerdictLog(Path(arguments.verdicts)).append(
+            IterationVerdict(
+                iteration=arguments.iteration,
+                brief_name=brief.name,
+                visual_inspected=True,
+                visual_deviations=verdict.deviations,
+                examiner=verdict.examiner_identity,
+                abstained=verdict.abstained,
+                calibration_identity=calibration_file_identity(),
+            )
+        )
 
     # --- USER-GUIDED REFINEMENT: a second turn, gated exactly like the
     # first. The standard requires follow-up instructions to be applied
@@ -185,13 +344,24 @@ def main(argv) -> int:
         # it is meant to survive. The primitives are idempotent by name,
         # so a rebuild under the same name destroys the datablock and
         # takes the stamp with it — which is the whole measurement.
-        stamped_identity = stamp_identity(built_object, new_identity())
+        # One identity for the whole build: parts are rebuilt together
+        # or edited together.
+        stamped_identity = new_identity()
+        for built_object in built_objects_in_scene:
+            stamp_identity(built_object, stamped_identity)
+        step_brief = brief
         for step in brief.refinements:
             print(f"\n[refine] {step.instruction_text}", flush=True)
             before_report = form_report
             session.send(step.instruction_text, on_event=on_event)
             bpy.context.view_layer.update()
-            after_report = evaluate_brief(refine_brief(brief, step))
+            # Each step is scored against the brief refined by its
+            # predecessors — a multi-step sequence is cumulative. Scoring
+            # every step against the ORIGINAL brief is how a run that
+            # correctly widened the seat then failed for still having a
+            # 0.40 m seat (measured at iteration 23).
+            step_brief = refine_brief(step_brief, step)
+            after_report = evaluate_brief(step_brief)
             outcome = RefinementOutcome(
                 step=step, before=before_report, after=after_report
             )
@@ -200,19 +370,24 @@ def main(argv) -> int:
             refinement_summaries.append(outcome.summary(brief))
             refinement_passed = refinement_passed and not step_failures
             print(outcome.summary(brief), flush=True)
-            refined_object = bpy.data.objects.get(brief.object_name)
-            locality = measure_locality(
-                refined_object, step.name, stamped_identity
-            )
-            refinement_locality.append(locality.summary())
-            print(locality.summary(), flush=True)
-            if refined_object is not None and (
-                refined_object.name in bpy.context.scene.objects
-            ):
+            refined_objects_in_scene = [
+                bpy.data.objects[part.name]
+                for part in brief.parts
+                if part.name in bpy.data.objects
+                and part.name in bpy.context.scene.objects
+            ]
+            for refined_object in refined_objects_in_scene:
+                locality = measure_locality(
+                    refined_object, step.name, stamped_identity
+                )
+                refinement_locality.append(locality.summary())
+                print(locality.summary(), flush=True)
+            if refined_objects_in_scene:
                 capture_contact_sheet(
-                    refined_object,
+                    refined_objects_in_scene[0],
                     render_directory / f"refined_{step.name}",
                     settings=CaptureSettings(),
+                    extra_objects=tuple(refined_objects_in_scene[1:]),
                 )
             form_report = after_report
     elif brief.refinements:
@@ -276,10 +451,17 @@ def main(argv) -> int:
     # the exit code below does not consult it.
     for summary in refinement_locality:
         print(summary, flush=True)
+    for failure in visual_gate_failures:
+        print(f"VISUAL GATE: {failure}", flush=True)
     print("=================================================", flush=True)
     return (
         0
-        if (structural_passed and not form_failures and refinement_passed)
+        if (
+            structural_passed
+            and not form_failures
+            and refinement_passed
+            and not visual_gate_failures
+        )
         else 1
     )
 

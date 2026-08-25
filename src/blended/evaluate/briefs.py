@@ -21,6 +21,12 @@ So every brief carries three kinds of assertion, all measured:
   an area. Grounding is one number and a single touching point
   satisfies it; standing up requires a face.
 
+A brief names PARTS, not one object. Most briefs are single-part — the
+object the agent builds — but an assembly (a crate with a lid) has two
+objects, each with its own acceptance spec, plus RELATIONS that pin
+how the parts sit against each other. `object_name` does not exist;
+the parts are the objects.
+
 Config is separate from construction (project rule): every quantity
 below is a named constant with its unit in the name, and briefs compose
 those constants. No literal appears inside an assertion.
@@ -94,6 +100,73 @@ STOOL_FOOT_CIRCLE_RADIUS_M = 0.14
 STOOL_LEG_PROBE_Z_M = 0.03
 STOOL_CENTRE_PROBE_Z_M = STOOL_TOTAL_HEIGHT_Z_M * 0.4
 STOOL_SEAT_PROBE_Z_M = STOOL_TOTAL_HEIGHT_Z_M - (STOOL_SEAT_THICKNESS_M / 2.0)
+
+# Second refinement step: a wider seat. The seat probes' z derives from
+# the height the previous step set, so the step carries new seat probes
+# in `changed_probes`.
+STOOL_REFINED_SEAT_DIAMETER_M = 0.40
+
+# Third refinement step: thicker legs. Leg radius is NOT a bounding-box
+# extent, so it is expressed in probes only: solid inside a 0.03 m leg
+# at foot-circle radius plus 0.025 m, empty further out at plus 0.045 m
+# so the check cannot be satisfied by an oversized leg.
+STOOL_REFINED_LEG_RADIUS_M = 0.03
+STOOL_THICK_LEG_PROBE_OFFSET_M = 0.025
+STOOL_THICK_LEG_PROBE_EMPTY_OFFSET_M = 0.045
+
+# --- Brief 3: uv crate --------------------------------------------------
+CRATE_SIZE_M = 0.50
+CRATE_BEVEL_M = 0.02
+# The discriminating number for the UV gate: a beveled cube is 6 faces +
+# 12 edge bevels + 8 corners, so a per-face unwrap yields ~26 islands
+# while any real seam-and-unwrap lands well under 12. The gate fails a
+# per-face layout on exactly this.
+UV_CRATE_MAXIMUM_UV_ISLANDS = 12
+
+# --- Brief 4: ribbed column ---------------------------------------------
+COLUMN_DIAMETER_M = 0.20
+COLUMN_HEIGHT_Z_M = 1.00
+COLUMN_RIB_COUNT = 5
+COLUMN_TRIANGLE_BUDGET = 1200
+# The shaft is narrower than the named diameter; the ribs stand proud
+# of it and reach the diameter. Measured at iteration 27: a brief that
+# named only the diameter left the agent free to read it as the shaft
+# size, and probes at 0.09 m sat inside a 0.10 m shaft so the
+# between-ribs check could never fire. The shaft and the rib reach are
+# both named now, and the probes sit at the rib radius.
+COLUMN_SHAFT_DIAMETER_M = 0.16
+COLUMN_RIB_RADIUS_M = COLUMN_DIAMETER_M / 2.0 - 0.01
+# Where the ribs sit. Measured at iteration 37: the agent built five
+# ribs centered at 0.1/0.3/0.5/0.7/0.9 m — a legitimate reading of
+# "evenly spaced down the height" — while the probes assumed 1/3 and
+# 2/3 height and read empty between the real ribs. The brief now names
+# the centers, and the probes sit on them.
+COLUMN_RIB_CENTRE_Z_M = tuple(
+    (COLUMN_HEIGHT_Z_M / COLUMN_RIB_COUNT) * (index + 0.5)
+    for index in range(COLUMN_RIB_COUNT)
+)
+# How tall each rib is. Measured at iteration 41: the agent built ribs
+# 0.04 m tall (half-height 0.02) and the between-ribs probe at
+# center + 0.02 landed exactly on the rib's top edge, reading solid.
+# The brief now names the thickness, and the between-ribs probe sits
+# at the midpoint between centers — guaranteed empty for any rib
+# thinner than the gap.
+COLUMN_RIB_THICKNESS_M = 0.03
+COLUMN_RIB_HALF_THICKNESS_M = COLUMN_RIB_THICKNESS_M / 2.0
+COLUMN_BETWEEN_RIBS_PROBE_Z_M = (
+    COLUMN_RIB_CENTRE_Z_M[1] + COLUMN_RIB_CENTRE_Z_M[2]
+) / 2.0
+
+# --- Brief 5: crate with lid (assembly) ---------------------------------
+CRATE_BODY_SIZE_M = 0.50
+CRATE_BODY_HEIGHT_Z_M = 0.40
+CRATE_WALL_THICKNESS_M = 0.02
+CRATE_LID_SIZE_M = 0.50
+CRATE_LID_THICKNESS_M = 0.06
+# "Resting on" another part, same tolerance as resting on the ground
+# plane — the planter's grounding tolerance.
+CRATE_LID_STACK_TOLERANCE_M = GROUNDING_TOLERANCE_M
+CRATE_LID_CENTRE_TOLERANCE_M = 0.005
 
 AXIS_NAMES = ("x", "y", "z")
 
@@ -207,24 +280,105 @@ class RefinementStep:
 
 
 @dataclass(frozen=True)
-class AssetBrief:
-    """A prompt plus its executable acceptance spec."""
+class PartSpec:
+    """One named object the brief demands, and its own acceptance spec.
+
+    Only the part that rests on the floor carries `require_base_at_ground`;
+    a lid that sits on a crate does not — the stack relation pins where
+    it rests.
+    """
 
     name: str
-    object_name: str
-    prompt_text: str
-    dimensions: tuple[DimensionSpec, ...]
-    probes: tuple[SolidityProbe, ...]
+    dimensions: tuple[DimensionSpec, ...] = ()
+    probes: tuple[SolidityProbe, ...] = ()
     clear_axes: tuple[ClearAxisProbe, ...] = ()
     ground_contacts: tuple[GroundContactProbe, ...] = ()
+    require_base_at_ground: bool = False
+
+
+@dataclass(frozen=True)
+class StackedOnSpec:
+    """`upper_part` must rest ON `lower_part`: gap in z within tolerance.
+
+    Measured against the parts' bounding boxes: upper.bbox_min_z minus
+    lower.bbox_max_z within `tolerance_m` of zero. Zero tolerance would
+    demand exact float contact; the tolerance is the same "resting on"
+    tolerance the grounding check uses against the floor plane.
+    """
+
+    name: str
+    upper_part: str
+    lower_part: str
+    tolerance_m: float
+    why: str
+
+
+@dataclass(frozen=True)
+class SharedCentreSpec:
+    """Two parts' bounding-box centres must agree on the named axes.
+
+    One question, answered directly: is the lid hanging off one side of
+    the crate it sits on? Axes are named ("x", "y") so a relation that
+    only constrains x exists without a dead y branch.
+    """
+
+    name: str
+    part_a: str
+    part_b: str
+    axes: tuple[str, ...]
+    tolerance_m: float
+    why: str
+
+
+@dataclass(frozen=True)
+class NoInterpenetrationSpec:
+    """One part must not pass through another: measured on the SURFACE.
+
+    Not the bounding boxes (a lid sunk through a rim can still satisfy
+    every bbox relation) and not vertex distance (scp measured a
+    nearest-vertex reading 60 mm where the true surface gap was
+    6.5 mm — on box geometry the nearest vertex is a far corner).
+
+    ``minimum_separation_m`` is None when contact is correct (a lid
+    rests on its crate): only interpenetration is a failure then.
+    """
+
+    name: str
+    first_part: str
+    second_part: str
+    why: str
+    maximum_intersecting_face_pairs: int = 0
+    minimum_separation_m: float | None = None
+
+
+@dataclass(frozen=True)
+class AssetBrief:
+    """A prompt plus its executable acceptance spec.
+
+    `parts` are the objects the agent must build, each measured by its
+    own acceptance spec. `relations` pin how the parts sit against each
+    other. Budget, grounding and material requirements are brief-level
+    and apply to every part.
+    """
+
+    name: str
+    prompt_text: str
+    parts: tuple[PartSpec, ...]
+    relations: tuple[
+        StackedOnSpec | SharedCentreSpec | NoInterpenetrationSpec, ...
+    ] = ()
     refinements: tuple[RefinementStep, ...] = ()
     budget: MeshBudget = field(default_factory=MeshBudget)
-    require_base_at_ground: bool = True
     grounding_tolerance_m: float = GROUNDING_TOLERANCE_M
     # A game asset with no material slot is not shippable, and an empty
     # slot list is the single cheapest thing to forget. Checked
     # deterministically so it never reaches the visual pass.
     require_material: bool = True
+
+    @property
+    def part_names(self) -> tuple[str, ...]:
+        """The part names in order. Two briefs cannot share a name."""
+        return tuple(part.name for part in self.parts)
 
 
 def _stool_foot_probes() -> tuple[SolidityProbe, ...]:
@@ -282,109 +436,50 @@ def _stool_ground_contacts() -> tuple[GroundContactProbe, ...]:
     return tuple(contacts)
 
 
-PLANTER_BOX_BRIEF = AssetBrief(
-    name="planter_box",
-    object_name="PlanterBox",
-    prompt_text=(
-        f"Build a rectangular garden planter box named 'PlanterBox'. "
-        f"It is {PLANTER_WIDTH_X_M} m wide on X, {PLANTER_DEPTH_Y_M} m deep "
-        f"on Y, and {PLANTER_HEIGHT_Z_M} m tall on Z, sitting on the ground "
-        f"at z=0. The walls and floor are {PLANTER_WALL_THICKNESS_M} m thick. "
-        f"The top is open — it is a container, hollow inside, not a solid "
-        f"block. There is one drainage hole of radius "
-        f"{PLANTER_DRAIN_HOLE_RADIUS_M} m bored straight down through the "
-        f"centre of the floor, and it must go all the way through so water "
-        f"can actually drain. The finished object must be a single watertight "
-        f"manifold mesh under {DEFAULT_PROP_TRIANGLE_BUDGET} triangles, "
-        f"with a material assigned, and it must be the only mesh object "
-        f"left in the scene when you are done."
-    ),
-    dimensions=(
-        DimensionSpec("width_x", "x", PLANTER_WIDTH_X_M),
-        DimensionSpec("depth_y", "y", PLANTER_DEPTH_Y_M),
-        DimensionSpec("height_z", "z", PLANTER_HEIGHT_Z_M),
-    ),
-    probes=(
-        SolidityProbe(
-            name="drain_hole_is_open",
-            point_m=(0.0, 0.0, PLANTER_DRAIN_PROBE_Z_M),
-            expect_inside=False,
-            why="the drainage hole is sealed shut — water cannot drain",
+def _stool_part() -> PartSpec:
+    """The stool's part spec: the single object the agent must build."""
+    return PartSpec(
+        name="Stool",
+        dimensions=(
+            DimensionSpec("seat_diameter_x", "x", STOOL_SEAT_DIAMETER_M),
+            DimensionSpec("seat_diameter_y", "y", STOOL_SEAT_DIAMETER_M),
+            DimensionSpec("total_height_z", "z", STOOL_TOTAL_HEIGHT_Z_M),
         ),
-        SolidityProbe(
-            name="interior_is_hollow",
-            point_m=(0.0, 0.0, PLANTER_CAVITY_PROBE_Z_M),
-            expect_inside=False,
-            why="the planter is a solid block, not a container",
-        ),
-        SolidityProbe(
-            name="floor_is_solid_off_centre",
-            point_m=(PLANTER_FLOOR_PROBE_X_M, 0.0, PLANTER_DRAIN_PROBE_Z_M),
-            expect_inside=True,
-            why="the floor is missing — soil would fall straight out",
-        ),
-        SolidityProbe(
-            name="wall_is_solid",
-            point_m=(PLANTER_WALL_PROBE_X_M, 0.0, PLANTER_CAVITY_PROBE_Z_M),
-            expect_inside=True,
-            why="the side wall has no thickness",
-        ),
-    ),
-    clear_axes=(
-        ClearAxisProbe(
-            name="drain_hole_goes_all_the_way_through",
-            point_m=(0.0, 0.0, 0.0),
-            axis="z",
-            why=(
-                "the drainage hole does not pass through the floor — it is a "
-                "blind recess, so water cannot drain"
+        probes=(
+            *_stool_foot_probes(),
+            SolidityProbe(
+                name="no_central_post",
+                point_m=(0.0, 0.0, STOOL_CENTRE_PROBE_Z_M),
+                expect_inside=False,
+                why=(
+                    "the legs collapsed to the central axis instead of "
+                    "splaying (see drift/catalog.py: matrix_world is stale "
+                    "until update)"
+                ),
+            ),
+            SolidityProbe(
+                name="seat_is_solid",
+                point_m=(0.0, 0.0, STOOL_SEAT_PROBE_Z_M),
+                expect_inside=True,
+                why="there is no seat",
             ),
         ),
-    ),
-)
+        ground_contacts=_stool_ground_contacts(),
+        require_base_at_ground=True,
+    )
 
-THREE_LEG_STOOL_BRIEF = AssetBrief(
-    name="three_leg_stool",
-    object_name="Stool",
-    prompt_text=(
-        f"Build a three-legged wooden stool named 'Stool'. The round seat is "
-        f"{STOOL_SEAT_DIAMETER_M} m across and {STOOL_SEAT_THICKNESS_M} m "
-        f"thick. Total height is {STOOL_TOTAL_HEIGHT_Z_M} m with the feet on "
-        f"the ground at z=0. The {STOOL_LEG_COUNT} legs splay outward as they "
-        f"descend: each foot touches the ground on a circle of radius "
-        f"{STOOL_FOOT_CIRCLE_RADIUS_M} m from the central axis, with the legs "
-        f"evenly spaced and the first one on the +X axis. The space between "
-        f"the legs is open — there is no central post and no skirt. The "
-        f"finished object must be a single watertight manifold mesh under "
-        f"{DEFAULT_PROP_TRIANGLE_BUDGET} triangles, with a material "
-        f"assigned, and it must be the only mesh object left in the "
-        f"scene when you are done."
-    ),
-    dimensions=(
-        DimensionSpec("seat_diameter_x", "x", STOOL_SEAT_DIAMETER_M),
-        DimensionSpec("seat_diameter_y", "y", STOOL_SEAT_DIAMETER_M),
-        DimensionSpec("total_height_z", "z", STOOL_TOTAL_HEIGHT_Z_M),
-    ),
-    probes=(
-        *_stool_foot_probes(),
-        SolidityProbe(
-            name="no_central_post",
-            point_m=(0.0, 0.0, STOOL_CENTRE_PROBE_Z_M),
-            expect_inside=False,
-            why=(
-                "the legs collapsed to the central axis instead of splaying "
-                "(see drift/catalog.py: matrix_world is stale until update)"
-            ),
-        ),
-        SolidityProbe(
-            name="seat_is_solid",
-            point_m=(0.0, 0.0, STOOL_SEAT_PROBE_Z_M),
-            expect_inside=True,
-            why="there is no seat",
-        ),
-    ),
-    ground_contacts=_stool_ground_contacts(),
-    refinements=(
+
+def _stool_refinements() -> tuple[RefinementStep, ...]:
+    """The stool's follow-up steps, in declared order.
+
+    Design commitment 6 caps refinement at three rounds then escalates
+    to the human; three steps exercise the whole cap. Each step's
+    changed probes carry positions derived from the changed dimension —
+    the seat probe's z derives from the height the previous step set.
+    """
+    import math
+
+    return (
         RefinementStep(
             name="taller_stool",
             instruction_text=(
@@ -403,8 +498,7 @@ THREE_LEG_STOOL_BRIEF = AssetBrief(
                     point_m=(
                         0.0,
                         0.0,
-                        STOOL_REFINED_HEIGHT_Z_M
-                        - (STOOL_SEAT_THICKNESS_M / 2.0),
+                        STOOL_REFINED_HEIGHT_Z_M - (STOOL_SEAT_THICKNESS_M / 2.0),
                     ),
                     expect_inside=True,
                     why="there is no seat at the new height",
@@ -422,12 +516,414 @@ THREE_LEG_STOOL_BRIEF = AssetBrief(
                 "unchanged, and a rebuild would move them"
             ),
         ),
+        RefinementStep(
+            name="wider_seat",
+            instruction_text=(
+                f"Make the seat {STOOL_REFINED_SEAT_DIAMETER_M} m across "
+                f"instead of {STOOL_SEAT_DIAMETER_M} m. Leave everything "
+                f"else exactly as it is."
+            ),
+            changed=(
+                DimensionSpec(
+                    "seat_diameter_x", "x", STOOL_REFINED_SEAT_DIAMETER_M
+                ),
+                DimensionSpec(
+                    "seat_diameter_y", "y", STOOL_REFINED_SEAT_DIAMETER_M
+                ),
+            ),
+            changed_probes=(
+                # The seat probe's z derives from the height the previous
+                # step set, so it has to move with this step's seat.
+                SolidityProbe(
+                    name="seat_is_solid",
+                    point_m=(
+                        0.0,
+                        0.0,
+                        STOOL_REFINED_HEIGHT_Z_M - (STOOL_SEAT_THICKNESS_M / 2.0),
+                    ),
+                    expect_inside=True,
+                    why="there is no seat at the new width",
+                ),
+            ),
+            why=(
+                "a seat widening is a localized edit: the stool height, "
+                "the foot circle and the leg bearings must come through "
+                "it unchanged, and a rebuild would move them"
+            ),
+        ),
+        RefinementStep(
+            name="thicker_legs",
+            instruction_text=(
+                f"Make the legs {STOOL_REFINED_LEG_RADIUS_M} m in radius "
+                f"instead of 0.02 m. Leave everything else exactly as it "
+                f"is."
+            ),
+            changed=(),
+            changed_probes=(
+                *(
+                    SolidityProbe(
+                        name=f"leg_{leg_index}_thickened_is_solid",
+                        point_m=(
+                            (
+                                STOOL_FOOT_CIRCLE_RADIUS_M
+                                + STOOL_THICK_LEG_PROBE_OFFSET_M
+                            )
+                            * math.cos(angle_rad),
+                            (
+                                STOOL_FOOT_CIRCLE_RADIUS_M
+                                + STOOL_THICK_LEG_PROBE_OFFSET_M
+                            )
+                            * math.sin(angle_rad),
+                            STOOL_LEG_PROBE_Z_M,
+                        ),
+                        expect_inside=True,
+                        why=(
+                            f"leg {leg_index} did not thicken: material "
+                            f"missing at foot-circle radius plus "
+                            f"{STOOL_THICK_LEG_PROBE_OFFSET_M} m, inside a "
+                            f"{STOOL_REFINED_LEG_RADIUS_M} m leg"
+                        ),
+                    )
+                    for leg_index, angle_rad in [
+                        (index, (2.0 * math.pi / STOOL_LEG_COUNT) * index)
+                        for index in range(STOOL_LEG_COUNT)
+                    ]
+                ),
+                *(
+                    SolidityProbe(
+                        name=f"leg_{leg_index}_not_oversized_is_empty",
+                        point_m=(
+                            (
+                                STOOL_FOOT_CIRCLE_RADIUS_M
+                                + STOOL_THICK_LEG_PROBE_EMPTY_OFFSET_M
+                            )
+                            * math.cos(angle_rad),
+                            (
+                                STOOL_FOOT_CIRCLE_RADIUS_M
+                                + STOOL_THICK_LEG_PROBE_EMPTY_OFFSET_M
+                            )
+                            * math.sin(angle_rad),
+                            STOOL_LEG_PROBE_Z_M,
+                        ),
+                        expect_inside=False,
+                        why=(
+                            f"leg {leg_index} is oversized: material at "
+                            f"foot-circle radius plus "
+                            f"{STOOL_THICK_LEG_PROBE_EMPTY_OFFSET_M} m, "
+                            f"outside a {STOOL_REFINED_LEG_RADIUS_M} m leg"
+                        ),
+                    )
+                    for leg_index, angle_rad in [
+                        (index, (2.0 * math.pi / STOOL_LEG_COUNT) * index)
+                        for index in range(STOOL_LEG_COUNT)
+                    ]
+                ),
+            ),
+            why=(
+                "a leg thickening is a localized edit: the seat size, the "
+                "stool height and the foot bearings must come through it "
+                "unchanged — and the leg is measured as geometry (solid "
+                "inside the new radius, empty outside), not as a number "
+                "the brief can check"
+            ),
+        ),
+    )
+
+
+PLANTER_BOX_BRIEF = AssetBrief(
+    name="planter_box",
+    prompt_text=(
+        f"Build a rectangular garden planter box named 'PlanterBox'. "
+        f"It is {PLANTER_WIDTH_X_M} m wide on X, {PLANTER_DEPTH_Y_M} m deep "
+        f"on Y, and {PLANTER_HEIGHT_Z_M} m tall on Z, sitting on the ground "
+        f"at z=0. The walls and floor are {PLANTER_WALL_THICKNESS_M} m thick. "
+        f"The top is open — it is a container, hollow inside, not a solid "
+        f"block. There is one drainage hole of radius "
+        f"{PLANTER_DRAIN_HOLE_RADIUS_M} m bored straight down through the "
+        f"centre of the floor, and it must go all the way through so water "
+        f"can actually drain. The finished object must be a single watertight "
+        f"manifold mesh under {DEFAULT_PROP_TRIANGLE_BUDGET} triangles, "
+        f"with a material assigned, and it must be the only mesh object "
+        f"left in the scene when you are done."
+    ),
+    parts=(
+        PartSpec(
+            name="PlanterBox",
+            dimensions=(
+                DimensionSpec("width_x", "x", PLANTER_WIDTH_X_M),
+                DimensionSpec("depth_y", "y", PLANTER_DEPTH_Y_M),
+                DimensionSpec("height_z", "z", PLANTER_HEIGHT_Z_M),
+            ),
+            probes=(
+                SolidityProbe(
+                    name="drain_hole_is_open",
+                    point_m=(0.0, 0.0, PLANTER_DRAIN_PROBE_Z_M),
+                    expect_inside=False,
+                    why="the drainage hole is sealed shut — water cannot drain",
+                ),
+                SolidityProbe(
+                    name="interior_is_hollow",
+                    point_m=(0.0, 0.0, PLANTER_CAVITY_PROBE_Z_M),
+                    expect_inside=False,
+                    why="the planter is a solid block, not a container",
+                ),
+                SolidityProbe(
+                    name="floor_is_solid_off_centre",
+                    point_m=(PLANTER_FLOOR_PROBE_X_M, 0.0, PLANTER_DRAIN_PROBE_Z_M),
+                    expect_inside=True,
+                    why="the floor is missing — soil would fall straight out",
+                ),
+                SolidityProbe(
+                    name="wall_is_solid",
+                    point_m=(PLANTER_WALL_PROBE_X_M, 0.0, PLANTER_CAVITY_PROBE_Z_M),
+                    expect_inside=True,
+                    why="the side wall has no thickness",
+                ),
+            ),
+            clear_axes=(
+                ClearAxisProbe(
+                    name="drain_hole_goes_all_the_way_through",
+                    point_m=(0.0, 0.0, 0.0),
+                    axis="z",
+                    why=(
+                        "the drainage hole does not pass through the floor "
+                        "— it is a blind recess, so water cannot drain"
+                    ),
+                ),
+            ),
+            require_base_at_ground=True,
+        ),
+    ),
+)
+
+THREE_LEG_STOOL_BRIEF = AssetBrief(
+    name="three_leg_stool",
+    prompt_text=(
+        f"Build a three-legged wooden stool named 'Stool'. The round seat is "
+        f"{STOOL_SEAT_DIAMETER_M} m across and {STOOL_SEAT_THICKNESS_M} m "
+        f"thick. Total height is {STOOL_TOTAL_HEIGHT_Z_M} m with the feet on "
+        f"the ground at z=0. The {STOOL_LEG_COUNT} legs splay outward as they "
+        f"descend: each foot touches the ground on a circle of radius "
+        f"{STOOL_FOOT_CIRCLE_RADIUS_M} m from the central axis, with the legs "
+        f"evenly spaced and the first one on the +X axis. The space between "
+        f"the legs is open — there is no central post and no skirt. The "
+        f"finished object must be a single watertight manifold mesh under "
+        f"{DEFAULT_PROP_TRIANGLE_BUDGET} triangles, with a material "
+        f"assigned, and it must be the only mesh object left in the "
+        f"scene when you are done."
+    ),
+    parts=(_stool_part(),),
+    refinements=_stool_refinements(),
+)
+
+UV_CRATE_BRIEF = AssetBrief(
+    name="uv_crate",
+    prompt_text=(
+        f"Build a solid wooden crate named 'Crate'. It is "
+        f"{CRATE_SIZE_M} m on each side (X, Y and Z), sitting on the ground "
+        f"at z=0, with its edges beveled {CRATE_BEVEL_M} m. The crate must "
+        f"be UNWRAPPED for texturing: it needs a UV layout with no "
+        f"overlapping faces and no faces outside the 0-1 UV square, in "
+        f"under {UV_CRATE_MAXIMUM_UV_ISLANDS} islands — a real seam-and-"
+        f"unwrap layout, not one island per face. One material assigned. "
+        f"The finished object must be a single watertight manifold mesh "
+        f"under {DEFAULT_PROP_TRIANGLE_BUDGET} triangles, and it must be "
+        f"the only mesh object left in the scene when you are done."
+    ),
+    parts=(
+        PartSpec(
+            name="Crate",
+            dimensions=(
+                DimensionSpec("width_x", "x", CRATE_SIZE_M),
+                DimensionSpec("depth_y", "y", CRATE_SIZE_M),
+                DimensionSpec("height_z", "z", CRATE_SIZE_M),
+            ),
+            probes=(
+                SolidityProbe(
+                    name="centre_is_solid",
+                    point_m=(0.0, 0.0, CRATE_SIZE_M / 2.0),
+                    expect_inside=True,
+                    why="the crate is hollow — the bounding box is a shell, "
+                    "not a solid block",
+                ),
+                SolidityProbe(
+                    name="just_outside_a_face_is_empty",
+                    point_m=(CRATE_SIZE_M / 2.0 + 0.05, 0.0, CRATE_SIZE_M / 2.0),
+                    expect_inside=False,
+                    why="material found outside the box — the bounding box "
+                    "is satisfied by geometry in the wrong place",
+                ),
+            ),
+            require_base_at_ground=True,
+        ),
+    ),
+    budget=MeshBudget(
+        require_uv_layer=True,
+        allow_uv_overlaps=False,
+        allow_uv_out_of_bounds=False,
+        maximum_uv_island_count=UV_CRATE_MAXIMUM_UV_ISLANDS,
+    ),
+)
+
+RIBBED_COLUMN_BRIEF = AssetBrief(
+    name="ribbed_column",
+    prompt_text=(
+        f"Build a turned column named 'Column', {COLUMN_DIAMETER_M} m in "
+        f"diameter and {COLUMN_HEIGHT_Z_M} m tall, sitting on the ground "
+        f"at z=0. The shaft is {COLUMN_SHAFT_DIAMETER_M} m in diameter; "
+        f"the {COLUMN_RIB_COUNT} horizontal ribs stand proud of it and "
+        f"reach the full {COLUMN_DIAMETER_M} m diameter, centered at "
+        f"z = {', '.join(f'{z:.1f}' for z in COLUMN_RIB_CENTRE_Z_M)} m, "
+        f"each {COLUMN_RIB_THICKNESS_M} m thick — a real ridge of "
+        f"material, not a texture and not a smooth taper. The silhouette "
+        f"must read as round, not faceted. The finished object must be "
+        f"a single watertight manifold mesh under "
+        f"{COLUMN_TRIANGLE_BUDGET} triangles, with a material assigned, "
+        f"and it must be the only mesh object left in the scene when you "
+        f"are done."
+    ),
+    parts=(
+        PartSpec(
+            name="Column",
+            dimensions=(
+                DimensionSpec("diameter_x", "x", COLUMN_DIAMETER_M),
+                DimensionSpec("diameter_y", "y", COLUMN_DIAMETER_M),
+                DimensionSpec("height_z", "z", COLUMN_HEIGHT_Z_M),
+            ),
+            probes=(
+                SolidityProbe(
+                    name="axis_mid_height_is_solid",
+                    point_m=(0.0, 0.0, COLUMN_HEIGHT_Z_M / 2.0),
+                    expect_inside=True,
+                    why="the column is hollow — the shaft has no material "
+                    "at its centre",
+                ),
+                SolidityProbe(
+                    name="rib_crest_is_solid",
+                    point_m=(
+                        COLUMN_RIB_RADIUS_M,
+                        0.0,
+                        COLUMN_RIB_CENTRE_Z_M[1],
+                    ),
+                    expect_inside=True,
+                    why=(
+                        "no material at rib radius — the ribs do not exist "
+                        "as geometry"
+                    ),
+                ),
+                SolidityProbe(
+                    name="between_ribs_is_empty",
+                    point_m=(
+                        COLUMN_RIB_RADIUS_M,
+                        0.0,
+                        COLUMN_BETWEEN_RIBS_PROBE_Z_M,
+                    ),
+                    expect_inside=False,
+                    why=(
+                        "the rib reads as solid across its whole height — "
+                        "the column is a smooth taper with no separate ribs"
+                    ),
+                ),
+            ),
+            require_base_at_ground=True,
+        ),
+    ),
+    budget=MeshBudget(maximum_triangle_count=COLUMN_TRIANGLE_BUDGET),
+)
+
+CRATE_WITH_LID_BRIEF = AssetBrief(
+    name="crate_with_lid",
+    prompt_text=(
+        f"Build a crate with a lid as TWO separate named objects. The "
+        f"first, named 'CrateBody', is a hollow open-top crate "
+        f"{CRATE_BODY_SIZE_M} m on X and Y and {CRATE_BODY_HEIGHT_Z_M} m "
+        f"tall, sitting on the ground at z=0, with walls "
+        f"{CRATE_WALL_THICKNESS_M} m thick. The second, named 'CrateLid', "
+        f"is a solid slab {CRATE_LID_SIZE_M} m on X and Y and "
+        f"{CRATE_LID_THICKNESS_M} m thick, resting on the crate's rim — "
+        f"not floating above it and not sunk into it — centred on the "
+        f"crate so it does not overhang one side. Each object is a single "
+        f"watertight manifold mesh under {DEFAULT_PROP_TRIANGLE_BUDGET} "
+        f"triangles with a material assigned. The only mesh objects left "
+        f"in the scene when you are done are 'CrateBody' and 'CrateLid'."
+    ),
+    parts=(
+        PartSpec(
+            name="CrateBody",
+            dimensions=(
+                DimensionSpec("width_x", "x", CRATE_BODY_SIZE_M),
+                DimensionSpec("depth_y", "y", CRATE_BODY_SIZE_M),
+                DimensionSpec("height_z", "z", CRATE_BODY_HEIGHT_Z_M),
+            ),
+            probes=(
+                SolidityProbe(
+                    name="cavity_is_hollow",
+                    point_m=(0.0, 0.0, CRATE_BODY_HEIGHT_Z_M / 2.0),
+                    expect_inside=False,
+                    why="the crate body is a solid block, not a hollow "
+                    "container",
+                ),
+                SolidityProbe(
+                    name="wall_is_solid",
+                    point_m=(
+                        CRATE_BODY_SIZE_M / 2.0 - CRATE_WALL_THICKNESS_M / 2.0,
+                        0.0,
+                        CRATE_BODY_HEIGHT_Z_M / 2.0,
+                    ),
+                    expect_inside=True,
+                    why="the crate wall has no thickness",
+                ),
+            ),
+            require_base_at_ground=True,
+        ),
+        PartSpec(
+            name="CrateLid",
+            dimensions=(
+                DimensionSpec("lid_width_x", "x", CRATE_LID_SIZE_M),
+                DimensionSpec("lid_depth_y", "y", CRATE_LID_SIZE_M),
+                DimensionSpec("lid_height_z", "z", CRATE_LID_THICKNESS_M),
+            ),
+        ),
+    ),
+    relations=(
+        StackedOnSpec(
+            name="lid_sits_on_the_body",
+            upper_part="CrateLid",
+            lower_part="CrateBody",
+            tolerance_m=CRATE_LID_STACK_TOLERANCE_M,
+            why=(
+                "the lid floats above the crate or sinks into it instead "
+                "of resting on the rim"
+            ),
+        ),
+        SharedCentreSpec(
+            name="lid_is_centred_on_the_body",
+            part_a="CrateLid",
+            part_b="CrateBody",
+            axes=("x", "y"),
+            tolerance_m=CRATE_LID_CENTRE_TOLERANCE_M,
+            why="the lid is offset and overhangs one side",
+        ),
+        NoInterpenetrationSpec(
+            name="lid_does_not_sink_into_the_body",
+            first_part="CrateLid",
+            second_part="CrateBody",
+            maximum_intersecting_face_pairs=0,
+            minimum_separation_m=None,  # the lid rests ON the body: contact is correct
+            why=(
+                "a lid sunk into the body reads as closed in every "
+                "orthographic view"
+            ),
+        ),
     ),
 )
 
 BRIEFS: dict[str, AssetBrief] = {
     PLANTER_BOX_BRIEF.name: PLANTER_BOX_BRIEF,
     THREE_LEG_STOOL_BRIEF.name: THREE_LEG_STOOL_BRIEF,
+    UV_CRATE_BRIEF.name: UV_CRATE_BRIEF,
+    RIBBED_COLUMN_BRIEF.name: RIBBED_COLUMN_BRIEF,
+    CRATE_WITH_LID_BRIEF.name: CRATE_WITH_LID_BRIEF,
 }
 
 

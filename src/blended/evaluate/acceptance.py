@@ -24,8 +24,12 @@ from blended.evaluate.briefs import (
     ClearAxisProbe,
     DimensionSpec,
     GroundContactProbe,
+    NoInterpenetrationSpec,
+    PartSpec,
     RefinementStep,
+    SharedCentreSpec,
     SolidityProbe,
+    StackedOnSpec,
 )
 
 # Parity ray casting. The ray starts at the probe point and marches +Z,
@@ -196,11 +200,14 @@ class GroundContactMeasurement:
 
 
 @dataclass(frozen=True)
-class AcceptanceReport:
-    """Measured facts about whether the built object matches the brief."""
+class PartReport:
+    """Measured facts about ONE part of a brief's build.
 
-    brief_name: str
-    object_name: str
+    Mirrors what AcceptanceReport used to hold per object; an
+    AcceptanceReport is a tuple of these plus the relations verdict.
+    """
+
+    name: str
     object_found: bool
     # An object can exist in bpy.data and still have no depsgraph
     # instance, because construction and linking are separate steps in
@@ -221,56 +228,154 @@ class AcceptanceReport:
     # slot count answers "did a modifier run", not "is this textured".
     material_slot_count: int = 0
     assigned_material_count: int = 0
+
+
+@dataclass(frozen=True)
+class AcceptanceReport:
+    """Measured facts about whether the built scene matches the brief.
+
+    One `PartReport` per brief part, plus any relation failures. The
+    per-object measurements (`dimensions`, `probes`, `clear_axes`,
+    `ground_contacts`, `base_z_m`, `material_*`) read as PROPERTIES
+    concatenating across the parts, so every existing caller keeps
+    working against a brief that names one part.
+    """
+
+    brief_name: str
+    part_reports: tuple[PartReport, ...]
+    relation_failures: tuple[str, ...] = field(default_factory=tuple)
     stray_object_names: tuple[str, ...] = field(default_factory=tuple)
 
+    @property
+    def object_name(self) -> str:
+        """The part names joined; single-part briefs read as before."""
+        return ", ".join(part.name for part in self.part_reports)
+
+    @property
+    def object_found(self) -> bool:
+        return all(part.object_found for part in self.part_reports)
+
+    @property
+    def linked_into_scene(self) -> bool:
+        return all(part.linked_into_scene for part in self.part_reports)
+
+    @property
+    def dimensions(self) -> tuple[DimensionMeasurement, ...]:
+        return tuple(
+            measurement
+            for part in self.part_reports
+            for measurement in part.dimensions
+        )
+
+    @property
+    def probes(self) -> tuple[ProbeMeasurement, ...]:
+        return tuple(
+            measurement
+            for part in self.part_reports
+            for measurement in part.probes
+        )
+
+    @property
+    def clear_axes(self) -> tuple[ClearAxisMeasurement, ...]:
+        return tuple(
+            measurement
+            for part in self.part_reports
+            for measurement in part.clear_axes
+        )
+
+    @property
+    def ground_contacts(self) -> tuple[GroundContactMeasurement, ...]:
+        return tuple(
+            measurement
+            for part in self.part_reports
+            for measurement in part.ground_contacts
+        )
+
+    @property
+    def base_z_m(self) -> float:
+        return min(part.base_z_m for part in self.part_reports)
+
+    @property
+    def transform_is_finite(self) -> bool:
+        return all(part.transform_is_finite for part in self.part_reports)
+
+    @property
+    def material_slot_count(self) -> int:
+        return sum(part.material_slot_count for part in self.part_reports)
+
+    @property
+    def assigned_material_count(self) -> int:
+        return sum(part.assigned_material_count for part in self.part_reports)
+
     def failures(self, brief: AssetBrief) -> list[str]:
-        """Human-readable failures (empty list = the form gate passed)."""
-        if not self.object_found:
-            return [
-                f"no object named {self.object_name!r} in the scene "
-                f"(the brief names it explicitly)"
-            ]
-        if not self.linked_into_scene:
-            return [
-                f"object {self.object_name!r} exists but is not linked into "
-                f"the scene collection, so it has no evaluated mesh and does "
-                f"not appear in the viewport (call ops.primitives."
-                f"link_into_scene after constructing it)"
-            ]
+        """Human-readable failures (empty list = the form gate passed).
+
+        Per-part failures are prefixed with the part name ONLY when the
+        brief names more than one part, so single-part messages stay
+        byte-identical to what they were before parts existed. Relation
+        failures follow the parts.
+        """
+        prefix = (
+            lambda part: f"{part.name}: " if len(self.part_reports) > 1 else ""
+        )
         found: list[str] = []
-        if not self.transform_is_finite:
-            found.append("object transform contains non-finite values")
-        found.extend(
-            measurement.describe()
-            for measurement in self.dimensions
-            if not measurement.ok
-        )
-        if brief.require_base_at_ground and abs(self.base_z_m) > (
-            brief.grounding_tolerance_m
-        ):
-            found.append(
-                f"base sits at z={self.base_z_m:+.4f} m, expected 0 +/- "
-                f"{brief.grounding_tolerance_m:.4f} (not on the ground)"
+        for part in self.part_reports:
+            if not part.object_found:
+                found.append(
+                    f"{prefix(part)}no object named {part.name!r} in the "
+                    f"scene (the brief names it explicitly)"
+                )
+                continue
+            if not part.linked_into_scene:
+                found.append(
+                    f"{prefix(part)}object {part.name!r} exists but is not "
+                    f"linked into the scene collection, so it has no "
+                    f"evaluated mesh and does not appear in the viewport "
+                    f"(call ops.primitives.link_into_scene after "
+                    f"constructing it)"
+                )
+                continue
+            if not part.transform_is_finite:
+                found.append(
+                    f"{prefix(part)}object transform contains non-finite values"
+                )
+            found.extend(
+                prefix(part) + measurement.describe()
+                for measurement in part.dimensions
+                if not measurement.ok
             )
-        found.extend(
-            measurement.describe() for measurement in self.probes if not measurement.ok
-        )
-        found.extend(
-            measurement.describe()
-            for measurement in self.clear_axes
-            if not measurement.ok
-        )
-        found.extend(
-            measurement.describe()
-            for measurement in self.ground_contacts
-            if not measurement.ok
-        )
-        if brief.require_material and self.assigned_material_count == 0:
-            found.append(
-                f"no material assigned: {self.material_slot_count} slot(s), "
-                f"{self.assigned_material_count} filled (an empty slot left "
-                f"by a boolean modifier is not a material)"
+            spec = _part_spec(brief, part.name)
+            if spec.require_base_at_ground and abs(part.base_z_m) > (
+                brief.grounding_tolerance_m
+            ):
+                found.append(
+                    f"{prefix(part)}base sits at z={part.base_z_m:+.4f} m, "
+                    f"expected 0 +/- {brief.grounding_tolerance_m:.4f} "
+                    f"(not on the ground)"
+                )
+            found.extend(
+                prefix(part) + measurement.describe()
+                for measurement in part.probes
+                if not measurement.ok
             )
+            found.extend(
+                prefix(part) + measurement.describe()
+                for measurement in part.clear_axes
+                if not measurement.ok
+            )
+            found.extend(
+                prefix(part) + measurement.describe()
+                for measurement in part.ground_contacts
+                if not measurement.ok
+            )
+            if brief.require_material and part.assigned_material_count == 0:
+                found.append(
+                    f"{prefix(part)}no material assigned: "
+                    f"{part.material_slot_count} slot(s), "
+                    f"{part.assigned_material_count} filled (an empty slot "
+                    f"left by a boolean modifier is not a material)"
+                )
+        found.extend(self.relation_failures)
         if self.stray_object_names:
             found.append(
                 f"{len(self.stray_object_names)} stray mesh object(s) left in "
@@ -288,17 +393,32 @@ class AcceptanceReport:
         if not self.object_found or not self.linked_into_scene:
             return f"{head}\n  - {failures[0]}"
         lines = [head]
-        lines.extend(f"  {measurement.describe()}" for measurement in self.dimensions)
-        lines.append(f"  base_z: {self.base_z_m:+.4f} m")
-        lines.extend(f"  {measurement.describe()}" for measurement in self.probes)
-        lines.extend(f"  {measurement.describe()}" for measurement in self.clear_axes)
-        lines.extend(
-            f"  {measurement.describe()}" for measurement in self.ground_contacts
-        )
-        lines.append(
-            f"  materials: {self.assigned_material_count} assigned "
-            f"in {self.material_slot_count} slot(s)"
-        )
+        for part in self.part_reports:
+            lines.append(f"  [{part.name}]")
+            lines.extend(
+                f"    {measurement.describe()}" for measurement in part.dimensions
+            )
+            lines.append(f"    base_z: {part.base_z_m:+.4f} m")
+            lines.extend(
+                f"    {measurement.describe()}" for measurement in part.probes
+            )
+            lines.extend(
+                f"    {measurement.describe()}" for measurement in part.clear_axes
+            )
+            lines.extend(
+                f"    {measurement.describe()}" for measurement in part.ground_contacts
+            )
+            lines.append(
+                f"    materials: {part.assigned_material_count} assigned "
+                f"in {part.material_slot_count} slot(s)"
+            )
+        if brief.relations:
+            lines.append("  [relations]")
+            if self.relation_failures:
+                lines.extend(f"    {failure}" for failure in self.relation_failures)
+            else:
+                for relation in brief.relations:
+                    lines.append(f"    {relation.name}: OK")
         if self.stray_object_names:
             lines.append(f"  stray objects: {', '.join(self.stray_object_names)}")
         return "\n".join(lines)
@@ -450,32 +570,50 @@ def _measure_sole_contact(
 
 
 def evaluate_brief(brief: AssetBrief) -> AcceptanceReport:
-    """Measure the live scene against one brief's acceptance spec."""
+    """Measure the live scene against one brief's acceptance spec.
+
+    One PartReport per part, then the relations verdict, then the
+    stray-object check against the brief's part names.
+    """
     import bpy
     from mathutils import Vector
 
     bpy.context.view_layer.update()
-    blender_object = bpy.data.objects.get(brief.object_name)
+    part_reports = tuple(
+        _measure_part(brief, part, bpy, Vector) for part in brief.parts
+    )
+    relation_failures = _measure_relations(brief, bpy, Vector)
+    stray_object_names = tuple(
+        scene_object.name
+        for scene_object in bpy.context.scene.objects
+        if scene_object.type == "MESH"
+        and scene_object.name not in brief.part_names
+    )
+    return AcceptanceReport(
+        brief_name=brief.name,
+        part_reports=part_reports,
+        relation_failures=relation_failures,
+        stray_object_names=stray_object_names,
+    )
+
+
+def _part_spec(brief: AssetBrief, part_name: str):
+    """The PartSpec for one named part. There is no nearest match."""
+    for part in brief.parts:
+        if part.name == part_name:
+            return part
+    raise KeyError(f"no part named {part_name!r} in brief {brief.name!r}")
+
+
+def _measure_part(brief: AssetBrief, part, bpy, Vector) -> PartReport:
+    """Measure one part's object against its own acceptance spec."""
+    blender_object = bpy.data.objects.get(part.name)
     if blender_object is None or blender_object.type != "MESH":
-        return AcceptanceReport(
-            brief_name=brief.name,
-            object_name=brief.object_name,
-            object_found=False,
-            stray_object_names=tuple(
-                scene_object.name
-                for scene_object in bpy.context.scene.objects
-                if scene_object.type == "MESH"
-            ),
-        )
+        return PartReport(name=part.name, object_found=False)
 
     linked_into_scene = blender_object.name in bpy.context.scene.objects
     if not linked_into_scene:
-        return AcceptanceReport(
-            brief_name=brief.name,
-            object_name=brief.object_name,
-            object_found=True,
-            linked_into_scene=False,
-        )
+        return PartReport(name=part.name, object_found=True, linked_into_scene=False)
 
     depsgraph = bpy.context.evaluated_depsgraph_get()
     evaluated_object = blender_object.evaluated_get(depsgraph)
@@ -496,50 +634,145 @@ def evaluate_brief(brief: AssetBrief) -> AcceptanceReport:
     }
     base_z_m = min(corner.z for corner in corners)
 
-    dimensions = tuple(
-        DimensionMeasurement(spec=spec, measured_m=extents[spec.axis])
-        for spec in brief.dimensions
-    )
-    probes = tuple(
-        ProbeMeasurement(
-            probe=probe,
-            crossing_count=_count_surface_crossings(evaluated_object, probe.point_m),
-        )
-        for probe in brief.probes
-    )
-    clear_axes = tuple(
-        ClearAxisMeasurement(
-            probe=probe,
-            blocked_at_m=_find_axis_blockage(evaluated_object, probe),
-        )
-        for probe in brief.clear_axes
-    )
-    ground_contacts = tuple(
-        _measure_sole_contact(evaluated_object, probe)
-        for probe in brief.ground_contacts
-    )
-    stray_object_names = tuple(
-        scene_object.name
-        for scene_object in bpy.context.scene.objects
-        if scene_object.type == "MESH" and scene_object.name != brief.object_name
-    )
-    return AcceptanceReport(
-        brief_name=brief.name,
-        object_name=brief.object_name,
+    return PartReport(
+        name=part.name,
         object_found=True,
         linked_into_scene=True,
-        dimensions=dimensions,
-        probes=probes,
-        clear_axes=clear_axes,
-        ground_contacts=ground_contacts,
+        dimensions=tuple(
+            DimensionMeasurement(spec=spec, measured_m=extents[spec.axis])
+            for spec in part.dimensions
+        ),
+        probes=tuple(
+            ProbeMeasurement(
+                probe=probe,
+                crossing_count=_count_surface_crossings(
+                    evaluated_object, probe.point_m
+                ),
+            )
+            for probe in part.probes
+        ),
+        clear_axes=tuple(
+            ClearAxisMeasurement(
+                probe=probe,
+                blocked_at_m=_find_axis_blockage(evaluated_object, probe),
+            )
+            for probe in part.clear_axes
+        ),
+        ground_contacts=tuple(
+            _measure_sole_contact(evaluated_object, probe)
+            for probe in part.ground_contacts
+        ),
         base_z_m=base_z_m,
         transform_is_finite=transform_is_finite,
         material_slot_count=len(blender_object.data.materials),
         assigned_material_count=sum(
             1 for material in blender_object.data.materials if material is not None
         ),
-        stray_object_names=stray_object_names,
     )
+
+
+def _measure_relations(brief: AssetBrief, bpy, Vector) -> tuple[str, ...]:
+    """Score every relation between parts. Failures name the relation.
+
+    StackedOn: the upper part's bbox minimum z must sit within
+    tolerance of the lower part's bbox maximum z — resting ON the rim,
+    not floating and not sunk into it. SharedCentre: the two parts'
+    bbox centres must agree on each named axis within tolerance, so a
+    lid cannot hang off one side of the crate it sits on.
+    NoInterpenetration: measured on the MESH SURFACE, not bboxes and
+    not nearest vertices (see pair_checks.py for the measured
+    nearest-vertex lie).
+    """
+    def _bbox(part_name: str):
+        blender_object = bpy.data.objects.get(part_name)
+        if blender_object is None or blender_object.type != "MESH":
+            return None
+        corners = [
+            blender_object.matrix_world @ Vector(corner)
+            for corner in blender_object.bound_box
+        ]
+        minima = tuple(min(corner[i] for corner in corners) for i in range(3))
+        maxima = tuple(max(corner[i] for corner in corners) for i in range(3))
+        return minima, maxima
+
+    found: list[str] = []
+    for relation in brief.relations:
+        if isinstance(relation, NoInterpenetrationSpec):
+            first_object = bpy.data.objects.get(relation.first_part)
+            second_object = bpy.data.objects.get(relation.second_part)
+            if (
+                first_object is None
+                or second_object is None
+                or first_object.type != "MESH"
+                or second_object.type != "MESH"
+            ):
+                continue  # a missing part is the part report's failure
+            from blended.analyze.pair_checks import analyze_pair
+
+            pair_report = analyze_pair(first_object, second_object)
+            failures: list[str] = []
+            if (
+                pair_report.intersecting_face_pair_count
+                > relation.maximum_intersecting_face_pairs
+            ):
+                failures.append(
+                    f"{pair_report.intersecting_face_pair_count} intersecting "
+                    f"face pairs"
+                )
+            if (
+                relation.minimum_separation_m is not None
+                and pair_report.minimum_separation_m
+                < relation.minimum_separation_m
+            ):
+                failures.append(
+                    f"minimum separation "
+                    f"{pair_report.minimum_separation_m:.6f} m, expected at "
+                    f"least {relation.minimum_separation_m:.6f} m"
+                )
+            if failures:
+                found.append(
+                    f"{relation.name}: {relation.first_part} against "
+                    f"{relation.second_part}: {'; '.join(failures)} "
+                    f"-> {relation.why}"
+                )
+            continue
+        if isinstance(relation, StackedOnSpec):
+            lower = _bbox(relation.lower_part)
+            upper = _bbox(relation.upper_part)
+            if lower is None or upper is None:
+                continue  # a missing part is the part report's failure
+            gap_m = upper[0][2] - lower[1][2]
+            if abs(gap_m) > relation.tolerance_m:
+                found.append(
+                    f"{relation.name}: {relation.upper_part} bottom sits "
+                    f"{gap_m:+.4f} m from {relation.lower_part} top, expected "
+                    f"0 +/- {relation.tolerance_m:.4f} -> {relation.why}"
+                )
+            continue
+        if isinstance(relation, SharedCentreSpec):
+            first = _bbox(relation.part_a)
+            second = _bbox(relation.part_b)
+            if first is None or second is None:
+                continue
+            axis_index = {"x": 0, "y": 1, "z": 2}
+            for axis in relation.axes:
+                index = axis_index[axis]
+                first_centre = (first[0][index] + first[1][index]) / 2.0
+                second_centre = (second[0][index] + second[1][index]) / 2.0
+                offset_m = first_centre - second_centre
+                if abs(offset_m) > relation.tolerance_m:
+                    found.append(
+                        f"{relation.name}: {relation.part_a} centre is "
+                        f"{offset_m:+.4f} m off {relation.part_b} on {axis}, "
+                        f"expected within {relation.tolerance_m:.4f} "
+                        f"-> {relation.why}"
+                    )
+            continue
+        raise TypeError(
+            f"unknown relation type {type(relation).__name__} on brief "
+            f"{brief.name!r}"
+        )
+    return tuple(found)
 
 
 # What a measurement may drift by and still count as "untouched" by a
@@ -555,8 +788,10 @@ def refine_brief(brief: AssetBrief, step: RefinementStep) -> AssetBrief:
     """The brief as it stands AFTER the instruction.
 
     The changed dimensions and their derived probes replace their
-    originals; everything else — clear axes, ground contacts, budget —
-    carries over untouched, because the user changed one thing.
+    originals inside each PART; everything else — clear axes, ground
+    contacts, relations, budget — carries over untouched, because the
+    user changed one thing. A refinement names a MEASUREMENT, not a
+    part, so the replacement is by spec name across all parts.
 
     Measure the refined asset against THIS, not against the original.
     A DimensionMeasurement carries the spec it was measured with, so
@@ -567,13 +802,21 @@ def refine_brief(brief: AssetBrief, step: RefinementStep) -> AssetBrief:
     probe_replacements = {probe.name: probe for probe in step.changed_probes}
     return dataclasses.replace(
         brief,
-        dimensions=tuple(
-            replacements.get(spec.name, spec) for spec in brief.dimensions
-        ),
-        probes=tuple(
-            probe_replacements.get(probe.name, probe) for probe in brief.probes
+        parts=tuple(
+            dataclasses.replace(
+                part,
+                dimensions=tuple(
+                    replacements.get(spec.name, spec) for spec in part.dimensions
+                ),
+                probes=tuple(
+                    probe_replacements.get(probe.name, probe)
+                    for probe in part.probes
+                ),
+            )
+            for part in brief.parts
         ),
     )
+
 
 
 @dataclasses.dataclass(frozen=True)

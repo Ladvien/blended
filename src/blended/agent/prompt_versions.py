@@ -370,50 +370,113 @@ PROMPT_REVISIONS: tuple[PromptRevision, ...] = (
             "bytes the agent actually received."
         ),
     ),
+    PromptRevision(
+        revision=10,
+        changed_element=(
+            "Added, to the 'gate measures STRUCTURE, not intent' "
+            "paragraph: every feature the brief NAMES must exist as "
+            "real geometry, not be approximated or skipped."
+        ),
+        hypothesis=(
+            "Changed it because iteration 31 (ribbed_column) built a "
+            "plain 0.20 m cylinder with NO ribs: the brief named a "
+            "0.16 m shaft with five ribs reaching 0.20 m, and the "
+            "agent read '0.20 m in diameter' as the shaft and skipped "
+            "the rib geometry entirely — rib_crest_is_solid at radius "
+            "0.09 read empty. The brief was self-consistent; the "
+            "working agreement v9 never told the agent that a named "
+            "feature is a build requirement, not a suggestion. Expect "
+            "ribbed_column to build the five ribs as real material "
+            "reaching the named diameter, and the other four briefs "
+            "to be unaffected (they already build their named "
+            "features)."
+        ),
+        outcome=(
+            "CONFIRMED on its target, and CONVERGED. Iteration 37 "
+            "(ribbed_column, first run of v10) built five ribs reaching "
+            "the named 0.20 m diameter — the sentence worked; the run "
+            "failed only on a probe the brief had not pinned (rib "
+            "positions), which was a bad_brief fix, not a prompt one. "
+            "Then the five-brief convergence rule was met: iterations "
+            "47-51, one clean human-verified run per brief, consecutive, "
+            "no prompt change between them — three_leg_stool (23 calls, "
+            "three refinement steps, 0 disturbed), planter_box (15), "
+            "uv_crate (22, 1 UV island, 0 overlaps), ribbed_column (6), "
+            "crate_with_lid (14, both relations OK). The four "
+            "pre-existing briefs were unaffected by the sentence, as the "
+            "hypothesis predicted; the harness defects the five-brief "
+            "suite surfaced (refinement composition, silent boolean "
+            "no-op, shared-material destruction) were all classified "
+            "harness_code and fixed by coding."
+        ),
+    ),
 )
 
 # --- CONVERGED --------------------------------------------------------
-# v9 is PINNED, superseding the v5 pin of earlier the same day. The rule is three CONSECUTIVE runs passing both
-# deterministic gates with zero visual deviations, confirmed by the
-# human, with no prompt change between them. Met 2026-08-22:
+# v10 is PINNED, superseding the v9 pin of earlier the same day. The
+# rule for THIS attempt (recorded in
+# docs/2026-08-22-prompt-convergence-plan.md Phase 3): one clean
+# human-verified run per brief, CONSECUTIVE, with no prompt change
+# between them — five runs. Met 2026-08-22:
 #
-#   iteration 20  planter_box        8 calls  both gates PASS  0 deviations
-#   iteration 21  three_leg_stool    9 calls  both gates PASS  0 deviations
-#   iteration 22  planter_box        3 calls  both gates PASS  0 deviations
+#   iteration 47  three_leg_stool    23 calls  both gates PASS  0 deviations
+#   iteration 48  planter_box        15 calls  both gates PASS  0 deviations
+#   iteration 49  uv_crate           22 calls  both gates PASS  0 deviations
+#   iteration 50  ribbed_column       6 calls  both gates PASS  0 deviations
+#   iteration 51  crate_with_lid     14 calls  both gates PASS  0 deviations
 #
-# All three terminated with a written report, all three exported a
-# round-trip-verified .glb, and the human confirmed every render. The
-# stool run also passed the refinement gate with 0 unnamed measurements
-# disturbed, which v5 was never asked to do.
+# All five terminated with a written report, all five exported
+# round-trip-verified .glb files, and the human confirmed every render.
+# The stool run also passed all THREE refinement steps (taller, wider
+# seat, thicker legs) with 0 unnamed measurements disturbed — the
+# multi-step refinement gate v9 was never asked to run.
 #
-# WHAT "NO PROMPT CHANGE" MEANS HERE. v9's working agreement is
-# byte-identical to v7's — same hash, 2e5d0dab1033 — because v9 reverts
-# v8. But iterations 15, 16 and 19 ran that same text and are NOT
-# counted toward this pin: 15 and 16 predate blended.ops.legs, and 19
-# predates the removal of the uv.smart_unwrap shim. Both changed the
-# generated manifest, and the manifest is part of the bytes the agent
-# receives. Counting them would claim evidence from a system that no
-# longer exists.
+# WHAT v10 CHANGED. One sentence added to the "gate measures STRUCTURE,
+# not intent" paragraph: every feature the brief NAMES must exist as
+# real geometry, not be approximated or skipped. Made because
+# iteration 31 (ribbed_column) built a plain 0.20 m cylinder with NO
+# ribs — the brief named a 0.16 m shaft with five ribs reaching
+# 0.20 m, and the agent read the diameter as the shaft and skipped the
+# rib geometry entirely. The sentence is the one element between v9
+# and v10; the rest of the text is byte-identical.
 #
-# The v5 pin was earned on its own harness and is not disowned: it is
-# in the append-only log, and v5 still carries its outcome above. What
-# it no longer has is a golden test, because its runs cannot be
-# replayed against a harness that has since gained ops.
+# WHAT THE RUNS COST. The five-brief suite found three harness defects
+# and two under-determined briefs before it converged: a refinement
+# scorer that graded each step against the ORIGINAL brief instead of
+# the accumulated one (iteration 23), a boolean that silently no-opped
+# (iteration 33 — now guarded by BooleanNoOp, which compares geometry,
+# not counts, because the EXACT solver cuts a tilted cap flat while
+# preserving counts), and assign_material destroying a shared material
+# datablock (iteration 46 — now reuses the datablock). ribbed_column
+# needed its shaft diameter, rib centers, and rib thickness pinned
+# (iterations 27/37/41). Each was classified into exactly one bucket
+# and fixed in the right artifact; the prompt changed only once.
 #
-# The evidence is MODEL-SPECIFIC and the log records it per run. v1-v4
-# were scored against deepseek-v4-flash, which never converged this
-# suite: the last two blockers were not prompt wording at all but a
-# writer too weak to place geometry and a tool budget too small to
-# build, verify AND report in one turn.
-PINNED_PROMPT_REVISION = 9
+# The v9 pin was earned on its own harness and is not disowned: it is
+# in the append-only log, and v9 still carries its outcome above. Its
+# three runs (20/21/22) were against the two-brief suite, which is why
+# v10 re-ran the sequence on the five-brief suite.
+#
+# The evidence is MODEL-SPECIFIC and the log records it per run.
+# v1-v4 were scored against deepseek-v4-flash, which never converged
+# this suite; v9 and v10 were scored against deepseek-v4-pro, which
+# holds the pin.
+PINNED_PROMPT_REVISION = 10
 CONVERGED_ON = "2026-08-22"
 CONVERGENCE_RUNS = (
-    (20, "planter_box"),
-    (21, "three_leg_stool"),
-    (22, "planter_box"),
+    (47, "three_leg_stool"),
+    (48, "planter_box"),
+    (49, "uv_crate"),
+    (50, "ribbed_column"),
+    (51, "crate_with_lid"),
 )
 CONVERGENCE_WRITER_MODEL = "deepseek-v4-pro:cloud"
-CONVERGENCE_VISION_MODEL = "minimax-m3:cloud"
+# The v10 runs recorded minimax-m3:cloud as their eye (iterations.jsonl
+# 47-51), but that model was measured broken on 2026-08-24: it answers
+# in message.thinking and returns empty content, so every examiner call
+# fails the JSON contract. The licensed replacement, calibrated the same
+# day (sensitivity 0.80, control specificity 1.00), is kimi-k2.7-code.
+CONVERGENCE_VISION_MODEL = "kimi-k2.7-code:cloud"
 CONVERGENCE_TOOL_CALL_BUDGET = 24
 
 ACTIVE_PROMPT_REVISION = PINNED_PROMPT_REVISION

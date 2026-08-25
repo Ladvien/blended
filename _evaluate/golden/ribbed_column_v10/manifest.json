@@ -1,0 +1,15 @@
+{
+  "blender_series": "5.2",
+  "brief": "ribbed_column",
+  "captured_at": "2026-08-22T23:28:03.067385+00:00",
+  "iteration": 50,
+  "prompt_identity": "v10:b6627b38f4c1",
+  "revision": 10,
+  "view_sha256": {
+    "bottom": "4ef09a8fd5a7ffca32ac9a8662ee7a83f2be152bc073768db66ac53bf2499a9f",
+    "front": "ad52915edb51c7cb864f3435985c5046e9fb848d199ebe622e3d257045aca1c5",
+    "right": "ad52915edb51c7cb864f3435985c5046e9fb848d199ebe622e3d257045aca1c5",
+    "three_quarter": "69b157cf38c0e1c9369d569ef0cfdc3289b1dffb89e589f3ead785660b5200dd",
+    "top": "eae7636828a56bdc45e60f6935a011be7934e8fcf7de5d24d5ecf6384d022ca2"
+  }
+}

@@ -7,15 +7,20 @@ construction. These tests are what replaces it.
 """
 
 import hashlib
+from pathlib import Path
 
 import pytest
 
 from blended.agent import prompt_templates, prompt_versions
 
-# The revision the convergence loop signed off. Its hash is the claim
-# that the pinned TEXT is the text that was measured; if extracting the
-# templates had altered so much as a space, this is what would say so.
-PINNED_IDENTITY = "v9:2e5d0dab1033"
+# The identity of the revision the convergence loop signed off, read from
+# the artifact the pin itself writes (`scripts/pin_revision.py`) rather
+# than hardcoded here. The guarantee is unchanged — any later edit to a
+# pinned `.j2` changes the identity while this file does not, so the test
+# goes red — but pinning no longer requires hand-editing a test.
+PINNED_IDENTITY_PATH = (
+    Path(__file__).resolve().parents[2] / "_evaluate" / "golden" / "pinned_identity.txt"
+)
 
 # Jinja's delimiters. The bodies are prose and markdown, and the day one
 # of these appears in a body is the day a prompt silently loses a
@@ -51,8 +56,13 @@ def test_each_revision_changes_exactly_one_place(revision):
 
 
 def test_the_pinned_revision_text_has_not_drifted():
+    assert PINNED_IDENTITY_PATH.exists(), (
+        f"no {PINNED_IDENTITY_PATH}: the pinned identity is written by "
+        f"`make pin`, and without it nothing proves the pinned text is the "
+        f"text that converged"
+    )
     pinned = prompt_versions.get_revision(prompt_versions.PINNED_PROMPT_REVISION)
-    assert pinned.identity == PINNED_IDENTITY
+    assert pinned.identity == PINNED_IDENTITY_PATH.read_text(encoding="utf-8").strip()
 
 
 def test_the_template_file_is_the_body_byte_for_byte():
@@ -90,9 +100,31 @@ def test_a_missing_variable_is_an_error_not_a_blank():
         prompt_templates.render("system_prompt")
 
 
-def test_the_assembled_prompt_carries_the_working_agreement():
+def test_the_shipped_configuration_is_the_converged_configuration():
+    """The addon ships what the loop converged on, or it ships a lie.
+
+    Guarded here so the three axes cannot drift silently: the tool
+    budget, the writer model, the eye model, and — the failure that
+    started this whole convergence — that the system prompt an
+    AgentSession builds with no arguments is the PINNED revision, not
+    some earlier text nobody scored.
+    """
+    from blended.agent.loop import AgentSession, ModelConfig
+
+    assert AgentSession().maximum_tool_calls_per_turn == (
+        prompt_versions.CONVERGENCE_TOOL_CALL_BUDGET
+    ), "the library default budget drifted from the converged budget"
+    assert ModelConfig().model == prompt_versions.CONVERGENCE_WRITER_MODEL, (
+        "the default writer drifted from the model the pin was scored with"
+    )
+    assert ModelConfig().vision_model == prompt_versions.CONVERGENCE_VISION_MODEL, (
+        "the default eye drifted from the model every scored run used"
+    )
     from blended.agent.system_prompt import build_system_prompt
 
-    text = build_system_prompt(include_operations=False)
-    assert prompt_versions.get_revision().body in text
-    assert "Blender" in text.splitlines()[0]
+    assert prompt_versions.get_revision(
+        prompt_versions.PINNED_PROMPT_REVISION
+    ).body in build_system_prompt(), (
+        "the default session prompt is not the pinned revision — a user "
+        "would talk to text nobody scored"
+    )

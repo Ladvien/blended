@@ -50,21 +50,33 @@ def test_difference_consumes_the_cutter(empty_scene):
     assert "HoleCutter" not in bpy.data.objects
 
 
-def test_union_produces_single_manifold_solid(empty_scene):
-    from blended.analyze import MeshBudget, analyze_object
-    from blended.ops import add_box, boolean_union, link_into_scene
+def test_non_intersecting_cutter_raises_instead_of_silently_no_oping(empty_scene):
+    """A cutter that does not touch the target applies as a silent
+    no-op: the modifier evaluates, nothing intersects, and the mesh
+    comes back unchanged. Measured 2026-08-22 (iteration 33): the
+    agent's planter cavity sat 0.01 m short of the box top, the boolean
+    returned normally, and the agent spent 21 tool calls debugging an
+    op that was never wrong — the gate had already caught the real
+    defect (2 disconnected components). A boolean that changes nothing
+    must raise, naming the counts, and must leave the target intact —
+    the operand is only consumed on a real result."""
+    from blended.ops import add_box, boolean_difference, link_into_scene
+    from blended.ops.booleans import BooleanNoOp
 
-    base_object = add_box("UnionBase", 1.0, 1.0, 1.0)
-    link_into_scene(base_object)
-    overlapping_object = add_box(
-        "UnionAddend", 1.0, 1.0, 1.0, location_m=(0.5, 0.0, 0.3)
+    box_object = add_box("NoOpBox", 1.0, 1.0, 1.0)
+    link_into_scene(box_object)
+    # Entirely outside the target: no intersection, no change.
+    outside_cutter = add_box(
+        "OutsideCutter", 0.5, 0.5, 0.5, location_m=(5.0, 0.0, 0.0)
     )
-    link_into_scene(overlapping_object)
-    unioned = boolean_union(base_object, overlapping_object)
+    link_into_scene(outside_cutter)
 
-    report = analyze_object(unioned)
-    assert report.connected_component_count == 1
-    assert report.failures(MeshBudget()) == [], report.failures(MeshBudget())
+    with pytest.raises(BooleanNoOp):
+        boolean_difference(box_object, outside_cutter)
+
+    # The refusal must not have eaten the operand or damaged the target.
+    assert "OutsideCutter" in bpy.data.objects
+    assert len(box_object.data.vertices) == 8
 
 
 def test_snap_base_to_ground(empty_scene):

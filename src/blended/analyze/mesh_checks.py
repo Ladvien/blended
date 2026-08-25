@@ -38,6 +38,7 @@ class MeshBudget:
     maximum_component_count: int = 1
     allow_self_intersections: bool = False
     allow_flipped_normals: bool = False
+    allow_inverted_facets: bool = False
     # UV requirements. Off by default so pure-geometry stages (blockout,
     # CSG intermediates) are not forced to carry a UV layout; turn on
     # for anything headed to texturing or export.
@@ -71,6 +72,7 @@ class MeshReport:
     # (measured: a barrel atlas reporting 94.1% here was 69.9% by
     # rasterization, with 38% of covered pixels multiply-covered).
     uv_coverage_fraction: float = 0.0
+    inverted_facet_count: int = 0
 
     def failures(self, budget: MeshBudget) -> list[str]:
         """Return human-readable failures against a budget (empty = pass)."""
@@ -114,6 +116,14 @@ class MeshReport:
             found_failures.append(
                 f"{self.flipped_normal_triangle_count} triangles face inward "
                 f"(flipped normals)"
+            )
+        if (
+            not budget.allow_inverted_facets
+            and self.inverted_facet_count > 0
+        ):
+            found_failures.append(
+                f"{self.inverted_facet_count} triangles disagree with their own "
+                f"vertex normals (inverted facets)"
             )
         if budget.require_uv_layer and self.uv_layer_count == 0:
             found_failures.append("no UV layer (cannot be textured)")
@@ -240,6 +250,83 @@ def _count_flipped_normal_triangles(evaluated_mesh) -> int:
         if crossing_count % 2 == 1:
             flipped_count += 1
     return flipped_count
+
+def facet_disagrees_with_its_normals(
+    corner_positions: tuple[tuple[float, float, float], ...],
+    corner_normals: tuple[tuple[float, float, float], ...],
+) -> bool:
+    """True when a triangle's winding disagrees with its own corner
+    normals: dot(winding_normal, mean(corner_normals)) < 0.0.
+
+    This is the "inverted facet" test — a face that disagrees with
+    ITSELF — and it is deliberately NOT edge contiguity. Contiguity
+    asks whether two adjacent faces agree, so an island wound
+    inside-out passes it, and so does an inverted facet whose
+    neighbours were inverted with it. Decimation and boolean work
+    create these (scp measured backpack 0 -> 15/164 facets, body
+    0 -> 5/749); recalculating normals does not fix them, because
+    the geometry has folded.
+
+    Pure arithmetic (no bpy): the same test runs in the file-level
+    report, which reads the normals out of the shipped .glb.
+
+    No epsilon, matching scp. A zero-area facet yields a zero cross
+    product, dot 0.0, and is therefore NOT counted; the existing
+    ZERO_AREA_EPSILON_M2 degenerate-face count reports those.
+    """
+    first, second, third = corner_positions
+    edge_1 = (
+        second[0] - first[0],
+        second[1] - first[1],
+        second[2] - first[2],
+    )
+    edge_2 = (
+        third[0] - first[0],
+        third[1] - first[1],
+        third[2] - first[2],
+    )
+    winding_normal = (
+        edge_1[1] * edge_2[2] - edge_1[2] * edge_2[1],
+        edge_1[2] * edge_2[0] - edge_1[0] * edge_2[2],
+        edge_1[0] * edge_2[1] - edge_1[1] * edge_2[0],
+    )
+    stored_normal = (
+        sum(corner[0] for corner in corner_normals) / 3.0,
+        sum(corner[1] for corner in corner_normals) / 3.0,
+        sum(corner[2] for corner in corner_normals) / 3.0,
+    )
+    return (
+        winding_normal[0] * stored_normal[0]
+        + winding_normal[1] * stored_normal[1]
+        + winding_normal[2] * stored_normal[2]
+    ) < 0.0
+
+
+def _count_inverted_facets(evaluated_mesh) -> int:
+    """Count triangles whose winding disagrees with their own corner
+    normals (inverted facets).
+
+    Per-corner normals, not per-vertex: per-corner is what glTF ships
+    (the NORMAL accessor), and the file-level report reads the same
+    numbers back out of the .glb. Unconditional — open meshes get
+    their normals checked too, which is the entire point: the parity
+    test needs a closed manifold, folded geometry does not.
+    """
+    evaluated_mesh.calc_loop_triangles()
+    corner_normals = evaluated_mesh.corner_normals
+    inverted_count = 0
+    for loop_triangle in evaluated_mesh.loop_triangles:
+        corner_positions = tuple(
+            tuple(evaluated_mesh.vertices[vertex_index].co)
+            for vertex_index in loop_triangle.vertices
+        )
+        normals = tuple(
+            tuple(corner_normals[loop_index].vector)
+            for loop_index in loop_triangle.loops
+        )
+        if facet_disagrees_with_its_normals(corner_positions, normals):
+            inverted_count += 1
+    return inverted_count
 
 
 # UV analysis constants.
@@ -546,6 +633,13 @@ def analyze_object(blender_object) -> MeshReport:
                 )
             else:
                 flipped_normal_triangle_count = 0
+            # Deliberately NOT inside the closed-manifold branch above:
+            # parity needs a closed solid, but folded geometry does not
+            # respect manifoldness (measured: decimation and boolean
+            # work create inverted facets on open meshes too, and the
+            # parity branch used to report zero normals checking for
+            # every open prop).
+            inverted_facet_count = _count_inverted_facets(evaluated_mesh)
             uv_layer_count = len(working_mesh.loops.layers.uv)
             uv_measurements = _measure_uvs(working_mesh)
         finally:
@@ -564,6 +658,7 @@ def analyze_object(blender_object) -> MeshReport:
         duplicate_vertex_pair_count=duplicate_vertex_pair_count,
         self_intersecting_face_pair_count=self_intersecting_face_pair_count,
         flipped_normal_triangle_count=flipped_normal_triangle_count,
+        inverted_facet_count=inverted_facet_count,
         uv_layer_count=uv_layer_count,
         uv_island_count=uv_measurements["uv_island_count"],
         uv_overlapping_face_pair_count=uv_measurements[

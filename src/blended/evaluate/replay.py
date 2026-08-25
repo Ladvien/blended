@@ -52,11 +52,29 @@ def sources_from(record: dict) -> list[str]:
     return sources
 
 
-def replay_record(record: dict, object_name: str, on_chunk=None):
-    """Re-run a record's chunks into the current scene, return its object.
+def steps_applied(record: dict, brief) -> list:
+    """The refinement steps the run actually executed, in order.
 
-    Chunks that failed in the original run fail here too; that is the
-    point of a faithful replay, and the object is what is judged.
+    A record carries one `LOCALITY <step_name>: ...` line per executed
+    step, so which steps ran is recorded, not assumed. Replay and the
+    golden tests score the terminal asset against the brief composed
+    from exactly these steps — a record from before the suite gained
+    steps must not be graded against steps it never ran.
+    """
+    executed = {
+        line.split(":", 1)[0].removeprefix("LOCALITY ").strip()
+        for line in record.get("refinement_locality", ())
+    }
+    return [step for step in brief.refinements if step.name in executed]
+
+
+def replay_record(record: dict, object_names: tuple[str, ...], on_chunk=None):
+    """Re-run a record's chunks into the current scene, return its objects.
+
+    Returns the objects in `object_names` order, so a multi-part brief
+    comes back the way the brief names its parts. Chunks that failed in
+    the original run fail here too; that is the point of a faithful
+    replay, and the objects are what is judged.
     """
     import bpy
 
@@ -68,10 +86,13 @@ def replay_record(record: dict, object_name: str, on_chunk=None):
         if on_chunk is not None:
             on_chunk(index, len(sources), result)
     bpy.context.view_layer.update()
-    rebuilt = bpy.data.objects.get(object_name)
-    if rebuilt is None:
-        raise ReplayProducedNothing(
-            f"replaying {len(sources)} chunk(s) left no object named "
-            f"{object_name!r} — the log is not reproducible"
-        )
+    rebuilt = []
+    for object_name in object_names:
+        rebuilt_object = bpy.data.objects.get(object_name)
+        if rebuilt_object is None:
+            raise ReplayProducedNothing(
+                f"replaying {len(sources)} chunk(s) left no object named "
+                f"{object_name!r} — the log is not reproducible"
+            )
+        rebuilt.append(rebuilt_object)
     return rebuilt

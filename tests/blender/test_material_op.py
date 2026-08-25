@@ -56,16 +56,33 @@ def test_assign_material_sets_both_colour_fields(empty_scene):
     assert viewport_rgb == pytest.approx(TERRACOTTA_RGB)
 
 
-def test_assign_material_is_idempotent_by_name(empty_scene):
-    """Re-running a chunk must not stack a second slot."""
+def test_a_shared_material_name_survives_reassignment(empty_scene):
+    """A material name is a shared resource across parts.
+
+    Measured 2026-08-22 (iteration 46): the agent assigned "CrateWood"
+    to the crate body, then assigned the same name to the lid. The old
+    remove-and-recreate left the body's slot dangling to None — the
+    assembly failed the material gate with 0 assigned in 1 slot. The
+    datablock must be reused, so every object referencing the name
+    keeps its assignment."""
     from blended.ops.materials import assign_material
+    from blended.ops.primitives import add_box, link_into_scene
 
-    box = _box()
-    assign_material(box, "Terracotta", TERRACOTTA_RGB)
-    assign_material(box, "Terracotta", TERRACOTTA_RGB)
+    body = add_box("Body", 0.5, 0.5, 0.4)
+    link_into_scene(body)
+    lid = add_box("Lid", 0.5, 0.5, 0.06)
+    link_into_scene(lid)
 
-    assert len(box.data.materials) == 1
-    assert len([m for m in bpy.data.materials if m.name == "Terracotta"]) == 1
+    assign_material(body, "CrateWood", TERRACOTTA_RGB)
+    assign_material(lid, "CrateWood", TERRACOTTA_RGB)
+
+    assert body.data.materials[0] is not None, "the body's slot dangled to None"
+    assert lid.data.materials[0] is not None
+    assert body.data.materials[0].name == "CrateWood"
+    assert lid.data.materials[0] is body.data.materials[0], (
+        "both parts must reference the SAME datablock"
+    )
+    assert len([m for m in bpy.data.materials if m.name == "CrateWood"]) == 1
 
 
 def test_the_render_actually_shows_the_colour(empty_scene, tmp_path):

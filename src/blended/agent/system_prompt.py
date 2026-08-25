@@ -29,17 +29,32 @@ OUTPUT_CONTRACT_HEADING = "## Your output"
 
 
 def build_system_prompt(
-    include_operations: bool = True, revision: int | None = None
+    include_operations: bool = True,
+    revision: int | None = None,
+    lane: str | None = None,
 ) -> str:
     """Render the system prompt for an interactive modeling session.
 
     `revision` selects the working-agreement revision; `None` uses the
     active one. Unknown revisions raise rather than defaulting — see
     `prompt_versions.get_revision`.
+
+    `lane` selects which capability modules load, and defaults to NONE.
+    That default is deliberate: with no lane this renders exactly the
+    text the convergence loop scored, so every existing measurement
+    keeps meaning what it meant. Skills are opt-in per turn until a run
+    has scored them — see `skill_modules`, and the -1.3 pp that
+    self-authored skills measured there. Unknown lanes raise.
     """
     from blended.agent.prompt_templates import render
     from blended.agent.prompt_versions import get_revision
     from blended.version import TARGET_BLENDER_SERIES
+
+    skills_text = ""
+    if lane is not None:
+        from blended.agent.skill_modules import render_modules
+
+        skills_text = render_modules(lane)
 
     conventions_text = ""
     operations_text = ""
@@ -62,6 +77,7 @@ def build_system_prompt(
             f"{TARGET_BLENDER_SERIES[0]}.{TARGET_BLENDER_SERIES[1]}"
         ),
         working_agreement=get_revision(revision).body,
+        skills=skills_text,
         conventions=conventions_text,
         operations=operations_text,
     )

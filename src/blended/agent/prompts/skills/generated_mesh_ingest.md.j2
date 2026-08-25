@@ -1,0 +1,36 @@
+## What arrives from a generator
+
+A mesh from an image-to-3D or text-to-3D generator is a BLOCKOUT. Treat
+it as a silhouette proposal, not an asset.
+
+What it reliably is: roughly the right shape, quickly. What it reliably
+is not: manifold, budgeted, UV-mapped, or built from parts you can name
+and edit. Native-mesh generators top out in the hundreds to a few
+thousand faces; surface-extraction pipelines overshoot by orders of
+magnitude in the other direction. Neither lands on a budget by accident.
+
+## The lane
+
+1. Import and MEASURE before deciding anything. Triangle count,
+   component count, manifoldness, bounding box. The numbers decide the
+   route, not the render.
+2. Fix scale and orientation first. Everything measured afterwards is
+   wrong if the object is at the wrong size or lying on its side.
+3. Bounded cleanup only, with the threshold printed. See the repair
+   caveat: an aggressive gap-close on generated geometry invents
+   surfaces that were never proposed.
+4. Then decide honestly which of three things this is:
+   - a reference to model FROM, and you write the builder;
+   - a background asset that survives cleanup as-is;
+   - a base for retopology.
+   Say which one you chose and why, in numbers.
+
+## What not to do
+
+Do not decimate your way to a budget and call it done. Decimation on
+non-manifold generated geometry tears holes and drags UVs with it, and
+the tear is not visible from the angle you rendered.
+
+Do not present a cleaned generation as if it were built. The user needs
+to know which lane an asset came from, because the two carry different
+guarantees about what can be changed later.

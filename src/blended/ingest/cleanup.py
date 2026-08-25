@@ -41,6 +41,11 @@ class CleanupReport:
     before: MeshReport
     after: MeshReport
     actions: tuple[str, ...] = field(default_factory=tuple)
+    # Hole fills that were reverted because they cost more than they
+    # bought (non-manifold edges or inverted facets appeared). The holes
+    # stay open and report as remaining failures — the module's existing
+    # contract for a hole it refuses to fill.
+    reverted_hole_fills: int = 0
 
     def summary(self) -> str:
         return (
@@ -49,6 +54,7 @@ class CleanupReport:
             f"{self.after.boundary_edge_count}"
             f" | doubles {self.before.duplicate_vertex_pair_count} -> "
             f"{self.after.duplicate_vertex_pair_count}"
+            f" | reverted hole fills {self.reverted_hole_fills}"
         )
 
 
@@ -80,9 +86,11 @@ def cleanup_mesh(
 ) -> CleanupReport:
     """Run the bounded cleanup pass; return before/after reports."""
     import bmesh
+    import bpy
 
     before_report = analyze_object(blender_object)
     actions: list[str] = []
+    reverted_hole_fills = 0
 
     working_mesh = bmesh.new()
     working_mesh.from_mesh(blender_object.data)
@@ -117,6 +125,10 @@ def cleanup_mesh(
             bmesh.ops.delete(working_mesh, geom=loose_vertices, context="VERTS")
             actions.append(f"deleted {len(loose_vertices)} loose vertices")
 
+        # Copy the mesh BEFORE the fill pass, so a fill that costs more
+        # than it buys can be undone to exactly this state.
+        original_mesh = blender_object.data.copy()
+
         for hole_edges, perimeter_m in _boundary_hole_groups(working_mesh):
             if perimeter_m <= settings.maximum_hole_perimeter_m:
                 bmesh.ops.holes_fill(working_mesh, edges=hole_edges, sides=0)
@@ -135,6 +147,29 @@ def cleanup_mesh(
         working_mesh.to_mesh(blender_object.data)
     finally:
         working_mesh.free()
+
+    # The fill is a trade, not a win (measured on scp's valkyrie_body:
+    # every fill ordering traded open edges for non-manifold edges and
+    # inverted facets — 241 boundary / 0 non-manifold / 5 inverted
+    # became 36 / 18 / 21). An inverted facet is a wrongly-lit patch
+    # visible in normal gameplay; an open boundary costs only gib caps.
+    # A small fill on a closed prop is usually right, so the fill stays
+    # — but a fill that makes the mesh WORSE is reverted, holes open.
+    filled_report = analyze_object(blender_object)
+    if (
+        filled_report.non_manifold_edge_count > before_report.non_manifold_edge_count
+        or filled_report.inverted_facet_count > before_report.inverted_facet_count
+    ):
+        edited_mesh = blender_object.data
+        blender_object.data = original_mesh
+        bpy.data.meshes.remove(edited_mesh)
+        reverted_hole_fills = 1
+        actions.append(
+            "REVERTED hole fill(s): filling created non-manifold edges or "
+            "inverted facets, so the holes stay open"
+        )
+    else:
+        bpy.data.meshes.remove(original_mesh)
 
     if settings.decimate_to_budget:
         for _ in range(MAXIMUM_DECIMATE_PASSES):
@@ -161,5 +196,8 @@ def cleanup_mesh(
 
     after_report = analyze_object(blender_object)
     return CleanupReport(
-        before=before_report, after=after_report, actions=tuple(actions)
+        before=before_report,
+        after=after_report,
+        actions=tuple(actions),
+        reverted_hole_fills=reverted_hole_fills,
     )
