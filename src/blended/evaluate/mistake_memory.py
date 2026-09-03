@@ -1382,6 +1382,49 @@ MISTAKES: tuple[MistakeRecord, ...] = (
         ),
         recorded_on="2026-08-23",
     ),
+    MistakeRecord(
+        identifier="extent-rank-tie-break-cannot-canonicalise-a-cube",
+        scope="harness_code",
+        failure=(
+            "The first canonical_orientation draft ranked the three world "
+            "extents by POSITION (stable argsort, ties broken by axis "
+            "index) and asserted afterwards that the depth axis held rank "
+            "1. On an isotropic object — extents (1, 1, 1) — the rule "
+            "selected X as the source axis, applied a quarter turn about "
+            "Z, and then its own post-condition read rank 0, so "
+            "apply_canonical_depth_axis raised RuntimeError on a perfect "
+            "cube. Every 3DCodeBench script ends with that call, so it "
+            "would have converted a scoring question into ERR_EXEC."
+        ),
+        cause=(
+            "'Middle extent' is a VALUE, not a position. With two equal "
+            "extents the middle axis is ambiguous while the middle number "
+            "never is, and a position-based rule both picks an arbitrary "
+            "axis and then fails to recognise its own output as correct — "
+            "the rule was not idempotent, which is the one property a "
+            "re-baked epilogue must have."
+        ),
+        fix=(
+            "canonical_depth_axis_rotation_euler_rad now compares against "
+            "middle_extent_m (sorted(extents)[1]) and returns identity "
+            "whenever depth_axis_holds_middle_extent is already true; the "
+            "post-condition asserts that same value invariant with a "
+            "relative tolerance instead of a rank equality. Reported rank "
+            "is kept as a diagnostic and never asserted on. The GLB audit "
+            "in scripts/orientation_policy_sim.py carries the matching "
+            "tie tolerance, so a radially symmetric object is not "
+            "reported as off-policy (measured: Bottle, Jar, Pillar, "
+            "Auger, Lid, Wineglass all tie within 0.2% of max extent)."
+        ),
+        guarded_by=(
+            "tests/pure/test_canonical_orientation.py::"
+            "test_a_cube_needs_no_rotation, plus "
+            "test_ties_are_deterministic_and_settle_after_one_call and "
+            "tests/blender/test_canonical_orientation_op.py::"
+            "test_a_second_call_is_a_no_op"
+        ),
+        recorded_on="2026-09-03",
+    ),
 )
 
 

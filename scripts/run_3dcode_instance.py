@@ -68,6 +68,10 @@ Rules for this task:
 - Every piece of geometry must be created inside `run_python` chunks. Those chunks are
   collected verbatim into a standalone script that is re-executed from an empty scene to
   score this run, so anything built outside a chunk will not exist when it is re-run.
+Placement: the scored mesh is compared in world space against a reference mesh,
+and neither is reoriented. Align the object's principal axes with the world axes:
+- Up is +Z. Legs, stems and stand-offs point straight down; tops and caps are
+  horizontal. No tilt, no roll, no spin to an arbitrary angle.
 """
 
 PROMPT_FILENAMES = {
@@ -128,6 +132,36 @@ def script_prelude() -> str:
     )
 
 
+def canonical_orientation_epilogue() -> str:
+    """The deterministic orientation step appended to the emitted script.
+
+    The benchmark's `chamfer_with_yaw` quotients out rotation about glTF
+    Z only, so exactly one degree of freedom is penalised in full: which
+    Blender axis lands on the depth axis (Blender Y). Measured over 145
+    dev references, putting the MIDDLE extent there costs 0.0311 mean
+    cd_yawmin against 0.0632 for the unconstrained choice this harness
+    made through iter2 (`scripts/orientation_policy_sim.py`).
+
+    It is an epilogue, not a prompt sentence, because the writer cannot
+    verify it: the eye is measured at 0.20-0.40 sensitivity, in line with
+    reported false-negative rates for imperfect visual verifiers
+    (DOI 10.48550/arXiv.2606.15693), while raising a loop's deterministic
+    verification ratio is the change BlenderGym measures as a consistent
+    win (DOI 10.48550/arXiv.2504.01786). The iter2 alternative — a
+    measured one-shot nudge in the tool result — fired 0/20 and is gone.
+
+    Appended verbatim to the collected chunks, so the re-baked script
+    ends in the same scene the live session ended in.
+    """
+    return (
+        "\n# --- canonical orientation (harness epilogue) ---\n"
+        "from blended.ops.canonical_orientation import "
+        "apply_canonical_depth_axis\n"
+        "\n"
+        'print("canonical orientation:", apply_canonical_depth_axis())\n'
+    )
+
+
 def main(argv) -> int:
     import bpy
 
@@ -137,6 +171,7 @@ def main(argv) -> int:
         OllamaClient,
         dispatch_here,
     )
+    from blended.ops.canonical_orientation import apply_canonical_depth_axis
     from blended.version import assert_supported_blender
 
     arguments = parse_arguments(argv)
@@ -255,11 +290,19 @@ def main(argv) -> int:
     included = [source for source, text in recorded if chunk_executed(text)]
     excluded_count = len(recorded) - len(included)
 
+    # The scored orientation, applied deterministically to the live scene
+    # so the meta record matches what the emitted script will produce on
+    # re-bake. No try/except: an object that cannot be oriented is a
+    # broken run, and a silent skip here would score as a shape error.
+    canonical_orientation = apply_canonical_depth_axis() if included else None
+
     # Each chunk carries its own index so a re-bake traceback points at
     # the chunk the agent actually ran.
     parts = [script_prelude()]
     for index, source in enumerate(included, start=1):
         parts.append(f"\n# --- chunk {index} ---\n{source}\n")
+    if included:
+        parts.append(canonical_orientation_epilogue())
     script_text = "".join(parts)
     script_path.write_text(script_text)
 
@@ -275,6 +318,7 @@ def main(argv) -> int:
                 "num_turns": len(recorded),
                 "n_chunks_included": len(included),
                 "n_chunks_excluded": excluded_count,
+                "canonical_orientation": canonical_orientation,
                 "max_tool_calls": arguments.max_tool_calls,
                 "writer": client.config.model,
                 "eye": client.config.vision_model,
