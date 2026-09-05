@@ -8,6 +8,11 @@ the acceptance spec got wrong, and the assertion that now guards it.
 
 A record is not complete until `guarded_by` names something executable.
 "Be careful about X" is not a guard; a test that fails when X recurs is.
+
+Shape per CoALA's procedural memory — reflect experience into knowledge,
+then into a code library (DOI 10.48550/arXiv.2309.02427); the open
+problem is stale memory dominating (memory-mechanism survey,
+DOI 10.48550/arXiv.2404.13501), which is why `recorded_on` is a field.
 """
 
 from __future__ import annotations
@@ -1424,6 +1429,609 @@ MISTAKES: tuple[MistakeRecord, ...] = (
             "test_a_second_call_is_a_no_op"
         ),
         recorded_on="2026-09-03",
+    ),
+    MistakeRecord(
+        identifier="a-tool-schema-without-descriptions-is-a-list-of-names",
+        scope="harness_code",
+        failure=(
+            "First live turn on the Claude Code lane: the writer answered "
+            "\"I'm unable to create the Crate cube right now\" and made "
+            "ZERO tool calls, with a valid schema in the request."
+        ),
+        cause=(
+            "envelope_schema built each oneOf variant from a tool's NAME "
+            "and parameters and dropped its description. On the HTTP lanes "
+            "descriptions ride the API's own `tools` field, so nothing "
+            "else had ever needed them explicitly — this lane has no such "
+            "field, so the model was handed seven names it knew nothing "
+            "about."
+        ),
+        fix=(
+            "Each variant carries `description` from the same "
+            "TOOL_SCHEMAS entry as its arguments schema. Verified live: "
+            "the same prompt then called run_python on the first turn."
+        ),
+        guarded_by=(
+            "tests/pure/test_claude_code_lane.py::"
+            "test_the_envelope_pins_each_tool_to_its_own_arguments"
+        ),
+        recorded_on="2026-09-05",
+    ),
+    MistakeRecord(
+        identifier="an-agent-cli-reaches-for-its-own-tools",
+        scope="harness_code",
+        failure=(
+            "chat_e2e --only object on claude-code:sonnet: 0 tool calls, "
+            "FAIL, and the answer read \"Every tool call I make "
+            "(run_python, list_scene, search_ops) is being rejected with "
+            "'No such tool available'\"."
+        ),
+        cause=(
+            "The harness system prompt describes the six tools as "
+            "callable, which is true on every lane that hands them over "
+            "natively. Claude Code is itself an agent harness, so the "
+            "model emitted native tool_use blocks — and `--tools \"\"` "
+            "correctly refused them. The structured envelope was "
+            "available and simply never used."
+        ),
+        fix=(
+            "TOOL_PROTOCOL_NOTE is appended to the system prompt in the "
+            "same `if tools:` branch that adds --json-schema, so the "
+            "schema and the instruction for using it can never ship "
+            "apart. The scenario then passed with one run_python call, "
+            "gate PASS, dims 0.600x0.400x0.500."
+        ),
+        guarded_by=(
+            "tests/pure/test_claude_code_lane.py::"
+            "test_the_command_disables_every_built_in_capability"
+        ),
+        recorded_on="2026-09-05",
+    ),
+    MistakeRecord(
+        identifier="an-empty-enum-identifier-is-not-an-option",
+        scope="harness_code",
+        failure=(
+            "In a live GUI session, setting the Eye preference to \"no "
+            "eye\" raised TypeError: bpy_struct: item.attr = val: enum "
+            "\"\" not found in ('kimi-k2.7-code:cloud', "
+            "'qwen3.5:397b-cloud', 'kimi-k3:cloud', 'qwen3-vl', "
+            "'qwen3.8-27b', 'claude-code:haiku') — the "
+            "\"None - writer sees for itself\" row was absent from the "
+            "RNA item list entirely."
+        ),
+        cause=(
+            "That row spelled \"off\" as the empty identifier, which "
+            "Blender DROPS from an EnumProperty. Registration still "
+            "succeeded and the panel still drew, so nothing failed "
+            "loudly: the option was simply unreachable, and the eye "
+            "could not be switched off from the UI at all. It became "
+            "load-bearing with the Claude Code lane, whose recommended "
+            "setup is a vision-capable writer looking at its own "
+            "renders."
+        ),
+        fix=(
+            "The row carries a real token (_EYE_NONE_IDENTIFIER = "
+            "\"none\") and one function, _eye_model_id, turns it back "
+            "into the library's empty `vision_model` at the two places "
+            "that build a ModelConfig and in the routing hint — so the "
+            "token never reaches the library and \"\" never reaches an "
+            "enum."
+        ),
+        guarded_by=(
+            "tests/blender/test_addon_registration.py::"
+            "test_no_dropdown_row_carries_an_empty_identifier and "
+            "test_the_eye_can_be_switched_off_and_that_means_no_eye"
+        ),
+        recorded_on="2026-09-05",
+    ),
+    MistakeRecord(
+        identifier="a-gate-that-cannot-see-the-scene",
+        scope="harness_code",
+        failure=(
+            "A live GUI turn built `Barrel` with 192 faces and a "
+            "WoodMaterial; run_python reported GATE PASS, inspect_object "
+            "reported GATE PASS, render_views returned a contact sheet — "
+            "and bpy.context.scene.objects held only Camera, Cube and "
+            "Light. The viewport never changed and the object would have "
+            "been absent from any export."
+        ),
+        cause=(
+            "run_chunk located the gated object with "
+            "bpy.data.objects.get() and never asked whether it was "
+            "LINKED. Every downstream check works on the datablock: the "
+            "mesh analyzer reads the mesh, and the capture path links a "
+            "copy into a temporary scene of its own to render it — so a "
+            "chunk that forgot link_into_scene passed every gate while "
+            "changing nothing the user can see. The failure message even "
+            "said 'not found in scene' while reading bpy.data."
+        ),
+        fix=(
+            "_gate_capture_export refuses before it analyzes, through "
+            "harness.invisibility_failure(): one ordered walk that names "
+            "the cause (unlinked / excluded collection / hidden / "
+            "hide_render) so the writer can fix it from the tool result. "
+            "inspect_object calls the SAME function, so the writer's own "
+            "check cannot contradict the gate, and the "
+            "missing-datablock message no longer claims to be about the "
+            "scene."
+        ),
+        guarded_by=(
+            "tests/blender/test_harness.py::"
+            "test_an_unlinked_object_fails_the_gate, "
+            "test_a_linked_object_passes_the_same_gate and "
+            "test_every_invisibility_cause_is_named_not_just_detected"
+        ),
+        recorded_on="2026-09-05",
+    ),
+    MistakeRecord(
+        identifier="visible_get-covers-four-causes-hide_render-covers-none",
+        scope="harness_code",
+        failure=(
+            "Probing the gate for siblings of the unlinked-object hole "
+            "found three more, all reporting GATE PASS: hide_viewport = "
+            "True, hide_set(True), and membership of a collection "
+            "excluded from the view layer. A fourth, hide_render = True, "
+            "passed while halving the harness's own contact sheet "
+            "(634280 bytes with the object, 318310 without) — the eye "
+            "was reviewing a render the asset was absent from."
+        ),
+        cause=(
+            "The first fix tested exactly one symptom "
+            "(name in scene.objects) instead of the property that "
+            "matters: can this be seen. Object.visible_get() is False "
+            "for all four visibility causes INCLUDING the unlinked one, "
+            "so the narrow test was both incomplete and redundant. "
+            "hide_render is the exception in the other direction: "
+            "visible_get() stays True, so a visibility-only rule would "
+            "have missed the one cause that breaks the render the model "
+            "is judged by."
+        ),
+        fix=(
+            "invisibility_failure() walks scene membership, view-layer "
+            "membership, visible_get() and hide_render in that order, "
+            "returning the cause-specific instruction. Both run_chunk "
+            "and inspect_object call it."
+        ),
+        guarded_by=(
+            "tests/blender/test_harness.py::"
+            "test_every_invisibility_cause_is_named_not_just_detected, "
+            "test_an_unrenderable_object_fails_even_though_it_is_visible "
+            "and test_inspect_object_agrees_with_the_gate"
+        ),
+        recorded_on="2026-09-05",
+    ),
+    MistakeRecord(
+        identifier="view-layer-membership-lags-the-link",
+        scope="harness_code",
+        failure=(
+            "The first draft of the visibility gate turned 9 green "
+            "Blender tests red, accusing every freshly built object of "
+            "sitting in an excluded collection. The SAME trap then bit "
+            "in the other direction: the transform gate let a "
+            "`scale = (1, 1, 0)` chunk through with GATE PASS, because "
+            "matrix_world still held the pre-assignment value."
+        ),
+        cause=(
+            "Evaluated scene state lags an assignment. An object linked "
+            "by the chunk that just ran appears in "
+            "bpy.context.scene.objects immediately but NOT in "
+            "bpy.context.view_layer.objects, and a scale assigned by "
+            "that chunk is NOT yet in matrix_world, until the depsgraph "
+            "catches up. Both probes that designed the rules had called "
+            "view_layer.update() by hand, so both rules looked correct "
+            "in isolation and read the previous frame in the gate."
+        ),
+        fix=(
+            "One helper, harness._synchronise_view_layer(), called at "
+            "the top of BOTH invisibility_failure() and "
+            "degenerate_transform_failure(). Rule: any scene-state "
+            "assertion made immediately after a chunk runs syncs first "
+            "— view-layer membership, matrix_world, dimensions and "
+            "visible_get() are all evaluated state."
+        ),
+        guarded_by=(
+            "tests/blender/test_harness.py::"
+            "test_a_linked_object_passes_the_same_gate, "
+            "test_the_gate_reports_a_broken_transform_through_run_chunk "
+            "and tests/blender/test_task_loop.py::"
+            "test_task_succeeds_first_round"
+        ),
+        recorded_on="2026-09-05",
+    ),
+    MistakeRecord(
+        identifier="the-object-matrix-is-outside-the-mesh-analyzer",
+        scope="harness_code",
+        failure=(
+            "Four broken transforms all reported GATE PASS with a "
+            "perfect mesh report: scale.x = 0 (world extent 0, 1, 1), "
+            "scale.x = 1e-9, location.x = NaN (world extent nan, 1, 1), "
+            "and scale.x = inf — the last of which makes the glTF "
+            "export raise RuntimeError on geometry the gate had just "
+            "called clean."
+        ),
+        cause=(
+            "analyze_object measures the EVALUATED mesh (so modifiers "
+            "are covered) but in the object's LOCAL space, which puts "
+            "the object matrix outside everything it can see. A NaN "
+            "transform is the worst case: the mesh measures perfect, "
+            "the gate passes, and every world-space number the model "
+            "prints back to itself is NaN."
+        ),
+        fix=(
+            "degenerate_transform_failure() refuses non-finite matrix "
+            "elements and collapsed axes, testing the SCALE LENGTHS' "
+            "anisotropy (min/max < 1e-6) rather than the determinant — "
+            "a legitimately tiny object scaled 0.001 uniformly has "
+            "determinant 1e-9, so a determinant threshold would have "
+            "refused real work. A 10x stretch, a 0.001 uniform scale "
+            "and a 0.01-thin panel all still pass."
+        ),
+        guarded_by=(
+            "tests/blender/test_harness.py::"
+            "test_a_collapsed_or_non_finite_transform_fails_the_gate and "
+            "test_legitimate_scales_are_left_alone"
+        ),
+        recorded_on="2026-09-05",
+    ),
+    MistakeRecord(
+        identifier="the-domain-reports-had-the-same-hole-as-the-gate",
+        scope="harness_code",
+        failure=(
+            "Auditing the rig/weight/animation reports for the gate's "
+            "own blind spot found three: rig_report counted a mesh as "
+            "BOUND while its Armature modifier was switched off in "
+            "viewport or render; weight_report reported non-zero "
+            "weights for a vertex group whose name matched no bone (one "
+            "typo away, and it deforms nothing); animation_report "
+            "counted keyframes on MUTED fcurves and keyframes outside "
+            "the scene's frame range as animation."
+        ),
+        cause=(
+            "Each report measured the presence of a thing rather than "
+            "its effect: a modifier exists, a weight is non-zero, a "
+            "keyframe is stored. Every one of those can be true while "
+            "the mesh never deforms and the object never moves — the "
+            "same mistake the mesh gate made by measuring the mesh and "
+            "not what the user could see."
+        ),
+        fix=(
+            "bound_mesh_names now means DEFORMING (enabled in viewport "
+            "and render) with disabled_modifier_mesh_names reported "
+            "beside it; weight_report cross-checks group names against "
+            "the deforming armature's bones "
+            "(groups_without_bones / bones_without_groups, both empty "
+            "for an unrigged mesh so ordinary modelling is never "
+            "accused); animation_report adds muted_fcurve_count and "
+            "keyframes_outside_frame_range_count. chat_e2e asserts all "
+            "of them are clean, so the criteria mean what they say."
+        ),
+        guarded_by=(
+            "tests/blender/test_domain_report_blind_spots.py (8 tests, "
+            "each pathology beside its control) and "
+            "scripts/chat_e2e.py::check_rig / check_weights / "
+            "check_animation"
+        ),
+        recorded_on="2026-09-05",
+    ),
+    MistakeRecord(
+        identifier="a-test-that-computed-an-answer-and-asserted-nothing",
+        scope="harness_code",
+        failure=(
+            "test_copy_buttons_address_the_transcript_not_the_visible_"
+            "slice built the list of copy-button indices and then "
+            "ended. No assert. It passed for any behaviour at all, "
+            "including the exact off-by-slice bug it was written to "
+            "catch, and it sat green in the suite."
+        ),
+        cause=(
+            "An earlier edit to the file dropped the final assertion "
+            "along with the blank line before the next `def`, which is "
+            "invisible to every check that matters: the module still "
+            "parses, pytest still collects the test, and the test "
+            "still passes. Nothing in a green suite distinguishes a "
+            "test that verifies something from one that does not."
+        ),
+        fix=(
+            "The assertion is restored with the absolute indices "
+            "spelled out ([7, 8, 9, 10] for a 4-message window over an "
+            "11-event transcript). The general guard: a range-based "
+            "edit near a test boundary must be re-read afterwards, and "
+            "any test whose body ends in an assignment is a defect."
+        ),
+        guarded_by=(
+            "tests/blender/test_addon_draw.py::"
+            "test_copy_buttons_address_the_transcript_not_the_visible_slice"
+        ),
+        recorded_on="2026-09-05",
+    ),
+    MistakeRecord(
+        identifier="the-panel-woke-the-viewport-forever",
+        scope="harness_code",
+        failure=(
+            "The tool-drain timer called _redraw_sidebars() on every "
+            "tick, so every VIEW_3D area in every window was tagged for "
+            "redraw 6.7 times a second for the whole session — with no "
+            "conversation, no agent running, and nothing on screen "
+            "changing."
+        ),
+        cause=(
+            "The redraw was written for the streaming case, where the "
+            "panel genuinely has new text several times a second, and "
+            "the timer is the only main-thread hook available. Nothing "
+            "distinguished 'the transcript moved' from 'the timer "
+            "fired', so the expensive case became the only case."
+        ),
+        fix=(
+            "_SessionState.revision counts every change the panel can "
+            "see (log(), busy transitions, reset, revert) and the timer "
+            "redraws only when it moved. Streaming still repaints at "
+            "the timer's cadence; an idle sidebar costs one integer "
+            "comparison per tick."
+        ),
+        guarded_by=(
+            "tests/blender/test_addon_registration.py::"
+            "test_an_idle_session_does_not_ask_for_a_redraw"
+        ),
+        recorded_on="2026-09-05",
+    ),
+    MistakeRecord(
+        identifier="the-preview-cache-held-the-struct-not-the-icon-id",
+        scope="harness_code",
+        failure=(
+            "Render thumbnails never appeared in the panel. "
+            "RenderPreviews.icon_for returned what "
+            "`bpy.utils.previews` collection.load() hands back — an "
+            "ImagePreview STRUCT — instead of its integer icon_id. "
+            "`template_icon(icon_value=<struct>)` raises, draw() "
+            "swallows the exception to stay alive, and the picture is "
+            "silently absent."
+        ),
+        cause=(
+            "Headless Blender has no GPU context, so every icon id is 0 "
+            "there. The test asserted the CACHE (that a second call did "
+            "not reload the file) rather than the VALUE, and 0 is what a "
+            "correct implementation returns headless too — so the wrong "
+            "type passed every assertion the background suite could "
+            "make. It took a live GUI session to see it."
+        ),
+        fix=(
+            "icon_for returns int(preview.icon_id); measured 1128 in a "
+            "GUI session. The general rule: when a value is degenerate "
+            "headless, assert its TYPE headless and its value under "
+            "skipif — a cache test proves caching, not correctness."
+        ),
+        guarded_by=(
+            "tests/blender/test_render_previews.py::"
+            "test_icon_for_returns_an_integer_id_not_the_preview_struct "
+            "(type, background) and "
+            "test_icon_for_real_png_returns_nonzero_in_gui (value, GUI)"
+        ),
+        recorded_on="2026-09-05",
+    ),
+    MistakeRecord(
+        identifier="the-sidebar-is-twenty-seven-rows-not-a-page",
+        scope="harness_code",
+        failure=(
+            "Three times in a row the panel's working controls — plan, "
+            "renders, prompt box, status — fell below the bottom edge of "
+            "the sidebar in a live GUI session. Each fix was based on an "
+            "ESTIMATE of how many rows the content cost, and each "
+            "estimate was too low: first no cap at all, then a cap of 8 "
+            "SOURCE LINES (one paragraph wraps to ten ROWS), then row "
+            "reserves that forgot the panel header and the record "
+            "panel's own header."
+        ),
+        cause=(
+            "A Blender region cannot be scrolled from code (View2D is "
+            "read-only through RNA; 5.2 has no scroll operator), so "
+            "anything unbounded drawn above a control puts that control "
+            "out of reach — and the region is far smaller than it looks: "
+            "561 x 1104 px at ui_scale 2.0 is 27 ROWS, because "
+            "UI_UNIT_Y is 20 px BEFORE ui_scale."
+        ),
+        fix=(
+            "The record moved into its own DEFAULT_CLOSED panel "
+            "(BLENDED_PT_history) so the working surface cannot grow "
+            "with the conversation; the answer is capped by "
+            "_answer_row_budget(region.height, ui_scale, …), which "
+            "subtracts the cards above and the controls below from the "
+            "region's real row count; and the plan collapses to header + "
+            "progress bar once the turn ends, giving its rows back to "
+            "the answer. Verified by screenshot: every control plus both "
+            "panel headers visible."
+        ),
+        guarded_by=(
+            "tests/blender/test_chat_panel_heuristics.py::"
+            "test_the_answer_budget_comes_from_the_region_not_a_guess, "
+            "test_the_working_surface_does_not_grow_with_the_turn, "
+            "test_a_finished_plan_gives_its_rows_back_to_the_answer"
+        ),
+        recorded_on="2026-09-05",
+    ),
+    MistakeRecord(
+        identifier="a-hot-reload-dropped-the-turns-plan",
+        scope="harness_code",
+        failure=(
+            "Editing the library mid-session made the plan card vanish "
+            "from the panel while the transcript survived: the plan and "
+            "the right to revert the turn were gone."
+        ),
+        cause=(
+            "_hot_reload transplants a hand-listed set of _SessionState "
+            "fields into the fresh module. New state added to the panel "
+            "(plan, can_revert, undo_guard) was not on that list, so "
+            "every dev-mode reload silently reset it. The list is a "
+            "duplicate of the state's own definition — the kind that "
+            "rots the moment the state grows."
+        ),
+        fix=(
+            "plan, can_revert and undo_guard are carried across the "
+            "reload with the transcript. Any field added to "
+            "_SessionState that the panel reads must be added there too."
+        ),
+        guarded_by=(
+            "tests/blender/test_addon_registration.py::"
+            "test_hot_reload_swaps_the_loaded_module_and_keeps_the_session"
+        ),
+        recorded_on="2026-09-05",
+    ),
+    MistakeRecord(
+        identifier="a-while-loop-around-an-operator-froze-blender",
+        scope="harness_code",
+        failure=(
+            "Clicking the workspace button hung Blender completely — no "
+            "traceback, no log line after 'Workspace blended ready', and "
+            "the main thread stopped servicing timers, so the whole "
+            "session had to be killed. The workspace layout builder "
+            "collapsed areas with `while len(screen.areas) > 1: "
+            "bpy.ops.screen.area_join(...)`."
+        ),
+        cause=(
+            "`area_join` can return without joining (it declines "
+            "geometry it cannot merge), and the loop's exit condition "
+            "depended on the operator making progress. An operator that "
+            "no-ops is not an error, so nothing raised — the loop simply "
+            "never ended, on the thread that draws the UI."
+        ),
+        fix=(
+            "The layout now splits the LARGEST area exactly once and "
+            "never joins: one operator call, no loop, and the user's "
+            "other editors survive (a better outcome anyway, since the "
+            "workspace is a copy of the layout they were using). The "
+            "general rule: never write a `while` whose exit depends on a "
+            "bpy operator making progress — bound the attempts and "
+            "report the failure."
+        ),
+        guarded_by=(
+            "src/blended/ui/workspace.py::arrange_workspace has no loop "
+            "and returns False when the split refuses; "
+            "tests/blender/test_workspace.py asserts the background "
+            "refusal and idempotence"
+        ),
+        recorded_on="2026-09-05",
+    ),
+    MistakeRecord(
+        identifier="an-area-was-chosen-by-position-not-identity",
+        scope="harness_code",
+        failure=(
+            "The blended workspace built a 91-pixel Image Editor and "
+            "left a stray second 3D viewport behind. `area_split` had "
+            "worked; the code then picked which area to retype by "
+            "POSITION — 'the lowest area sharing this x' — and the "
+            "lowest area in that column was the source layout's own "
+            "91 px timeline strip, not the half the split had just "
+            "created."
+        ),
+        cause=(
+            "A screen column can already hold areas the caller knows "
+            "nothing about, so geometry does not identify the operator's "
+            "product. Nothing failed loudly: every type assignment "
+            "succeeded, `_has_chat_layout` saw a VIEW_3D and an "
+            "IMAGE_EDITOR, and the function returned True on a layout "
+            "that was useless for looking at a render."
+        ),
+        fix=(
+            "Diff `{area.as_pointer() for area in screen.areas}` across "
+            "the split to find the CREATED area, and re-fetch the "
+            "survivor by its own pointer (the operator rebuilds the area "
+            "list). Only those two are retyped. Verified by geometry, "
+            "not by eye: VIEW_3D 2096x722 above IMAGE_EDITOR 2096x479 in "
+            "the same column, one viewport, the user's other editors "
+            "untouched."
+        ),
+        guarded_by=(
+            "src/blended/ui/workspace.py::arrange_workspace (pointer "
+            "diff + `return False` when the split creates nothing); "
+            "tests/blender/test_workspace.py asserts idempotence and the "
+            "background refusal"
+        ),
+        recorded_on="2026-09-05",
+    ),
+    MistakeRecord(
+        identifier="an-experiment-displaced-the-pins-own-evidence",
+        scope="process",
+        failure=(
+            "test_the_v10_cycle_is_one_converged_cycle went red with "
+            "'the recorded v10 cycle (iterations 47-51) must count as "
+            "converged: assert 0 >= 1' — without anyone touching those "
+            "records, the convergence rule, or the prompt. Five runs "
+            "qualifying a new WRITER had been appended to "
+            "_evaluate/iterations.jsonl."
+        ),
+        cause=(
+            "`converged_suite_cycles` counts TRAILING cycles, walking "
+            "iterations downwards and taking the newest record per "
+            "brief. Appending a newer sweep therefore makes the newest "
+            "cycle the sweep, and the pin's own evidence is no longer "
+            "trailing. The sweep was not a convergence cycle at all: it "
+            "was a lane qualification against goldens minted from a "
+            "DIFFERENT writer, so its examiner verdicts carried "
+            "deviations by construction and the count fell to zero."
+        ),
+        fix=(
+            "A lane qualification gets its own artifact: "
+            "_evaluate/writer_qualification_iterations.jsonl (and the "
+            "matching verdicts file), leaving the protocol's log to the "
+            "protocol. The general rule, already learned once for the "
+            "3DCodeBench runs: never write an experiment into a "
+            "canonical log that a rule reads positionally — appending "
+            "is not harmless when 'newest' is part of the meaning."
+        ),
+        guarded_by=(
+            "tests/pure/test_convergence_rule.py::"
+            "test_the_v10_cycle_is_one_converged_cycle (goes red the "
+            "moment a foreign cycle is appended); "
+            "tests/pure/test_prompt_templates.py::"
+            "test_the_shipped_configuration_is_the_converged_configuration "
+            "reads the qualification artifact instead"
+        ),
+        recorded_on="2026-09-05",
+    ),
+    MistakeRecord(
+        identifier="a-vision-read-inverted-a-profile",
+        scope="process",
+        failure=(
+            "A verification pass nearly reported a false defect. The "
+            "writer described its own render as 'narrower flat rims at "
+            "top and bottom, bulging out to its widest point at "
+            "mid-height — the classic barrel belly'. An independent "
+            "vision read of the SAME contact sheet said the opposite: "
+            "'the mid-height is the NARROWEST point ... the inverse of "
+            "a barrel (hourglass/spool profile)', with specific "
+            "supporting evidence ('horizontal crease where the "
+            "silhouette is narrowest'). Measuring the mesh settled it: "
+            "max radius 0.1500 at both rims and 0.1900 across "
+            "z 0.15-0.25, i.e. widest at mid-height. The writer was "
+            "right and the vision read was wrong."
+        ),
+        cause=(
+            "A single vision read of a shaded render is a MEASUREMENT "
+            "with an error rate, not ground truth. The shading crease "
+            "along the widest ring of a lathed solid reads as a waist "
+            "when the lighting puts a dark band there — and the reading "
+            "arrived with confident, specific-sounding evidence for the "
+            "inverted profile, which is exactly what makes it "
+            "dangerous."
+        ),
+        fix=(
+            "Never escalate a visual discrepancy without the "
+            "deterministic measurement, when geometry can answer: here, "
+            "eight radius bands from the mesh vertices took one command "
+            "and were unambiguous. This is the harness's founding order "
+            "(deterministic gate first, visual critique second; tool "
+            "feedback outranks model feedback, "
+            "10.48550/arXiv.2409.02977) applied to the REVIEWER rather "
+            "than to the writer — the reviewer's eye is the same kind "
+            "of instrument as the examiner's."
+        ),
+        guarded_by=(
+            "src/blended/evaluate/examiner.py thresholds and "
+            "_evaluate/eye_calibration.json bound how far ANY eye is "
+            "trusted (sensitivity 0.80, control specificity 1.00); "
+            "tests/pure/test_examiner.py::"
+            "test_the_shipped_eye_holds_the_licence_in_the_repository"
+        ),
+        recorded_on="2026-09-05",
     ),
 )
 

@@ -4,7 +4,10 @@ Convention: build with bmesh / the data API, not bpy.ops primitives.
 Operators depend on context (active object, mode, area) and their
 keyword arguments drift across versions; bmesh construction is
 context-free, deterministic, and headless-safe. This is the base
-vocabulary the reusable-component library grows from.
+vocabulary the reusable-component library grows from — executable code
+as the action space (CodeAct, DOI 10.48550/arXiv.2402.01030) over a
+surface that survives Blender's API drift (BlenderLLM,
+DOI 10.48550/arXiv.2412.14203).
 
 Convention: construction is IDEMPOTENT BY NAME. A failed attempt leaves
 its partial objects in the scene; re-creating under the same name would

@@ -27,6 +27,9 @@ _to_delete/
 _evaluate/renders/**/*.png
 _evaluate/renders/**/*.glb
 
+# Local-model run artifacts (regenerable, large)
+outputs/
+
 # Editor/tool caches
 .serena/
 logs/*

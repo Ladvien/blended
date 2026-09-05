@@ -1,5 +1,5 @@
-"""The OpenAI-protocol lane (bmb's llama-swap): wire shape and the
-tool-call round trip.
+"""The OpenAI-protocol lane (llama-swap on bmb and on big): wire shape
+and the tool-call round trip.
 
 llama-swap exposes /v1/chat/completions, not Ollama's /api/chat, so a
 client pointed at BMB_ENDPOINT must translate messages, tools, and the
@@ -8,11 +8,13 @@ requires on the result messages. All assertions happen at the _request
 boundary, the same interception point the vision-transport tests use.
 """
 
+import io
 import urllib.error
 
 import pytest
 
 from blended.agent.loop import (
+    BIG_ENDPOINT,
     BMB_ENDPOINT,
     ModelConfig,
     OllamaClient,
@@ -95,6 +97,57 @@ def test_bmb_endpoint_uses_the_openai_path_and_wire_shape(openai_payloads):
     assert reply["tool_calls"][0]["id"] == TOOL_CALL_ID
     assert reply["tool_calls"][0]["function"]["name"] == "run_python"
     assert reply["tool_calls"][0]["function"]["arguments"] == '{"source": "print(1)"}'
+
+
+def test_a_llama_swap_turn_gets_the_long_ceiling_and_the_cloud_keeps_the_short_one(
+    monkeypatch,
+):
+    """The 300 s cloud ceiling killed bmb's 27B mid-generation: its
+    first planter_box turn took 353.7 s and 3880 mostly-thinking
+    completion tokens before returning a valid tool call (measured
+    twice, 2026-09-03). `chat` must hand `_request` the ceiling the
+    LANE needs, not one constant for every server."""
+    from blended.agent import loop as live_loop
+
+    timeouts: list[int] = []
+
+    def capture(self, path, payload, timeout_seconds):
+        timeouts.append(timeout_seconds)
+        return {"choices": [{"message": {"role": "assistant", "content": "ok"}}]}
+
+    monkeypatch.setattr(live_loop.OllamaClient, "_request", capture)
+    monkeypatch.setattr(live_loop, "_read_bmb_api_key", lambda: "a" * 64)
+    monkeypatch.delenv("OLLAMA_HOST", raising=False)
+
+    for model in ("qwen3.8-27b", "qwen3-vl"):
+        client = live_loop.OllamaClient(
+            live_loop.ModelConfig.from_environment(model=model)
+        )
+        assert client.config.uses_openai_protocol
+        client.chat([{"role": "user", "content": "ping"}])
+
+    def capture_ollama(self, path, payload, timeout_seconds):
+        timeouts.append(timeout_seconds)
+        return {"message": {"role": "assistant", "content": "ok"}}
+
+    monkeypatch.setattr(live_loop.OllamaClient, "_request", capture_ollama)
+    cloud = live_loop.OllamaClient(
+        live_loop.ModelConfig.from_environment(model="deepseek-v4-pro:cloud")
+    )
+    cloud.chat([{"role": "user", "content": "ping"}])
+
+    assert timeouts == [
+        live_loop.LLAMA_SWAP_REQUEST_TIMEOUT_SECONDS,
+        live_loop.LLAMA_SWAP_REQUEST_TIMEOUT_SECONDS,
+        live_loop.REQUEST_TIMEOUT_SECONDS,
+    ]
+    # The preflight ceiling stays short: a dead server is still
+    # diagnosed, never waited on for 15 minutes.
+    assert (
+        live_loop.PREFLIGHT_TIMEOUT_SECONDS
+        < live_loop.REQUEST_TIMEOUT_SECONDS
+        < live_loop.LLAMA_SWAP_REQUEST_TIMEOUT_SECONDS
+    )
 
 
 def test_tool_result_round_trip_carries_the_call_id(openai_payloads):
@@ -250,8 +303,16 @@ def test_the_eye_rides_the_daemon_when_the_writer_rides_bmb():
     """A cloud eye does not live on bmb: when the writer is on bmb and
     the eye is a non-bmb model, the eye's config must point at the
     Ollama daemon. (The qwen3.8 eye, by contrast, rides bmb — see
-    test_the_qwen3_8_eye_rides_the_bmb_lane.)"""
-    writer = ModelConfig.from_environment(model="qwen3.8-27b")
+    test_the_qwen3_8_eye_rides_the_bmb_lane.)
+
+    The cloud eye is named here rather than inherited from the default:
+    the default eye is `claude-code:sonnet`, which has a server of its
+    own, so borrowing it would test a different rule than the one this
+    docstring claims.
+    """
+    writer = ModelConfig.from_environment(
+        model="qwen3.8-27b", vision_model="kimi-k2.7-code:cloud"
+    )
     eye = writer.eye_config()
     assert eye.endpoint == "http://localhost:11434"
     assert eye.model == "kimi-k2.7-code:cloud"
@@ -323,3 +384,211 @@ def test_the_401_hint_names_the_bmb_key_for_openai_lanes(monkeypatch):
     assert not status.ok
     assert "llama-swap" in status.detail and ".api-key" in status.detail
     assert "ollama signin" not in status.detail
+
+
+def test_the_local_eye_rides_bigs_llama_swap(monkeypatch):
+    """qwen3-vl lives on big's llama-swap, not on this machine —
+    mac_air's daemon reports zero models, so routing the local eye to
+    LOCAL_ENDPOINT 404'd with "model not found" (measured 2026-08-25,
+    the failure this lane exists to fix). The eye must reroute itself
+    while the cloud writer stays on the daemon that proxies cloud."""
+    monkeypatch.delenv("OLLAMA_HOST", raising=False)
+    writer = ModelConfig.from_environment(
+        model="deepseek-v4-pro:cloud",
+        endpoint="http://localhost:11434",
+        vision_model="qwen3-vl",
+    )
+    assert writer.endpoint == "http://localhost:11434"
+    eye = writer.eye_config()
+    assert eye.endpoint == BIG_ENDPOINT
+    assert eye.model == "qwen3-vl"
+    assert eye.uses_openai_protocol  # big's llama-swap speaks OpenAI
+    # As a writer the same id routes there too.
+    assert (
+        ModelConfig.from_environment(model="qwen3-vl").endpoint == BIG_ENDPOINT
+    )
+    # The describer uses the same rule, not a second copy of it. Both
+    # the class and the patch target come from the LIVE module object:
+    # tests/pure/test_devreload.py purges `blended.*` from sys.modules,
+    # so a later re-import makes this file's module-level OllamaClient a
+    # stale class — patching it would let the call reach big for real.
+    from blended.agent import loop as live_loop
+
+    captured: list[str] = []
+
+    def capture(self, path, payload, timeout_seconds):
+        captured.append(self.config.endpoint)
+        # big's lane is OpenAI-shaped, so the reply must be too — the
+        # eye reads choices[0].message there, not `message`.
+        return {
+            "choices": [
+                {"message": {"role": "assistant", "content": "a render"}}
+            ]
+        }
+
+    monkeypatch.setattr(live_loop.OllamaClient, "_request", capture)
+    describer = live_loop.VisionDescriber(
+        live_loop.OllamaClient(writer), "qwen3-vl"
+    )
+    assert describer.describe([]) == "a render"
+    assert captured == [BIG_ENDPOINT]
+
+
+def test_the_local_qwen_pair_splits_across_two_hosts(monkeypatch):
+    """writer on bmb, eye on big — and each gets its OWN credential:
+    bmb 401s without its key file, big's llama-swap has no apiKeys
+    list and must never receive one."""
+    # Bind ONE live module object for the patch AND the construction:
+    # test_devreload.py purges `blended.*`, so a string patch target
+    # would land on a freshly imported module while this file's
+    # module-level ModelConfig still belongs to the stale one — and the
+    # real key file would answer instead of the fake.
+    from blended.agent import loop as live_loop
+
+    monkeypatch.setattr(live_loop, "_read_bmb_api_key", lambda: "a" * 64)
+    monkeypatch.delenv("OLLAMA_API_KEY", raising=False)
+    monkeypatch.delenv("OLLAMA_HOST", raising=False)
+    writer = live_loop.ModelConfig.from_environment(
+        model="qwen3.8-27b", vision_model="qwen3-vl"
+    )
+    assert writer.endpoint == BMB_ENDPOINT
+    assert writer.api_key == "a" * 64
+    eye = writer.eye_config()
+    assert eye.endpoint == BIG_ENDPOINT
+    assert eye.model == "qwen3-vl"
+    assert eye.uses_openai_protocol
+    assert eye.api_key == ""
+
+
+def test_a_cloud_writers_key_never_rides_to_a_llama_swap_eye(monkeypatch):
+    """The eye's credential follows the eye's SERVER. A cloud writer's
+    Ollama key sent to bmb 401s, and bmb's key has no business on
+    big."""
+    from blended.agent import loop as live_loop
+
+    monkeypatch.setenv("OLLAMA_API_KEY", "cloud-key")
+    monkeypatch.delenv("OLLAMA_HOST", raising=False)
+    monkeypatch.setattr(live_loop, "_read_bmb_api_key", lambda: "b" * 64)
+
+    def eye_for(vision_model):
+        return live_loop.ModelConfig.from_environment(
+            model="deepseek-v4-pro:cloud", vision_model=vision_model
+        ).eye_config()
+
+    assert eye_for("qwen3.8-27b").api_key == "b" * 64
+    assert eye_for("qwen3-vl").api_key == ""
+    # A cloud eye still gets the environment credential.
+    assert eye_for("kimi-k2.7-code:cloud").api_key == "cloud-key"
+
+
+def test_a_404_hint_names_the_missing_model_not_the_api_key(monkeypatch):
+    """A signed-in daemon needs no key, so keying the hint off an empty
+    api_key printed "No OLLAMA_API_KEY" over a 404 and sent a real
+    debugging session chasing auth that was already fine (measured
+    2026-08-25). The hint must follow the observed status code."""
+
+    def missing(self, path, payload, timeout_seconds):
+        raise urllib.error.HTTPError(
+            path, 404, "not found", None, io.BytesIO(b'{"error":"model not found"}')
+        )
+
+    monkeypatch.setattr(OllamaClient, "_request", missing)
+    status = OllamaClient(
+        ModelConfig(model="qwen3-vl", api_key="")
+    ).check_connection()
+    assert not status.ok
+    assert "Nothing at http://localhost:11434 serves" in status.detail
+    assert BIG_ENDPOINT in status.detail
+    assert "OLLAMA_API_KEY" not in status.detail
+    # The printed probe follows the lane's protocol: that config sits on
+    # the local Ollama daemon, so /api/tags — but the same model on big
+    # is an OpenAI lane, where /api/tags does not exist.
+    assert "/api/tags" in status.detail
+    on_big = OllamaClient(
+        ModelConfig(model="qwen3-vl", endpoint=BIG_ENDPOINT, api_key="")
+    ).check_connection()
+    assert not on_big.ok
+    assert "/v1/models" in on_big.detail
+    assert "/api/tags" not in on_big.detail
+
+
+def test_a_connection_refused_carries_no_auth_advice(monkeypatch):
+    """A dead daemon is not an auth problem either: only 401/403 earns
+    the key hint."""
+
+    def refused(self, path, payload, timeout_seconds):
+        raise urllib.error.URLError("Connection refused")
+
+    monkeypatch.setattr(OllamaClient, "_request", refused)
+    status = OllamaClient(
+        ModelConfig(model="deepseek-v4-pro:cloud", api_key="")
+    ).check_connection()
+    assert not status.ok
+    assert "Connection refused" in status.detail
+    assert "OLLAMA_API_KEY" not in status.detail
+
+
+def test_a_vendor_slash_model_rides_openrouter_with_its_own_key(monkeypatch, tmp_path):
+    """`vendor/model` is OpenRouter's id shape and nothing else's. The
+    lane is OpenAI wire, keeps the CLOUD timeout (a dead gateway must be
+    reported, not waited on for 900 s), reads its own key file — in
+    either the bare or the `OPENROUTER_API_KEY=` form — and never the
+    Ollama env key."""
+    from blended.agent import loop as live_loop
+
+    key_file = tmp_path / "openrouter_api_key"
+    key_file.write_text("OPENROUTER_API_KEY=sk-or-v1-deadbeef\n")
+    monkeypatch.setattr(live_loop, "OPENROUTER_API_KEY_FILE", key_file)
+    monkeypatch.setenv("OLLAMA_API_KEY", "ollama-key-must-not-leak")
+    monkeypatch.delenv("OLLAMA_HOST", raising=False)
+
+    config = live_loop.ModelConfig.from_environment(model="qwen/qwen3-vl-8b-instruct")
+    assert config.endpoint == live_loop.OPENROUTER_ENDPOINT
+    assert config.uses_openai_protocol
+    assert config.api_key == "sk-or-v1-deadbeef"
+    assert config.request_timeout_seconds == live_loop.REQUEST_TIMEOUT_SECONDS
+
+    key_file.write_text("sk-or-v1-bare\n")
+    assert live_loop._read_openrouter_api_key() == "sk-or-v1-bare"
+
+    key_file.write_text("not-a-key\n")
+    with pytest.raises(RuntimeError):
+        live_loop._read_openrouter_api_key()
+
+    # A cloud eye beside an OpenRouter writer rides the daemon with the
+    # env key; an OpenRouter eye beside a cloud writer rides OpenRouter.
+    key_file.write_text("sk-or-v1-eye\n")
+    writer = live_loop.ModelConfig.from_environment(
+        model="qwen/qwen3-vl-8b-instruct", vision_model="kimi-k2.7-code:cloud"
+    )
+    assert writer.eye_config().endpoint == live_loop.LOCAL_ENDPOINT
+    assert writer.eye_config().api_key == "ollama-key-must-not-leak"
+    cloud_writer = live_loop.ModelConfig.from_environment(
+        model="deepseek-v4-pro:cloud", vision_model="qwen/qwen3-vl-8b-instruct"
+    )
+    assert cloud_writer.eye_config().endpoint == live_loop.OPENROUTER_ENDPOINT
+    assert cloud_writer.eye_config().api_key == "sk-or-v1-eye"
+
+
+def test_the_completion_cap_is_per_config_so_a_metered_lane_can_bound_spend(
+    monkeypatch,
+):
+    from blended.agent import loop as live_loop
+
+    payloads: list[dict] = []
+
+    def capture(self, path, payload, timeout_seconds):
+        payloads.append(payload)
+        return {"choices": [{"message": {"role": "assistant", "content": "ok"}}]}
+
+    monkeypatch.setattr(live_loop.OllamaClient, "_request", capture)
+    client = live_loop.OllamaClient(
+        live_loop.ModelConfig(
+            model="qwen/qwen3-vl-8b-instruct",
+            endpoint=live_loop.OPENROUTER_ENDPOINT,
+            api_key="sk-or-v1-x",
+            max_completion_tokens=64,
+        )
+    )
+    client.chat([{"role": "user", "content": "ping"}])
+    assert payloads[0]["max_tokens"] == 64

@@ -1,6 +1,6 @@
 {
   "control_specificity": 1.0,
-  "examiner_identity": "kimi-k2.7-code:cloud+examiner:60a9920cb938",
+  "examiner_identity": "claude-code:sonnet+examiner:60a9920cb938",
   "fixtures": [
     {
       "abstained": false,
@@ -47,7 +47,6 @@
       "brief": "three_leg_stool",
       "detected": true,
       "deviations": [
-        "offset_part",
         "wrong_proportion"
       ],
       "expected_tags": [
@@ -58,11 +57,8 @@
     {
       "abstained": false,
       "brief": "three_leg_stool",
-      "detected": true,
-      "deviations": [
-        "offset_part",
-        "wrong_proportion"
-      ],
+      "detected": false,
+      "deviations": [],
       "expected_tags": [
         "floating_part",
         "offset_part"
@@ -72,9 +68,10 @@
     {
       "abstained": false,
       "brief": "crate_with_lid",
-      "detected": false,
+      "detected": true,
       "deviations": [
-        "wrong_proportion"
+        "material_missing",
+        "offset_part"
       ],
       "expected_tags": [
         "offset_part"
@@ -86,8 +83,6 @@
       "brief": "three_leg_stool",
       "detected": true,
       "deviations": [
-        "missing_feature",
-        "missing_part",
         "wrong_count"
       ],
       "expected_tags": [
@@ -101,8 +96,7 @@
       "brief": "planter_box",
       "detected": true,
       "deviations": [
-        "missing_feature",
-        "missing_part"
+        "missing_feature"
       ],
       "expected_tags": [
         "missing_feature"
@@ -110,7 +104,7 @@
       "name": "sealed_drain"
     }
   ],
-  "recorded_at": "2026-08-24T13:45:00.050209+00:00",
+  "recorded_at": "2026-09-05T23:03:13.873744+00:00",
   "sensitivity": 0.8,
   "view_names": [
     "front",
@@ -119,5 +113,5 @@
     "bottom",
     "three_quarter"
   ],
-  "vision_model": "kimi-k2.7-code:cloud"
+  "vision_model": "claude-code:sonnet"
 }

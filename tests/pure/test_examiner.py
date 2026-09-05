@@ -235,3 +235,25 @@ def test_calibration_problems_are_loud():
 def test_missing_calibration_file_is_a_problem(tmp_path):
     calibration = Calibration.missing()
     assert calibration.problems("anything") != []
+
+
+def test_the_shipped_eye_holds_the_licence_in_the_repository():
+    """The default eye must be the one the calibration file licenses.
+
+    The licence is identity-bound, so changing the default eye without
+    re-running `make calibrate-eye` does not fail loudly — it makes
+    every machine verdict refuse at preflight, which reads as "the
+    harness is broken" rather than "the eye was swapped". Shipping an
+    eye the repository cannot license is the failure this pins.
+    """
+    from blended.agent.loop import ModelConfig
+    from blended.evaluate.examiner import load_calibration
+
+    shipped_eye = ModelConfig().vision_model
+    calibration = load_calibration()
+    assert calibration.problems(examiner_identity(shipped_eye)) == [], (
+        f"the shipped eye {shipped_eye!r} is not the one "
+        f"_evaluate/eye_calibration.json licenses "
+        f"({calibration.examiner_identity!r}) — re-run "
+        f"`make calibrate-eye` for the new eye, or ship the calibrated one"
+    )

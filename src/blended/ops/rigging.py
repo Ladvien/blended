@@ -1,0 +1,262 @@
+"""Armature rigging operations through the data API.
+
+Why this op exists: a chat agent needs to rig, weight-paint, and animate
+through `blended.ops`, but creating bones requires entering EDIT mode on
+an armature — an inherently context-dependent operation. This module
+wraps that context dance behind a declarative `BoneSpec` list so the
+caller never touches `bpy.ops` directly.
+
+Idempotent by name, like the primitive constructors: re-running
+`add_armature` under the same name removes the stale object and armature
+data before rebuilding, so a failed attempt never poisons a retry with
+a `.001`-suffixed sibling.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+
+MINIMUM_BONE_LENGTH_M = 1e-6
+"""Bones shorter than this are treated as zero-length and rejected.
+
+Blender allows degenerate bones but they break the heat-skin solver and
+confuse the weight-paint UI; rejecting them early turns a mysterious
+runtime crash into a clear ValueError."""
+
+ARMATURE_MODIFIER_TYPE = "ARMATURE"
+
+
+@dataclass(frozen=True)
+class BoneSpec:
+    """Declarative description of one edit bone.
+
+    Coordinates are in **armature-local** metres, matching the
+    `location_m` offset applied to the armature object.  `parent_name`
+    must reference a bone that appears earlier in the `bones` tuple
+    (parents are resolved in order during edit-bone construction).
+    """
+
+    name: str
+    head_m: tuple[float, float, float]
+    tail_m: tuple[float, float, float]
+    parent_name: str = ""
+    connected: bool = False
+
+
+@dataclass(frozen=True)
+class RigReport:
+    """Frozen snapshot of an armature's rig state for chat-E2E asserts."""
+
+    armature_name: str
+    bone_count: int
+    bone_names: tuple[str, ...]
+    # Meshes this armature ACTUALLY deforms: an Armature modifier that
+    # points here and is enabled in both viewport and render.
+    bound_mesh_names: tuple[str, ...]
+    # Meshes wired to this armature by a DISABLED modifier. They carry
+    # every sign of a finished rig — parent set, vertex groups weighted,
+    # modifier present — and deform nothing, which is the rig-lane
+    # version of the gate's `hide_render` hole. Reported separately so
+    # `bound_mesh_names` keeps meaning "deforming".
+    disabled_modifier_mesh_names: tuple[str, ...] = ()
+
+
+def _remove_armature_and_data(name: str) -> None:
+    """Remove an existing armature object and its orphaned armature data.
+
+    The idempotency primitive for armatures: constructors call this first
+    so a rerun replaces the stale rig instead of creating a `.001`
+    sibling.  Only removes the armature *data* when no other object
+    references it (users == 0), matching the mesh-removal convention.
+    """
+    import bpy
+
+    existing = bpy.data.objects.get(name)
+    if existing is not None:
+        armature_data = existing.data
+        bpy.data.objects.remove(existing)
+        if armature_data is not None and armature_data.users == 0:
+            bpy.data.armatures.remove(armature_data)
+
+
+def add_armature(
+    name: str,
+    bones: tuple[BoneSpec, ...],
+    location_m: tuple[float, float, float] = (0.0, 0.0, 0.0),
+):
+    """Create an armature object with the given edit bones.
+
+    Idempotent by name (removes any existing object + armature data of
+    that name first).  Bones are created in EDIT mode via
+    `temp_override` — the only context-safe way to manipulate
+    `armature.edit_bones` in a headless Blender.  Returns the armature
+    object (in OBJECT mode).
+
+    Raises:
+        ValueError: on empty bones, duplicate bone names, unknown parent
+            references, or zero-length bones (below
+            ``MINIMUM_BONE_LENGTH_M``).
+    """
+    import bpy
+
+    if not bones:
+        raise ValueError("add_armature requires at least one bone")
+
+    bone_names = [b.name for b in bones]
+    if len(set(bone_names)) != len(bone_names):
+        raise ValueError(f"Duplicate bone names in add_armature({name!r}): {bone_names}")
+
+    for spec in bones:
+        if spec.parent_name and spec.parent_name not in bone_names:
+            raise ValueError(
+                f"Bone {spec.name!r} references unknown parent "
+                f"{spec.parent_name!r}"
+            )
+
+    for spec in bones:
+        dx = spec.tail_m[0] - spec.head_m[0]
+        dy = spec.tail_m[1] - spec.head_m[1]
+        dz = spec.tail_m[2] - spec.head_m[2]
+        length = (dx * dx + dy * dy + dz * dz) ** 0.5
+        if length < MINIMUM_BONE_LENGTH_M:
+            raise ValueError(
+                f"Bone {spec.name!r} has zero length ({length:.2e} m < "
+                f"{MINIMUM_BONE_LENGTH_M:.2e} m)"
+            )
+
+    _remove_armature_and_data(name)
+
+    armature_data = bpy.data.armatures.new(name)
+    armature_object = bpy.data.objects.new(name, armature_data)
+    armature_object.location = location_m
+    bpy.context.scene.collection.objects.link(armature_object)
+
+    # edit_bones are only editable in EDIT mode.  In a headless context
+    # there is no active area, so we must override the mode context via
+    # temp_override rather than relying on the viewport.
+    bpy.context.view_layer.objects.active = armature_object
+    armature_object.select_set(True)
+    with bpy.context.temp_override(
+        object=armature_object,
+        active_object=armature_object,
+        selected_objects=[armature_object],
+    ):
+        bpy.ops.object.mode_set(mode="EDIT")
+
+        created: dict[str, object] = {}
+        for spec in bones:
+            edit_bone = armature_data.edit_bones.new(spec.name)
+            edit_bone.head = spec.head_m
+            edit_bone.tail = spec.tail_m
+            if spec.parent_name:
+                edit_bone.parent = created[spec.parent_name]
+                edit_bone.use_connect = spec.connected
+            created[spec.name] = edit_bone
+
+        bpy.ops.object.mode_set(mode="OBJECT")
+
+    armature_object.select_set(False)
+    return armature_object
+
+
+def bind_mesh_to_armature(
+    mesh_object,
+    armature_object,
+    automatic_weights: bool = True,
+):
+    """Parent a mesh to an armature with an Armature modifier.
+
+    Uses the data API for the parent relationship and modifier
+    (``mesh_object.parent``, ``modifier.object``).  When
+    ``automatic_weights`` is True, delegates to
+    ``bpy.ops.object.parent_set(type='ARMATURE_AUTO')`` under
+    ``temp_override`` — bpy.ops is unavoidable here because the
+    automatic heat-skin weight generation (`mesh_data.transform`,
+    nearest-bone heat diffusion) is implemented entirely inside that
+    operator with no data-API equivalent.  The override supplies the
+    selection/active context the operator requires.
+
+    Idempotent: removes any pre-existing Armature modifier on the mesh
+    before (re-)adding exactly one, so re-binding never stacks modifiers.
+    Returns the mesh object.
+    """
+    import bpy
+
+    # Remove stale Armature modifiers so re-binding leaves exactly one.
+    for mod in list(mesh_object.modifiers):
+        if mod.type == ARMATURE_MODIFIER_TYPE:
+            mesh_object.modifiers.remove(mod)
+
+    mesh_object.parent = armature_object
+
+    if automatic_weights:
+        # parent_set with ARMATURE_AUTO generates vertex groups + heat
+        # weights AND adds the Armature modifier internally.  We run it
+        # first, then normalise the modifier count to exactly one.
+        for obj in bpy.context.scene.collection.all_objects:
+            obj.select_set(False)
+        mesh_object.select_set(True)
+        armature_object.select_set(True)
+        bpy.context.view_layer.objects.active = armature_object
+        with bpy.context.temp_override(
+            selected_objects=[mesh_object, armature_object],
+            active_object=armature_object,
+        ):
+            bpy.ops.object.parent_set(type="ARMATURE_AUTO")
+
+        # parent_set may add its own Armature modifier; collapse to one.
+        armature_mods = [
+            m for m in mesh_object.modifiers if m.type == ARMATURE_MODIFIER_TYPE
+        ]
+        if armature_mods:
+            armature_mods[0].object = armature_object
+            for extra in armature_mods[1:]:
+                mesh_object.modifiers.remove(extra)
+        else:
+            mod = mesh_object.modifiers.new(name="Armature", type=ARMATURE_MODIFIER_TYPE)
+            mod.object = armature_object
+    else:
+        mod = mesh_object.modifiers.new(name="Armature", type=ARMATURE_MODIFIER_TYPE)
+        mod.object = armature_object
+
+    return mesh_object
+
+
+def rig_report(armature_object) -> RigReport:
+    """Return a frozen snapshot of the armature and its bound meshes.
+
+    A mesh counts as BOUND only when its Armature modifier points at
+    ``armature_object`` AND is enabled in viewport and render. A
+    disabled modifier is reported separately rather than counted:
+    parenting, vertex groups and a modifier can all be in place while
+    the mesh deforms nowhere, and a report that called that "bound"
+    would be telling the writer its rig works.
+    """
+    import bpy
+
+    armature_data = armature_object.data
+    bone_names = tuple(bone.name for bone in armature_data.bones)
+
+    bound_mesh_names: list[str] = []
+    disabled_mesh_names: list[str] = []
+    for obj in bpy.data.objects:
+        if obj.type != "MESH":
+            continue
+        for mod in obj.modifiers:
+            if (
+                mod.type == ARMATURE_MODIFIER_TYPE
+                and mod.object is armature_object
+            ):
+                if mod.show_viewport and mod.show_render:
+                    bound_mesh_names.append(obj.name)
+                else:
+                    disabled_mesh_names.append(obj.name)
+                break
+
+    return RigReport(
+        armature_name=armature_object.name,
+        bone_count=len(bone_names),
+        bone_names=bone_names,
+        bound_mesh_names=tuple(bound_mesh_names),
+        disabled_modifier_mesh_names=tuple(disabled_mesh_names),
+    )

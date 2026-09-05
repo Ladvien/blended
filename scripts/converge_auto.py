@@ -129,12 +129,9 @@ def preflight(arguments, brief_names) -> list[str]:
     writer_status = client.check_connection()
     if not writer_status.ok:
         problems.append(f"writer model unreachable: {writer_status.detail}")
+    # ONE routing rule: the eye's server follows its own model id.
     eye_client = _client(arguments.model, arguments.vision_model)
-    from dataclasses import replace as _replace
-
-    eye_client.config = _replace(
-        eye_client.config, model=eye_client.config.vision_model
-    )
+    eye_client.config = eye_client.config.eye_config()
     eye_status = eye_client.check_connection()
     if not eye_status.ok:
         problems.append(f"vision model unreachable: {eye_status.detail}")

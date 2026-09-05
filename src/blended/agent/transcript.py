@@ -33,8 +33,10 @@ EVENT_HEADINGS = {
     "tool": "→ tool call",
     "result": "← tool result",
     "vision": "👁 what the render shows",
+    "plan": "📋 plan",
+    "step": "▶ step",
+    "render": "🖼 render",
     "error": "⚠️ error",
-    "reload": "↻ reload",
 }
 
 

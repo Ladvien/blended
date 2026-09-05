@@ -73,12 +73,195 @@ class HarnessResult:
         return "\n".join(lines)
 
 
+# An object can hold flawless geometry and still be invisible, and every
+# mesh check would still pass: the analyzer reads the mesh datablock, and
+# the capture path links a copy into a temporary scene of its own, so it
+# renders a contact sheet for an asset nobody can see.
+#
+# Measured 2026-09-05, one live GUI turn plus a probe of every cause:
+#
+#   cause                          scene  view_layer  visible_get  gate
+#   never linked                   False  False       False        PASS
+#   collection excluded            True   False       False        PASS
+#   hide_viewport = True           True   True        False        PASS
+#   hide_set(True) (eye icon)      True   True        False        PASS
+#   control                        True   True        True         PASS
+#
+# `Object.visible_get()` is False for all four, so ONE call is the whole
+# rule — but the model has to know WHICH cause to fix, so the causes are
+# distinguished for the message and nothing else.
+#
+# `hide_render` is the fifth cause and the sneakiest: `visible_get()`
+# stays True, the user does see the object, and the gate passes — while
+# the render it is judged by silently loses it. Measured on the harness's
+# own contact sheet: 634280 bytes with the object, 318310 without.
+VISIBILITY_FAILURES = {
+    "unlinked": (
+        "{name!r} exists as a datablock but is NOT linked into the scene, "
+        "so nothing the user can see has changed and it would be missing "
+        "from any export. Link it at the end of the chunk with "
+        "`blended.ops.primitives.link_into_scene(obj)`."
+    ),
+    "excluded": (
+        "{name!r} is linked into the scene but sits in a collection that "
+        "is EXCLUDED from the view layer, so the user's viewport never "
+        "shows it. Link it into the scene collection instead of an "
+        "excluded one."
+    ),
+    "hidden": (
+        "{name!r} is in the view layer but HIDDEN "
+        "(`hide_viewport = True` or `hide_set(True)`), so the user sees "
+        "nothing. Clear the flag on the object you just built."
+    ),
+    "unrenderable": (
+        "{name!r} is visible in the viewport but has "
+        "`hide_render = True`, so it is absent from every render — "
+        "including the contact sheet this gate would have shown you. "
+        "Clear it."
+    ),
+}
+
+
+def invisibility_failure(blender_object) -> str:
+    """Why this object cannot be seen, or "" when it can.
+
+    One ordered walk from the coarsest cause to the finest, so the
+    message names the thing to fix rather than the symptom.
+
+    The view layer is synced first, and that is load-bearing: an object
+    linked by the chunk that just ran is in `scene.objects` immediately
+    but does NOT appear in `view_layer.objects` until the depsgraph
+    catches up, so without this the gate accused every freshly built
+    object of sitting in an excluded collection (caught by
+    tests/blender/test_harness.py and test_task_loop.py).
+    """
+    import bpy
+
+    _synchronise_view_layer()
+    name = blender_object.name
+    if name not in bpy.context.scene.objects:
+        return VISIBILITY_FAILURES["unlinked"].format(name=name)
+    if name not in bpy.context.view_layer.objects:
+        return VISIBILITY_FAILURES["excluded"].format(name=name)
+    if not blender_object.visible_get():
+        return VISIBILITY_FAILURES["hidden"].format(name=name)
+    if blender_object.hide_render:
+        return VISIBILITY_FAILURES["unrenderable"].format(name=name)
+    return ""
+
+
+# The analyzer measures the EVALUATED mesh (modifiers included) in the
+# object's own LOCAL space, so the object matrix sits outside everything
+# it can see. Measured 2026-09-05, every case gate=PASS before this:
+#
+#   transform            world extent        glTF export
+#   scale.x = 0          (0, 1, 1)           writes a degenerate mesh
+#   scale.x = 1e-9       (1e-09, 1, 1)       writes a degenerate mesh
+#   location.x = NaN     (nan, 1, 1)         writes, silently poisoned
+#   scale.x = inf        (3.4e+38, 1, 1)     raises RuntimeError
+#   scale.x = 10         (10, 1, 1)          fine — a legitimate stretch
+#
+# A NaN transform is the worst of them: the mesh measures perfect, the
+# gate passes, and every world-space number the model prints back to
+# itself is NaN.
+TRANSFORM_FAILURES = {
+    "non_finite": (
+        "{name!r} has a NON-FINITE object transform ({detail}), so every "
+        "world-space measurement you print is meaningless and a glTF "
+        "export raises. Its mesh is fine — fix the object's location, "
+        "rotation or scale."
+    ),
+    "collapsed": (
+        "{name!r} has a COLLAPSED axis in its transform (world scale "
+        "{detail}), so it is flattened to nothing in the scene even "
+        "though its mesh measures fine. Give it a non-zero scale, or "
+        "bake the intended size into the mesh."
+    ),
+}
+# Nothing legitimate scales one axis a MILLION times smaller than
+# another: a 1 cm panel cut from a 1 m cube is 1e-2, and a small object
+# is scaled uniformly (ratio 1), so this catches only genuine collapse.
+# The observed degenerate values are exactly 0 and 1e-9.
+COLLAPSED_SCALE_RATIO = 1e-6
+
+
+def _synchronise_view_layer() -> None:
+    """Make the evaluated scene state current before reading it.
+
+    Load-bearing for BOTH scene-state checks, and for the same reason:
+    an object linked by the chunk that just ran is absent from
+    `view_layer.objects`, and a scale assigned by that chunk is absent
+    from `matrix_world`, until the depsgraph catches up. Reading either
+    without this measures the previous frame — which first turned nine
+    green tests red, then hid a collapsed transform behind a PASS.
+    """
+    import bpy
+
+    bpy.context.view_layer.update()
+
+
+def degenerate_transform_failure(blender_object) -> str:
+    """Why this object's transform is unusable, or "" when it is fine.
+
+    Tests the SCALE LENGTHS' anisotropy rather than the determinant: a
+    legitimately tiny object (a 1 mm cube scaled 0.001 uniformly) has a
+    determinant of 1e-9 while being perfectly healthy, so a determinant
+    threshold would refuse real work.
+    """
+    import math
+
+    _synchronise_view_layer()
+    matrix = blender_object.matrix_world
+    non_finite = [
+        value
+        for row in matrix
+        for value in row
+        if not math.isfinite(value)
+    ]
+    if non_finite:
+        return TRANSFORM_FAILURES["non_finite"].format(
+            name=blender_object.name,
+            detail=f"{len(non_finite)} non-finite matrix element(s)",
+        )
+    scale = matrix.to_scale()
+    magnitudes = [abs(component) for component in scale]
+    if max(magnitudes) == 0.0 or (
+        min(magnitudes) / max(magnitudes) < COLLAPSED_SCALE_RATIO
+    ):
+        return TRANSFORM_FAILURES["collapsed"].format(
+            name=blender_object.name,
+            detail="(" + ", ".join(f"{value:.3g}" for value in scale) + ")",
+        )
+    return ""
+
+
+def scene_state_failure(blender_object) -> str:
+    """Everything the mesh analyzer cannot see, in one call.
+
+    The transform first: with a NaN matrix, "can it be seen" is not even
+    a meaningful question.
+    """
+    return (
+        degenerate_transform_failure(blender_object)
+        or invisibility_failure(blender_object)
+    )
+
+
 def _gate_capture_export(
     blender_object, settings: HarnessSettings, execution_summary: str
 ) -> HarnessResult:
-    """The shared back half: analyze, sheet, optionally export."""
+    """The shared back half: scene state, analyze, sheet, optionally export."""
     from blended.analyze import analyze_object
     from blended.capture import capture_contact_sheet
+
+    unusable = scene_state_failure(blender_object)
+    if unusable:
+        return HarnessResult(
+            ok=False,
+            stage_reached="locate",
+            object_name=blender_object.name,
+            execution_summary=execution_summary + "; " + unusable,
+        )
 
     report = analyze_object(blender_object)
     gate_failures = tuple(report.failures(settings.budget))
@@ -181,7 +364,8 @@ def run_chunk(
             stage_reached="locate",
             object_name=object_name,
             execution_summary=execution_summary
-            + f"; expected object {object_name!r} not found in scene",
+            + f"; expected object {object_name!r} does not exist "
+            + "(no such datablock in bpy.data.objects)",
         )
     return _gate_capture_export(built_object, settings, execution_summary)
 

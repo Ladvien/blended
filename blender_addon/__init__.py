@@ -16,6 +16,29 @@ inline freezes Blender's UI. So:
 The worker parks a request and waits; the timer picks it up, runs the
 tool on the main thread, and hands the result back. Nothing touches bpy
 off-thread.
+
+WHAT THE PANEL IS FOR. This is a creation task, and creation is the one
+cell of the human-AI matrix where the combination measurably beats
+either side alone: across 106 experiments / 370 effect sizes, decision
+tasks LOSE and creation tasks GAIN, with synergy appearing exactly when
+the human alone outperforms the AI alone (g = 0.46, DOI
+10.1038/s41562-024-02024-1). The user owns intent and taste; the agent
+owns routine construction.
+
+What eats that gain is review cost — experienced developers were
+measurably SLOWED on repositories they knew well while believing they
+had been sped up (DOI 10.48550/arXiv.2507.09089). So every element here
+is scored by how cheaply the user can tell whether the result is right:
+the plan and the renders sit next to the prompt box, tool traffic
+collapses to one line each, and a turn is one undo step. Uncertainty is
+stated impersonally and attached to a measurement rather than hedged in
+the first person, which reduces overreliance without the trust penalty
+that "I'm not sure" carries (DOI 10.48550/arxiv.2405.00623).
+
+Nothing in this panel fires on its own. Proactive assistance is
+accepted when it arrives at a natural workflow boundary and stays
+user-triggered (DOI 10.1145/3742413.3789148); until there is a boundary
+worth acting on, the agent speaks only when sent.
 """
 
 bl_info = {
@@ -30,6 +53,7 @@ bl_info = {
 
 import importlib
 import importlib.util
+import json
 import os
 import queue
 import sys
@@ -50,6 +74,19 @@ import bpy
 _TOOL_REQUESTS: "queue.Queue" = queue.Queue()
 _TIMER_INTERVAL_SECONDS = 0.15
 _MAXIMUM_TRANSCRIPT_LINES = 400
+# Model-id prefix of the Claude Code CLI lane. Duplicated from
+# `blended.agent.claude_code.CLAUDE_CODE_MODEL_PREFIX` on purpose: the
+# preferences panel must draw before the library is importable (that is
+# where you point it at the library in the first place).
+_CLAUDE_CODE_MODEL_PREFIX = "claude-code:"
+# The Eye dropdown's "no separate eye" row. It carries a real token
+# because Blender DROPS an enum item whose identifier is the empty
+# string: measured live 2026-09-05 in a GUI session, assigning "" to
+# vision_model_name raised `enum "" not found in ('kimi-k2.7-code:cloud',
+# ...)` and the row was absent from the RNA item list — so the eye could
+# not be switched off from the UI at all, which is exactly the setting a
+# vision-capable writer (any `claude-code:` model) wants.
+_EYE_NONE_IDENTIFIER = "none"
 # Fingerprinting ~40 files at the tool-timer's 0.15s would be wasteful,
 # so auto-reload checks on its own slower cadence.
 _AUTO_RELOAD_INTERVAL_SECONDS = 1.0
@@ -64,6 +101,14 @@ _RELOAD_IN_PROGRESS = False
 # A manual reload is deferred (the operator must not unregister its own
 # class mid-frame): the timer must stand down until it has run.
 _RELOAD_PENDING = False
+# The undo step's name in Blender's own undo history: long enough to
+# tell two turns apart in the Edit menu, short enough not to run off it.
+_UNDO_MESSAGE_CHARACTERS = 48
+# The paired render thumbnails. Blender scales an icon by multiples of
+# its own icon size, so this is a factor, not pixels.
+_THUMBNAIL_SCALE = 3.0
+# Redraw only when the panel's data actually moved.
+_LAST_DRAWN_REVISION = [-1]
 
 
 def _ensure_blended_importable(
@@ -280,6 +325,17 @@ def _hot_reload(preferences) -> str:
         _RELOAD_IN_PROGRESS = False
 
 
+def _eye_model_id(vision_model_name: str) -> str:
+    """The eye's MODEL id from the dropdown's token.
+
+    `_EYE_NONE_IDENTIFIER` means "no separate eye — the writer looks at
+    its own renders", which `ModelConfig` spells as an empty
+    `vision_model`. One place converts, so the token never reaches the
+    library and the empty string never reaches an enum.
+    """
+    return "" if vision_model_name == _EYE_NONE_IDENTIFIER else vision_model_name
+
+
 def _snapshot_preferences(preferences):
     """Read the preference VALUES a reload needs off the RNA object.
 
@@ -308,6 +364,7 @@ def _snapshot_preferences(preferences):
         endpoint=plain_value("endpoint", ""),
         api_key=plain_value("api_key", ""),
         vision_model_name=plain_value("vision_model_name", ""),
+        claude_code_binary_path=plain_value("claude_code_binary_path", ""),
         log_chat=plain_value("log_chat", False),
         log_directory=plain_value("log_directory", ""),
     )
@@ -332,6 +389,11 @@ def _hot_reload_unlocked(preferences) -> str:
     routing = _STATE.routing
     prompt_history = _STATE.prompt_history[:]
     history_index = _STATE.history_index
+    # A reload mid-session must not lose the turn's plan or the right to
+    # revert it: both are what the panel is showing at that moment.
+    plan = _STATE.plan
+    can_revert = _STATE.can_revert
+    undo_guard = _STATE.undo_guard
     old_queue = _TOOL_REQUESTS
     old_session = _STATE.session
     old_library_fingerprint = (
@@ -402,6 +464,9 @@ def _hot_reload_unlocked(preferences) -> str:
     module._STATE.routing = routing
     module._STATE.prompt_history = prompt_history
     module._STATE.history_index = history_index
+    module._STATE.plan = plan
+    module._STATE.can_revert = can_revert
+    module._STATE.undo_guard = undo_guard
     module._TOOL_REQUESTS = old_queue
     module._LAST_ADDON_FINGERPRINT = old_addon_fingerprint
 
@@ -525,6 +590,12 @@ def _drain_tool_requests():
         finally:
             request.completed.set()
 
+    # The turn is over: give Blender its undo pushes back. This runs on
+    # the main thread on purpose — the guard writes a preference, and
+    # the worker thread that finished the turn may not touch RNA.
+    if not _STATE.busy and _STATE.undo_guard is not None and _STATE.undo_guard.is_open:
+        _STATE.undo_guard.close()
+
     # Auto-reload runs on the main thread here, and never mid-turn:
     # purging modules while a worker is executing library code would
     # pull the floor out from under it.
@@ -536,7 +607,13 @@ def _drain_tool_requests():
         except Exception:  # noqa: BLE001 — dev convenience must never break the timer
             pass
 
-    _redraw_sidebars()
+    # A streaming turn moves _STATE.revision several times a second and
+    # an idle session never moves it at all, so this is the difference
+    # between a live panel and waking every VIEW_3D area 6.7 times a
+    # second for nothing.
+    if _STATE.revision != _LAST_DRAWN_REVISION[0]:
+        _LAST_DRAWN_REVISION[0] = _STATE.revision
+        _redraw_sidebars()
     return _TIMER_INTERVAL_SECONDS
 
 
@@ -571,10 +648,52 @@ class _SessionState:
         self.prompt_history: list[str] = []
         self.history_index: int | None = None
         self.suppress_prompt_send = False
+        # The reply being streamed right now: (kind, text so far). Drawn
+        # as a live bubble under the history and replaced by the whole
+        # event ("thinking"/"answer") once the model finishes it.
+        self.live_kind = ""
+        self.live_text = ""
+        # The plan the agent declared for the turn in flight and how far
+        # through it the agent reports being. Magentic-UI's measured
+        # shape: a list of natural-language steps SHARED between user
+        # and agent, with a progress bar over them during execution
+        # (DOI 10.48550/arXiv.2507.22358). It is a shared
+        # representation, not an approval gate — users approve ~93% of
+        # permission prompts, so a gate buys oversight it does not
+        # deliver (DOI 10.48550/arxiv.2604.14228).
+        self.plan = None
+        # Open for exactly as long as the worker runs, so the whole turn
+        # collapses into one undo step. H-LAN: match the host's design
+        # language, undo/redo included
+        # (DOI 10.1080/10447318.2026.2632170).
+        self.undo_guard = None
+        self.can_revert = False
+        # Bumped by every change the panel can see. The timer redraws
+        # only when this moved, so an idle sidebar costs nothing —
+        # before this, every VIEW_3D area was tagged for redraw 6.7
+        # times a second forever.
+        self.revision = 0
 
     def log(self, kind: str, text: str):
+        self.revision += 1
+        if kind.endswith("_delta"):
+            base_kind = kind[: -len("_delta")]
+            if base_kind != self.live_kind:
+                self.live_kind, self.live_text = base_kind, ""
+            self.live_text += text
+            return
+        self.live_kind, self.live_text = "", ""
+        if kind == "plan":
+            from blended.agent.plan import decode_plan_event
+
+            self.plan = decode_plan_event(text)
+        elif kind == "step" and self.plan is not None:
+            self.plan = self.plan.with_step(int(text))
         self.transcript.append((kind, text))
         del self.transcript[:-_MAXIMUM_TRANSCRIPT_LINES]
+        disk_transcript = getattr(self.session, "transcript", None)
+        if disk_transcript is not None:
+            disk_transcript.record(kind, text)
 
 
 _STATE = _SessionState()
@@ -592,7 +711,8 @@ def _build_session(preferences):
         model=preferences.model_name,
         endpoint=preferences.endpoint,
         api_key=preferences.api_key,
-        vision_model=preferences.vision_model_name,
+        vision_model=_eye_model_id(preferences.vision_model_name),
+        claude_code_binary_path=preferences.claude_code_binary_path,
     )
 
     def main_thread_dispatch(tool_name, arguments, output_directory):
@@ -611,6 +731,11 @@ def _build_session(preferences):
         client=OllamaClient(config),
         output_directory=Path(bpy.app.tempdir) / "blended_agent",
         dispatch=main_thread_dispatch,
+        stream_replies=True,
+        # The user watches this session, so it owes them a plan before
+        # it changes their scene. Batch drivers keep the unplanned
+        # contract — see AgentSession.require_plan.
+        require_plan=True,
     )
     _STATE.routing = config.describe_routing()
 
@@ -673,26 +798,84 @@ class BLENDED_OT_send(bpy.types.Operator):
                 self.report({"ERROR"}, str(build_error))
                 return {"CANCELLED"}
 
+        # What the user has selected IS part of the request: "make this
+        # taller" is the natural way to ask, and selection is the
+        # second-largest family of user-guided controllability
+        # techniques in the generative-UI survey
+        # (DOI 10.48550/arXiv.2410.22370). Blender already provides
+        # world-class selection, so the harness wires the existing
+        # selection into the conversation instead of adding widgets.
+        from blended.agent.scene_context import (
+            collect_scene_context,
+            render_scene_context,
+            summarize_scene_context,
+        )
+
+        scene_context = collect_scene_context(context)
+        context_block = render_scene_context(scene_context)
+        model_text = f"{user_text}\n\n{context_block}" if context_block else user_text
+
         _STATE.log("user", user_text)
+        if context_block:
+            _STATE.log(
+                "context",
+                summarize_scene_context(
+                    scene_context,
+                    _characters_per_line(
+                        context.region.width if context.region else _NARROW_SIDEBAR_PIXELS,
+                        context.preferences.system.ui_scale,
+                    ),
+                ),
+            )
         if not _STATE.prompt_history or _STATE.prompt_history[-1] != user_text:
             _STATE.prompt_history.append(user_text)
         _STATE.history_index = None
         scene_properties.prompt = ""
+        _STATE.plan = None
         _STATE.busy = True
+        _STATE.revision += 1
+
+        # One undo step for the whole turn: push a named restore point
+        # now, then stop Blender pushing one per operator until the turn
+        # ends. Opened here rather than in the worker because the
+        # preference write must happen on the main thread.
+        from blended.ui.turn_undo import TurnUndoGuard
+
+        _STATE.undo_guard = TurnUndoGuard(message=f"blended: {user_text[:_UNDO_MESSAGE_CHARACTERS]}")
+        _STATE.undo_guard.open()
 
         def worker():
             try:
                 _STATE.session.send(
-                    user_text,
+                    model_text,
                     on_event=lambda kind, text: _STATE.log(kind, text),
                 )
             except Exception as run_error:  # noqa: BLE001
                 _STATE.log("error", str(run_error))
             finally:
                 _STATE.busy = False
+                _STATE.can_revert = True
+                _STATE.revision += 1
 
         _STATE.worker = threading.Thread(target=worker, daemon=True)
         _STATE.worker.start()
+        return {"FINISHED"}
+
+
+class BLENDED_OT_stop(bpy.types.Operator):
+    bl_idname = "blended.stop_turn"
+    bl_label = "Stop"
+    bl_description = (
+        "Stop the agent at its next step. The model call in flight finishes; "
+        "no further tool runs"
+    )
+
+    def execute(self, context):
+        if not _STATE.busy or _STATE.session is None:
+            self.report({"WARNING"}, "Nothing is running.")
+            return {"CANCELLED"}
+        _STATE.session.cancel()
+        _STATE.log("status", "Stopping after the current step…")
         return {"FINISHED"}
 
 
@@ -716,19 +899,19 @@ class BLENDED_OT_test_connection(bpy.types.Operator):
             model=preferences.model_name,
             endpoint=preferences.endpoint,
             api_key=preferences.api_key,
-            vision_model=preferences.vision_model_name,
+            vision_model=_eye_model_id(preferences.vision_model_name),
+            claude_code_binary_path=preferences.claude_code_binary_path,
         )
         client = OllamaClient(config)
         status = client.check_connection()
         self.report({"INFO"} if status.ok else {"ERROR"}, status.summary())
         _STATE.log("result" if status.ok else "error", status.summary())
 
-        # The eye is a separate model on the same endpoint — verify it too,
-        # or a broken eye only surfaces mid-conversation.
+        # The eye is a separate model, and its server follows its own id
+        # — `eye_config()` is the single routing rule the runtime uses,
+        # so the preflight must probe exactly what the run will hit.
         if status.ok and config.uses_separate_eye:
-            eye_status = OllamaClient(
-                replace(config, model=config.vision_model)
-            ).check_connection()
+            eye_status = OllamaClient(config.eye_config()).check_connection()
             self.report(
                 {"INFO"} if eye_status.ok else {"WARNING"},
                 f"Eye: {eye_status.summary()}",
@@ -782,6 +965,95 @@ class BLENDED_OT_open_transcript(bpy.types.Operator):
         return {"FINISHED"}
 
 
+class BLENDED_OT_revert_turn(bpy.types.Operator):
+    bl_idname = "blended.revert_turn"
+    bl_label = "Revert turn"
+    bl_description = (
+        "Undo everything the last turn did to the scene, in one step. "
+        "The same as Ctrl+Z — the turn is a single undo step on purpose"
+    )
+
+    def execute(self, context):
+        if _STATE.busy:
+            self.report({"WARNING"}, "The agent is still working.")
+            return {"CANCELLED"}
+        if not _STATE.can_revert:
+            self.report({"WARNING"}, "No turn to revert.")
+            return {"CANCELLED"}
+        from blended.ui.turn_undo import revert_turn
+
+        if not revert_turn():
+            self.report({"WARNING"}, "Blender had nothing left to undo.")
+            return {"CANCELLED"}
+        _STATE.can_revert = False
+        _STATE.log("status", "Reverted the last turn.")
+        _redraw_sidebars()
+        return {"FINISHED"}
+
+
+class BLENDED_OT_show_render(bpy.types.Operator):
+    bl_idname = "blended.show_render"
+    bl_label = "Open render"
+    bl_description = "Open this render at full size in an Image Editor"
+    path: bpy.props.StringProperty(default="")
+
+    def execute(self, context):
+        image_path = Path(self.path)
+        if not self.path or not image_path.exists():
+            self.report({"WARNING"}, f"That render is gone: {self.path}")
+            return {"CANCELLED"}
+        image = bpy.data.images.load(str(image_path), check_existing=True)
+        image.reload()  # the agent re-renders to the same path within a turn
+        for area in context.screen.areas:
+            if area.type == "IMAGE_EDITOR":
+                area.spaces.active.image = image
+                self.report({"INFO"}, f"Opened {image_path.name}")
+                return {"FINISHED"}
+        self.report(
+            {"INFO"},
+            f"Loaded {image_path.name} — the blended workspace has an "
+            f"Image Editor ready for it.",
+        )
+        return {"FINISHED"}
+
+
+class BLENDED_OT_open_workspace(bpy.types.Operator):
+    bl_idname = "blended.open_workspace"
+    bl_label = "blended workspace"
+    bl_description = (
+        "Create (or switch to) a workspace laid out for this: the "
+        "viewport, an Image Editor for the renders, and a wide chat sidebar"
+    )
+
+    def execute(self, context):
+        from blended.ui.workspace import (
+            activate_chat_tab,
+            arrange_workspace,
+            ensure_workspace,
+        )
+
+        try:
+            name = ensure_workspace()
+        except Exception as workspace_error:  # noqa: BLE001 — reported, never swallowed
+            self.report({"ERROR"}, str(workspace_error))
+            return {"CANCELLED"}
+
+        # A freshly copied screen has never been drawn, so its areas
+        # have no realised regions: `area.type`, `area_split` and
+        # `active_panel_category` all fail to land there (measured live,
+        # 2026-09-05 — the layout came out as two Timeline editors). One
+        # frame after the window switches to it, they take.
+        def _arrange():
+            arrange_workspace()
+            activate_chat_tab()
+            _redraw_sidebars()
+            return None  # one-shot
+
+        bpy.app.timers.register(_arrange, first_interval=0.0)
+        self.report({"INFO"}, f"Workspace “{name}” ready.")
+        return {"FINISHED"}
+
+
 class BLENDED_OT_reload(bpy.types.Operator):
     bl_idname = "blended.reload_library"
     bl_label = "Reload"
@@ -805,9 +1077,8 @@ class BLENDED_OT_reload(bpy.types.Operator):
             context.preferences.addons[__name__].preferences
         )
         _RELOAD_PENDING = True  # the drain timer stands down until this runs
-        # the dead operator's RNA and segfaults (measured:
-        # Operator.__getattribute__ -> path_resolve on a freed struct).
         # Defer to a one-shot timer that fires after execute() returns.
+
         def _fire_reload():
             # `_hot_reload` itself logs the summary on the fresh module's
             # state; nothing else to do here but wake the UI.
@@ -830,6 +1101,9 @@ class BLENDED_OT_reset(bpy.types.Operator):
             return {"CANCELLED"}
         _STATE.session = None
         _STATE.transcript.clear()
+        _STATE.plan = None
+        _STATE.can_revert = False
+        _STATE.revision += 1
         _redraw_sidebars()
         return {"FINISHED"}
 
@@ -880,9 +1154,13 @@ _KIND_SPEAKERS = {
     "vision": "Agent looked at the render",
     "error": "Error",
     "reload": "Reloaded",
+    "status": "Status",
     "result": "Tool result",
     "tool": "Tool call",
     "thinking": "Thinking",
+    "context": "Scene",
+    "plan": "Plan",
+    "render": "Render",
 }
 
 _KIND_ICONS = {
@@ -893,9 +1171,147 @@ _KIND_ICONS = {
     "thinking": "SORTTIME",
     "vision": "HIDE_OFF",
     "reload": "FILE_REFRESH",
+    "status": "INFO",
     "error": "ERROR",
+    "context": "RESTRICT_SELECT_OFF",
+    "plan": "PRESET",
+    "render": "IMAGE_DATA",
 }
-_PREVIEW_CHARACTERS = 90
+# Event kinds that are TRAFFIC, not conversation: each one is its own
+# collapsed sub-panel, so the header line says what happened and the
+# body is one click away. Drawn in full they pushed the answer and the
+# composer off the bottom of the sidebar (measured by screenshot,
+# 2026-09-04), which is the whole panel failing at once; drawn as a
+# single global toggle they were all-or-nothing. Per-event disclosure
+# is Ecological Interface Design's first principle — do not force
+# processing to a higher cognitive level than the task demands
+# (DOI 10.1109/21.156574). `plan` is in here because its event text is
+# the raw JSON of the plan: drawn as a message it filled the panel with
+# escapes (measured by screenshot in a live GUI session, 2026-09-05).
+_COMPACT_KINDS = (
+    "thinking",
+    "tool",
+    "result",
+    "vision",
+    "reload",
+    "status",
+    "context",
+    "plan",
+)
+# Progress and plan steps drive the plan card, not the conversation.
+_STATE_ONLY_KINDS = ("step",)
+# A compact row is icon + label + copy button: this many characters of
+# the row's width are not text.
+_COMPACT_ROW_CHROME_CHARACTERS = 8
+# `layout.panel()` remembers open/closed state per idname, so the
+# transcript index has to be part of it or every event would share one
+# switch. Indices are stable: the transcript only ever appends.
+_EVENT_PANEL_IDNAME = "blended_event_{index}"
+# Plan steps are a list to scan, not prose to read.
+_PLAN_STEP_SCALE_Y = 0.9
+_EVIDENCE_BEFORE_LABEL = "before"
+_EVIDENCE_LATEST_LABEL = "now"
+# The pinned surface must fit the region it is drawn in. Blender's row
+# unit is UI_UNIT_Y = 20 px before `ui_scale`, and a real sidebar is
+# far smaller than it looks: 561 x 1104 px at ui_scale 2.0 is 27 ROWS
+# (measured in a live GUI session, 2026-09-05). An unbounded answer ate
+# all of them and pushed the prompt box off the bottom — three times,
+# each time because a cost here was estimated instead of measured.
+_UI_ROW_HEIGHT_PX = 20.0
+# Panel header, box padding, textbox (2.5), send button (1.3), status
+# row, settings header — AND one row for the record panel's own header,
+# because a record the user cannot see the way into is not reachable.
+# Measured against the 27-row sidebar, twice.
+_COMPOSER_RESERVED_ROWS = 12
+# Renders card: header + labels + the thumbnails + the Open buttons.
+# The pair sits side by side, so the cost is the same for one or two.
+_RENDER_CARD_ROWS = 6
+# A plan being worked through: header + progress bar, plus a row per
+# step. A FINISHED plan collapses to its header and bar.
+_PLAN_CARD_FIXED_ROWS = 2
+# Below this an answer is not worth drawing at all; the record has it.
+_MINIMUM_ANSWER_ROWS = 3
+# One preview collection for the addon's lifetime, loaded in register()
+# and unloaded in unregister(); a panel redraws several times a second
+# and must never reload a PNG to draw it.
+_PREVIEWS = None
+
+
+def _characters_per_line(region_width_px: float, ui_scale: float) -> int:
+    """The same estimate wrap_for_region uses, inline so draw() never
+    depends on the library being importable."""
+    return max(24, int((region_width_px - 34) / (7.0 * max(ui_scale, 0.1))))
+
+
+def _preview(text: str, limit: int) -> str:
+    """The first non-empty line, cut at the END with an ellipsis — Blender
+    clips overlong labels in the MIDDLE, which loses the substance."""
+    first_line = next((line.strip() for line in text.splitlines() if line.strip()), "")
+    if len(first_line) > limit:
+        return first_line[: max(1, limit - 1)] + "…"
+    return first_line
+
+
+def _summarize_event(kind: str, text: str, limit: int) -> str:
+    """One line that says what happened, for the collapsed view."""
+    if kind == "tool":
+        name, _, raw_arguments = text.partition("(")
+        try:
+            arguments = json.loads(raw_arguments[:-1]) if raw_arguments.endswith(")") else {}
+        except ValueError:
+            arguments = {}
+        parts = [name]
+        if isinstance(arguments, dict):
+            if arguments.get("object_name"):
+                parts.append(str(arguments["object_name"]))
+            if arguments.get("domain"):
+                parts.append(str(arguments["domain"]))
+            if arguments.get("source"):
+                parts.append(f"{len(str(arguments['source']).splitlines())} lines")
+        return _preview(" · ".join(parts), limit)
+    if kind == "render":
+        return _preview(Path(text).name, limit)
+    if kind == "plan":
+        try:
+            from blended.agent.plan import decode_plan_event
+
+            plan = decode_plan_event(text)
+        except Exception:  # noqa: BLE001 — draw() must never raise
+            return _preview(text, limit)
+        return _preview(f"{len(plan.steps)} steps · {plan.steps[0]}", limit)
+    return _preview(text, limit)
+
+
+def _display_prose(text: str) -> str:
+    """Model answers arrive as Markdown; labels cannot render it, so the
+    emphasis markers are dropped rather than shown as asterisks."""
+    return text.replace("**", "").replace("`", "")
+
+
+def _result_failed(text: str) -> bool:
+    head = text.lstrip()[:12].upper()
+    return head.startswith(("FAILED", "TOOL RAISED", "GATE FAIL"))
+
+
+_NARROW_SIDEBAR_PIXELS = 300
+
+
+def _status_text() -> str:
+    """Ready, or what the agent is doing right now (its last tool)."""
+    if not _STATE.busy:
+        return "Ready"
+    if _STATE.live_kind == "thinking":
+        return "Thinking…"
+    if _STATE.live_kind == "content":
+        return "Answering…"
+    for kind, text in reversed(_STATE.transcript):
+        if kind == "tool":
+            return f"Running {text.partition('(')[0]}…"
+        if kind == "user":
+            break
+    return "Working…"
+
+
 def _conversation_text() -> str:
     """The whole session as plain text, ready to paste into a report.
 
@@ -941,20 +1357,109 @@ class BLENDED_OT_copy_conversation(bpy.types.Operator):
         return {"FINISHED"}
 
 
-class BLENDED_PT_chat(bpy.types.Panel):
-    bl_label = "Agent Chat"
-    bl_idname = "BLENDED_PT_chat"
-    bl_space_type = "VIEW_3D"
-    bl_region_type = "UI"
-    bl_category = "blended"
+def _thumbnail_icon(image_path) -> int:
+    """The preview icon for a render, or 0 — Blender's "no icon".
 
-    def _draw_message(self, layout, kind, body_text, region_width, ui_scale, index):
+    Zero is a real answer, not a failure: it is what a headless
+    Blender, a missing file, or an addon whose previews are not loaded
+    yet all produce, and `draw()` must never raise (an exception inside
+    draw makes Blender silently abandon the rest of the panel).
+    """
+    if _PREVIEWS is None:
+        return 0
+    try:
+        return _PREVIEWS.icon_for(image_path)
+    except Exception:  # noqa: BLE001 — draw() must never raise
+        return 0
+
+
+def _answer_row_budget(
+    region_height_px, ui_scale, plan_step_count, has_plan, has_renders
+) -> int:
+    """How many WRAPPED rows the newest answer may occupy.
+
+    Rows, not source lines: the live GUI sessions that lost the prompt
+    box did it with a SINGLE paragraph that wrapped to ten rows, so a
+    line-count cap protects nothing. The budget is what the region has
+    left after the cards above the answer and the controls below it, so
+    it adapts to the sidebar the user actually has.
+    """
+    rows = int(region_height_px / (_UI_ROW_HEIGHT_PX * max(ui_scale, 0.1)))
+    spent = _COMPOSER_RESERVED_ROWS
+    if has_renders:
+        spent += _RENDER_CARD_ROWS
+    if has_plan:
+        spent += _PLAN_CARD_FIXED_ROWS + plan_step_count
+    return max(_MINIMUM_ANSWER_ROWS, rows - spent)
+
+
+def _tail_lines(text: str, limit: int) -> str:
+    """The LAST `limit` non-empty lines: what a stream is writing now."""
+    lines = [line for line in text.splitlines() if line.strip()]
+    return "\n".join(lines[-limit:])
+
+
+
+class _ChatDrawing:
+    """The drawing both panels share.
+
+    The chat is TWO panels on purpose. A Blender region cannot be
+    scrolled programmatically (View2D is read-only through RNA and 5.2
+    has no scroll operator), so anything drawn after a growing
+    conversation eventually sits below the visible area — measured in a
+    live GUI session on 2026-09-05, where one finished turn pushed the
+    plan card, the renders and the composer off the bottom. Splitting
+    them means the surface a reviewer works on — status, plan, renders,
+    the answer, the prompt box — is always the first thing in the tab,
+    and the full record is one disclosure below it. That is the
+    conversational UI's own division of space: the prompt box is the
+    primary interaction space and the history is the secondary one
+    (DOI 10.48550/arXiv.2410.22370).
+    """
+
+    def _draw_traffic(
+        self, layout, kind, body_text, index, region_width, ui_scale, expanded
+    ):
+        """One traffic event: a collapsible sub-panel whose header says
+        what happened and whose body holds the whole text.
+
+        `layout.panel()` is Blender's own disclosure widget — it looks
+        like every other collapsed section in the application and
+        Blender remembers each one's state itself (H-LAN: match the
+        design language of the host environment,
+        DOI 10.1080/10447318.2026.2632170). Per-event rather than one
+        global switch, because a global switch forces the user to read
+        everything to read anything (DOI 10.1109/21.156574).
+        """
+        limit = _characters_per_line(region_width, ui_scale) - _COMPACT_ROW_CHROME_CHARACTERS
+        header, body = layout.panel(
+            _EVENT_PANEL_IDNAME.format(index=index), default_closed=not expanded
+        )
+        failed = kind == "result" and _result_failed(body_text)
+        if failed:
+            header.alert = True
+        header.label(
+            text=_summarize_event(kind, body_text, limit),
+            icon=_KIND_ICONS.get(kind, "DOT"),
+        )
+        header.operator(
+            BLENDED_OT_copy_message.bl_idname, text="", icon="COPYDOWN", emboss=False
+        ).index = index
+        if body is None:
+            return
+        if failed:
+            body.alert = True
+        self._draw_body(body, kind, body_text, region_width, ui_scale)
+
+    def _draw_message(
+        self, layout, kind, body_text, region_width, ui_scale, index, max_rows=None
+    ):
         """One chat bubble: a titled box with wrapped body text."""
         speaker = _KIND_SPEAKERS.get(kind)
         if speaker is None:
             return
         bubble = layout.box()
-        if kind == "error":
+        if kind == "error" or (kind == "result" and _result_failed(body_text)):
             # The one per-widget emphasis Blender exposes: the theme's
             # alert tint on the bubble border/labels. Errors should read
             # at a glance, not as one more grey block.
@@ -967,8 +1472,30 @@ class BLENDED_PT_chat(bpy.types.Panel):
             icon="COPYDOWN",
             emboss=False,
         ).index = index
+        self._draw_body(
+            bubble, kind, body_text, region_width, ui_scale, max_rows=max_rows
+        )
 
-        body_column = bubble.column(align=True)
+    def _draw_body(
+        self, layout, kind, body_text, region_width, ui_scale, max_rows=None
+    ):
+        """The text of one event, wrapped to the region — the one place
+        a body is rendered, so a bubble and a disclosed panel can never
+        disagree about what an event says."""
+        if kind == "render":
+            self._draw_thumbnail(layout, Path(body_text), label=Path(body_text).name)
+            return
+        if kind == "plan":
+            # The event text is the plan's wire form. A reader wants the
+            # steps, not the JSON that carried them.
+            try:
+                from blended.agent.plan import decode_plan_event
+
+                self._draw_plan(layout, decode_plan_event(body_text), busy=False)
+                return
+            except Exception:  # noqa: BLE001 — draw() must never raise
+                pass
+        body_column = layout.column(align=True)
         body_column.scale_y = 0.8  # tighten line spacing so it reads as prose
         # Tool calls carry ESCAPED text (the worker logs the raw JSON
         # string): render the escapes so the code reads line-by-line,
@@ -977,7 +1504,16 @@ class BLENDED_PT_chat(bpy.types.Panel):
         display_text = body_text
         if kind == "tool":
             display_text = body_text.replace("\\n", "\n").replace("\\t", "\t")
+        elif kind in ("answer", "thinking", "vision"):
+            display_text = _display_prose(body_text)
         wrapped = _wrap_for_region(display_text, region_width, ui_scale)
+        if max_rows is not None and len(wrapped) > max_rows:
+            # Cut the ROWS, not the source lines: one paragraph wraps to
+            # ten rows in a real sidebar, which is how an "8-line" cap
+            # still lost the prompt box (measured 2026-09-05).
+            hidden = len(wrapped) - max_rows
+            wrapped = wrapped[:max_rows]
+            wrapped.append(f"… {hidden} more lines — open Conversation")
         for line in wrapped:
             if not line.strip():
                 # A blank line is a paragraph separator, not a row: an
@@ -990,41 +1526,116 @@ class BLENDED_PT_chat(bpy.types.Panel):
                 continue
             body_column.label(text=line)
 
-    def draw(self, context):
-        layout = self.layout
-        scene_properties = context.scene.blended_chat
-        preferences = context.preferences.addons[__name__].preferences
-        region_width = context.region.width
-        ui_scale = context.preferences.system.ui_scale
+    def _draw_plan(self, layout, plan, busy, steps=True):
+        """The turn's plan and how far through it the agent reports being.
 
-        # LAYOUT: the conversation is drawn FIRST, oldest at the top,
-        # and every control is clustered BELOW it — the composer sits at
-        # the bottom, like a chat. Blender panel regions cannot scroll
-        # programmatically (View2D is read-only through RNA; no scroll
-        # operator in 5.2), so "the newest stays reachable" is achieved
-        # by adjacency: scrolling to the bottom lands on the latest
-        # message with the input right beneath it. Each event is its own
-        # entry in the log — tool calls, results, and thinking included.
+        Magentic-UI's measured shape: natural-language steps shared
+        between user and agent, with a progress bar over them during
+        execution (DOI 10.48550/arXiv.2507.22358). Steps are drawn
+        verbatim — the model wrote them for the user to read.
 
-        # --- conversation, oldest first ----------------------------------
-        conversation = layout.column()
+        The step state is deliberately conservative: while the turn runs,
+        only steps BEFORE the reported one are done; once it ends, steps
+        the agent never reached stay pending rather than being claimed.
+
+        `steps=False` draws the header and the bar only. The pinned
+        surface uses it once the turn is over: the step list is what a
+        user watches DURING a turn, and afterwards it is competing for
+        rows with the answer they are actually reading. The full list
+        stays in the record.
+        """
+        card = layout.box()
+        header = card.row(align=True)
+        header.label(text="Plan", icon=_KIND_ICONS["plan"])
+        header.label(text=plan.status_text())
+        if steps:
+            for number, step_text in enumerate(plan.steps, start=1):
+                if number < plan.current_step or (
+                    not busy and number <= plan.current_step
+                ):
+                    icon, done = "CHECKMARK", True
+                elif number == plan.current_step:
+                    icon, done = "PLAY", False
+                else:
+                    icon, done = "DOT", False
+                row = card.row(align=True)
+                row.scale_y = _PLAN_STEP_SCALE_Y
+                row.active = not done  # completed steps recede, current reads
+                row.label(text=f"{number}. {step_text}", icon=icon)
+        card.progress(text=plan.status_text(), factor=plan.progress_fraction())
+
+    def _draw_thumbnail(self, layout, image_path, label):
+        """One render, as a clickable thumbnail.
+
+        `icon_for` returns 0 (Blender's "no icon") when the preview
+        cannot be made, so the row always carries the button that opens
+        the file — the picture is the nice case, not the only case.
+        """
+        column = layout.column(align=True)
+        column.label(text=label)
+        icon_identifier = _thumbnail_icon(image_path)
+        if icon_identifier:
+            column.template_icon(icon_value=icon_identifier, scale=_THUMBNAIL_SCALE)
+        column.operator(
+            BLENDED_OT_show_render.bl_idname, text="Open", icon="ZOOM_IN"
+        ).path = str(image_path)
+
+    def _draw_evidence(self, layout, previous_path, latest_path):
+        """This turn's render beside the one before it.
+
+        RESP measured reference pairing at +0.32 F1 / +0.12 accuracy for
+        spotting visual defects, almost all of it recovering recall
+        (0.28 → 0.76) — a single frame with nothing to compare against is
+        the condition where a reviewer accepts what they are shown
+        (DOI 10.48550/arXiv.2604.11082). The same pairing is what lets a
+        human see drift between two turns.
+        """
+        card = layout.box()
+        card.label(text="Renders", icon=_KIND_ICONS["render"])
+        pair = card.row(align=True)
+        if previous_path is not None:
+            self._draw_thumbnail(pair, previous_path, label=_EVIDENCE_BEFORE_LABEL)
+        self._draw_thumbnail(pair, latest_path, label=_EVIDENCE_LATEST_LABEL)
+
+    def _draw_conversation(self, layout, scene_properties, region_width, ui_scale):
+        """The record: every event, oldest first, each disclosable."""
         if not _STATE.transcript:
-            empty_box = conversation.box()
+            empty_box = layout.box()
             empty_box.label(text="Ask for an asset to get started.", icon="INFO")
             for example in (
                 '"Build a wooden crate, 0.8 m, and show me the renders."',
-                '"Make the legs thinner and re-check it."',
+                '"Make this thinner and re-check it."',
             ):
                 for line in _wrap_for_region(example, region_width, ui_scale):
                     empty_box.label(text=line)
+            return
 
         visible = _STATE.transcript[-scene_properties.visible_messages :]
         visible_offset = max(
             0, len(_STATE.transcript) - scene_properties.visible_messages
         )
+        if visible_offset:
+            layout.label(
+                text=f"…{visible_offset} earlier events in the transcript",
+                icon="TEXT",
+            )
         for index, (kind, body_text) in enumerate(visible):
+            if kind in _STATE_ONLY_KINDS:
+                # Progress, not conversation: it moves the plan card.
+                continue
+            if kind in _COMPACT_KINDS or kind == "render":
+                self._draw_traffic(
+                    layout,
+                    kind,
+                    body_text,
+                    visible_offset + index,
+                    region_width,
+                    ui_scale,
+                    expanded=scene_properties.show_details,
+                )
+                continue
             self._draw_message(
-                conversation,
+                layout,
                 kind,
                 body_text,
                 region_width,
@@ -1032,35 +1643,164 @@ class BLENDED_PT_chat(bpy.types.Panel):
                 visible_offset + index,
             )
 
-        # --- control cluster, pinned AFTER the history --------------------
-        layout.separator()
-        controls = layout.box()
+    def _draw_latest_answer(self, layout, region_width, ui_scale, max_rows):
+        """The reply the user is waiting for, on the pinned surface.
+
+        The whole point of the split: the answer must be readable
+        without scrolling past the turn's traffic, because review cost
+        is what decides whether the agent helped at all
+        (DOI 10.48550/arXiv.2507.09089).
+
+        `max_rows` comes from `_answer_row_budget` — what the region has
+        left once the cards above and the controls below are paid for.
+        The full text is always in the record panel and on the copy
+        button, so nothing is lost by cutting it here.
+        """
+        if _STATE.live_text:
+            live_kind = "answer" if _STATE.live_kind == "content" else _STATE.live_kind
+            if live_kind == "thinking":
+                limit = (
+                    _characters_per_line(region_width, ui_scale)
+                    - _COMPACT_ROW_CHROME_CHARACTERS
+                )
+                layout.label(
+                    text=_preview(_STATE.live_text, limit),
+                    icon=_KIND_ICONS["thinking"],
+                )
+                return
+            # Streaming shows the TAIL: the newest words are the ones
+            # being written, and the cursor has to stay visible.
+            self._draw_message(
+                layout,
+                live_kind,
+                _tail_lines(_STATE.live_text, max_rows) + " ▍",
+                region_width,
+                ui_scale,
+                len(_STATE.transcript),
+                max_rows=max_rows,
+            )
+            return
+        for index in range(len(_STATE.transcript) - 1, -1, -1):
+            kind, body_text = _STATE.transcript[index]
+            if kind in ("answer", "error"):
+                self._draw_message(
+                    layout,
+                    kind,
+                    body_text,
+                    region_width,
+                    ui_scale,
+                    index,
+                    max_rows=max_rows,
+                )
+                return
+
+
+class BLENDED_PT_chat(_ChatDrawing, bpy.types.Panel):
+    """The pinned surface: status, plan, renders, answer, prompt."""
+
+    bl_label = "Agent Chat"
+    bl_idname = "BLENDED_PT_chat"
+    bl_space_type = "VIEW_3D"
+    bl_region_type = "UI"
+    bl_category = "blended"
+    bl_order = 0
+
+    def draw(self, context):
+        layout = self.layout
+        scene_properties = context.scene.blended_chat
+        preferences = context.preferences.addons[__name__].preferences
+        region_width = context.region.width
+        ui_scale = context.preferences.system.ui_scale
+
+        # Order matters: what the agent is doing (plan), what it made
+        # (renders) and what it said (answer) sit directly above the
+        # prompt box, which is the conversational UI's primary
+        # interaction space (DOI 10.48550/arXiv.2410.22370). None of it
+        # scrolls away, because the growing record lives in its own
+        # panel below this one.
+        controls = layout.column()
+
+        try:
+            from blended.ui.previews import paired_render_paths
+
+            previous_render, latest_render = paired_render_paths(_STATE.transcript)
+        except Exception:  # noqa: BLE001 — draw() must never raise
+            previous_render = latest_render = None
+        if latest_render is not None:
+            self._draw_evidence(controls, previous_render, latest_render)
+
+        # The step list is what a user watches while the agent works.
+        # Once the turn is over it competes for rows with the answer,
+        # so it collapses to its header and bar; the record keeps it.
+        if _STATE.plan is not None:
+            self._draw_plan(
+                controls, _STATE.plan, _STATE.busy, steps=_STATE.busy
+            )
+
+        if _STATE.transcript or _STATE.live_text:
+            self._draw_latest_answer(
+                controls,
+                region_width,
+                ui_scale,
+                max_rows=_answer_row_budget(
+                    context.region.height,
+                    ui_scale,
+                    plan_step_count=(
+                        len(_STATE.plan.steps)
+                        if _STATE.plan is not None and _STATE.busy
+                        else 0
+                    ),
+                    has_plan=_STATE.plan is not None,
+                    has_renders=latest_render is not None,
+                ),
+            )
+        else:
+            empty_box = controls.box()
+            empty_box.label(text="Ask for an asset to get started.", icon="INFO")
+            for example in (
+                '"Build a wooden crate, 0.8 m, and show me the renders."',
+                '"Make this thinner and re-check it."',
+            ):
+                for line in _wrap_for_region(example, region_width, ui_scale):
+                    empty_box.label(text=line)
 
         composer = controls.column(align=True)
         composer.textbox(
             scene_properties,
             "prompt",
             initial_visible_lines=2,
-            placeholder="Ask for an asset to build, or a change to make…",
+            placeholder="Ask for an asset, or a change to make…  (Ctrl+↑ recalls)",
         )
         send_row = composer.row(align=True)
         send_row.scale_y = 1.3
-        send_row.enabled = not _STATE.busy
-        send_row.operator(BLENDED_OT_send.bl_idname, icon="PLAY")
-        hint_row = composer.row(align=True)
-        hint_row.scale_y = 0.8
-        hint_row.label(
-            text="Enter sends · Ctrl+Enter sends from the viewport",
-            icon="INFO",
-        )
+        if _STATE.busy:
+            send_row.operator(BLENDED_OT_stop.bl_idname, icon="CANCEL")
+        else:
+            # The binding is printed ON the button: showing hotkeys in
+            # place is what moves a user from pointing to expert
+            # keyboard use (ExposeHK, DOI 10.1145/2470654.2470735).
+            send_row.operator(
+                BLENDED_OT_send.bl_idname, text="Send   ⌘⏎", icon="PLAY"
+            )
 
-        # Status text on its own short line, event count on another —
-        # neither can be truncated at any sidebar width (a single
-        # "Working… — 10 events so far" label was cut mid-sentence).
+        # One short status line that cannot truncate at any sidebar
+        # width, then the session actions as icons.
         status_row = controls.row(align=True)
         status_row.label(
-            text="Working…" if _STATE.busy else "Ready",
+            text=_status_text(),
             icon="SORTTIME" if _STATE.busy else "CHECKMARK",
+        )
+        revert = status_row.row(align=True)
+        revert.enabled = _STATE.can_revert and not _STATE.busy
+        revert.operator(
+            BLENDED_OT_revert_turn.bl_idname, text="", icon="LOOP_BACK", emboss=True
+        )
+        status_row.prop(
+            scene_properties,
+            "show_details",
+            text="",
+            icon="ALIGN_JUSTIFY" if scene_properties.show_details else "ALIGN_LEFT",
+            emboss=True,
         )
         status_row.operator(
             BLENDED_OT_copy_conversation.bl_idname,
@@ -1071,20 +1811,8 @@ class BLENDED_PT_chat(bpy.types.Panel):
         status_row.operator(BLENDED_OT_open_transcript.bl_idname, text="", icon="TEXT")
         status_row.operator(BLENDED_OT_reset.bl_idname, text="", icon="TRASH")
 
-        event_count_row = controls.row(align=True)
-        event_count_row.scale_y = 0.7
-        event_count_row.label(
-            text=(
-                f"{len(_STATE.transcript)} events so far"
-                if _STATE.busy
-                else f"{len(_STATE.transcript)} events"
-            )
-        )
-
-        if region_width < 300:
-            controls.label(
-                text="Drag the sidebar edge for a wider chat.", icon="AREA_SWAP"
-            )
+        if region_width < _NARROW_SIDEBAR_PIXELS:
+            controls.label(text="Drag the sidebar edge wider.", icon="AREA_SWAP")
 
         settings_header = controls.row(align=True)
         settings_header.prop(
@@ -1105,17 +1833,45 @@ class BLENDED_PT_chat(bpy.types.Panel):
             if preferences.developer_mode:
                 settings_column.prop(preferences, "repository_path")
                 settings_column.prop(preferences, "auto_reload")
+                reload_row = settings_column.row(align=True)
+                reload_row.enabled = not _STATE.busy
+                reload_row.operator(
+                    BLENDED_OT_reload.bl_idname, text="Reload", icon="FILE_REFRESH"
+                )
             settings_column.prop(preferences, "log_directory")
             settings_column.operator(BLENDED_OT_test_connection.bl_idname, icon="URL")
+            # A layout built for this work: the viewport, an Image Editor
+            # for the renders, and a sidebar wide enough to read
+            # (H-LAN, DOI 10.1080/10447318.2026.2632170).
+            settings_column.operator(
+                BLENDED_OT_open_workspace.bl_idname, icon="WORKSPACE"
+            )
 
-        reload_row = controls.row(align=True)
-        reload_row.enabled = not _STATE.busy
-        reload_row.operator(
-            BLENDED_OT_reload.bl_idname, text="Reload", icon="FILE_REFRESH"
-        )
-        reload_row.label(
-            text="auto" if preferences.auto_reload else "manual",
-            icon="TIME" if preferences.auto_reload else "HANDLETYPE_VECTOR_VEC",
+
+class BLENDED_PT_history(_ChatDrawing, bpy.types.Panel):
+    """The record, below the pinned surface and closed by default.
+
+    Everything the turn did, oldest first, each event disclosable. It
+    is closed by default because the working loop — ask, watch the plan,
+    look at the render, read the answer — needs none of it, and an open
+    record is what pushed that loop off the bottom of the sidebar
+    (measured 2026-09-05).
+    """
+
+    bl_label = "Conversation"
+    bl_idname = "BLENDED_PT_history"
+    bl_space_type = "VIEW_3D"
+    bl_region_type = "UI"
+    bl_category = "blended"
+    bl_order = 1
+    bl_options = {"DEFAULT_CLOSED"}
+
+    def draw(self, context):
+        self._draw_conversation(
+            self.layout,
+            context.scene.blended_chat,
+            context.region.width,
+            context.preferences.system.ui_scale,
         )
 
 
@@ -1184,8 +1940,25 @@ class BLENDED_Preferences(bpy.types.AddonPreferences):
                 "OpenAI wire — pick qwen3.8-27b as the Eye to see renders. "
                 "No cloud usage.",
             ),
+            (
+                "claude-code:sonnet",
+                "Claude Sonnet (Claude Code CLI)",
+                "Runs through the signed-in Claude Code CLI on this "
+                "machine: no API key, no metered balance, covered by your "
+                "Claude subscription's 5h/7d windows. Vision-capable, so "
+                "you can leave the Eye on 'None' and let it look at its "
+                "own renders. Tool calls are schema-CONSTRAINED here, not "
+                "parsed out of prose.",
+            ),
+            (
+                "claude-code:opus",
+                "Claude Opus (Claude Code CLI)",
+                "The strongest model on the CLI lane, same subscription "
+                "auth as Sonnet and the same 5h/7d windows — it just "
+                "spends them faster.",
+            ),
         ],
-        default="deepseek-v4-pro:cloud",
+        default="claude-code:sonnet",
     )
     vision_model_name: bpy.props.EnumProperty(
         name="Eye",
@@ -1213,14 +1986,16 @@ class BLENDED_Preferences(bpy.types.AddonPreferences):
                 "Best vision available, billed separately.",
             ),
             (
-                "qwen3-vl:8b-instruct",
-                "Qwen3-VL 8B Instruct (local)",
-                "8.8B vision, ~7 GB of VRAM, no cloud usage. Measured "
-                "2026-08-22: 0.20 sensitivity on the examiner fixture zoo "
-                "with no false positives on 5 controls — good enough to "
-                "DESCRIBE a render, not to judge one. Pick the -instruct "
-                "build, not qwen3-vl:8b: the thinking build fills its whole "
-                "context deliberating and returns nothing.",
+                "qwen3-vl",
+                "Qwen3-VL 8B Instruct (big llama-swap)",
+                "8B vision, Q8_0 + F16 projector, no cloud usage and no "
+                "API key. Served by big's llama-swap at "
+                "192.168.1.110:8081 on the OpenAI wire, not by this "
+                "machine — picking it routes there automatically. Pair "
+                "it with the qwen3.8-27b writer for a fully-local run. "
+                "Measured 0.20-0.40 sensitivity on the examiner fixture "
+                "zoo with no false positives on the controls: good "
+                "enough to DESCRIBE a render, not to judge one.",
             ),
             (
                 "qwen3.8-27b",
@@ -1230,12 +2005,32 @@ class BLENDED_Preferences(bpy.types.AddonPreferences):
                 "also qwen3.8-27b — one local model for text and vision.",
             ),
             (
-                "",
+                "claude-code:sonnet",
+                "Claude Sonnet (Claude Code CLI) — sees its own renders",
+                "The DEFAULT eye. Picking the same model as the writer "
+                "means no second call: the render reaches the writer "
+                "itself as a native image block, so nothing is lost to a "
+                "prose summary in between. Measured 2026-09-05: two "
+                "renders arrive unfused and in order (swapping them "
+                "swaps the answer). Calibrated on the fixture zoo before "
+                "it was made the default.",
+            ),
+            (
+                "claude-code:haiku",
+                "Claude Haiku (Claude Code CLI)",
+                "The cheapest model on the CLI lane for an eye that only "
+                "describes renders. No API key; your Claude subscription "
+                "covers it. Renders arrive as real image blocks, unfused "
+                "and in order (measured 2026-09-05).",
+            ),
+            (
+                _EYE_NONE_IDENTIFIER,
                 "None — writer sees for itself",
-                "Only valid if the writer is vision-capable.",
+                "Only valid if the writer is vision-capable — every "
+                "claude-code model is, and so are the kimi models.",
             ),
         ],
-        default="kimi-k2.7-code:cloud",
+        default="claude-code:sonnet",
     )
     endpoint: bpy.props.StringProperty(
         name="Endpoint",
@@ -1295,7 +2090,19 @@ class BLENDED_Preferences(bpy.types.AddonPreferences):
             "Required for the bmb llama-swap models (qwen3.8-27b, "
             "gpt-oss-20b) — that key lives on bmb at ~/llm/.api-key. "
             "Leave empty for the Ollama lanes when signed in via "
-            "`ollama signin`."
+            "`ollama signin`. big's llama-swap (`qwen3-vl`) needs none "
+            "— leave this empty and it will not be sent there."
+        ),
+    )
+    claude_code_binary_path: bpy.props.StringProperty(
+        name="Claude Code binary (optional)",
+        default="",
+        subtype="FILE_PATH",
+        description=(
+            "Only for the claude-code models. Leave empty and the addon "
+            "looks on PATH and in the standard install directories — "
+            "needed because Blender launched from Finder inherits no "
+            "shell PATH. The CLI owns its own sign-in; no key goes here."
         ),
     )
 
@@ -1339,16 +2146,17 @@ class BLENDED_Preferences(bpy.types.AddonPreferences):
             "deepseek-v4-flash:cloud",
             "gpt-oss-20b",
         )
-        if self.model_name in text_only_writers and not self.vision_model_name:
+        eye_model = _eye_model_id(self.vision_model_name)
+        if self.model_name in text_only_writers and not eye_model:
             routing_box.label(
                 text="This writer cannot see. Pick an Eye, or it will never "
                 "look at its own renders.",
                 icon="ERROR",
             )
-        elif self.vision_model_name and self.vision_model_name != self.model_name:
+        elif eye_model and eye_model != self.model_name:
             routing_box.label(
                 text=f"Writer {self.model_name} drives every turn; "
-                f"{self.vision_model_name} is called only on renders.",
+                f"{eye_model} is called only on renders.",
                 icon="CHECKMARK",
             )
         else:
@@ -1391,6 +2199,10 @@ class BLENDED_Preferences(bpy.types.AddonPreferences):
                 icon="INFO",
             )
         layout.prop(self, "api_key")
+        if _CLAUDE_CODE_MODEL_PREFIX in (self.model_name or "") or (
+            _CLAUDE_CODE_MODEL_PREFIX in (self.vision_model_name or "")
+        ):
+            layout.prop(self, "claude_code_binary_path")
         layout.operator(BLENDED_OT_test_connection.bl_idname, icon="URL")
 
 
@@ -1445,6 +2257,14 @@ class BLENDED_ChatProperties(bpy.types.PropertyGroup):
     show_settings: bpy.props.BoolProperty(
         name="Show settings",
         description="Model and developer options, inline in this panel",
+        default=False,
+    )
+    show_details: bpy.props.BoolProperty(
+        name="Show details",
+        description=(
+            "Expand tool calls, tool results and thinking to their full text. "
+            "Off, each is one line so the conversation stays readable"
+        ),
         default=False,
     )
 
@@ -1551,13 +2371,18 @@ _CLASSES = (
     BLENDED_Preferences,
     BLENDED_ChatProperties,
     BLENDED_OT_send,
+    BLENDED_OT_stop,
     BLENDED_OT_reset,
     BLENDED_OT_reload,
     BLENDED_OT_open_transcript,
     BLENDED_OT_history,
     BLENDED_OT_copy_message,
     BLENDED_OT_copy_conversation,
+    BLENDED_OT_revert_turn,
+    BLENDED_OT_show_render,
+    BLENDED_OT_open_workspace,
     BLENDED_PT_chat,
+    BLENDED_PT_history,
 )
 
 
@@ -1601,13 +2426,29 @@ def register():
     )
     if not bpy.app.timers.is_registered(_drain_tool_requests):
         bpy.app.timers.register(_drain_tool_requests, persistent=True)
+    # The panel draws render thumbnails from disk, so the preview
+    # collection has to exist before its first draw. A failure here is
+    # reported by `_thumbnail_icon` returning 0 (no picture, still a
+    # working Open button) rather than by breaking registration.
+    global _PREVIEWS
+    try:
+        from blended.ui.previews import RenderPreviews
+
+        _PREVIEWS = RenderPreviews()
+        _PREVIEWS.load()
+    except Exception:  # noqa: BLE001 — an unconfigured library is reported on use
+        _PREVIEWS = None
     _register_keymaps()
 
 
 def unregister():
+    global _PREVIEWS
     _unregister_keymaps()
     if bpy.app.timers.is_registered(_drain_tool_requests):
         bpy.app.timers.unregister(_drain_tool_requests)
+    if _PREVIEWS is not None:
+        _PREVIEWS.unload()
+        _PREVIEWS = None
     if hasattr(bpy.types.Scene, "blended_chat"):
         del bpy.types.Scene.blended_chat
     for class_object in reversed(_CLASSES):

@@ -33,10 +33,11 @@ from pathlib import Path
 import numpy as np
 import trimesh
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from bench_thresholds import ORIENT_ARTIFACT_THRESHOLD  # shared, stdlib-only
+
 DIAGNOSTIC_N_POINTS = 8192          # scorer default --n-points
 DIAGNOSTIC_SEED = 0                 # scorer default --seed
-ORIENT_ARTIFACT_THRESHOLD = 0.02    # Δ_orient at/above which the score is an
-                                    # orientation artifact, not shape error
 THIN_RATIO = 0.3                    # min_extent/max_extent below this -> flat
 ORIENT_WORDS = ("standing", "vertical", "flat", "horizontal", "upright",
                 "facing")
@@ -54,6 +55,8 @@ def parse_arguments(argv):
     parser.add_argument("--instances-file", required=True,
                         help="Frozen instance list for the report")
     parser.add_argument("--out", required=True, help="Markdown report path")
+    parser.add_argument("--json", default="",
+                        help="Also write per-instance rows as JSON.")
     return parser.parse_args(argv)
 
 
@@ -409,6 +412,29 @@ def main(argv) -> int:
 
     Path(args.out).write_text("\n".join(lines) + "\n")
     print(f"wrote {args.out}")
+
+    if args.json:
+        scoreable = [r for r in rows if r["cd_yawmin"] is not None]
+        document = {
+            "model_dir": args.model_dir,
+            "instances_file": args.instances_file,
+            "n_points": DIAGNOSTIC_N_POINTS,
+            "seed": DIAGNOSTIC_SEED,
+            "per_instance": [
+                {"instance": r["instance"], "cd_yawmin": r["cd_yawmin"],
+                 "cd_pca": r["cd_pca"], "delta_orient": r["delta_orient"],
+                 "status": r["status"], "num_turns": r["num_turns"],
+                 "duration_s": r["duration_s"]}
+                for r in rows
+            ],
+            "means": {
+                key: (sum(r[key] for r in scoreable) / len(scoreable)
+                      if scoreable else None)
+                for key in ("cd_yawmin", "cd_pca", "delta_orient")
+            } | {"n": len(scoreable)},
+        }
+        Path(args.json).write_text(json.dumps(document, indent=2) + "\n")
+        print(f"wrote {args.json}")
     return 0
 
 

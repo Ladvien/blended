@@ -16,11 +16,32 @@ from __future__ import annotations
 
 import base64
 import json
+import threading
 import urllib.error
 import urllib.request
 from collections.abc import Callable
 from dataclasses import dataclass, field, replace
 from pathlib import Path
+
+from blended.agent.claude_code import (
+    CLAUDE_CODE_DEFAULT_EFFORT,
+    CLAUDE_CODE_ENDPOINT,
+    CLAUDE_CODE_MODEL_IDS,
+    CLAUDE_CODE_REQUEST_TIMEOUT_SECONDS,
+    IMAGE_PLACEHOLDER_TOKEN,
+    ClaudeCodeTransport,
+    is_claude_code_model,
+)
+
+from blended.agent.plan import (
+    MISSING_PLAN_REFUSAL,
+    PLAN_TOOL_NAME,
+    TurnPlan,
+    encode_plan_event,
+    parse_plan_arguments,
+    plan_required_for,
+    plan_step_of,
+)
 
 LOCAL_ENDPOINT = "http://localhost:11434"
 CLOUD_ENDPOINT = "https://ollama.com"
@@ -30,7 +51,29 @@ OPENAI_CHAT_PATH = "/v1/chat/completions"
 # llama-swap on bmb speaks the OpenAI protocol; bmb exposes the port
 # directly on the LAN at this address (no SSH tunnel needed).
 BMB_ENDPOINT = "http://192.168.1.233:9292"
+# `big` runs llama-swap on the LAN holding the local vision weights
+# (this machine's daemon is a signed-in cloud proxy with no models
+# pulled). OpenAI protocol, NO auth: /v1/models answers 200 with and
+# without a bearer, because that llama-swap has no apiKeys list
+# (verified live 2026-09-03). The served id is `qwen3-vl` =
+# Qwen3-VL-8B-Instruct Q8_0 + mmproj-F16 at -c 16384, ttl 600.
+# STRICT SWAP: one model resident at a time on that 24 GB card, which
+# is why the local WRITER stays on bmb — a 22 GiB qwen3.8-27b on big
+# would evict the eye on every alternation.
+BIG_ENDPOINT = "http://192.168.1.110:8081"
 REQUEST_TIMEOUT_SECONDS = 300
+# A local llama-swap lane gets a longer ceiling than the cloud lanes.
+# Not a guess: bmb's qwen3.8-27b (Q8_XL, --reasoning-format deepseek)
+# answered the FIRST turn of the planter_box brief — 6239 prompt
+# tokens of system prompt plus 6 tool schemas — in 353.7 s with 3880
+# completion tokens, almost all of them thinking, and returned a
+# well-formed tool call. Against the 300 s cloud ceiling that turn
+# died mid-generation with `TimeoutError: timed out` (measured twice,
+# 2026-09-03), so `make converge-local` could never reach its first
+# tool call. Cloud writers answer the same turn in well under 60 s and
+# keep the tight ceiling, so a dead cloud endpoint is still reported
+# rather than waited on.
+LLAMA_SWAP_REQUEST_TIMEOUT_SECONDS = 900
 # The preflight sends a real one-token chat, so it pays whatever the
 # model's cold start costs. Measured 2026-08-22: a cloud model proxied
 # through a local daemon answered `ping` in 23.3 s from cold, against a
@@ -39,6 +82,9 @@ REQUEST_TIMEOUT_SECONDS = 300
 # of REQUEST_TIMEOUT_SECONDS, so a genuinely dead endpoint is reported
 # rather than waited on.
 PREFLIGHT_TIMEOUT_SECONDS = 90
+# What a stopped turn says, to the user and to the model's history.
+CANCELLED_ANSWER = "Stopped at your request. The scene is as the last tool call left it."
+CANCELLED_TOOL_RESULT = "Not executed: the user stopped this turn."
 
 API_KEY_ENVIRONMENT_VARIABLE = "OLLAMA_API_KEY"
 HOST_ENVIRONMENT_VARIABLE = "OLLAMA_HOST"
@@ -65,6 +111,52 @@ def _read_bmb_api_key() -> str:
         )
     return key
 
+
+# OpenRouter: one OpenAI-protocol gateway over many vendors' models.
+# Ids are `vendor/model` (e.g. `qwen/qwen3-vl-8b-instruct`), which is
+# the discriminator below — no Ollama id (`name:tag`) and no llama-swap
+# id served here carries a slash. Metered per token on a small prepaid
+# balance ($20, 2026-09-04), so this lane is for the provider smoke and
+# deliberate opt-in, never for bench or E2E sweeps.
+# The base WITHOUT /v1: the client appends OPENAI_CHAT_PATH, and
+# .../api/v1/v1/chat/completions 404s with an HTML page.
+OPENROUTER_ENDPOINT = "https://openrouter.ai/api"
+OPENROUTER_API_KEY_FILE = Path.home() / ".blended" / "openrouter_api_key"
+OPENROUTER_API_KEY_PREFIX = "sk-or-"
+# OpenRouter attributes usage to an app through these two headers; they
+# are optional on the wire and show up on the dashboard.
+OPENROUTER_APP_HEADERS = {
+    "HTTP-Referer": "https://github.com/ladvien/blended",
+    "X-Title": "blended",
+}
+
+
+def _read_openrouter_api_key() -> str:
+    """The OpenRouter key from its file, or "" when the file is absent.
+
+    The file holds either the bare key or a shell-style
+    `OPENROUTER_API_KEY=sk-or-...` line (how it was first written), so
+    both forms are accepted. Anything else fails loudly: a key that is
+    not `sk-or-*` would 401 every call with no clue why.
+    """
+    if not OPENROUTER_API_KEY_FILE.exists():
+        return ""
+    key = OPENROUTER_API_KEY_FILE.read_text(encoding="utf-8").strip()
+    _, _, after_equals = key.rpartition("=")
+    key = after_equals.strip() or key
+    if not key.startswith(OPENROUTER_API_KEY_PREFIX):
+        raise RuntimeError(
+            f"{OPENROUTER_API_KEY_FILE} does not hold an OpenRouter key "
+            f"(expected it to start with {OPENROUTER_API_KEY_PREFIX!r}). "
+            f"Fix or remove the file."
+        )
+    return key
+
+
+def _is_openrouter_model(model: str) -> bool:
+    """`vendor/model` ids belong to OpenRouter; nothing else has a slash."""
+    return "/" in model
+
 # Why these, given what this harness actually asks of a model.
 #
 # The job is: write bpy Python, call tools, read measured gate reports,
@@ -83,11 +175,33 @@ def _read_bmb_api_key() -> str:
 # subscription-covered.
 RECOMMENDED_MODELS = {
     "writer": (
+        "claude-code:sonnet",
+        (
+            "Drives every turn: writes bpy, calls tools, reads gate "
+            "reports, and — being natively multimodal — LOOKS at its own "
+            "renders, so no prose summary sits between the picture and "
+            "the code. Default writer. Qualified on the five-brief suite "
+            "at the pinned prompt on 2026-09-05 (iterations 52-56): "
+            "structural, form and refinement gates green on 5/5 briefs, "
+            "first attempt, zero failures, a plan declared before the "
+            "first edit in every run. The visual gate reports drift for "
+            "this writer BY CONSTRUCTION — the golden renders were "
+            "minted from deepseek-v4-pro's runs, so another writer's "
+            "legitimate solution moves the render (the stool at "
+            "iteration 55 is a well-formed three-legged stool that is "
+            "simply not deepseek's stool). Subscription-covered through "
+            "the signed-in CLI; rate-limited by the 5h/7d windows."
+        ),
+    ),
+    "writer_scored_cloud": (
         "deepseek-v4-pro:cloud",
         (
-            "1.65T MoE. Drives every turn: writes bpy, calls tools, reads "
-            "gate reports. The writer this harness CONVERGED on — v9's "
-            "pin rests on runs scored with it. Default writer. "
+            "1.65T MoE, and the writer that MINTED the golden references "
+            "the visual gate and the examiner compare against "
+            "(iterations 47-51, revision 10) — which is why it stays "
+            "offered and why `CONVERGENCE_WRITER_MODEL` still names it. "
+            "Pick it to reproduce a scored run exactly, or when the CLI "
+            "lane is outside its subscription window. "
             "deepseek-v4-flash is deliberately absent: it was scored "
             "through v1-v4 and never converged this suite — the last two "
             "blockers were not prompt wording but a writer too weak to "
@@ -95,14 +209,34 @@ RECOMMENDED_MODELS = {
         ),
     ),
     "eye": (
+        "claude-code:sonnet",
+        (
+            "The writer's OWN model, which is why it is the default: an "
+            "eye equal to the writer means `uses_separate_eye` is False, "
+            "so a render reaches the writer as a native image block "
+            "instead of a prose summary — no second call, and nothing "
+            "lost in between (RESP measures the reference-paired path at "
+            "recall 0.76 against 0.28 for no reference, "
+            "10.48550/arXiv.2604.11082). Licensed on the fixture zoo "
+            "2026-09-05: sensitivity 0.80 (4/5), control specificity "
+            "1.00 (5/5). Measured the same day: two renders arrive "
+            "unfused and in order — swapping them swaps the answer."
+        ),
+    ),
+    "eye_licensed_cloud": (
         "kimi-k2.7-code:cloud",
         (
-            "High Usage tier, vision + coding-tuned. Calibrated 2026-08-24: "
-            "sensitivity 0.80 (4/5), control specificity 1.00 (5/5) — the "
-            "only LICENSED examiner. minimax-m3:cloud was the old default "
-            "but is broken on this harness: it answers in message.thinking "
-            "and returns empty content (measured 2026-08-24), so every "
-            "examiner call would fail the JSON contract."
+            "The superseded default, still licensed by its own recorded "
+            "calibration (_evaluate/eye_calibration_kimi.json): "
+            "sensitivity 0.80, control specificity 1.00, measured "
+            "2026-08-24. Its miss is COMPLEMENTARY to claude-code's — it "
+            "missed lid_offset and saw floating_seat. Pick it when the "
+            "writer is not vision-capable and the CLI lane is out of "
+            "subscription window. minimax-m3:cloud was the old default "
+            "but is broken on this harness: it answers in "
+            "message.thinking and returns empty content (measured "
+            "2026-08-24), so every examiner call would fail the JSON "
+            "contract."
         ),
     ),
     "single_model_subscription": (
@@ -138,8 +272,52 @@ RECOMMENDED_MODELS = {
         (
             "bmb llama-swap (OpenAI protocol via "
             f"{BMB_ENDPOINT}, exposed directly on the LAN). Local "
-            "and free; no subscription usage. Pair it with an Eye "
-            "for vision. The id is exactly what /v1/models serves."
+            "and free; no subscription usage. Pair it with `qwen3-vl` "
+            "on big for a fully-local run (`make converge-local`). "
+            "The id is exactly what /v1/models serves."
+        ),
+    ),
+    "local_eye_big": (
+        "qwen3-vl",
+        (
+            "Qwen3-VL-8B-Instruct Q8_0 + F16 projector on big's "
+            f"llama-swap ({BIG_ENDPOINT}), OpenAI wire, no key. The "
+            "local half of the fully-local pair: writer qwen3.8-27b on "
+            "bmb, eye qwen3-vl on big — two hosts, so neither evicts "
+            "the other. Measured 2026-09-03: 258 prompt tokens per "
+            "512x512 render (the Ollama lane cost ~1050), 1160 for a "
+            "1048x1048 contact sheet, multiple images delivered "
+            "unfused and in order. DESCRIBE-only: the licensed "
+            "examiner slot holds kimi's calibration, so machine "
+            "verdicts still need --examiner none."
+        ),
+    ),
+    # The headless Claude Code CLI (see agent/claude_code.py). No key,
+    # no endpoint, no metered balance: the binary owns its own auth and
+    # this harness never handles the token. One transport serves both
+    # slots because the model is natively multimodal — measured
+    # 2026-09-05: renders arrive as real image blocks (1315 prompt
+    # tokens with none, 1685 with one, 2068 with two, unfused and in
+    # order), so a `claude-code:` writer can be its OWN eye with
+    # `vision_model` left empty.
+    "claude_code_writer": (
+        "claude-code:sonnet",
+        (
+            "Claude Code in headless mode, subscription-covered through "
+            "the signed-in CLI. Tool calls are schema-CONSTRAINED via "
+            "--json-schema rather than parsed out of prose. Rate-limited "
+            "by the 5h/7d subscription windows, not metered; overage on "
+            "this account is rejected, so a window hit is a hard stop "
+            "the preflight and the panel report."
+        ),
+    ),
+    "claude_code_eye": (
+        "claude-code:haiku",
+        (
+            "The cheapest Claude Code model for the eye slot: it only "
+            "describes renders, and the same subscription covers it. "
+            "Pick `claude-code:sonnet` for both slots when the writer "
+            "should look at its own renders instead."
         ),
     ),
 }
@@ -153,6 +331,65 @@ BMB_MODEL_IDS = (
     "qwen3-32b",
     "qwen3.8-27b",
 )
+# Every model `big`'s llama-swap serves that this addon offers, per its
+# /v1/models (verified live 2026-09-03). The local eye lives THERE, not
+# on this machine: mac_air's daemon reports zero models, so routing
+# qwen3-vl to LOCAL_ENDPOINT 404s with "model not found".
+BIG_MODEL_IDS = ("qwen3-vl",)
+# Every endpoint that speaks OpenAI /v1/chat/completions instead of
+# Ollama /api/chat: the two LAN llama-swaps and OpenRouter. The cloud
+# and the local daemon are Ollama.
+LLAMA_SWAP_ENDPOINTS = (BMB_ENDPOINT, BIG_ENDPOINT)
+OPENAI_PROTOCOL_ENDPOINTS = (*LLAMA_SWAP_ENDPOINTS, OPENROUTER_ENDPOINT)
+# Every endpoint that serves ONLY its own model ids, so an eye with no
+# server of its own cannot inherit it: the two llama-swaps, OpenRouter,
+# and the Claude Code CLI. The local daemon is the fallback because it
+# is the one endpoint that serves whatever it is signed in for.
+MODEL_IMPLIED_ENDPOINTS = (*OPENAI_PROTOCOL_ENDPOINTS, CLAUDE_CODE_ENDPOINT)
+
+
+def _implied_endpoint(model: str) -> str:
+    """The one server that serves `model`, ignoring explicit overrides.
+
+    A model id implies its host: a `claude-code:` id is the local
+    headless CLI, bmb's llama-swap serves BMB_MODEL_IDS, big's
+    llama-swap serves BIG_MODEL_IDS, a `vendor/model` id is
+    OpenRouter's, everything else rides the local daemon (which proxies
+    cloud models once `ollama signin` ran). One table, used by both
+    writer and eye resolution — a model id absent from every table has
+    no server, and that is what a 404 means.
+    """
+    if is_claude_code_model(model):
+        return CLAUDE_CODE_ENDPOINT
+    if model in BMB_MODEL_IDS:
+        return BMB_ENDPOINT
+    if model in BIG_MODEL_IDS:
+        return BIG_ENDPOINT
+    if _is_openrouter_model(model):
+        return OPENROUTER_ENDPOINT
+    return LOCAL_ENDPOINT
+
+
+def _implied_api_key(model: str, environment_key: str) -> str:
+    """The credential `model`'s own server wants.
+
+    bmb's llama-swap 401s without its key file; big's llama-swap has no
+    apiKeys list and must never be handed a cloud key; OpenRouter takes
+    its own key file; the Claude Code CLI owns its own auth and this
+    harness never handles its token; everything else rides the Ollama
+    lanes, where the env key (or a signed-in daemon) is the credential.
+    Used by BOTH writer and eye resolution so the eye cannot inherit a
+    credential for a server it is not talking to.
+    """
+    endpoint = _implied_endpoint(model)
+    if endpoint == BMB_ENDPOINT:
+        return _read_bmb_api_key()
+    if endpoint in (BIG_ENDPOINT, CLAUDE_CODE_ENDPOINT):
+        return ""
+    if endpoint == OPENROUTER_ENDPOINT:
+        return _read_openrouter_api_key()
+    return environment_key
+
 
 # What the eye is asked when a tool hands back a render. It describes;
 # it does not adjudicate. The analyzer already returned a hard verdict on
@@ -189,6 +426,19 @@ class ModelConfig:
     temperature: float = 0.3  # low: this is engineering, not brainstorming
     context_length: int = 32768
     api_key: str = ""
+    # Completion ceiling on the OpenAI-protocol lanes. The bmb writer is
+    # a REASONING build: its 65536-token context and thinking budget
+    # make 4096 a starvation cap — measured live 2026-08-23: the tool
+    # round trip returned EMPTY content with finish_reason=length, then
+    # answered in 72 tokens with 16384. A metered lane (OpenRouter) can
+    # lower this per call to bound spend.
+    max_completion_tokens: int = 16384
+    # Claude Code lane only. The effort level is passed explicitly so a
+    # harness run does not change behaviour when the user edits their
+    # own settings.json; the binary path exists because Blender launched
+    # from Finder inherits no shell PATH.
+    claude_code_effort: str = CLAUDE_CODE_DEFAULT_EFFORT
+    claude_code_binary_path: str = ""
 
     @classmethod
     def from_environment(
@@ -200,9 +450,10 @@ class ModelConfig:
     ) -> ModelConfig:
         """Resolve endpoint and auth.
 
-        The model implies its server when nothing explicit was given:
-        qwen3.8 is bmb's llama-swap, everything else rides the local
-        daemon (which proxies cloud models once `ollama signin` has
+        The model implies its server when nothing explicit was given
+        (`_implied_endpoint`): qwen3.8 is bmb's llama-swap, qwen3-vl is
+        big's daemon, everything else rides the local daemon (which
+        proxies cloud models once `ollama signin` has
         authenticated it). An explicit non-default endpoint or
         OLLAMA_HOST wins over the model's implied server — but the
         default `http://localhost:11434` is treated as UNSET, because
@@ -219,30 +470,27 @@ class ModelConfig:
         resolved_model = model or RECOMMENDED_MODELS["writer"][0]
         # Auth order, one path per lane:
         #   * an explicit api_key (addon preference) always wins;
-        #   * a bmb model reads the bmb key file (~/.blended/bmb_api_key,
-        #     0600, written from bmb's llama-swap.yaml) — Finder-launched
-        #     Blender has no shell environment, so the key must come from
-        #     a file, not an export;
-        #   * every other lane falls back to OLLAMA_API_KEY.
-        # The Ollama env key is deliberately NOT sent to bmb: it is the
-        # wrong credential for llama-swap and would 401.
+        #   * otherwise the credential follows the SERVER the model id
+        #     implies: a bmb model reads the bmb key file
+        #     (~/.blended/bmb_api_key, 0600, written from bmb's
+        #     llama-swap.yaml) — Finder-launched Blender has no shell
+        #     environment, so the key must come from a file, not an
+        #     export; big's llama-swap takes NO key; every other lane
+        #     falls back to OLLAMA_API_KEY.
+        # The Ollama env key is deliberately NOT sent to either
+        # llama-swap: it is the wrong credential there and would 401.
         resolved_key = api_key
         if not resolved_key:
-            if resolved_model in BMB_MODEL_IDS:
-                resolved_key = _read_bmb_api_key()
-            else:
-                resolved_key = os.environ.get(API_KEY_ENVIRONMENT_VARIABLE, "")
+            resolved_key = _implied_api_key(
+                resolved_model, os.environ.get(API_KEY_ENVIRONMENT_VARIABLE, "")
+            )
         explicit_endpoint = (
             endpoint if endpoint and endpoint != LOCAL_ENDPOINT else ""
         )
         resolved_endpoint = (
             explicit_endpoint
             or os.environ.get(HOST_ENVIRONMENT_VARIABLE, "")
-            or (
-                BMB_ENDPOINT
-                if resolved_model in BMB_MODEL_IDS
-                else LOCAL_ENDPOINT
-            )
+            or _implied_endpoint(resolved_model)
         )
         return cls(
             model=resolved_model,
@@ -262,8 +510,32 @@ class ModelConfig:
 
     @property
     def uses_openai_protocol(self) -> bool:
-        """llama-swap (bmb) and other OpenAI-shaped servers."""
-        return BMB_ENDPOINT in self.endpoint
+        """llama-swap on bmb and big, and OpenRouter; the Ollama lanes are the rest."""
+        return any(host in self.endpoint for host in OPENAI_PROTOCOL_ENDPOINTS)
+
+    @property
+    def is_openrouter(self) -> bool:
+        return OPENROUTER_ENDPOINT in self.endpoint
+
+    @property
+    def uses_claude_code(self) -> bool:
+        """True when this config's turns run through the headless CLI."""
+        return self.endpoint == CLAUDE_CODE_ENDPOINT
+
+    @property
+    def request_timeout_seconds(self) -> int:
+        """The per-call ceiling this lane's server actually needs.
+
+        A ceiling, not a wait: the LAN llama-swap lanes hold a local 27B
+        thinking model whose first turn was measured at 353.7 s, so the
+        cloud ceiling killed it mid-generation. OpenRouter is a cloud
+        lane and keeps the tight ceiling so a dead gateway is reported.
+        """
+        if self.uses_claude_code:
+            return CLAUDE_CODE_REQUEST_TIMEOUT_SECONDS
+        if any(host in self.endpoint for host in LLAMA_SWAP_ENDPOINTS):
+            return LLAMA_SWAP_REQUEST_TIMEOUT_SECONDS
+        return REQUEST_TIMEOUT_SECONDS
 
     @property
     def uses_separate_eye(self) -> bool:
@@ -273,17 +545,39 @@ class ModelConfig:
     def eye_config(self) -> ModelConfig:
         """The config for this config's vision model.
 
-        An eye that IS the bmb model rides the bmb OpenAI lane (the
-        wire now carries images). Any other eye — a daemon model or a
-        cloud model — rides the Ollama daemon when the writer is on
-        bmb, because only the bmb model is served by bmb.
+        An eye whose model implies its own server rides that server:
+        the bmb model rides bmb's OpenAI lane (the wire carries images
+        there), the `qwen3-vl` eye rides big's llama-swap, a
+        `claude-code:` eye rides the headless CLI. An eye with
+        no implied server (a cloud model) inherits the writer's
+        endpoint — unless the writer sits on a model-implied server,
+        which serves only its own ids, in which case the eye falls to
+        the local daemon. The credential follows the eye's server, so a
+        cloud writer's key never rides to a llama-swap — and a writer
+        whose lane is not Ollama (bmb file, OpenRouter file, the CLI's
+        own auth) never rides its key to the daemon: the daemon lane
+        only ever inherits a key the writer itself got from the Ollama
+        lanes.
         """
-        eye = replace(self, model=self.vision_model)
-        if self.vision_model in BMB_MODEL_IDS:
-            eye = replace(eye, endpoint=BMB_ENDPOINT)
-        elif self.uses_openai_protocol:
-            eye = replace(eye, endpoint=LOCAL_ENDPOINT)
-        return eye
+        eye_endpoint = _implied_endpoint(self.vision_model)
+        if (
+            eye_endpoint == LOCAL_ENDPOINT
+            and self.endpoint not in MODEL_IMPLIED_ENDPOINTS
+        ):
+            eye_endpoint = self.endpoint
+        import os
+
+        ollama_lane_key = (
+            self.api_key
+            if not self.uses_openai_protocol and not self.uses_claude_code
+            else os.environ.get(API_KEY_ENVIRONMENT_VARIABLE, "")
+        )
+        return replace(
+            self,
+            model=self.vision_model,
+            endpoint=eye_endpoint,
+            api_key=_implied_api_key(self.vision_model, ollama_lane_key),
+        )
 
     def describe_routing(self) -> str:
         if self.uses_separate_eye:
@@ -382,18 +676,137 @@ def _assistant_message_from_openai(body: dict) -> dict:
     return normalized
 
 
+# macOS ships its trust store at this path. Blender's bundled Python and
+# Homebrew's find it on their own; the python.org framework build looks
+# only in its own etc/openssl, which is empty until its
+# "Install Certificates" step runs — so every https lane (OpenRouter,
+# ollama.com) failed CERTIFICATE_VERIFY_FAILED from the venv while
+# working from Blender (measured 2026-09-04). One context, one file.
+SYSTEM_CA_BUNDLE = Path("/etc/ssl/cert.pem")
+
+
+def _tls_context():
+    import ssl
+
+    if ssl.get_default_verify_paths().cafile is None and SYSTEM_CA_BUNDLE.exists():
+        return ssl.create_default_context(cafile=str(SYSTEM_CA_BUNDLE))
+    return ssl.create_default_context()
+
+
+SSE_DATA_PREFIX = "data:"
+SSE_DONE_MARKER = "[DONE]"
+
+
+# Streaming exists for the person watching, not the model: seeing the
+# reply and the thinking arrive is how the UI "makes clear why the
+# system did what it did" (Amershi et al., G11, DOI
+# 10.1145/3290605.3300233) during turns that take minutes.
+def _assemble_openai_stream(lines, on_delta, stop_requested) -> dict:
+    """Fold OpenAI SSE deltas into the assistant dict the loop consumes.
+
+    Tool calls stream as fragments keyed by `index`: the first fragment
+    carries id and name, later ones append to `arguments`. They are
+    accumulated by index and only handed over once the stream ends —
+    a half-received argument string is not a call. On a stop, calls
+    still being received are dropped for the same reason.
+    """
+    content: list[str] = []
+    thinking: list[str] = []
+    calls_by_index: dict[int, dict] = {}
+    stopped = False
+    for line in lines:
+        if stop_requested is not None and stop_requested():
+            stopped = True
+            break
+        if not line.startswith(SSE_DATA_PREFIX):
+            continue
+        data = line[len(SSE_DATA_PREFIX) :].strip()
+        if data == SSE_DONE_MARKER:
+            break
+        frame = json.loads(data)
+        choice = (frame.get("choices") or [{}])[0]
+        delta = choice.get("delta") or {}
+        text = delta.get("content")
+        if text:
+            content.append(text)
+            on_delta("content", text)
+        reasoning = delta.get("reasoning_content") or delta.get("reasoning")
+        if reasoning:
+            thinking.append(reasoning)
+            on_delta("thinking", reasoning)
+        for fragment in delta.get("tool_calls") or []:
+            index = fragment.get("index", 0)
+            call = calls_by_index.setdefault(
+                index, {"id": "", "function": {"name": "", "arguments": ""}}
+            )
+            if fragment.get("id"):
+                call["id"] = fragment["id"]
+            function = fragment.get("function") or {}
+            if function.get("name"):
+                call["function"]["name"] += function["name"]
+            if function.get("arguments"):
+                call["function"]["arguments"] += function["arguments"]
+    message: dict = {
+        "role": "assistant",
+        "content": "".join(content),
+        "tool_calls": [] if stopped else [calls_by_index[i] for i in sorted(calls_by_index)],
+    }
+    if thinking:
+        message["thinking"] = "".join(thinking)
+    return message
+
+
+def _assemble_ollama_stream(lines, on_delta, stop_requested) -> dict:
+    """Fold Ollama NDJSON frames into the assistant dict.
+
+    Ollama streams content and thinking as fragments and delivers each
+    tool call whole inside one frame, so calls are appended as they
+    arrive and dropped on a stop only if the stream was cut before
+    `done`.
+    """
+    content: list[str] = []
+    thinking: list[str] = []
+    tool_calls: list[dict] = []
+    stopped = False
+    for line in lines:
+        if stop_requested is not None and stop_requested():
+            stopped = True
+            break
+        frame = json.loads(line)
+        message = frame.get("message") or {}
+        text = message.get("content")
+        if text:
+            content.append(text)
+            on_delta("content", text)
+        reasoning = message.get("thinking")
+        if reasoning:
+            thinking.append(reasoning)
+            on_delta("thinking", reasoning)
+        tool_calls.extend(message.get("tool_calls") or [])
+        if frame.get("done"):
+            break
+    assembled: dict = {
+        "role": "assistant",
+        "content": "".join(content),
+        "tool_calls": [] if stopped else tool_calls,
+    }
+    if thinking:
+        assembled["thinking"] = "".join(thinking)
+    return assembled
+
+
 class OllamaClient:
     """Minimal chat client with tool-calling and image attachment.
 
     One client, two wire protocols, chosen per endpoint:
     Ollama /api/chat (local daemon and cloud) or OpenAI
-    /v1/chat/completions (bmb's llama-swap).
+    /v1/chat/completions (the llama-swaps and OpenRouter).
     """
 
     def __init__(self, config: ModelConfig | None = None) -> None:
         self.config = config or ModelConfig.from_environment()
 
-    def _request(self, path: str, payload: dict | None, timeout_seconds: int):
+    def _build_request(self, path: str, payload: dict | None) -> urllib.request.Request:
         request = urllib.request.Request(
             self.config.endpoint.rstrip("/") + path,
             data=json.dumps(payload).encode("utf-8") if payload else None,
@@ -402,8 +815,34 @@ class OllamaClient:
         )
         if self.config.api_key:
             request.add_header("Authorization", f"Bearer {self.config.api_key}")
-        with urllib.request.urlopen(request, timeout=timeout_seconds) as response:
+        if self.config.is_openrouter:
+            for header, value in OPENROUTER_APP_HEADERS.items():
+                request.add_header(header, value)
+        return request
+
+    def _request(self, path: str, payload: dict | None, timeout_seconds: int):
+        request = self._build_request(path, payload)
+        with urllib.request.urlopen(
+            request, timeout=timeout_seconds, context=_tls_context()
+        ) as response:
             return json.loads(response.read().decode("utf-8"))
+
+    def _stream_lines(self, path: str, payload: dict, timeout_seconds: int):
+        """Yield the response body line by line as it arrives.
+
+        Both wire protocols stream newline-delimited frames: Ollama
+        emits one JSON object per line, OpenAI-protocol servers emit
+        SSE `data: {...}` lines. The generator holds the socket open,
+        so a consumer that stops iterating (a cancel) closes it.
+        """
+        request = self._build_request(path, payload)
+        with urllib.request.urlopen(
+            request, timeout=timeout_seconds, context=_tls_context()
+        ) as response:
+            for raw_line in response:
+                line = raw_line.decode("utf-8", "replace").strip()
+                if line:
+                    yield line
 
     def _chat_path(self) -> str:
         return OPENAI_CHAT_PATH if self.config.uses_openai_protocol else CHAT_PATH
@@ -414,13 +853,8 @@ class OllamaClient:
                 "model": self.config.model,
                 "messages": _to_openai_messages(messages),
                 "temperature": self.config.temperature,
-                # The bmb writer is a REASONING build: its 65536-token
-                # context and thinking budget make 4096 a starvation cap —
-                # measured live 2026-08-23: the tool round trip returned
-                # EMPTY content with finish_reason=length, then answered
-                # in 72 tokens with 16384. The whole lane is capped by
-                # REQUEST_TIMEOUT_SECONDS, so this only sets the ceiling.
-                "max_tokens": 16384,
+                # Ceiling only; the wall clock is config.request_timeout_seconds.
+                "max_tokens": self.config.max_completion_tokens,
                 "stream": False,
             }
             if tools:
@@ -439,6 +873,22 @@ class OllamaClient:
             payload["tools"] = tools
         return payload
 
+    def _claude_code_transport(self, timeout_seconds: int = 0) -> ClaudeCodeTransport:
+        """This config's headless-CLI transport.
+
+        Built per call, holding no conversation: the CLI lane is as
+        stateless as the HTTP lanes, so `AgentSession.messages` stays
+        the single source of truth for the conversation. `timeout_seconds`
+        overrides the lane ceiling for the preflight, which asks for one
+        token and must not wait out a whole modeling turn.
+        """
+        return ClaudeCodeTransport(
+            model=self.config.model,
+            effort=self.config.claude_code_effort,
+            binary_path=self.config.claude_code_binary_path,
+            timeout_seconds=timeout_seconds or self.config.request_timeout_seconds,
+        )
+
     def check_connection(self) -> ConnectionStatus:
         """Verify the model is reachable BEFORE the first real turn.
 
@@ -447,17 +897,27 @@ class OllamaClient:
         misconfiguration is a one-line diagnosis instead of a mystery
         timeout mid-conversation.
         """
+        if self.config.uses_claude_code:
+            transport = self._claude_code_transport(PREFLIGHT_TIMEOUT_SECONDS)
+            from blended.agent.tools import TOOL_SCHEMAS
+
+            # The preflight ping carries the REAL envelope schema, so a
+            # CLI too old for --json-schema fails here rather than
+            # mid-conversation.
+            ok, detail = transport.check_connection(TOOL_SCHEMAS)
+            return ConnectionStatus(ok, CLAUDE_CODE_ENDPOINT, detail)
         attempts = [self.config.endpoint]
         if (
             not self.config.is_cloud_endpoint
             and not self.config.uses_openai_protocol
             and self.config.api_key
         ):
-            # Ollama lanes fall back to direct cloud; the bmb lane has
-            # ONE server and ONE key — no fallback.
+            # Ollama lanes fall back to direct cloud; a llama-swap lane
+            # has ONE server and ONE credential — no fallback.
             attempts.append(CLOUD_ENDPOINT)
 
         failures: list[str] = []
+        codes: set[int] = set()
         for endpoint in attempts:
             probe_client = OllamaClient(self.config.with_endpoint(endpoint))
             try:
@@ -470,29 +930,67 @@ class OllamaClient:
                 )
             except urllib.error.HTTPError as http_error:
                 body = http_error.read().decode("utf-8", "replace")[:200]
+                codes.add(http_error.code)
                 failures.append(f"{endpoint}: HTTP {http_error.code} {body}")
                 continue
             except Exception as error:  # noqa: BLE001 — diagnostic path
                 failures.append(f"{endpoint}: {error}")
                 continue
             self.config = self.config.with_endpoint(endpoint)
-            if self.config.uses_openai_protocol:
-                route = f"llama-swap (bmb) via {BMB_ENDPOINT}"
+            if BMB_ENDPOINT in endpoint:
+                route = f"llama-swap on bmb ({BMB_ENDPOINT})"
+            elif BIG_ENDPOINT in endpoint:
+                route = f"llama-swap on big ({BIG_ENDPOINT})"
             elif CLOUD_ENDPOINT in endpoint:
                 route = "direct cloud (Bearer key)"
             else:
                 route = "local daemon (proxying cloud models if signed in)"
             return ConnectionStatus(True, endpoint, f"{self.config.model} via {route}")
 
+        # The hint follows the OBSERVED failure, never the mere absence
+        # of a key. A signed-in daemon needs no key, so keying the hint
+        # off `api_key == ""` printed "no OLLAMA_API_KEY" over a 404 and
+        # sent a real debugging session chasing auth that was fine.
         hint = ""
-        if not self.config.api_key:
-            if self.config.uses_openai_protocol:
+        if 404 in codes:
+            served_list_path = (
+                "/v1/models" if self.config.uses_openai_protocol else TAGS_PATH
+            )
+            hint = (
+                f" Nothing at {self.config.endpoint} serves "
+                f"{self.config.model!r}. A model id picks its own server: "
+                f"bmb's llama-swap serves {', '.join(BMB_MODEL_IDS)}; "
+                f"big's llama-swap at {BIG_ENDPOINT} serves "
+                f"{', '.join(BIG_MODEL_IDS)}; a `claude-code:` id rides "
+                f"the local headless CLI; a `vendor/model` id rides "
+                f"OpenRouter; every other id rides the "
+                f"local daemon, which serves cloud models once "
+                f"`ollama signin` ran plus whatever is pulled locally. "
+                f"Check the served list with "
+                f"`curl {self.config.endpoint}{served_list_path}`."
+            )
+        elif codes & {401, 403} and not self.config.api_key:
+            if BMB_ENDPOINT in self.config.endpoint:
                 hint = (
-                    f" bmb's llama-swap requires its API key (it 401s "
-                    f"without one, verified live 2026-08-23). The key lives "
-                    f"on bmb at ~/llm/.api-key — paste it into the addon's "
-                    f"API key preference. Finder-launched Blender does not "
-                    f"inherit your shell environment."
+                    " bmb's llama-swap requires its API key (it 401s "
+                    "without one, verified live 2026-08-23). The key lives "
+                    "on bmb at ~/llm/.api-key — paste it into the addon's "
+                    "API key preference. Finder-launched Blender does not "
+                    "inherit your shell environment."
+                )
+            elif BIG_ENDPOINT in self.config.endpoint:
+                hint = (
+                    f" big's llama-swap takes no API key (it answers 200 "
+                    f"with and without a bearer, verified 2026-09-03), so "
+                    f"a 401 here means something else is listening on "
+                    f"{BIG_ENDPOINT} — check `ssh big \"bash -lc "
+                    f"'journalctl --user -u llama-swap -n 20'\"`."
+                )
+            elif self.config.is_openrouter:
+                hint = (
+                    f" OpenRouter needs its key: put it in "
+                    f"{OPENROUTER_API_KEY_FILE} (bare `sk-or-...` or an "
+                    f"`OPENROUTER_API_KEY=` line)."
                 )
             else:
                 hint = (
@@ -505,11 +1003,40 @@ class OllamaClient:
                 )
         return ConnectionStatus(False, self.config.endpoint, "; ".join(failures) + hint)
 
-    def chat(self, messages: list[dict], tools: list[dict] | None = None) -> dict:
-        """One chat completion. Returns the assistant message dict."""
+    def chat(
+        self,
+        messages: list[dict],
+        tools: list[dict] | None = None,
+        on_delta: Callable[[str, str], None] | None = None,
+        stop_requested: Callable[[], bool] | None = None,
+    ) -> dict:
+        """One chat completion. Returns the assistant message dict.
+
+        With `on_delta(kind, text)` the reply is STREAMED: each content
+        or thinking fragment is delivered as it arrives (kind in
+        {"content", "thinking"}) and the same assistant dict is
+        assembled from the fragments. `stop_requested()` is polled per
+        frame; when it turns true the socket is closed and whatever
+        arrived so far is returned — which is how a user's Stop lands
+        mid-generation instead of after it.
+        """
+        if self.config.uses_claude_code:
+            # A subprocess, not a socket: the transport owns the frame
+            # protocol, the schema-constrained tool calls, and the same
+            # on_delta / stop_requested contract.
+            return self._claude_code_transport().chat(
+                messages, tools, on_delta, stop_requested
+            )
         payload = self._chat_payload(messages, tools)
+        streaming = on_delta is not None
+        if streaming:
+            payload["stream"] = True
         try:
-            body = self._request(self._chat_path(), payload, REQUEST_TIMEOUT_SECONDS)
+            if streaming:
+                return self._chat_streamed(payload, on_delta, stop_requested)
+            body = self._request(
+                self._chat_path(), payload, self.config.request_timeout_seconds
+            )
         except urllib.error.HTTPError as http_error:
             detail = http_error.read().decode("utf-8", "replace")[:300]
             raise RuntimeError(
@@ -525,6 +1052,14 @@ class OllamaClient:
         if self.config.uses_openai_protocol:
             return _assistant_message_from_openai(body)
         return body.get("message", {})
+
+    def _chat_streamed(self, payload: dict, on_delta, stop_requested) -> dict:
+        lines = self._stream_lines(
+            self._chat_path(), payload, self.config.request_timeout_seconds
+        )
+        if self.config.uses_openai_protocol:
+            return _assemble_openai_stream(lines, on_delta, stop_requested)
+        return _assemble_ollama_stream(lines, on_delta, stop_requested)
 
 
 class VisionDescriber:
@@ -564,15 +1099,13 @@ class VisionDescriber:
             "content": _image_placeholders(len(image_paths)) + text,
             "images": _encode_images(image_paths),
         }
-        eye_config = replace(self.client.config, model=self.vision_model)
-        if self.vision_model in BMB_MODEL_IDS:
-            # The eye IS a bmb model: it rides the bmb OpenAI lane.
-            eye_config = replace(eye_config, endpoint=BMB_ENDPOINT)
-        elif self.client.config.uses_openai_protocol:
-            # The bmb lane is text-only for non-bmb eyes; they live on
-            # the daemon.
-            eye_config = replace(eye_config, endpoint=LOCAL_ENDPOINT)
-        eye_client = OllamaClient(eye_config)
+        # ONE routing rule for the eye, shared with the preflight:
+        # `self.vision_model` is the describer's own eye (the examiner
+        # passes its own), so it is pushed onto the config first.
+        eye_client = OllamaClient(
+            replace(self.client.config, vision_model=self.vision_model)
+            .eye_config()
+        )
         reply = eye_client.chat([message])
         return (reply.get("content") or "").strip()
 
@@ -593,10 +1126,15 @@ def _image_placeholders(image_count: int) -> str:
 
     The renderer substitutes placeholders in order, so `Image 1` is the
     first path — which is what `examiner.md.j2` means by "the FIRST
-    image".
+    image". The Claude Code lane needs no such workaround (it delivers
+    images unfused already) but splices its real image blocks in at
+    these same positions, which is why the token is one constant.
     """
     return (
-        "".join(f"Image {index}:\n[img]\n" for index in range(1, image_count + 1))
+        "".join(
+            f"Image {index}:\n{IMAGE_PLACEHOLDER_TOKEN}\n"
+            for index in range(1, image_count + 1)
+        )
         + "\n"
     )
 
@@ -647,6 +1185,25 @@ class AgentSession:
     # INSTANCE, so `self.dispatch(...)` calls it unbound — no phantom
     # `self` argument. Frontends override it; nothing patches it.
     dispatch: ToolDispatch = dispatch_here
+    # Set from ANY thread (the UI) to stop the turn at the next seam:
+    # before the next model call, per streamed frame, and before each
+    # tool call. Efficient dismissal and correction are guidelines G8/G9
+    # of Amershi et al., Guidelines for Human-AI Interaction
+    # (DOI 10.1145/3290605.3300233); streaming (below) is G11, make
+    # clear why the system did what it did — while it is doing it.
+    cancel_requested: threading.Event = field(default_factory=threading.Event)
+    # Stream model replies as `content_delta` / `thinking_delta` events.
+    # Off by default so scripted clients and batch drivers keep the
+    # one-shot `chat(messages, tools)` contract; the live UI turns it on.
+    stream_replies: bool = False
+    # Require a declared plan before any scene-changing tool this turn.
+    # Off by default so scripted clients and the 3DCodeBench batch
+    # driver keep their current contract; the live UI and the chat E2E
+    # gate turn it on. A plan belongs to one turn and is reset in send().
+    require_plan: bool = False
+
+    def cancel(self) -> None:
+        self.cancel_requested.set()
 
     def __post_init__(self) -> None:
         if not self.messages:
@@ -658,8 +1215,11 @@ class AgentSession:
         """Run one user turn to completion, executing tool calls.
 
         `on_event(kind, text)` is called for streaming UI updates with
-        kind in {"thinking", "tool", "result", "answer"}. Returns the
-        assistant's final text.
+        kind in {"thinking", "tool", "result", "answer", "vision",
+        "plan", "step", "render"} plus, when `stream_replies` is on,
+        {"content_delta", "thinking_delta"} fragments that precede the
+        whole "thinking"/"answer" event. Returns the assistant's final
+        text.
         """
         from blended.agent.tools import TOOL_SCHEMAS
 
@@ -669,10 +1229,24 @@ class AgentSession:
 
         self.messages.append({"role": "user", "content": user_text})
 
+        self.cancel_requested.clear()
         executed_tool_call_count = 0
+        # Per-turn plan state. A plan belongs to one turn: declared at
+        # the start, advanced through its steps, discarded at the end.
+        turn_plan: TurnPlan | None = None
         while executed_tool_call_count < self.maximum_tool_calls_per_turn:
-            assistant_message = self.client.chat(self.messages, TOOL_SCHEMAS)
+            if self.stream_replies:
+                assistant_message = self.client.chat(
+                    self.messages,
+                    TOOL_SCHEMAS,
+                    on_delta=lambda kind, text: emit(f"{kind}_delta", text),
+                    stop_requested=self.cancel_requested.is_set,
+                )
+            else:
+                assistant_message = self.client.chat(self.messages, TOOL_SCHEMAS)
             self.messages.append(assistant_message)
+            if self.cancel_requested.is_set():
+                return self._cancel_turn(assistant_message, emit)
 
             thinking_text = assistant_message.get("thinking")
             if thinking_text:
@@ -693,6 +1267,29 @@ class AgentSession:
                     if isinstance(raw_arguments, str)
                     else raw_arguments
                 )
+                if self.cancel_requested.is_set():
+                    return self._cancel_turn(assistant_message, emit)
+                # Plan enforcement: a scene-changing tool with no plan
+                # declared this turn is refused, not dispatched. The
+                # refusal counts against the tool-call budget so a loop
+                # that never plans still terminates. The model sees the
+                # refusal as a tool result and can correct itself by
+                # declaring a plan on its next turn.
+                if (
+                    self.require_plan
+                    and plan_required_for(tool_name)
+                    and turn_plan is None
+                ):
+                    emit("tool", f"{tool_name}({json.dumps(arguments)})")
+                    executed_tool_call_count += 1
+                    emit("result", MISSING_PLAN_REFUSAL)
+                    self.messages.append({
+                        "role": "tool",
+                        "content": MISSING_PLAN_REFUSAL,
+                        "tool_name": tool_name,
+                        "tool_call_id": tool_call.get("id", ""),
+                    })
+                    continue
                 emit("tool", f"{tool_name}({json.dumps(arguments)})")
                 executed_tool_call_count += 1
                 try:
@@ -709,6 +1306,29 @@ class AgentSession:
                     image_paths = []
                 emit("result", result_text)
 
+                # When the model declared its plan, parse and store it
+                # for this turn, then emit a plan event so the panel can
+                # show the steps and progress bar. The plan was already
+                # validated inside dispatch_tool; re-parse from the
+                # arguments to get the TurnPlan object.
+                if tool_name == PLAN_TOOL_NAME:
+                    try:
+                        turn_plan = parse_plan_arguments(arguments)
+                        emit("plan", encode_plan_event(turn_plan))
+                    except ValueError:
+                        # dispatch_tool already returned a FAILED result
+                        # naming the problem; no plan event to emit.
+                        turn_plan = None
+
+                # When the call carried a plan_step, emit a step event
+                # and advance the plan's current_step so a later plan
+                # event is consistent. An out-of-range step clamps
+                # rather than breaking the panel.
+                step_index = plan_step_of(arguments)
+                if step_index is not None and turn_plan is not None:
+                    turn_plan = turn_plan.with_step(step_index)
+                    emit("step", str(step_index))
+
                 tool_message: dict = {
                     "role": "tool",
                     "content": result_text,
@@ -719,6 +1339,12 @@ class AgentSession:
                     "tool_call_id": tool_call.get("id", ""),
                 }
                 if image_paths:
+                    # Emit render events BEFORE the vision event so the
+                    # panel can pair the picture with what the eye said.
+                    # Emitted in both eye configs because the panel shows
+                    # the render either way.
+                    for image_path in image_paths:
+                        emit("render", str(image_path))
                     if self.client.config.uses_separate_eye:
                         describer = VisionDescriber(
                             self.client, self.client.config.vision_model
@@ -752,3 +1378,30 @@ class AgentSession:
         )
         emit("answer", exhausted)
         return exhausted
+
+    def _cancel_turn(self, assistant_message: dict, emit) -> str:
+        """Close the turn consistently after a cancel.
+
+        Every tool_call the model issued gets a tool result — an
+        OpenAI-protocol backend rejects the next turn otherwise — and
+        the model is told, in the history it will read next turn, that
+        the user stopped it.
+        """
+        answered_ids = {
+            message.get("tool_call_id")
+            for message in self.messages
+            if message.get("role") == "tool"
+        }
+        for tool_call in assistant_message.get("tool_calls") or []:
+            if tool_call.get("id", "") in answered_ids and tool_call.get("id"):
+                continue
+            self.messages.append(
+                {
+                    "role": "tool",
+                    "content": CANCELLED_TOOL_RESULT,
+                    "tool_name": tool_call.get("function", {}).get("name", ""),
+                    "tool_call_id": tool_call.get("id", ""),
+                }
+            )
+        emit("answer", CANCELLED_ANSWER)
+        return CANCELLED_ANSWER

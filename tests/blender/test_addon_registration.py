@@ -76,22 +76,97 @@ def test_preferences_expose_the_developer_controls():
         assert expected in annotations, f"missing preference: {expected}"
 
 
-def test_the_writer_default_is_the_converged_model():
-    """The registered model_name default must be the writer the
-    convergence loop pinned, and it must be selectable. A default the
-    enum does not offer would stop Blender registering the addon."""
+def test_the_addon_and_the_library_ship_the_same_models():
+    """The panel's defaults must be the library's defaults, and both
+    must be selectable.
+
+    Two failures are pinned here. A default the enum does not offer
+    stops Blender registering the addon outright. A default that
+    disagrees with `ModelConfig` is quieter and worse: the panel would
+    talk to one model while every script and batch run talked to
+    another, and the transcripts would not say so.
+
+    `CONVERGENCE_WRITER_MODEL` is asserted SELECTABLE rather than
+    default: it names the writer whose runs minted the golden
+    references, so it must stay reachable to reproduce a scored run,
+    but the shipped default is qualified separately (see
+    tests/pure/test_prompt_templates.py).
+    """
     from blended.agent import prompt_versions
+    from blended.agent.loop import ModelConfig
 
     module = _load_addon("blended_agent_writer_test")
-    writer_property = module.BLENDED_Preferences.__annotations__["model_name"]
-    enum_items = writer_property.keywords["items"]
-    enum_values = {item[0] for item in enum_items}
-    assert prompt_versions.CONVERGENCE_WRITER_MODEL in enum_values, (
-        "the converged writer is not selectable in the addon preferences"
+    annotations = module.BLENDED_Preferences.__annotations__
+    shipped = ModelConfig()
+    for property_name, shipped_model in (
+        ("model_name", shipped.model),
+        ("vision_model_name", shipped.vision_model),
+    ):
+        keywords = annotations[property_name].keywords
+        enum_values = {item[0] for item in keywords["items"]}
+        assert keywords["default"] in enum_values, (
+            f"{property_name} defaults to {keywords['default']!r}, which the "
+            f"dropdown does not offer — Blender would refuse to register"
+        )
+        assert keywords["default"] == shipped_model, (
+            f"the addon ships {keywords['default']!r} for {property_name} "
+            f"but the library ships {shipped_model!r} — the panel and the "
+            f"batch driver would talk to different models"
+        )
+    writer_values = {
+        item[0] for item in annotations["model_name"].keywords["items"]
+    }
+    assert prompt_versions.CONVERGENCE_WRITER_MODEL in writer_values, (
+        "the writer that minted the goldens is not selectable, so a scored "
+        "run can no longer be reproduced from the panel"
     )
-    assert writer_property.keywords["default"] == (
-        prompt_versions.CONVERGENCE_WRITER_MODEL
-    ), "the addon default drifted from the writer the pin was scored with"
+
+
+def test_no_dropdown_row_carries_an_empty_identifier():
+    """Blender DROPS an enum item whose identifier is the empty string.
+
+    Measured live in a GUI session 2026-09-05: the Eye's
+    "None — writer sees for itself" row used `""`, and assigning it
+    raised `enum "" not found in ('kimi-k2.7-code:cloud', ...)` — the
+    row never reached the RNA item list, so the eye could not be
+    switched off from the UI at all. Any future row that spells "off"
+    as "" would silently vanish the same way.
+    """
+    module = _load_addon("blended_agent_enum_test")
+    for property_name in ("model_name", "vision_model_name"):
+        items = module.BLENDED_Preferences.__annotations__[property_name].keywords[
+            "items"
+        ]
+        identifiers = [item[0] for item in items]
+        assert all(identifiers), (
+            f"{property_name} has an item with an empty identifier: "
+            f"{identifiers}"
+        )
+        assert len(set(identifiers)) == len(identifiers)
+
+
+def test_the_eye_can_be_switched_off_and_that_means_no_eye():
+    """A vision-capable writer (every claude-code model) looks at its
+    own renders, which the library spells as an empty vision_model."""
+    module = _load_addon("blended_agent_eye_off_test")
+    items = module.BLENDED_Preferences.__annotations__[
+        "vision_model_name"
+    ].keywords["items"]
+    identifiers = [item[0] for item in items]
+    assert module._EYE_NONE_IDENTIFIER in identifiers
+    assert module._eye_model_id(module._EYE_NONE_IDENTIFIER) == ""
+    assert module._eye_model_id("claude-code:haiku") == "claude-code:haiku"
+
+
+def test_both_dropdowns_offer_the_claude_code_lane():
+    """The CLI lane is reachable from the UI, writer and eye."""
+    module = _load_addon("blended_agent_claude_lane_test")
+    annotations = module.BLENDED_Preferences.__annotations__
+    writer_ids = {item[0] for item in annotations["model_name"].keywords["items"]}
+    eye_ids = {item[0] for item in annotations["vision_model_name"].keywords["items"]}
+    assert "claude-code:sonnet" in writer_ids
+    assert "claude-code:haiku" in eye_ids
+    assert "claude_code_binary_path" in annotations
 
 
 class _Preferences:
@@ -169,6 +244,12 @@ def test_hot_reload_swaps_the_loaded_module_and_keeps_the_session():
     module._STATE.routing = "writer=test"
     module._STATE.prompt_history = ["first prompt", "second prompt"]
     module._STATE.history_index = 1
+    # The panel's live state, not just the record: a dev-mode reload
+    # mid-turn used to blank the plan card and the revert button.
+    from blended.agent.plan import TurnPlan
+
+    module._STATE.plan = TurnPlan(steps=("build it", "check it"), current_step=2)
+    module._STATE.can_revert = True
     preferences = _Preferences(developer_mode=True)
     preferences.repository_path = str(Path(__file__).resolve().parents[2])
     module_name = module.__name__
@@ -186,6 +267,14 @@ def test_hot_reload_swaps_the_loaded_module_and_keeps_the_session():
     assert fresh_module._STATE.routing == "writer=test"
     assert fresh_module._STATE.prompt_history == ["first prompt", "second prompt"]
     assert fresh_module._STATE.history_index == 1  # carried verbatim
+    assert fresh_module._STATE.plan == module._STATE.plan, (
+        "the reload dropped the turn's plan: the card the user was "
+        "reading disappears mid-session"
+    )
+    assert fresh_module._STATE.can_revert is True, (
+        "the reload dropped the right to revert a turn that is still "
+        "in the scene"
+    )
     assert fresh_module._TOOL_REQUESTS is module._TOOL_REQUESTS
     assert "conversation kept (2 messages)" in summary
     assert fresh_module._STATE.session is None  # no session existed to rebuild
@@ -227,3 +316,31 @@ def test_register_heals_orphaned_keymap_items_from_a_crashed_session():
             keymap.keymap_items.remove(orphan)
         except (RuntimeError, ReferenceError):
             pass
+
+
+def test_an_idle_session_does_not_ask_for_a_redraw():
+    """The drain timer runs 6.7 times a second for the whole session.
+    It used to tag every VIEW_3D area for redraw on every one of those
+    ticks whether anything had changed or not; now it redraws exactly
+    when the panel's data moved, which is what makes streaming cheap
+    AND idling free."""
+    module = _load_addon("blended_agent_redraw_test")
+    redraws = []
+    module._redraw_sidebars = lambda: redraws.append(1)
+
+    module._drain_tool_requests()  # first tick after load: state is unseen
+    first_tick = len(redraws)
+    module._drain_tool_requests()
+    module._drain_tool_requests()
+    assert len(redraws) == first_tick, (
+        "an idle session must not wake the viewport"
+    )
+
+    module._STATE.log("status", "the agent said something")
+    module._drain_tool_requests()
+    assert len(redraws) == first_tick + 1, "a new event must repaint the panel"
+
+    module._STATE.busy = True
+    module._STATE.revision += 1  # what BLENDED_OT_send does when it starts
+    module._drain_tool_requests()
+    assert len(redraws) == first_tick + 2, "starting a turn must repaint"

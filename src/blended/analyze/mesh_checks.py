@@ -9,7 +9,10 @@ render critique is advisory.
 
 Check list follows the Attene/Campen/Kobbelt repair taxonomy for
 *designed* meshes: non-manifoldness, gaps (boundary edges),
-degeneracies, disconnected components.
+degeneracies, disconnected components (Polygon Mesh Repairing,
+DOI 10.1145/2431211.2431214). Validity checks are kept apart from
+quality judgements per Fukaya et al.'s metric framework
+(DOI 10.1109/TPAMI.2024.3398998).
 """
 
 from __future__ import annotations

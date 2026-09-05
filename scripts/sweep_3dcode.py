@@ -25,6 +25,8 @@ from pathlib import Path
 REPOSITORY_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_BLENDER = "/Applications/Blender.app/Contents/MacOS/Blender"
 RUNNER = REPOSITORY_ROOT / "scripts" / "run_3dcode_instance.py"
+SWEEP_TIMEOUT_SECONDS = 1500        # 1.28x the measured worst instance
+                                    # (Oven_seed0, 1167 s) — see --timeout
 
 
 def parse_arguments(argv):
@@ -38,8 +40,15 @@ def parse_arguments(argv):
     parser.add_argument("--prompt-variant", choices=("description", "instruction"),
                         default="description")
     parser.add_argument("--max-tool-calls", type=int, default=24)
-    parser.add_argument("--timeout", type=int, default=900,
-                        help="Per-instance seconds.")
+    parser.add_argument("--timeout", type=int, default=SWEEP_TIMEOUT_SECONDS,
+                        help=f"Per-instance seconds (default "
+                             f"{SWEEP_TIMEOUT_SECONDS}). Measured iter3 "
+                             f"holdout durations: mean 408 s, worst "
+                             f"Oven_seed0 1167 s, TableCoral_seed0 919 s, "
+                             f"CeilingClassicLamp_seed0 893 s; FoodBox_seed0 "
+                             f"hit a 1200 s cap and then finished in 703 s "
+                             f"on a direct re-run, so a tighter cap injects "
+                             f"retries instead of catching hangs.")
     parser.add_argument("--blender", default=DEFAULT_BLENDER)
     parser.add_argument("--overwrite", action="store_true")
     return parser.parse_args(argv)

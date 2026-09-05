@@ -15,7 +15,8 @@ dollar pricing* means it is metered and billed on top.
 
 | Use | Model | Tier | Notes |
 |---|---|---|---|
-| **Default** | `minimax-m3:cloud` | **High Usage — subscription** | Best VLM the subscription covers. Native multimodal, tools + thinking, 1M context (512K guaranteed on Cloud). |
+| **Default (writer AND eye)** | `claude-code:sonnet` | **Claude subscription — no API key** | Runs through the signed-in Claude Code CLI, so this harness never handles a token. Natively multimodal, and picking it for BOTH slots means the writer looks at its own renders as real image blocks — no second model call, nothing lost to a prose summary. Qualified on the five-brief suite 2026-09-05 (5/5 deterministic gates, first attempt) and licensed as examiner on the fixture zoo (sensitivity 0.80, control specificity 1.00). Rate-limited by the 5h/7d windows rather than metered. |
+| Superseded default | `minimax-m3:cloud` | High Usage — subscription | **Do not use as the eye.** Measured 2026-08-24: it answers in `message.thinking` and returns empty `content`, so every examiner call fails the JSON contract. |
 | Snappier | `kimi-k2.7-code:cloud` | High Usage — subscription | Coding-tuned, ~30% fewer thinking tokens. Lighter on your weekly limit, some capability cost. |
 | Lightest | `qwen3.5:397b-cloud` | Medium Usage — subscription | Cheapest against your limits. Vision + tools, 256K context. |
 | Strongest overall | `kimi-k3:cloud` | **METERED — $3/$15 per 1M** | 2.81T params, text/image/video, the best VLM on the platform. Billed *separately* from your subscription — opt in deliberately. *22|| Local | `qwen3.8-27b` on bmb | — | Writer AND eye on bmb's llama-swap (OpenAI protocol at 192.168.1.233:9292). No cloud usage. |

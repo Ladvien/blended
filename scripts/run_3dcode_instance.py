@@ -4,7 +4,7 @@
         --python scripts/run_3dcode_instance.py -- \\
         --instance ArmChair_seed0 --bench-root /Users/ladvien/3dcodebench
 
-3DCodeBench scores a STANDALONE script: it re-executes `<inst>/<inst>.py`
+3DCodeBench (DOI 10.48550/arXiv.2606.01057) scores a STANDALONE script: it re-executes `<inst>/<inst>.py`
 from an empty scene in a bare Blender and measures the mesh that comes
 out. This harness does not write scripts — it drives a live `bpy`
 session through `run_python` chunks. The bridge is that the chunks ARE

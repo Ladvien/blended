@@ -20,6 +20,10 @@ import json
 import re
 import threading
 from pathlib import Path
+from blended.agent.plan import (
+    MAXIMUM_PLAN_STEPS,
+    parse_plan_arguments,
+)
 
 # Bounded observation windows.
 MAXIMUM_SCENE_OBJECTS_LISTED = 40
@@ -58,6 +62,15 @@ TOOL_SCHEMAS = [
                             "Omit to run the chunk without gating."
                         ),
                     },
+                    "plan_step": {
+                        "type": "integer",
+                        "description": (
+                            "The 1-based plan step this call belongs to. "
+                            "Set this when you execute a step of the plan "
+                            "you declared with declare_plan, so the UI "
+                            "advances the progress bar."
+                        ),
+                    },
                 },
                 "required": ["source"],
             },
@@ -76,8 +89,55 @@ TOOL_SCHEMAS = [
                 "type": "object",
                 "properties": {
                     "object_name": {"type": "string"},
+                    "plan_step": {
+                        "type": "integer",
+                        "description": (
+                            "The 1-based plan step this call belongs to."
+                        ),
+                    },
                 },
                 "required": ["object_name"],
+            },
+        },
+    },
+    # The domain lanes' self-verifier. Voyager's ablation measured
+    # self-verification as the single largest component (−73% without
+    # it, DOI 10.48550/arXiv.2305.16291); a rig or an action that the
+    # writer cannot measure would be the one thing it never verifies.
+    {
+        "type": "function",
+        "function": {
+            "name": "inspect_domain",
+            "description": (
+                "Measure the non-mesh state of an object: its rig (armature "
+                "bones and bound meshes), its vertex-group weights, its "
+                "animation (action, fcurves, keyframes, frame range), or "
+                "its material node tree. Read this back after rigging, "
+                "weighting, keyframing or texturing to verify what you did, "
+                "the way inspect_object verifies geometry."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "object_name": {
+                        "type": "string",
+                        "description": (
+                            "The armature for `rig`; the mesh for `weights` and "
+                            "`material`; either for `animation`."
+                        ),
+                    },
+                    "domain": {
+                        "type": "string",
+                        "enum": ["rig", "weights", "animation", "material"],
+                    },
+                    "plan_step": {
+                        "type": "integer",
+                        "description": (
+                            "The 1-based plan step this call belongs to."
+                        ),
+                    },
+                },
+                "required": ["object_name", "domain"],
             },
         },
     },
@@ -111,6 +171,12 @@ TOOL_SCHEMAS = [
                             "e.g. 'are all four legs the same length?' or 'is "
                             "the drainage hole open?'. Aims the description at "
                             "your actual question."
+                        ),
+                    },
+                    "plan_step": {
+                        "type": "integer",
+                        "description": (
+                            "The 1-based plan step this call belongs to."
                         ),
                     },
                 },
@@ -170,8 +236,50 @@ TOOL_SCHEMAS = [
                 "properties": {
                     "object_name": {"type": "string"},
                     "path": {"type": "string", "description": "Output .glb path."},
+                    "plan_step": {
+                        "type": "integer",
+                        "description": (
+                            "The 1-based plan step this call belongs to."
+                        ),
+                    },
                 },
                 "required": ["object_name", "path"],
+            },
+        },
+    },
+    # The plan tool — Decision D1 of the chat-UX overhaul. The agent
+    # declares a numbered plan before it changes the scene; the UI shows
+    # it and advances a progress bar through it. The plan is a shared
+    # representation, not an approval gate (DOI 10.48550/arXiv.2507.22358
+    # shared editable plan + progress bar; DOI 10.48550/arxiv.2604.14228
+    # ~93 % of permission prompts are approved, so no approval click).
+    {
+        "type": "function",
+        "function": {
+            "name": "declare_plan",
+            "description": (
+                "Declare your plan as a numbered list of short, "
+                "user-readable steps. Call this FIRST, once per turn, "
+                "before any tool that changes the scene. The steps are "
+                "shown to the user verbatim. Keep each step to one line "
+                f"and at most {MAXIMUM_PLAN_STEPS} steps. After declaring, "
+                "execute the steps in order, setting plan_step on each "
+                "action call to the 1-based step it belongs to."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "steps": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": (
+                            "The numbered plan steps, in execution order. "
+                            "Each step is a short natural-language "
+                            "description of what you will do."
+                        ),
+                    },
+                },
+                "required": ["steps"],
             },
         },
     },
@@ -209,6 +317,19 @@ def dispatch_tool(
             f"bpy is not thread-safe. Frontends must pass a main-thread "
             f"dispatcher: AgentSession(dispatch=...)."
         )
+    # The plan tool is pure — it touches no bpy, so handle it before
+    # the bpy import to keep it testable without Blender. The model
+    # sees its own plan echoed back as the tool result.
+    if tool_name == "declare_plan":
+        try:
+            plan = parse_plan_arguments(arguments)
+        except ValueError as error:
+            return f"FAILED: {error}", []
+        numbered = "\n".join(
+            f"  {index}. {step}"
+            for index, step in enumerate(plan.steps, start=1)
+        )
+        return f"Plan declared:\n{numbered}", []
 
     import bpy
 
@@ -270,12 +391,55 @@ def dispatch_tool(
         if blender_object is None:
             return f"No object named {object_name!r} in the scene.", []
         report = analyze_object(blender_object)
-        failures = report.failures(MeshBudget())
+        failures = list(report.failures(MeshBudget()))
+        # The same blind spots `run_chunk` had: flawless geometry the
+        # user cannot see (unlinked, excluded collection, hidden,
+        # hide_render) or cannot use (collapsed or non-finite object
+        # transform) passes every mesh check. ONE shared rule, because
+        # this tool is what the writer uses to check its own work and it
+        # must not disagree with the gate.
+        from blended.harness import scene_state_failure
+
+        unusable = scene_state_failure(blender_object)
+        if unusable:
+            failures.append(unusable)
         verdict = "PASS" if not failures else "FAIL: " + "; ".join(failures)
         return (
             f"GATE {verdict}\n{json.dumps(_report_to_dict(report), indent=1)}",
             [],
         )
+
+    if tool_name == "inspect_domain":
+        object_name = arguments["object_name"]
+        domain = arguments["domain"]
+        blender_object = bpy.data.objects.get(object_name)
+        if blender_object is None:
+            return f"No object named {object_name!r} in the scene.", []
+        if domain == "rig":
+            from blended.ops.rigging import rig_report
+
+            if blender_object.type != "ARMATURE":
+                return f"{object_name!r} is a {blender_object.type}, not an ARMATURE.", []
+            report = rig_report(blender_object)
+        elif domain == "weights":
+            from blended.ops.weights import weight_report
+
+            if blender_object.type != "MESH":
+                return f"{object_name!r} is a {blender_object.type}, not a MESH.", []
+            report = weight_report(blender_object)
+        elif domain == "animation":
+            from blended.ops.animation import animation_report
+
+            report = animation_report(blender_object, bpy.context.scene)
+        elif domain == "material":
+            from blended.ops.material_nodes import material_report
+
+            if blender_object.type != "MESH":
+                return f"{object_name!r} is a {blender_object.type}, not a MESH.", []
+            report = material_report(blender_object)
+        else:
+            return f"Unknown domain {domain!r}.", []
+        return f"{domain} report for {object_name}:\n{json.dumps(_report_to_dict(report), indent=1)}", []
 
     if tool_name == "render_views":
         from blended.capture import CaptureSettings, capture_contact_sheet

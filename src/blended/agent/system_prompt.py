@@ -16,6 +16,11 @@ version pin, the conventions, the live ops manifest and its drift traps
 `prompts/`; the tunable working agreement is an addressable revision in
 `prompt_versions.py`, so a convergence run can cite exactly which text
 it scored and roll back to its predecessor.
+
+The user never writes any of this: non-experts design prompts
+opportunistically and the result is brittle (Why Johnny Can't Prompt,
+DOI 10.1145/3544548.3581388), so the chat takes plain words and the
+harness supplies the agreement.
 """
 
 from __future__ import annotations

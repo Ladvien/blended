@@ -11,7 +11,9 @@ rewrites, and a rewrite destroys the attribution that makes the next
 edit informed. So `PROMPT_REVISIONS` reads as a diff history, and every
 entry after v1 carries the hypothesis that motivated it and the outcome
 that was measured — the record 3DCodeBench's Experience Library keeps,
-in the artifact it is about.
+in the artifact it is about. The Prompt Report's field note that prompts
+are sensitive to detail without obvious reason (DOI
+10.48550/arXiv.2406.06608) is why a pin needs repeated clean runs, not one.
 
 This module is the REGISTRY, not the text. Each body lives in
 `prompts/working_agreement_v{n}.md.j2` so it can be read and reviewed as
@@ -410,6 +412,35 @@ PROMPT_REVISIONS: tuple[PromptRevision, ...] = (
             "harness_code and fixed by coding."
         ),
     ),
+    PromptRevision(
+        revision=11,
+        changed_element=(
+            "Added a 'Beyond the mesh: rigs, weights, animation, "
+            "materials' section after Tool discipline: each domain names "
+            "its ops and the inspect_domain report that verifies it."
+        ),
+        hypothesis=(
+            "Added because the chat now covers rigging, weight painting, "
+            "animation and node materials (ops.rigging / weights / "
+            "animation / material_nodes, tool inspect_domain), and v10 "
+            "only ever speaks of the mesh gate — a writer told 'done "
+            "means the gate passed' has no verification step for an "
+            "armature or an action and either skips it or raw-bpy's it. "
+            "Expect the six chat E2E scenarios (scripts/chat_e2e.py) to "
+            "pass their domain assertions, and the five mesh briefs plus "
+            "the 3DCodeBench frozen-20 to be unaffected (the mesh text "
+            "is byte-identical)."
+        ),
+        outcome=(
+            "CONFIRMED on its target, 2026-09-04: scripts/chat_e2e.py "
+            "passed 6/6 on two independent rolls (object/rig/weights/"
+            "animation/material/iterative; tool calls 10/11/12/3/5/3 and "
+            "17/9/4/6/2/2), zero raw bpy.ops in any transcript, every "
+            "domain scenario reached for the named ops and read "
+            "inspect_domain back. Still a candidate: the frozen-20 bench "
+            "guard and the human pin remain (make pin)."
+        ),
+    ),
 )
 
 # --- CONVERGED --------------------------------------------------------
@@ -470,15 +501,49 @@ CONVERGENCE_RUNS = (
     (50, "ribbed_column"),
     (51, "crate_with_lid"),
 )
+# PROVENANCE, NOT THE SHIPPED DEFAULT. This names the writer whose runs
+# MINTED the golden references in _evaluate/golden — which is why the
+# visual gate reports drift for any other writer by construction, and
+# why this constant must not be repointed without re-minting them
+# (`make pin-golden-views`, the one act reserved for a human: RESP
+# measures a wrong reference as worse than none at all, -0.23 F1,
+# 10.48550/arXiv.2604.11082).
+#
+# The shipped default writer is claude-code:sonnet, which qualified on
+# the same five-brief suite at this prompt on 2026-09-05 (iterations
+# 52-56: structural, form and refinement gates green on 5/5, first
+# attempt). That claim is guarded against the append-only run log by
+# tests/pure/test_prompt_templates.py::
+# test_the_shipped_configuration_is_the_converged_configuration, which
+# is stronger evidence than a constant equal to another constant.
 CONVERGENCE_WRITER_MODEL = "deepseek-v4-pro:cloud"
 # The v10 runs recorded minimax-m3:cloud as their eye (iterations.jsonl
 # 47-51), but that model was measured broken on 2026-08-24: it answers
 # in message.thinking and returns empty content, so every examiner call
-# fails the JSON contract. The licensed replacement, calibrated the same
-# day (sensitivity 0.80, control specificity 1.00), is kimi-k2.7-code.
-CONVERGENCE_VISION_MODEL = "kimi-k2.7-code:cloud"
+# fails the JSON contract. kimi-k2.7-code replaced it that day on
+# calibration evidence alone (sensitivity 0.80, control specificity
+# 1.00) — the eye slot is earned by CALIBRATION, not by re-running the
+# convergence suite, because the eye does not write the runs.
+#
+# claude-code:sonnet takes the slot on 2026-09-05 by the same standard,
+# measured on the same fixture zoo: sensitivity 0.80 (4/5), control
+# specificity 1.00 (5/5), problems() empty, identity
+# claude-code:sonnet+examiner:60a9920cb938. Its miss is COMPLEMENTARY
+# to kimi's rather than worse — kimi missed lid_offset and saw
+# floating_seat, claude-code missed floating_seat and saw lid_offset.
+# Both calibrations are kept: _evaluate/eye_calibration.json is the
+# licensed one (identity-bound, so it must match the eye in use) and
+# _evaluate/eye_calibration_kimi.json is the superseded record. Why
+# this eye is the default: it is the WRITER's own model, so a render
+# reaches the writer as a native image block instead of a prose
+# summary, and RESP measures the reference-paired path at recall 0.76
+# against 0.28 for no reference (10.48550/arXiv.2604.11082).
+CONVERGENCE_VISION_MODEL = "claude-code:sonnet"
 CONVERGENCE_TOOL_CALL_BUDGET = 24
 
+# v11 is a CANDIDATE: scripts/chat_e2e.py runs it explicitly
+# (build_system_prompt(revision=11)) and records its outcome; it becomes
+# the shipped text only through `make pin`, the one human act.
 ACTIVE_PROMPT_REVISION = PINNED_PROMPT_REVISION
 
 

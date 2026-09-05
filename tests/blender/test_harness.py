@@ -92,4 +92,234 @@ def test_missing_object_is_a_distinct_failure(empty_scene, tmp_path):
     )
     assert not result.ok
     assert result.stage_reached == "locate"
-    assert "not found" in result.execution_summary
+    assert "NeverBuilt" in result.execution_summary
+
+
+def test_an_unlinked_object_fails_the_gate(empty_scene, tmp_path):
+    """Flawless geometry the user cannot see is not a pass.
+
+    Measured 2026-09-05 in a live GUI turn: a writer built a barrel
+    with 192 faces and a material but never linked it, and the gate
+    said PASS, `inspect_object` said PASS and the contact sheet
+    rendered — while the viewport stayed empty and the object would
+    have been absent from any export, because `export_glb` writes the
+    SCENE.
+    """
+    from blended.harness import HarnessSettings, run_chunk
+
+    UNLINKED_SOURCE = """
+import sys
+sys.path.insert(0, "src")
+from blended.ops import add_box
+
+add_box("Orphan", 1.0, 1.0, 1.0)
+"""
+    result = run_chunk(
+        UNLINKED_SOURCE,
+        object_name="Orphan",
+        settings=HarnessSettings(output_directory=tmp_path),
+    )
+    assert not result.ok
+    assert result.stage_reached == "locate"
+    assert "NOT linked into the scene" in result.execution_summary
+    assert "link_into_scene" in result.execution_summary
+
+
+def test_a_linked_object_passes_the_same_gate(empty_scene, tmp_path):
+    """The control: the only difference is the link call."""
+    from blended.harness import HarnessSettings, run_chunk
+
+    LINKED_SOURCE = """
+import sys
+sys.path.insert(0, "src")
+from blended.ops import add_box, link_into_scene
+
+link_into_scene(add_box("Linked", 1.0, 1.0, 1.0))
+"""
+    result = run_chunk(
+        LINKED_SOURCE,
+        object_name="Linked",
+        settings=HarnessSettings(output_directory=tmp_path),
+    )
+    assert result.ok, result.summary()
+    assert result.stage_reached == "done"
+
+
+def _visible_box(name: str):
+    """A gate-clean, linked, visible cube — the control for every case."""
+    from blended.ops import add_box, link_into_scene
+
+    built = add_box(name, 1.0, 1.0, 1.0)
+    link_into_scene(built)
+    return built
+
+
+def test_every_invisibility_cause_is_named_not_just_detected(empty_scene):
+    """One rule, four causes, four different instructions.
+
+    `Object.visible_get()` is False for all four (measured 2026-09-05:
+    unlinked, excluded collection, hide_viewport, hide_set), so one call
+    is the whole rule — but a model that is told "invisible" cannot act,
+    while "not linked, call link_into_scene" can be fixed in one line.
+    """
+    import bpy
+
+    from blended.harness import invisibility_failure
+
+    control = _visible_box("Control")
+    assert invisibility_failure(control) == ""
+
+    orphan = bpy.data.objects.new("Orphan", control.data)
+    assert "NOT linked into the scene" in invisibility_failure(orphan)
+
+    excluded_collection = bpy.data.collections.new("Excluded")
+    bpy.context.scene.collection.children.link(excluded_collection)
+    banished = _visible_box("Banished")
+    for parent in list(banished.users_collection):
+        parent.objects.unlink(banished)
+    excluded_collection.objects.link(banished)
+    bpy.context.view_layer.layer_collection.children["Excluded"].exclude = True
+    bpy.context.view_layer.update()
+    assert "EXCLUDED from the view layer" in invisibility_failure(banished)
+
+    hidden = _visible_box("Hidden")
+    hidden.hide_viewport = True
+    bpy.context.view_layer.update()
+    assert "HIDDEN" in invisibility_failure(hidden)
+
+    eye_hidden = _visible_box("EyeHidden")
+    eye_hidden.hide_set(True)
+    assert "HIDDEN" in invisibility_failure(eye_hidden)
+
+
+def test_an_unrenderable_object_fails_even_though_it_is_visible(empty_scene, tmp_path):
+    """The sneakiest cause: the user sees it, the render does not.
+
+    `hide_render` leaves `visible_get()` True, so a visibility-only rule
+    would pass it — while the contact sheet the eye judges silently
+    loses the object. Measured on the harness's own sheet: 634280 bytes
+    with the object, 318310 without.
+    """
+    from blended.harness import HarnessSettings, run_chunk
+
+    UNRENDERABLE_SOURCE = """
+import sys
+sys.path.insert(0, "src")
+from blended.ops import add_box, link_into_scene
+
+built = add_box("Ghost", 1.0, 1.0, 1.0)
+link_into_scene(built)
+built.hide_render = True
+"""
+    result = run_chunk(
+        UNRENDERABLE_SOURCE,
+        object_name="Ghost",
+        settings=HarnessSettings(output_directory=tmp_path),
+    )
+    assert not result.ok
+    assert result.stage_reached == "locate"
+    assert "hide_render" in result.execution_summary
+
+
+def test_inspect_object_agrees_with_the_gate(empty_scene, tmp_path):
+    """The writer's own check must not contradict the gate that stopped
+    it — one shared rule, one verdict."""
+    import bpy
+
+    from blended.agent.tools import dispatch_tool
+
+    hidden = _visible_box("Checked")
+    hidden.hide_viewport = True
+    bpy.context.view_layer.update()
+    text, _ = dispatch_tool("inspect_object", {"object_name": "Checked"}, tmp_path)
+    assert "GATE FAIL" in text
+    assert "HIDDEN" in text
+
+    hidden.hide_viewport = False
+    bpy.context.view_layer.update()
+    text, _ = dispatch_tool("inspect_object", {"object_name": "Checked"}, tmp_path)
+    assert "GATE PASS" in text
+
+
+def test_a_collapsed_or_non_finite_transform_fails_the_gate(empty_scene):
+    """The analyzer measures the mesh in LOCAL space, so the object
+    matrix is outside everything it can see.
+
+    Measured 2026-09-05, all four gate=PASS before this check: scale 0
+    and 1e-9 flatten the object to nothing while its mesh measures
+    perfect; a NaN location makes every world-space number the model
+    prints NaN; an inf scale makes the glTF export raise RuntimeError.
+    """
+    import bpy
+
+    from blended.harness import degenerate_transform_failure
+
+    control = _visible_box("Control")
+    assert degenerate_transform_failure(control) == ""
+
+    zeroed = _visible_box("Zeroed")
+    zeroed.scale = (0.0, 1.0, 1.0)
+    bpy.context.view_layer.update()
+    assert "COLLAPSED" in degenerate_transform_failure(zeroed)
+
+    nearly = _visible_box("Nearly")
+    nearly.scale = (1e-9, 1.0, 1.0)
+    bpy.context.view_layer.update()
+    assert "COLLAPSED" in degenerate_transform_failure(nearly)
+
+    poisoned = _visible_box("Poisoned")
+    poisoned.location = (float("nan"), 0.0, 0.0)
+    bpy.context.view_layer.update()
+    assert "NON-FINITE" in degenerate_transform_failure(poisoned)
+
+    overflowed = _visible_box("Overflowed")
+    overflowed.scale = (float("inf"), 1.0, 1.0)
+    bpy.context.view_layer.update()
+    assert degenerate_transform_failure(overflowed) != ""
+
+
+def test_legitimate_scales_are_left_alone(empty_scene):
+    """A stretch and a small uniform scale are normal modelling, and a
+    determinant threshold would have refused both (a 0.001 uniform
+    scale has determinant 1e-9)."""
+    import bpy
+
+    from blended.harness import degenerate_transform_failure
+
+    stretched = _visible_box("Stretched")
+    stretched.scale = (10.0, 1.0, 1.0)
+    bpy.context.view_layer.update()
+    assert degenerate_transform_failure(stretched) == ""
+
+    tiny = _visible_box("Tiny")
+    tiny.scale = (0.001, 0.001, 0.001)
+    bpy.context.view_layer.update()
+    assert degenerate_transform_failure(tiny) == ""
+
+    panel = _visible_box("Panel")
+    panel.scale = (1.0, 1.0, 0.01)
+    bpy.context.view_layer.update()
+    assert degenerate_transform_failure(panel) == ""
+
+
+def test_the_gate_reports_a_broken_transform_through_run_chunk(empty_scene, tmp_path):
+    """End to end: the model must read the cause in the tool result."""
+    from blended.harness import HarnessSettings, run_chunk
+
+    COLLAPSED_SOURCE = """
+import sys
+sys.path.insert(0, "src")
+from blended.ops import add_box, link_into_scene
+
+built = add_box("Flat", 1.0, 1.0, 1.0)
+link_into_scene(built)
+built.scale = (1.0, 1.0, 0.0)
+"""
+    result = run_chunk(
+        COLLAPSED_SOURCE,
+        object_name="Flat",
+        settings=HarnessSettings(output_directory=tmp_path),
+    )
+    assert not result.ok
+    assert result.stage_reached == "locate"
+    assert "COLLAPSED" in result.execution_summary

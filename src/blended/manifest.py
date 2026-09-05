@@ -22,6 +22,7 @@ from dataclasses import fields
 OP_MODULE_NAMES = (
     "primitives",
     "materials",
+    "material_nodes",
     "booleans",
     "lathe",
     "arrays",
@@ -30,6 +31,9 @@ OP_MODULE_NAMES = (
     "modifiers",
     "heal",
     "uv",
+    "rigging",
+    "weights",
+    "animation",
 )
 
 # Config dataclasses that an operation takes as an argument. Listed
@@ -37,7 +41,10 @@ OP_MODULE_NAMES = (
 # on its own — an agent cannot construct a type it has never been
 # shown, and would fall back to hand-rolling the geometry the op
 # exists to get right.
-OP_CONFIG_DATACLASSES = (("blended.ops.legs", "SplayedLegSpec"),)
+OP_CONFIG_DATACLASSES = (
+    ("blended.ops.legs", "SplayedLegSpec"),
+    ("blended.ops.rigging", "BoneSpec"),
+)
 
 CONVENTIONS = (
     (
