@@ -2799,6 +2799,40 @@ MISTAKES: tuple[MistakeRecord, ...] = (
         guarded_by="tests/pure/test_prompt_templates.py::test_the_assembled_fingerprint_covers_the_drift_catalog, which asserts the synthetic row reached build_manifest before comparing fingerprints, and is green in file order, after test_devreload, and in the full suite",
         recorded_on="2026-09-06",
     ),
+    MistakeRecord(
+        identifier="git-checkout-reverts-to-the-index-not-to-your-snapshot",
+        scope="process",
+        failure=(
+            "Running a negative control on "
+            "src/blended/ops/canonical_orientation.py — reorder "
+            "AXIS_NAMES, confirm 3 of 21 tests redden, revert — "
+            "DELETED the uncommitted orientation_reading function the "
+            "control was proving. The revert step was `git checkout -- "
+            "<file>`; the assertion that the file matched its "
+            "pre-probe bytes then failed, which is the only reason the "
+            "loss was noticed at all."
+        ),
+        cause=(
+            "`git checkout -- <path>` restores from the INDEX (or HEAD), "
+            "not from the working-tree state that was snapshotted a "
+            "moment earlier. The same command was safe on "
+            "src/blended/drift/catalog.py in the same session, because "
+            "that file had already been committed and its index copy WAS "
+            "the snapshot — so the habit reads as correct right up until "
+            "it is applied to a file with uncommitted work."
+        ),
+        fix=(
+            "A probe on a file with uncommitted work snapshots BYTES and "
+            "restores BYTES: read the file, write the probe, measure, "
+            "write the saved bytes back, then assert byte equality. "
+            "`git checkout` is for reverting to a commit, never for "
+            "undoing a scratch edit. Assert the restore, always — the "
+            "assertion is what turned a silent deletion into a caught "
+            "one."
+        ),
+        guarded_by="No test can guard a shell habit; the guard is the byte-equality assertion at the end of every negative control, and this record. tests/pure/test_canonical_orientation.py::test_the_reading_names_the_axis_holding_the_middle_extent is what reddened under the probe and what proved the restore.",
+        recorded_on="2026-09-06",
+    ),
 )
 
 

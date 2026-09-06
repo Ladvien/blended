@@ -404,8 +404,18 @@ def dispatch_tool(
         if unusable:
             failures.append(unusable)
         verdict = "PASS" if not failures else "FAIL: " + "; ".join(failures)
+        # The same shared text function `HarnessResult.summary()` uses, so
+        # the tool the writer checks its own work with cannot disagree
+        # with the gate about where the extents landed. Read after
+        # scene_state_failure, which synchronises the view layer.
+        from blended.ops.canonical_orientation import orientation_reading
+
+        reading = orientation_reading(
+            tuple(float(extent) for extent in blender_object.dimensions)
+        )
         return (
-            f"GATE {verdict}\n{json.dumps(_report_to_dict(report), indent=1)}",
+            f"GATE {verdict}\n{reading}\n"
+            f"{json.dumps(_report_to_dict(report), indent=1)}",
             [],
         )
 

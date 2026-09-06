@@ -49,6 +49,13 @@ class HarnessResult:
     export_path: Path | None = None
     export_file_size_bytes: int = 0
     execution_summary: str = ""
+    # WHERE THE EXTENTS LANDED, so the writer can see it during the turn.
+    # The harness rotates the finished object by exactly this reading
+    # (`ops.canonical_orientation.apply_canonical_depth_axis`), and the
+    # bench prompt carries a placement clause — both AFTER or BESIDE the
+    # writer's own decision. Nothing here gates; it is a fact arriving
+    # early enough to act on.
+    world_extents_m: tuple[float, float, float] | None = None
 
     def summary(self) -> str:
         verdict = "OK" if self.ok else f"FAILED at {self.stage_reached}"
@@ -61,6 +68,13 @@ class HarnessResult:
                 f"({self.report.triangle_count} tris, "
                 f"{self.report.connected_component_count} components)"
             )
+        if self.world_extents_m is not None:
+            # Computed by the pure text function from the stored tuple, so
+            # `summary()` stays free of bpy and the tool the writer checks
+            # its own work with cannot disagree with the gate.
+            from blended.ops.canonical_orientation import orientation_reading
+
+            lines.append(f"  orient: {orientation_reading(self.world_extents_m)}")
         lines.extend(f"    - {failure}" for failure in self.gate_failures)
         lines.extend(f"  export: {failure}" for failure in self.export_failures)
         if self.export_path is not None and not self.export_failures:
@@ -263,6 +277,13 @@ def _gate_capture_export(
             execution_summary=execution_summary + "; " + unusable,
         )
 
+    # Read AFTER scene_state_failure, which synchronises the view layer:
+    # `dimensions` comes from the evaluated transform, so reading it
+    # earlier measures the previous frame. Carried on every result from
+    # here on, including the gate-FAIL one — a writer whose gate just
+    # failed is exactly who needs to know which axis holds which extent.
+    world_extents_m = tuple(float(extent) for extent in blender_object.dimensions)
+
     report = analyze_object(blender_object)
     gate_failures = tuple(report.failures(settings.budget))
     contact_sheet_path = capture_contact_sheet(
@@ -280,6 +301,7 @@ def _gate_capture_export(
             gate_failures=gate_failures,
             contact_sheet_path=contact_sheet_path,
             execution_summary=execution_summary,
+            world_extents_m=world_extents_m,
         )
 
     export_path: Path | None = None
@@ -300,6 +322,7 @@ def _gate_capture_export(
                 contact_sheet_path=contact_sheet_path,
                 export_failures=export_failures,
                 execution_summary=execution_summary,
+                world_extents_m=world_extents_m,
             )
 
     return HarnessResult(
@@ -311,6 +334,7 @@ def _gate_capture_export(
         export_path=export_path,
         export_file_size_bytes=export_file_size_bytes,
         execution_summary=execution_summary,
+        world_extents_m=world_extents_m,
     )
 
 

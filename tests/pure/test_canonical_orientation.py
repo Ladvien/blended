@@ -24,6 +24,7 @@ from blended.ops.canonical_orientation import (
     depth_axis_extent_rank,
     depth_axis_holds_middle_extent,
     middle_extent_m,
+    orientation_reading,
 )
 
 QUARTER_TURN_RAD = math.pi / 2.0
@@ -126,3 +127,47 @@ def test_reported_rank_counts_strictly_larger_extents():
 def test_the_middle_extent_is_the_median_value():
     assert middle_extent_m((0.1, 2.0, 1.0)) == 1.0
     assert middle_extent_m((1.0, 1.0, 2.0)) == 1.0
+
+
+def test_the_reading_names_the_axis_holding_the_middle_extent():
+    """The fact the writer could not see: which axis holds which extent.
+
+    0.6 is the middle value of (0.9, 0.3, 0.6) and it sits on z, while
+    the canonical depth axis is y — so the reading has to name both, or
+    it tells the writer nothing it can act on.
+    """
+    reading = orientation_reading((0.9, 0.3, 0.6))
+    assert reading == (
+        "extents x 0.9000 y 0.3000 z 0.6000 m; "
+        "middle extent on z, canonical depth axis is y"
+    )
+
+
+def test_the_reading_marks_an_already_canonical_object():
+    """Middle extent 0.6 already on y: no axis to move to."""
+    assert orientation_reading((0.9, 0.6, 0.3)) == (
+        "extents x 0.9000 y 0.6000 z 0.3000 m; middle extent on y (canonical)"
+    )
+
+
+def test_the_reading_agrees_with_the_rotation_about_the_source_axis():
+    """A reading that named a different axis than the rotation uses would
+    be worse than no reading: the writer would move the wrong extent."""
+    for extents_m in [
+        (0.9, 0.3, 0.6), (0.3, 0.9, 0.6), (0.6, 0.3, 0.9),
+        (2.0, 0.5, 1.0), (1.0, 2.0, 0.5), (0.5, 1.0, 2.0),
+    ]:
+        reading = orientation_reading(extents_m)
+        rotation = canonical_depth_axis_rotation_euler_rad(*extents_m)
+        already_canonical = rotation == (0.0, 0.0, 0.0)
+        assert ("(canonical)" in reading) is already_canonical, (
+            extents_m, reading, rotation
+        )
+
+
+def test_the_reading_is_fixed_at_four_decimals():
+    """Not cosmetic: 0.30001 and 0.3 are the same placement decision, and
+    a full-precision float would make two identical situations read as
+    different facts."""
+    assert "y 0.3000 " in orientation_reading((0.9, 0.30001234, 0.6))
+    assert "x 12.3457 " in orientation_reading((12.345678, 0.3, 0.6))

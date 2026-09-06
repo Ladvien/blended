@@ -127,6 +127,39 @@ def depth_axis_extent_rank(extents_m: tuple[float, float, float]) -> int:
                if extent > extents_m[DEPTH_AXIS_INDEX])
 
 
+AXIS_NAMES = ("x", "y", "z")
+ORIENTATION_READING_DECIMALS = 4
+
+
+def orientation_reading(extents_m: tuple[float, float, float]) -> str:
+    """One line naming the extents and where the middle one sits.
+
+    The writer cannot see this today and the harness rotates the object
+    by it afterwards, so the fact arrives too late to act on. Text, not
+    a verdict: nothing here gates.
+
+    The axis is chosen the same way `canonical_depth_axis_rotation_euler_rad`
+    chooses its source axis — lowest index among the extents equal to the
+    middle VALUE — so the reading can never name an axis the rotation
+    would not have used.
+    """
+    extents_m = tuple(float(extent) for extent in extents_m)
+    figures = " ".join(
+        f"{AXIS_NAMES[axis]} {extents_m[axis]:.{ORIENTATION_READING_DECIMALS}f}"
+        for axis in range(AXIS_COUNT)
+    )
+    if depth_axis_holds_middle_extent(extents_m):
+        return (f"extents {figures} m; middle extent on "
+                f"{AXIS_NAMES[DEPTH_AXIS_INDEX]} (canonical)")
+    middle_m = middle_extent_m(extents_m)
+    middle_axis = min(
+        axis for axis in range(AXIS_COUNT) if extents_m[axis] == middle_m
+    )
+    return (f"extents {figures} m; middle extent on "
+            f"{AXIS_NAMES[middle_axis]}, canonical depth axis is "
+            f"{AXIS_NAMES[DEPTH_AXIS_INDEX]}")
+
+
 def _mesh_objects(object_name: str | None):
     """The mesh objects this rule applies to, or a loud failure."""
     import bpy

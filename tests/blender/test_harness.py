@@ -145,6 +145,43 @@ link_into_scene(add_box("Linked", 1.0, 1.0, 1.0))
     assert result.stage_reached == "done"
 
 
+
+def test_the_summary_tells_the_writer_where_the_extents_landed(
+    empty_scene, tmp_path
+):
+    """The orientation fact, in the text the writer reads every turn.
+
+    The harness rotates the finished object by exactly this reading and
+    the bench prompt carries a placement clause, but both act AFTER or
+    BESIDE the writer's own decision — nothing told it, during a turn,
+    which axis currently holds which extent. A 0.9 x 0.3 x 0.6 box has
+    its middle extent (0.6) on z while the canonical depth axis is y, so
+    the summary must name both.
+    """
+    from blended.harness import HarnessSettings, run_chunk
+
+    OBLONG_SOURCE = """
+import sys
+sys.path.insert(0, "src")
+from blended.ops import add_box, link_into_scene
+
+link_into_scene(add_box("Oblong", 0.9, 0.3, 0.6))
+"""
+    result = run_chunk(
+        OBLONG_SOURCE,
+        object_name="Oblong",
+        settings=HarnessSettings(output_directory=tmp_path),
+    )
+    assert result.ok, result.summary()
+    assert result.world_extents_m == pytest.approx((0.9, 0.3, 0.6))
+    summary = result.summary()
+    assert "middle extent on z" in summary, summary
+    assert "canonical depth axis is y" in summary, summary
+    # And it reads AFTER the gate line, where the writer is already
+    # looking when something went wrong.
+    assert summary.index("gate:") < summary.index("orient:"), summary
+
+
 def _visible_box(name: str):
     """A gate-clean, linked, visible cube — the control for every case."""
     from blended.ops import add_box, link_into_scene
