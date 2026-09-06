@@ -187,12 +187,96 @@ def test_a_missing_diagnose_file_is_refused(tmp_path):
         tool.load_rolls([tmp_path / "absent.json"])
 
 
-def test_the_contract_defaults_are_the_goals_numbers():
-    """The guard and target this repository is measured against."""
-    assert tool.CONTRACT_GUARD_CD_YAWMIN == 0.0706
-    assert tool.CONTRACT_TARGET_CD_YAWMIN == 0.060
+def test_the_ranking_metric_is_the_pose_normalized_axis():
+    """Ranking on cd_yawmin ranks an orientation coin flip.
+
+    Measured over six 20-instance rolls: delta_orient carries 89% of
+    cd_yawmin's between-roll variance, so a shape candidate judged on
+    cd_yawmin is judged mostly on which yaws it happened to draw.
+    """
+    assert tool.PRIMARY_METRIC == "cd_pca"
+    assert tool.RANKING_METRIC == "cd_pca"
+    assert "cd_yawmin" in tool.REPORTED_METRICS
+
+
+def test_the_target_is_a_fraction_of_the_baselines_own_mean(tmp_path):
+    """No literal guard survives: it is measured, not quoted.
+
+    The retired pair (0.0706 guard, 0.060 target) came from a single
+    roll of an axis whose between-roll SD is 0.0072, so the guard was
+    the minimum of six draws being read as an expected value. Re-pinning
+    the test to new literals would pin the same mistake.
+    """
+    assert not hasattr(tool, "CONTRACT_GUARD_CD_YAWMIN")
+    assert not hasattr(tool, "CONTRACT_TARGET_CD_YAWMIN")
     arguments = tool.parse_arguments(
         ["--baseline", "b.json", "--candidate", "c.json", "--label", "x"]
     )
-    assert arguments.guard == tool.CONTRACT_GUARD_CD_YAWMIN
-    assert arguments.target == tool.CONTRACT_TARGET_CD_YAWMIN
+    assert not hasattr(arguments, "guard")
+    assert not hasattr(arguments, "target")
+
+    baseline = load(
+        write_roll(
+            tmp_path / "baseline.json",
+            "baseline",
+            {
+                "A": (0.10, 0.02, 0.08),
+                "B": (0.20, 0.06, 0.14),
+                "C": (0.30, 0.04, 0.26),
+                "D": (0.40, 0.08, 0.32),
+            },
+        )
+    )
+    instances = ["A", "B", "C", "D"]
+    guard = tool.set_mean(baseline, instances, tool.RANKING_METRIC)
+    assert guard == pytest.approx(0.05)
+    report = tool.render_report(
+        baseline,
+        baseline,
+        instances,
+        tool.parse_arguments(
+            ["--baseline", "b.json", "--candidate", "c.json", "--label", "x"]
+        ),
+    )
+    expected_target = guard * (1.0 - tool.TARGET_RELATIVE_IMPROVEMENT)
+    assert f"{expected_target:.4f}" in report
+    assert f"{guard * tool.TARGET_RELATIVE_IMPROVEMENT:.4f}" in report
+
+
+def test_a_two_roll_candidate_is_refused(tmp_path):
+    """A candidate is a mean over at least MINIMUM_PAIRED_ROLLS rolls."""
+    rolls = [
+        load(
+            write_roll(
+                tmp_path / f"roll{index}.json",
+                f"roll{index}",
+                {f"I{n:02d}": (0.07, 0.02, 0.05) for n in range(20)},
+            )
+        )[0]
+        for index in range(2)
+    ]
+    with pytest.raises(SystemExit) as raised:
+        tool.refuse_underpowered(rolls)
+    assert "MINIMUM_PAIRED_ROLLS" in str(raised.value)
+
+
+def test_a_short_roll_inside_a_candidate_is_refused_by_name(tmp_path):
+    """A roll that did not cover the frozen set is not comparable."""
+    full = {f"I{n:02d}": (0.07, 0.02, 0.05) for n in range(20)}
+    rolls = [
+        load(write_roll(tmp_path / "a.json", "full_a", full))[0],
+        load(write_roll(tmp_path / "b.json", "full_b", full))[0],
+        load(
+            write_roll(
+                tmp_path / "c.json",
+                "three_instance_roll",
+                {"I00": (0.07, 0.02, 0.05), "I01": (0.07, 0.02, 0.05),
+                 "I02": (0.07, 0.02, 0.05)},
+            )
+        )[0],
+    ]
+    with pytest.raises(SystemExit) as raised:
+        tool.refuse_underpowered(rolls)
+    message = str(raised.value)
+    assert "three_instance_roll" in message
+    assert "MINIMUM_INSTANCES_FOR_RANKING" in message

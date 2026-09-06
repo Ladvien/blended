@@ -7,18 +7,22 @@ configuration land". This answers the two questions that decide a
 contract:
 
 1. **Regression test.** Pair every instance between one baseline roll and
-   one or more candidate rolls, then read the mean paired difference
-   against its own standard error. A guard set from a single roll cannot
-   be compared to a single roll: on this benchmark the per-instance
-   paired SD is ~0.10, so the 20-instance mean carries ~0.023 of standard
-   error and any smaller "movement" is a coin flip being reported as a
-   result.
+   the candidate's rolls, then read the mean paired difference against its
+   own standard error. The guard is the BASELINE'S OWN measured mean on
+   the ranking metric, computed at run time — there is no literal guard
+   in this file, because a guard quoted from one roll of an axis whose
+   between-roll SD is 0.0072 is the minimum of the draws taken, not an
+   expected value. On this benchmark the per-instance paired SD is ~0.10,
+   so a 20-instance mean carries ~0.023 of standard error and any smaller
+   "movement" is a coin flip being reported as a result.
 2. **Resolvable effect.** Given that measured SD, how many instance-rolls
-   would it take to resolve the improvement the contract asks for
-   (`--guard` minus `--target`) at 2 and 3 sigma? If the answer is "more
-   rolls than anyone will run", the target is a property of the
-   instrument, not of the harness.
+   would it take to resolve `TARGET_RELATIVE_IMPROVEMENT` of the guard at
+   2 and 3 sigma? If the answer is "more rolls than anyone will run", the
+   target is a property of the instrument, not of the harness.
 
+The ranking metric, the minimum roll count and the relative target all
+come from `bench_thresholds`, which `bench_panel.py` reads too: two files
+disagreeing about what "better" means is how a coin flip gets promoted.
 Consumes `diagnose_3dcode.py --json` files only — it recomputes nothing a
 scorer has not already produced — and shares that loader plus the
 instance-set intersection with `compare_3dcode_rolls.py`, so a set
@@ -39,25 +43,28 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+from bench_thresholds import (  # the pre-registered ranking rule
+    MINIMUM_INSTANCES_FOR_RANKING,
+    MINIMUM_PAIRED_ROLLS,
+    RANKING_METRIC,
+    REGRESSION_SIGMA,
+    REPORTED_METRICS,
+    TARGET_RELATIVE_IMPROVEMENT,
+)
 from compare_3dcode_rolls import (  # shared loader + set intersection
     NOISE_METRICS,
     load_roll,
     shared_instances,
 )
 
-# The metric the contract is written in; the others are reported beside it
-# because a move in cd_yawmin with cd_pca flat means orientation, not shape.
-PRIMARY_METRIC = "cd_yawmin"
+# The axis the verdict is written on, and the two reported beside it: a
+# move in cd_yawmin with cd_pca flat means orientation, not shape. The
+# choice lives in `bench_thresholds` because `bench_panel.py` ranks on
+# the same axis, and two files disagreeing about what "better" means is
+# how a coin flip gets promoted.
+PRIMARY_METRIC = RANKING_METRIC
 SHAPE_METRIC = "cd_pca"
 ORIENTATION_METRIC = "delta_orient"
-# The goal contract's own numbers: `cd_yawmin_cond <= 0.0706` required (no
-# regression), `<= 0.060` targeted. Defaults, not policy — pass your own.
-CONTRACT_GUARD_CD_YAWMIN = 0.0706
-CONTRACT_TARGET_CD_YAWMIN = 0.060
-# A one-sided call: only a candidate that is WORSE than the baseline by
-# more than this many standard errors is a regression. Two sigma is the
-# same bar the report asks of any claimed improvement.
-REGRESSION_SIGMA = 2.0
 # Sample sizes are quoted at both bars, because 2 sigma is the decision
 # bar and 3 sigma is what a pinned, published number should clear.
 RESOLUTION_SIGMA_LEVELS = (2.0, 3.0)
@@ -82,14 +89,6 @@ def parse_arguments(argv):
     parser.add_argument("--instances-file", default="",
                         help="Restrict to this instance list; every listed "
                              "instance must be scoreable in every roll.")
-    parser.add_argument("--guard", type=float,
-                        default=CONTRACT_GUARD_CD_YAWMIN,
-                        help="The value the candidate must not regress past.")
-    parser.add_argument("--target", type=float,
-                        default=CONTRACT_TARGET_CD_YAWMIN,
-                        help="The value the contract aims for; guard minus "
-                             "target is the effect whose resolvability is "
-                             "reported.")
     parser.add_argument("--out", default="",
                         help="Markdown report path (default "
                              "outputs/bench/paired_delta_<label>.md)")
@@ -184,7 +183,15 @@ def movers(baseline_rolls, candidate_rolls, instances, metric) -> list[dict]:
 def render_report(baseline_rolls, candidate_rolls, instances, arguments) -> str:
     primary = paired_delta(baseline_rolls, candidate_rolls, instances,
                            PRIMARY_METRIC)
-    effect = arguments.guard - arguments.target
+    # The guard is the BASELINE'S OWN MEASURED MEAN, computed here, and
+    # the target is a fraction of it. The retired literals (0.0706 guard,
+    # 0.060 target on cd_yawmin) came from a single roll of an axis whose
+    # between-roll SD is 0.0072, so the guard was the minimum of six
+    # draws being quoted as an expected value. A relative target moves
+    # with the incumbent and cannot go stale.
+    guard = set_mean(baseline_rolls, instances, PRIMARY_METRIC)
+    target = guard * (1.0 - TARGET_RELATIVE_IMPROVEMENT)
+    effect = guard - target
     baseline_names = [roll["model_dir"] for roll in baseline_rolls]
     candidate_names = [roll["model_dir"] for roll in candidate_rolls]
     scope = (f"the {len(instances)} instances named in "
@@ -253,9 +260,13 @@ def render_report(baseline_rolls, candidate_rolls, instances, arguments) -> str:
         "",
         "## Could this benchmark see the target?",
         "",
-        (f"Guard {arguments.guard:.4f} minus target {arguments.target:.4f} "
-         f"= an effect of {effect:.4f}, against a measured paired SD of "
-         f"{primary['paired_stdev']:.4f}."),
+        (f"The guard is the baseline's own measured mean on "
+         f"`{PRIMARY_METRIC}`, {guard:.4f}, and the target is "
+         f"{TARGET_RELATIVE_IMPROVEMENT:.0%} better than it, {target:.4f} "
+         f"— an effect of {effect:.4f} against a measured paired SD of "
+         f"{primary['paired_stdev']:.4f}. Neither number is a literal in "
+         f"this file: a guard quoted from one roll of a noisy axis is the "
+         f"minimum of the draws taken, not an expected value."),
         "",
         "| requirement | instance-rolls | rolls of this set |",
         "|---|---|---|",
@@ -267,13 +278,22 @@ def render_report(baseline_rolls, candidate_rolls, instances, arguments) -> str:
             f"| resolve {effect:.4f} at {sigma:.0f} sigma | {needed:.0f} "
             f"| {needed / len(instances):.0f} |"
         )
+    # A zero standard error is a real measurement, not a division to be
+    # guarded away: it means every instance moved by the same amount, so
+    # the pairing removed all spread. Say that instead of crashing.
+    resolution = (
+        f"the target effect is "
+        f"{effect / primary['standard_error']:.2f} sigma — anything under "
+        f"{REGRESSION_SIGMA:.0f} is unresolvable here"
+        if primary["standard_error"]
+        else "the paired difference has no spread at all, so any effect "
+             "this set can produce is resolvable"
+    )
     lines += [
         "",
         (f"At the current {len(instances)} instances and "
          f"{len(candidate_rolls)} candidate roll(s), the standard error is "
-         f"{primary['standard_error']:.4f}, so the target effect is "
-         f"{effect / primary['standard_error']:.2f} sigma — anything under "
-         f"{REGRESSION_SIGMA:.0f} is unresolvable here."),
+         f"{primary['standard_error']:.4f}, so {resolution}."),
         "",
     ]
     return "\n".join(lines)
@@ -302,10 +322,36 @@ def requested_instances(instances_file: str):
     return requested
 
 
+def refuse_underpowered(candidate_rolls) -> None:
+    """A candidate that cannot be ranked is refused, not reported.
+
+    Two ways to be unrankable, both fatal: too few rolls to average the
+    per-instance orientation coin flip out, or a roll that did not cover
+    the frozen set, which makes its mean incomparable to the others.
+    """
+    if len(candidate_rolls) < MINIMUM_PAIRED_ROLLS:
+        raise SystemExit(
+            f"a candidate is a mean over at least {MINIMUM_PAIRED_ROLLS} "
+            f"paired rolls (MINIMUM_PAIRED_ROLLS); got "
+            f"{len(candidate_rolls)}. A single-roll candidate was how "
+            f"three change classes each measured flat."
+        )
+    for roll in candidate_rolls:
+        covered = len(roll["per_instance"])
+        if covered < MINIMUM_INSTANCES_FOR_RANKING:
+            raise SystemExit(
+                f"roll {roll['model_dir']} ({roll['path']}) scores "
+                f"{covered} instances; ranking needs "
+                f"{MINIMUM_INSTANCES_FOR_RANKING} "
+                f"(MINIMUM_INSTANCES_FOR_RANKING)"
+            )
+
+
 def main(argv) -> int:
     arguments = parse_arguments(argv)
     baseline_rolls = load_rolls([arguments.baseline])
     candidate_rolls = load_rolls(arguments.candidate)
+    refuse_underpowered(candidate_rolls)
     instances = shared_instances(
         baseline_rolls + candidate_rolls,
         requested_instances(arguments.instances_file),
@@ -326,9 +372,8 @@ def main(argv) -> int:
 
     primary = paired_delta(baseline_rolls, candidate_rolls, instances,
                            PRIMARY_METRIC)
-    print(f"{PRIMARY_METRIC}: baseline "
-          f"{set_mean(baseline_rolls, instances, PRIMARY_METRIC):.4f} -> "
-          f"candidate "
+    guard = set_mean(baseline_rolls, instances, PRIMARY_METRIC)
+    print(f"{PRIMARY_METRIC}: baseline {guard:.4f} -> candidate "
           f"{set_mean(candidate_rolls, instances, PRIMARY_METRIC):.4f}")
     print(f"paired mean delta {primary['mean_delta']:+.4f}  "
           f"SD {primary['paired_stdev']:.4f}  "
@@ -336,7 +381,7 @@ def main(argv) -> int:
           f"{primary['sigma']:.2f} sigma  "
           f"worse/better {primary['worse_count']}/{primary['better_count']}")
     print("REGRESSION" if primary["regression"] else "no regression detected")
-    effect = arguments.guard - arguments.target
+    effect = guard * TARGET_RELATIVE_IMPROVEMENT
     for sigma in RESOLUTION_SIGMA_LEVELS:
         needed = instance_rolls_for_resolution(primary["paired_stdev"],
                                                effect, sigma)

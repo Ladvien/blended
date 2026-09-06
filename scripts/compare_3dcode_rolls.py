@@ -55,7 +55,15 @@ def parse_arguments(argv):
 
 
 def load_roll(path: Path) -> dict:
-    """One roll: its model dir and its scoreable per-instance metrics."""
+    """One roll: its model dir, its scoreable metrics, and its raw rows.
+
+    `per_instance` holds only rows a scorer produced every metric for,
+    because a mean over partially-scored rows is not a mean. `rows` keeps
+    EVERY row, including the unscoreable ones: executability is a
+    property of the whole attempt set, and reading it from `per_instance`
+    would silently divide by the instances that scored — the one subset
+    guaranteed to look healthy.
+    """
     document = json.loads(path.read_text())
     per_instance = {}
     for row in document["per_instance"]:
@@ -66,7 +74,9 @@ def load_roll(path: Path) -> dict:
     return {
         "path": str(path),
         "model_dir": document.get("model_dir", path.stem),
+        "instances_file": document.get("instances_file", ""),
         "per_instance": per_instance,
+        "rows": tuple(document["per_instance"]),
     }
 
 
