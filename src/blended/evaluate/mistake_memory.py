@@ -2253,6 +2253,58 @@ MISTAKES: tuple[MistakeRecord, ...] = (
         ),
         recorded_on="2026-09-06",
     ),
+    MistakeRecord(
+        identifier="the-workspace-pushed-its-own-composer-off-screen",
+        scope="harness_code",
+        failure=(
+            "A live walkthrough of the shipped `blended` workspace, run "
+            "for the user's sign-off, found the prompt box, the Send "
+            "button and the Revert control BELOW the visible sidebar "
+            "after one finished turn. Fourth time the composer has been "
+            "lost, and the first time the harness's own workspace "
+            "caused it."
+        ),
+        cause=(
+            "Two faults compounding. (1) `arrange_workspace` split the "
+            "viewport HORIZONTALLY to give the Image Editor a wide "
+            "short home — and the chat sidebar is a REGION OF THAT "
+            "VIEWPORT, so the split halved it: 561x618 px, 15 rows at "
+            "ui_scale 2.0, measured live. (2) `_answer_row_budget` "
+            "shrank only the ANSWER and drew the cards unconditionally, "
+            "so the surface still wanted 12 composer + 6 renders + 2 "
+            "plan + 3 answer = 23 rows in a 15-row region. The budget "
+            "adapted to the region and still overflowed, because what "
+            "it adapted was the one part that was already at its floor."
+        ),
+        fix=(
+            "Split VERTICALLY (`IMAGE_EDITOR_WIDTH_FRACTION`), which "
+            "leaves the viewport full height and the sidebar its "
+            "measured 561x1104 px / 27 rows — and puts the enlarged "
+            "render beside the thumbnails that open it. Assign the two "
+            "products by WIDTH, not by `area.x`: read straight after "
+            "the operator, x returned them in the opposite order to "
+            "their final geometry. `_pinned_surface_budget` now makes "
+            "the CARDS yield, renders first (the same images are in the "
+            "Image Editor pane), then the plan's steps, then the plan "
+            "card; the composer never yields. Two more ordering facts: "
+            "assigning `area.type` swaps the area's active space, so a "
+            "`show_region_ui` written right after the split lands on "
+            "the replaced space (sidebar came back 1x1) — it is set in "
+            "`activate_chat_tab`, which is already deferred a frame; "
+            "and the tab needs one frame MORE than the layout, so the "
+            "operator's timer re-arms until `active_panel_category` "
+            "takes, bounded by `_WORKSPACE_TAB_ATTEMPTS`."
+        ),
+        guarded_by=(
+            "tests/blender/test_chat_panel_heuristics.py::"
+            "test_the_pinned_surface_always_leaves_room_for_the_composer "
+            "(asserts drawn rows <= region rows across six heights, two "
+            "ui_scales and every card combination — the property, not a "
+            "single case) and ::test_the_cards_yield_in_order_and_the_"
+            "answer_keeps_the_surplus"
+        ),
+        recorded_on="2026-09-06",
+    ),
 )
 
 

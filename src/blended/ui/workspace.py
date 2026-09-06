@@ -50,9 +50,19 @@ __all__ = [
 
 BLENDED_WORKSPACE_NAME = "blended"
 
-# The Image Editor is split off below the viewport so a render contact sheet
-# has a wide, short home — the proportions a contact sheet needs.
-IMAGE_EDITOR_HEIGHT_FRACTION = 0.4
+# The Image Editor is split off BESIDE the viewport, not below it.
+#
+# Below was the first design — a wide short home for a contact sheet —
+# and it halved the height of the area that hosts the chat. Measured in
+# a live GUI session 2026-09-06: the sidebar came out 561 x 618 px, 15
+# rows at ui_scale 2.0, while the pinned surface wants 23, so the
+# workspace the harness ships pushed its own prompt box off the bottom.
+# The sidebar is a REGION OF THE VIEWPORT, so only a vertical split
+# leaves it the full window height (561 x 1104 px, 27 rows).
+#
+# The chat sidebar sits at the viewport's right edge, so this also puts
+# the enlarged render immediately beside the thumbnails that open it.
+IMAGE_EDITOR_WIDTH_FRACTION = 0.3
 
 
 class _BackgroundWorkspaceError(RuntimeError):
@@ -101,7 +111,7 @@ def ensure_workspace() -> str:
 
 
 def arrange_workspace() -> bool:
-    """Give the CURRENT window a 3D viewport with an Image Editor under it.
+    """Give the CURRENT window a 3D viewport with an Image Editor beside it.
 
     Must run a frame AFTER `ensure_workspace()` switched to the copy.
     Mutating the copied workspace's `screens[0]` directly produced a
@@ -142,7 +152,7 @@ def arrange_workspace() -> bool:
         window=window, screen=screen, area=largest, region=_window_region(largest)
     ):
         bpy.ops.screen.area_split(
-            direction="HORIZONTAL", factor=IMAGE_EDITOR_HEIGHT_FRACTION
+            direction="VERTICAL", factor=1.0 - IMAGE_EDITOR_WIDTH_FRACTION
         )
     created = [area for area in screen.areas if area.as_pointer() not in before]
     # Re-fetch the split area by pointer: the operator rebuilds the
@@ -156,9 +166,13 @@ def arrange_workspace() -> bool:
         # believe in a layout that does not exist.
         return False
 
-    # The split's two products are `kept` and the new area: the lower of
-    # the pair becomes the render's home, the upper stays the viewport.
-    pair = sorted([kept, created[0]], key=lambda area: area.y)
+    # The split's two products are `kept` and the new area. Assign by
+    # WIDTH, not by x: reading `area.x` straight after the operator
+    # returned the pair in the opposite order to their final geometry
+    # (measured 2026-09-06 — the Image Editor came out 1466 px wide and
+    # the viewport 623). Width is also the intent: the viewport keeps
+    # the majority of the column, and the render pane takes the rest.
+    pair = sorted([kept, created[0]], key=lambda area: area.width)
     pair[0].type = "IMAGE_EDITOR"
     pair[1].type = "VIEW_3D"
     _open_sidebar(screen, window)
@@ -195,17 +209,26 @@ def _open_sidebar(screen, window) -> None:
 
 
 def activate_chat_tab() -> bool:
-    """Select the `blended` tab in every open 3D-viewport sidebar.
+    """Open every 3D-viewport sidebar and select the `blended` tab.
 
-    Returns True when at least one region took it. Call this a frame
-    AFTER the workspace is built — the addon's operator defers it
+    Returns True when at least one region took the tab. Call this a
+    frame AFTER the workspace is built — the addon's operator defers it
     through `bpy.app.timers` for exactly that reason.
+
+    It also (re)opens the sidebar, which `arrange_workspace` cannot do
+    reliably: assigning `area.type` swaps the area's active space, so a
+    `show_region_ui` written immediately after the split lands on the
+    space that was replaced. Measured 2026-09-06 in a live session —
+    the sidebar came back 1x1 px (zero rows) until the flag was set on
+    the CURRENT space a frame later, and 561x1104 (27 rows) after.
+    Setting it here is idempotent and this call is already deferred.
     """
     activated = False
     for window in bpy.context.window_manager.windows:
         for area in window.screen.areas:
             if area.type != "VIEW_3D":
                 continue
+            area.spaces[0].show_region_ui = True
             for region in area.regions:
                 if region.type != "UI":
                     continue

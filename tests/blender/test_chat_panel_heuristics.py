@@ -122,51 +122,82 @@ def test_a_finished_plan_gives_its_rows_back_to_the_answer():
     assert f"1. {PLAN_STEPS[0]}" in record, "the record keeps every step"
 
 
-def test_the_answer_budget_comes_from_the_region_not_a_guess():
-    """The measured sidebar: 1104 px at ui_scale 2.0 is 27 rows, which
-    is why three successive "generous" caps still lost the prompt box.
-    The budget subtracts what is actually drawn around the answer, and
-    never returns less than the floor."""
-    module = _load_addon("blended_heuristics_budget")
-    sidebar_rows = 27
+def test_the_pinned_surface_always_leaves_room_for_the_composer():
+    """The invariant four live sessions have now broken.
 
-    bare = module._answer_row_budget(
+    The old budget shrank only the ANSWER and drew the cards
+    unconditionally, so on a short sidebar the surface still overflowed
+    and the prompt box went off the bottom — measured 2026-09-06 in the
+    shipped `blended` workspace, whose own layout left a 618 px sidebar
+    (15 rows at ui_scale 2.0) while the surface wanted 23. This asserts
+    the property directly, across every height a real window produces:
+    what the panel draws never exceeds the rows the region has.
+    """
+    module = _load_addon("blended_heuristics_budget")
+
+    def drawn_rows(budget, plan_step_count, has_plan, has_renders):
+        rows = module._COMPOSER_RESERVED_ROWS + budget.answer_rows
+        if has_plan and budget.show_plan:
+            rows += module._PLAN_CARD_FIXED_ROWS
+            if budget.show_plan_steps:
+                rows += plan_step_count
+        if has_renders and budget.show_renders:
+            rows += module._RENDER_CARD_ROWS
+        return rows
+
+    for height_px in (240, 400, 618, 800, 1104, 2160):
+        for ui_scale in (1.0, 2.0):
+            for plan_step_count, has_plan in ((0, False), (0, True), (5, True)):
+                for has_renders in (False, True):
+                    budget = module._pinned_surface_budget(
+                        height_px,
+                        ui_scale,
+                        plan_step_count=plan_step_count,
+                        has_plan=has_plan,
+                        has_renders=has_renders,
+                    )
+                    available = int(
+                        height_px / (module._UI_ROW_HEIGHT_PX * ui_scale)
+                    )
+                    used = drawn_rows(
+                        budget, plan_step_count, has_plan, has_renders
+                    )
+                    if available >= (
+                        module._COMPOSER_RESERVED_ROWS
+                        + module._MINIMUM_ANSWER_ROWS
+                    ):
+                        assert used <= available, (
+                            f"{height_px}px @{ui_scale} plan={has_plan}/"
+                            f"{plan_step_count} renders={has_renders}: "
+                            f"drew {used} rows into {available}"
+                        )
+                    assert budget.answer_rows >= module._MINIMUM_ANSWER_ROWS
+
+
+def test_the_cards_yield_in_order_and_the_answer_keeps_the_surplus():
+    """Renders go first because the Image Editor beside the chat already
+    has the same images; the plan is only ever here."""
+    module = _load_addon("blended_heuristics_budget_order")
+
+    # The measured 618 px sidebar: nothing but composer and answer fits.
+    cramped = module._pinned_surface_budget(
+        618, 2.0, plan_step_count=4, has_plan=True, has_renders=True
+    )
+    assert not cramped.show_renders
+    assert not cramped.show_plan_steps
+
+    # The measured full sidebar: everything fits at once.
+    roomy = module._pinned_surface_budget(
+        1104, 2.0, plan_step_count=4, has_plan=True, has_renders=True
+    )
+    assert roomy.show_renders and roomy.show_plan and roomy.show_plan_steps
+
+    # Nothing above the answer means the answer gets the whole surplus.
+    bare = module._pinned_surface_budget(
         1104, 2.0, plan_step_count=0, has_plan=False, has_renders=False
     )
-    assert bare == sidebar_rows - module._COMPOSER_RESERVED_ROWS
-
-    # The state a reviewer actually reads in: turn finished, so the plan
-    # is collapsed to two rows and the renders are up.
-    finished = module._answer_row_budget(
-        1104, 2.0, plan_step_count=0, has_plan=True, has_renders=True
-    )
-    assert finished == bare - module._RENDER_CARD_ROWS - module._PLAN_CARD_FIXED_ROWS
-    assert finished > module._MINIMUM_ANSWER_ROWS, (
-        "a finished turn must leave the answer more than the floor: "
-        "that is the moment the answer is the whole point"
-    )
-
-    # Mid-turn with a long plan there genuinely are not enough rows, and
-    # the floor — not a negative number — is what the answer gets.
-    working = module._answer_row_budget(
-        1104, 2.0, plan_step_count=5, has_plan=True, has_renders=True
-    )
-    assert working == module._MINIMUM_ANSWER_ROWS
-
-    # A tiny sidebar cannot go negative; a huge one is bounded only by
-    # its own height.
-    assert (
-        module._answer_row_budget(
-            120, 2.0, plan_step_count=8, has_plan=True, has_renders=True
-        )
-        == module._MINIMUM_ANSWER_ROWS
-    )
-    assert (
-        module._answer_row_budget(
-            4000, 1.0, plan_step_count=0, has_plan=False, has_renders=False
-        )
-        > bare
-    )
+    assert bare.answer_rows == 27 - module._COMPOSER_RESERVED_ROWS
+    assert bare.answer_rows > roomy.answer_rows
 
 
 def test_no_plan_means_no_plan_card():
@@ -369,9 +400,9 @@ def test_the_working_surface_does_not_grow_with_the_turn():
     assert any("more lines — open Conversation" in text for text in labels), (
         "a truncated answer must say so and say where the rest is"
     )
-    budget = module._answer_row_budget(
+    budget = module._pinned_surface_budget(
         1104, 1.0, plan_step_count=0, has_plan=False, has_renders=False
-    )
+    ).answer_rows
     assert len(labels) <= budget + _ROWS_OF_CHROME_AROUND_AN_ANSWER, (
         "the capped answer must fit the budget the region actually has"
     )

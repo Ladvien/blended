@@ -61,6 +61,7 @@ import threading
 import traceback
 from dataclasses import replace
 from pathlib import Path
+from typing import NamedTuple
 
 import bpy
 
@@ -1017,6 +1018,14 @@ class BLENDED_OT_show_render(bpy.types.Operator):
         return {"FINISHED"}
 
 
+# The `blended` sidebar tab needs one frame more than the layout does:
+# a region is 1x1 until Blender has drawn it once, and
+# `active_panel_category` is read-only until then. Bounded so a window
+# with no 3D viewport cannot spin the timer forever.
+_WORKSPACE_TAB_ATTEMPTS = 10
+_WORKSPACE_TAB_RETRY_SECONDS = 0.1
+
+
 class BLENDED_OT_open_workspace(bpy.types.Operator):
     bl_idname = "blended.open_workspace"
     bl_label = "blended workspace"
@@ -1043,11 +1052,24 @@ class BLENDED_OT_open_workspace(bpy.types.Operator):
         # `active_panel_category` all fail to land there (measured live,
         # 2026-09-05 — the layout came out as two Timeline editors). One
         # frame after the window switches to it, they take.
+        #
+        # The tab needs one frame MORE than the layout: opening the
+        # sidebar and selecting its tab cannot happen in the same tick,
+        # because the region is 1x1 until it has been drawn once
+        # (measured 2026-09-06 — the sidebar came out 561x1104 with
+        # `category=Item`, the tab silently unselected). So the timer
+        # re-arms until the tab takes, bounded so a headless or
+        # sidebar-less window cannot spin it forever.
+        attempts = [_WORKSPACE_TAB_ATTEMPTS]
+
         def _arrange():
             arrange_workspace()
-            activate_chat_tab()
+            selected = activate_chat_tab()
             _redraw_sidebars()
-            return None  # one-shot
+            attempts[0] -= 1
+            if selected or attempts[0] <= 0:
+                return None  # one-shot once the tab is on the panel
+            return _WORKSPACE_TAB_RETRY_SECONDS
 
         bpy.app.timers.register(_arrange, first_interval=0.0)
         self.report({"INFO"}, f"Workspace “{name}” ready.")
@@ -1373,24 +1395,53 @@ def _thumbnail_icon(image_path) -> int:
         return 0
 
 
-def _answer_row_budget(
-    region_height_px, ui_scale, plan_step_count, has_plan, has_renders
-) -> int:
-    """How many WRAPPED rows the newest answer may occupy.
+class _SurfaceBudget(NamedTuple):
+    """What the pinned surface may draw in the region it actually has."""
 
-    Rows, not source lines: the live GUI sessions that lost the prompt
-    box did it with a SINGLE paragraph that wrapped to ten rows, so a
-    line-count cap protects nothing. The budget is what the region has
-    left after the cards above the answer and the controls below it, so
-    it adapts to the sidebar the user actually has.
+    answer_rows: int
+    show_plan: bool
+    show_plan_steps: bool
+    show_renders: bool
+
+
+def _pinned_surface_budget(
+    region_height_px, ui_scale, plan_step_count, has_plan, has_renders
+) -> _SurfaceBudget:
+    """Fit the pinned surface into the region, composer FIRST.
+
+    Rows, not source lines: the live sessions that lost the prompt box
+    did it with a SINGLE paragraph that wrapped to ten rows, so a
+    line-count cap protects nothing.
+
+    The earlier version shrank only the ANSWER and drew the cards
+    unconditionally, which is why a fourth live session lost the
+    composer anyway — measured 2026-09-06: the shipped `blended`
+    workspace split the viewport in half, leaving a 618 px sidebar (15
+    rows at ui_scale 2.0) while the surface wanted 12 composer + 6
+    renders + 2 plan + 3 answer = 23. The cards now YIELD, in reverse
+    order of what the user cannot get anywhere else: renders go first
+    because the same images are already open in the Image Editor beside
+    the chat, then the plan's step list, then the plan card itself. The
+    composer never yields — it is the primary interaction space
+    (DOI 10.48550/arXiv.2410.22370).
     """
     rows = int(region_height_px / (_UI_ROW_HEIGHT_PX * max(ui_scale, 0.1)))
-    spent = _COMPOSER_RESERVED_ROWS
-    if has_renders:
-        spent += _RENDER_CARD_ROWS
-    if has_plan:
-        spent += _PLAN_CARD_FIXED_ROWS + plan_step_count
-    return max(_MINIMUM_ANSWER_ROWS, rows - spent)
+    spare = rows - _COMPOSER_RESERVED_ROWS - _MINIMUM_ANSWER_ROWS
+    show_plan = has_plan and spare >= _PLAN_CARD_FIXED_ROWS
+    if show_plan:
+        spare -= _PLAN_CARD_FIXED_ROWS
+    show_plan_steps = show_plan and plan_step_count > 0 and spare >= plan_step_count
+    if show_plan_steps:
+        spare -= plan_step_count
+    show_renders = has_renders and spare >= _RENDER_CARD_ROWS
+    if show_renders:
+        spare -= _RENDER_CARD_ROWS
+    return _SurfaceBudget(
+        answer_rows=_MINIMUM_ANSWER_ROWS + max(0, spare),
+        show_plan=show_plan,
+        show_plan_steps=show_plan_steps,
+        show_renders=show_renders,
+    )
 
 
 def _tail_lines(text: str, limit: int) -> str:
@@ -1726,15 +1777,34 @@ class BLENDED_PT_chat(_ChatDrawing, bpy.types.Panel):
             previous_render, latest_render = paired_render_paths(_STATE.transcript)
         except Exception:  # noqa: BLE001 — draw() must never raise
             previous_render = latest_render = None
-        if latest_render is not None:
+
+        # ONE decision about what fits, taken before anything is drawn:
+        # the composer must survive every combination of cards, and it
+        # only does if the cards are asked to yield up front.
+        budget = _pinned_surface_budget(
+            context.region.height,
+            ui_scale,
+            plan_step_count=(
+                len(_STATE.plan.steps)
+                if _STATE.plan is not None and _STATE.busy
+                else 0
+            ),
+            has_plan=_STATE.plan is not None,
+            has_renders=latest_render is not None,
+        )
+
+        if latest_render is not None and budget.show_renders:
             self._draw_evidence(controls, previous_render, latest_render)
 
         # The step list is what a user watches while the agent works.
         # Once the turn is over it competes for rows with the answer,
         # so it collapses to its header and bar; the record keeps it.
-        if _STATE.plan is not None:
+        if _STATE.plan is not None and budget.show_plan:
             self._draw_plan(
-                controls, _STATE.plan, _STATE.busy, steps=_STATE.busy
+                controls,
+                _STATE.plan,
+                _STATE.busy,
+                steps=_STATE.busy and budget.show_plan_steps,
             )
 
         if _STATE.transcript or _STATE.live_text:
@@ -1742,17 +1812,7 @@ class BLENDED_PT_chat(_ChatDrawing, bpy.types.Panel):
                 controls,
                 region_width,
                 ui_scale,
-                max_rows=_answer_row_budget(
-                    context.region.height,
-                    ui_scale,
-                    plan_step_count=(
-                        len(_STATE.plan.steps)
-                        if _STATE.plan is not None and _STATE.busy
-                        else 0
-                    ),
-                    has_plan=_STATE.plan is not None,
-                    has_renders=latest_render is not None,
-                ),
+                max_rows=budget.answer_rows,
             )
         else:
             empty_box = controls.box()
