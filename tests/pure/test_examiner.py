@@ -16,7 +16,7 @@ silently corrupt the loop if they regressed:
 
 import hashlib
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 import pytest
@@ -257,3 +257,82 @@ def test_the_shipped_eye_holds_the_licence_in_the_repository():
         f"({calibration.examiner_identity!r}) — re-run "
         f"`make calibrate-eye` for the new eye, or ship the calibrated one"
     )
+
+
+def test_a_licence_measured_on_identical_images_does_not_cover_a_fresh_run():
+    """Cross-run specificity is reported, and a miss disqualifies.
+
+    The same-run controls compare a run against the reference minted
+    from ITSELF, so `control_specificity` 1.00 measures "stays quiet
+    when shown the same image twice". The loop only ever compares a
+    FRESH run against an exemplar. Measured 2026-09-05: planter_box
+    iteration 62 was flagged `material_missing` against an exemplar
+    minted from its own lane's clean iteration 57, so the false-alarm
+    rate in the used regime is not zero and must be licensed
+    separately.
+    """
+    from blended.evaluate.examiner import (
+        CROSS_RUN_CONTROL_MINIMUM_SPECIFICITY,
+        Calibration,
+    )
+
+    identity = "claude-code:sonnet+examiner:60a9920cb938"
+    perfect_same_run = Calibration(
+        examiner_identity=identity,
+        vision_model="claude-code:sonnet",
+        recorded_at="2026-09-05T00:00:00+00:00",
+        view_names=("front",),
+        sensitivity=0.8,
+        control_specificity=1.0,
+    )
+    # Not measured yet is NOT a failure: the shipped licence predates
+    # the measurement and the log is append-only.
+    assert perfect_same_run.cross_run_control_specificity is None
+    assert perfect_same_run.problems(identity) == []
+
+    flags_clean_runs = replace(
+        perfect_same_run,
+        cross_run_control_specificity=CROSS_RUN_CONTROL_MINIMUM_SPECIFICITY - 0.25,
+    )
+    problems = flags_clean_runs.problems(identity)
+    assert len(problems) == 1
+    assert "cross-run control specificity" in problems[0]
+    assert "only regime the loop uses" in problems[0]
+
+    licensed = replace(
+        perfect_same_run,
+        cross_run_control_specificity=CROSS_RUN_CONTROL_MINIMUM_SPECIFICITY,
+    )
+    assert licensed.problems(identity) == []
+
+
+def test_a_verdict_records_which_view_earned_its_tags():
+    """Per-view tags, because a view that never tags is two calls for
+    nothing.
+
+    Examination is the loop's largest token consumer (10 eye calls per
+    brief against 26 for the whole build, measured 2026-09-06), and the
+    aggregate deviation list cannot say which of the five views paid
+    for itself.
+    """
+    from blended.evaluate.iteration_log import IterationVerdict
+
+    verdict = IterationVerdict(
+        iteration=900,
+        brief_name="planter_box",
+        visual_inspected=True,
+        visual_deviations=("material_missing",),
+        examiner="claude-code:sonnet+examiner:60a9920cb938",
+        calibration_identity="9bcc4d728d0d",
+        view_tags=(
+            ("front", ("material_missing",)),
+            ("bottom", ()),
+        ),
+    )
+    assert dict(verdict.view_tags)["bottom"] == ()
+    assert dict(verdict.view_tags)["front"] == ("material_missing",)
+    # An older row carries none, and that must not read as "no tags".
+    older = IterationVerdict(
+        iteration=1, brief_name="planter_box", visual_inspected=True
+    )
+    assert older.view_tags == ()

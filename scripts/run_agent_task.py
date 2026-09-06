@@ -359,6 +359,10 @@ def main(argv) -> int:
                 examiner=verdict.examiner_identity,
                 abstained=verdict.abstained,
                 calibration_identity=calibration_file_identity(),
+                view_tags=tuple(
+                    (view.view_name, tuple(view.order_consistent_tags))
+                    for view in verdict.views
+                ),
             )
         )
 

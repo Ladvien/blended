@@ -121,6 +121,13 @@ and ~415k per 5-brief cycle. And `_evaluate/verdicts.jsonl` stores only
 aggregate deviations, so there is no evidence about which views ever
 earn their two calls.
 
+**Measured 2026-09-06** (`--cross-run-only`, 4 briefs): 40 eye calls,
+258,200 input tok, $0.4165 — **$0.104 and 64,550 input tok per brief
+examined**. And the instrument those calls buy has a cross-run control
+specificity of **0.50**, so most of that spend currently buys a
+deviation the brief never specified. Cost-of-pass, not tokens: see
+`docs/2026-09-06-token-budget-plan.md`.
+
 ### 4. Contact sheets accumulate in the prefix
 
 The writer's sheets are 1048x1568 = **2,191 image tokens** each

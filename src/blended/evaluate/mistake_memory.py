@@ -2205,6 +2205,54 @@ MISTAKES: tuple[MistakeRecord, ...] = (
         ),
         recorded_on="2026-09-06",
     ),
+    MistakeRecord(
+        identifier="the-examiner-was-asked-the-wrong-question",
+        scope="harness_code",
+        failure=(
+            "Three convergence cycles halted on examiner deviations, "
+            "and the pending question was whether the examiner was "
+            "noisy. Measured 2026-09-06 with a new cross-run control "
+            "class: specificity 0.50 (2 of 4 gate-clean runs flagged), "
+            "against a required 1.00. At a per-brief false-alarm rate "
+            "of 0.5 a five-brief cycle comes up clean with probability "
+            "0.5^5 = 3%, so re-rolling cycles would have cost ~32 "
+            "cycles and ~$224 to reach a pin BY LUCK."
+        ),
+        cause=(
+            "The deviations are not noise — they are TRUE. Measured "
+            "from the meshes: planter_box's exemplar (iteration 57) is "
+            "base colour (0.45, 0.28, 0.15) and the flagged candidate "
+            "(62) is (0.35, 0.22, 0.12), a distance of 0.120, with "
+            "IDENTICAL dimensions; three_leg_stool 59 vs 64 share a "
+            "bbox but differ in internal proportion. The loop asks "
+            "'does this match the exemplar?' and reads the answer as "
+            "'does this satisfy the brief?'. Everything the brief "
+            "leaves free differs between runs BY CONSTRUCTION, so an "
+            "exemplar-matching question manufactures deviations at a "
+            "rate set by how much the brief leaves unspecified."
+        ),
+        fix=(
+            "PENDING a human decision (plan Phase B). What is already "
+            "settled: my own first draft — count a deviation only if "
+            "it reproduces across independent examinations — is "
+            "REFUTED by this measurement, because a systematic true "
+            "difference reproduces every time and the rule would have "
+            "doubled examiner calls for nothing. The recommended "
+            "branch is to stop asking the eye about properties a "
+            "deterministic gate measures (`wrong_proportion` -> form "
+            "gate, `material_missing` -> material gate) while keeping "
+            "the reference paired, since pairing is worth +0.32 F1 "
+            "(10.48550/arXiv.2604.11082) and tool feedback outranks "
+            "model feedback (10.48550/arXiv.2409.02977)."
+        ),
+        guarded_by=(
+            "make calibrate-eye ARGS=\"--cross-run-only\"; "
+            "tests/pure/test_examiner.py::"
+            "test_a_licence_measured_on_identical_images_does_not_"
+            "cover_a_fresh_run; docs/2026-09-06-token-budget-plan.md"
+        ),
+        recorded_on="2026-09-06",
+    ),
 )
 
 

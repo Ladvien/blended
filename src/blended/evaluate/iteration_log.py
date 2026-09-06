@@ -200,6 +200,17 @@ class IterationVerdict:
     # is not a pass, and the orchestrator halts on it.
     abstained: bool = False
     calibration_identity: str = ""
+    # PER VIEW, the order-consistent tags, as (view_name, tags) pairs.
+    # Recorded because the aggregate alone cannot answer whether a view
+    # earns its cost: each of the five views is examined TWICE (both
+    # image orders), so a view that never produces a consistent tag is
+    # two API calls per brief for no information — and examination is
+    # the loop's largest token consumer, measured 2026-09-06 at 10
+    # calls per brief against the writer's 26 for the whole build.
+    # Empty on older rows means "not recorded", not "no tags".
+    view_tags: tuple[tuple[str, tuple[str, ...]], ...] = field(
+        default_factory=tuple
+    )
 
     def __post_init__(self) -> None:
         if self.classification and self.classification not in CLASSIFICATIONS:

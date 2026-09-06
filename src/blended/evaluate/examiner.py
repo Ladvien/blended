@@ -60,6 +60,26 @@ MINIMUM_FIXTURE_SENSITIVITY = 0.6
 # (TikZ §6.2: "False positives are harmful, as they prematurely
 # terminate refinement"), so a control must be clean in every fixture.
 REQUIRED_CONTROL_SPECIFICITY = 1.0
+# The SAME-RUN controls above replay one recorded run and compare it
+# against the reference minted from THAT SAME run, so their inputs are
+# pixel-identical: `control_specificity` measures "does it stay quiet
+# when shown the same image twice". The loop never asks that question.
+# It compares a FRESH run against an exemplar of the same
+# configuration, and in THAT regime the false-alarm rate was never
+# measured — three convergence cycles on one unchanged configuration
+# produced deviations that moved between briefs, including one flagged
+# against an exemplar minted from its own lane's clean run
+# (planter_box iteration 62 vs planter_box_v11 from iteration 57,
+# measured 2026-09-05). Cross-run controls close that gap: candidate
+# and reference are two INDEPENDENT gate-clean runs of the same brief
+# on the same lane at the same prompt, so any tag is a false alarm by
+# construction. Same threshold, because the consequence is the same —
+# a false alarm ends refinement early (TikZ §6.2).
+CROSS_RUN_CONTROL_MINIMUM_SPECIFICITY = REQUIRED_CONTROL_SPECIFICITY
+# One independent pair per brief is enough to detect a non-zero rate;
+# raising this multiplies examiner calls, which is the loop's largest
+# single token consumer (10 calls per brief, measured 2026-09-06).
+CROSS_RUN_CONTROL_PAIRS_PER_BRIEF = 1
 CALIBRATION_PATH = Path("_evaluate/eye_calibration.json")
 
 
@@ -137,6 +157,12 @@ class Calibration:
     fixtures: tuple[dict, ...] = field(default_factory=tuple)
     sensitivity: float = 0.0
     control_specificity: float = 0.0
+    # None means "not measured yet", which is NOT the same as 0.0 and
+    # must not read as a failure: the 2026-09-05 licence predates this
+    # measurement, and rewriting history to look complete would be the
+    # opposite of what an append-only evidence trail is for.
+    cross_run_control_specificity: float | None = None
+    cross_run_controls: tuple[dict, ...] = field(default_factory=tuple)
     absent: bool = False
 
     @classmethod
@@ -172,6 +198,18 @@ class Calibration:
                 f"{REQUIRED_CONTROL_SPECIFICITY}: one false alarm on a "
                 f"clean control terminates refinement early"
             )
+        if (
+            self.cross_run_control_specificity is not None
+            and self.cross_run_control_specificity
+            < CROSS_RUN_CONTROL_MINIMUM_SPECIFICITY
+        ):
+            problems.append(
+                f"cross-run control specificity "
+                f"{self.cross_run_control_specificity:.2f} < "
+                f"{CROSS_RUN_CONTROL_MINIMUM_SPECIFICITY}: this examiner "
+                f"flags clean runs when the reference comes from a "
+                f"DIFFERENT run, which is the only regime the loop uses"
+            )
         return problems
 
 
@@ -188,6 +226,12 @@ def load_calibration(path: Path = CALIBRATION_PATH) -> Calibration:
         fixtures=tuple(payload["fixtures"]),
         sensitivity=float(payload["sensitivity"]),
         control_specificity=float(payload["control_specificity"]),
+        cross_run_control_specificity=(
+            None
+            if payload.get("cross_run_control_specificity") is None
+            else float(payload["cross_run_control_specificity"])
+        ),
+        cross_run_controls=tuple(payload.get("cross_run_controls") or ()),
     )
 
 

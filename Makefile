@@ -67,6 +67,7 @@ replay:
 # Writes _evaluate/eye_calibration.json, which licenses machine verdicts.
 #   make calibrate-eye
 #   make calibrate-eye ARGS="--only missing_leg"
+#   make calibrate-eye ARGS="--cross-run-only"   (the regime the loop uses)
 calibrate-eye:
 	$(BLENDER) --background --factory-startup \
 		--python scripts/calibrate_examiner.py -- $(ARGS)

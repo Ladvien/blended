@@ -99,6 +99,33 @@ def _fixtures() -> dict:
     }
 
 
+def _cross_run_controls() -> dict:
+    """Control name -> (brief, candidate iteration, reference revision).
+
+    A CROSS-RUN control is two INDEPENDENT gate-clean runs of the same
+    brief, on the same lane, at the same prompt identity: the candidate
+    is replayed from one run, the reference is the exemplar minted from
+    the other. Any deviation is a false alarm by construction, and this
+    is the ONLY regime the convergence loop actually uses — the
+    same-run controls in `_fixtures` compare a run against a reference
+    minted from itself, which is pixel-identical input.
+
+    Pairs measured from `_evaluate/iterations.jsonl` on 2026-09-06:
+    the v11 exemplars were minted from iterations 56-60 and the
+    following cycle produced independent gate-clean runs 62-65 on the
+    same claude-code lane. `crate_with_lid` is absent on purpose — its
+    only second v11 run (iteration 61) failed the structural gate, and
+    a damaged candidate is not a control. Recording the gap beats
+    inventing a pair.
+    """
+    return {
+        "cross_run_planter": ("planter_box", 62, 11),
+        "cross_run_column": ("ribbed_column", 63, 11),
+        "cross_run_stool": ("three_leg_stool", 64, 11),
+        "cross_run_crate": ("uv_crate", 65, 11),
+    }
+
+
 def parse_arguments(argv):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--log", default="_evaluate/iterations.jsonl")
@@ -111,6 +138,13 @@ def parse_arguments(argv):
         default="",
         help="run one fixture and print its verdict without rewriting "
         "the calibration file (the cheap live check)",
+    )
+    parser.add_argument(
+        "--cross-run-only",
+        action="store_true",
+        help="measure ONLY the cross-run controls and print the "
+        "false-alarm table without rewriting the calibration file; the "
+        "regime the loop actually uses (see the audit doc)",
     )
     return parser.parse_args(argv)
 
@@ -199,6 +233,8 @@ def main(argv) -> int:
     from blended.capture import CaptureSettings, capture_views
     from blended.evaluate.briefs import get_brief
     from blended.evaluate.examiner import (
+        CROSS_RUN_CONTROL_MINIMUM_SPECIFICITY,
+        DEVIATION_TAGS,
         EXAMINED_VIEW_NAMES,
         examine_asset,
         examiner_identity,
@@ -234,6 +270,120 @@ def main(argv) -> int:
     render_root = Path(arguments.renders)
     render_root.mkdir(parents=True, exist_ok=True)
     output_path = Path(arguments.output)
+
+    def _examine_replay(
+        label: str,
+        brief_name: str,
+        candidate_iteration: int,
+        reference_revision: int,
+        damage=None,
+    ):
+        """Replay one recorded run, render it, examine it. Returns the
+        verdict and the identity of the reference it was judged against.
+        """
+        bpy.ops.wm.read_factory_settings(use_empty=True)
+        brief = get_brief(brief_name)
+        record = load_record(Path(arguments.log), candidate_iteration)
+        built = replay_record(record, brief.part_names)
+        if damage is not None:
+            damage(built)
+        bpy.context.view_layer.update()
+
+        render_directory = render_root / label
+        render_directory.mkdir(parents=True, exist_ok=True)
+        captured = capture_views(
+            built[0],
+            render_directory,
+            settings=CaptureSettings(),
+            extra_objects=tuple(built[1:]),
+        )
+        missing_views = set(EXAMINED_VIEW_NAMES) - set(captured)
+        if missing_views:
+            raise SystemExit(
+                f"{label}: capture_views did not produce {sorted(missing_views)}"
+            )
+        golden_directory = GOLDEN_ROOT / f"{brief_name}_v{reference_revision}"
+        return examine_asset(
+            eye, golden_directory, render_directory, brief, vision_model
+        )
+
+    def _measure_cross_run_controls() -> list[dict]:
+        """The false-alarm rate in the regime the loop uses."""
+        records: list[dict] = []
+        for name, (brief_name, candidate, revision) in sorted(
+            _cross_run_controls().items()
+        ):
+            print(
+                f"\n=== cross-run control {name} "
+                f"(brief {brief_name}, candidate iteration {candidate} "
+                f"vs exemplar v{revision}) ===",
+                flush=True,
+            )
+            verdict = _examine_replay(name, brief_name, candidate, revision)
+            clean = verdict.deviations == () and not verdict.abstained
+            records.append(
+                {
+                    "name": name,
+                    "brief": brief_name,
+                    "candidate_iteration": candidate,
+                    "reference_revision": revision,
+                    "deviations": list(verdict.deviations),
+                    "abstained": verdict.abstained,
+                    "clean": clean,
+                    "view_tags": [
+                        [view.view_name, list(view.order_consistent_tags)]
+                        for view in verdict.views
+                    ],
+                }
+            )
+            print(verdict.summary(), flush=True)
+            print(
+                f"[cross-run] {name}: clean={clean} "
+                f"deviations={list(verdict.deviations)} "
+                f"abstained={verdict.abstained}",
+                flush=True,
+            )
+        return records
+
+    if arguments.cross_run_only:
+        cross_run_records = _measure_cross_run_controls()
+        specificity = sum(r["clean"] for r in cross_run_records) / len(
+            cross_run_records
+        )
+        print("\n=========== CROSS-RUN CONTROL SPECIFICITY ===========", flush=True)
+        for row in cross_run_records:
+            print(
+                f"  {row['brief']:<16} candidate {row['candidate_iteration']:<4} "
+                f"{'CLEAN' if row['clean'] else 'FALSE ALARM ' + str(row['deviations'])}",
+                flush=True,
+            )
+        print(
+            f"cross-run specificity: {specificity:.2f} "
+            f"({sum(r['clean'] for r in cross_run_records)}/"
+            f"{len(cross_run_records)}), threshold "
+            f"{CROSS_RUN_CONTROL_MINIMUM_SPECIFICITY}",
+            flush=True,
+        )
+        print("--- per view, across all controls ---", flush=True)
+        for view_name in EXAMINED_VIEW_NAMES:
+            # DEVIATION tags only: every clean control also carries a
+            # consistent `no_deviation`, so counting any tag would say
+            # every view earns its two calls, which is the question.
+            tagged = sum(
+                1
+                for row in cross_run_records
+                for name, tags in row["view_tags"]
+                if name == view_name
+                and set(tags) & set(DEVIATION_TAGS)
+            )
+            print(
+                f"  {view_name:<14} raised a deviation in "
+                f"{tagged}/{len(cross_run_records)} clean controls",
+                flush=True,
+            )
+        print(f"spent: {client.spent.summary()}", flush=True)
+        print(f"[cross-run] {output_path} was NOT rewritten", flush=True)
+        return 0
 
     fixture_records: list[dict] = []
     for fixture_name, (brief_name, expected_tags, damage) in sorted(fixtures.items()):
