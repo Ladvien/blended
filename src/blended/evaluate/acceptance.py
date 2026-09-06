@@ -23,6 +23,7 @@ from blended.evaluate.briefs import (
     AssetBrief,
     ClearAxisProbe,
     DimensionSpec,
+    DistinctMaterialSpec,
     GroundContactProbe,
     NoInterpenetrationSpec,
     PartSpec,
@@ -681,8 +682,33 @@ def _measure_relations(brief: AssetBrief, bpy, Vector) -> tuple[str, ...]:
     lid cannot hang off one side of the crate it sits on.
     NoInterpenetration: measured on the MESH SURFACE, not bboxes and
     not nearest vertices (see pair_checks.py for the measured
-    nearest-vertex lie).
+    nearest-vertex lie). DistinctMaterial: the two parts' base colours
+    must differ, because a lid flush on the rim with the body's exact
+    footprint is invisible otherwise.
     """
+
+    def _base_colour(part_name: str, bpy):
+        """The part's first material's Principled base colour, or None.
+
+        None means "nothing to compare" — no object, no material slot,
+        no Principled node — and the material gate is what reports
+        that. Reading `diffuse_color` as a fallback is deliberately NOT
+        done: it is the viewport display colour, which the renderer
+        ignores, so a fallback would pass a part the render shows grey.
+        """
+        blender_object = bpy.data.objects.get(part_name)
+        if blender_object is None or not blender_object.material_slots:
+            return None
+        material = blender_object.material_slots[0].material
+        if material is None or material.node_tree is None:
+            return None
+        from blended.ops.materials import PRINCIPLED_NODE_NAME
+
+        principled = material.node_tree.nodes.get(PRINCIPLED_NODE_NAME)
+        if principled is None:
+            return None
+        return tuple(principled.inputs["Base Color"].default_value[:3])
+
     def _bbox(part_name: str):
         blender_object = bpy.data.objects.get(part_name)
         if blender_object is None or blender_object.type != "MESH":
@@ -767,6 +793,31 @@ def _measure_relations(brief: AssetBrief, bpy, Vector) -> tuple[str, ...]:
                         f"expected within {relation.tolerance_m:.4f} "
                         f"-> {relation.why}"
                     )
+            continue
+        if isinstance(relation, DistinctMaterialSpec):
+            first_colour = _base_colour(relation.part_a, bpy)
+            second_colour = _base_colour(relation.part_b, bpy)
+            if first_colour is None or second_colour is None:
+                # No material is the material gate's failure to report,
+                # not this relation's — it would say the same thing
+                # twice and disagree about which part is at fault.
+                continue
+            distance = math.sqrt(
+                sum(
+                    (first - second) ** 2
+                    for first, second in zip(first_colour, second_colour)
+                )
+            )
+            if distance < relation.minimum_colour_distance_rgb:
+                found.append(
+                    f"{relation.name}: {relation.part_a} base colour "
+                    f"{tuple(round(value, 3) for value in first_colour)} is "
+                    f"{distance:.4f} from {relation.part_b}'s "
+                    f"{tuple(round(value, 3) for value in second_colour)}, "
+                    f"expected at least "
+                    f"{relation.minimum_colour_distance_rgb:.4f} "
+                    f"-> {relation.why}"
+                )
             continue
         raise TypeError(
             f"unknown relation type {type(relation).__name__} on brief "

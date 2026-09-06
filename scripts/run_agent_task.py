@@ -120,8 +120,41 @@ def main(argv) -> int:
     # measured record because the instrument was not calibrated, and the
     # measurement is the expensive part; it is not the examiner's to
     # discard.
-    golden_directory = (
+    # TWO references, because two instruments ask different questions.
+    #
+    # The VISUAL GATE asks "did the render move from the accepted
+    # state?", so its reference is the PINNED revision's — that is what
+    # "accepted" means.
+    #
+    # The EXAMINER asks "does this asset deliver the brief?", and it
+    # answers by comparison, so its reference must be an exemplar of the
+    # configuration under test. Pointing it at the pinned reference
+    # instead made it answer a third question nobody asked — "does this
+    # look like the artifact another writer built?" — and every
+    # incidental choice of that writer came back as a deviation.
+    # Measured 2026-09-05 on the Claude Code lane: `material_missing`
+    # because its browns are darker than deepseek's (planter
+    # 0.35/0.22/0.12 against 0.55/0.35/0.20), `wrong_proportion`
+    # because its stool is a different legitimate stool. Worse, the
+    # verdicts were not stable — uv_crate came back `material_missing`
+    # in one cycle and clean in the next on the same configuration — and
+    # the examiner's licensed specificity of 1.00 was measured on
+    # controls where candidate and reference come from the SAME run, so
+    # it never covered this use at all.
+    #
+    # converge_auto's own preflight already demands the reference for
+    # the revision under test; this is the half that disagreed.
+    pinned_golden_directory = (
         Path("_evaluate/golden") / f"{brief.name}_v{PINNED_PROMPT_REVISION}"
+    )
+    candidate_golden_directory = (
+        Path("_evaluate/golden") / f"{brief.name}_v{arguments.revision}"
+    )
+    golden_directory = pinned_golden_directory
+    examiner_golden_directory = (
+        candidate_golden_directory
+        if (candidate_golden_directory / "manifest.json").exists()
+        else pinned_golden_directory
     )
     if arguments.examiner == "auto":
         from blended.evaluate.examiner import load_calibration
@@ -129,10 +162,10 @@ def main(argv) -> int:
         licence_problems = load_calibration().problems(
             examiner_identity(client.config.vision_model)
         )
-        if not (golden_directory / "manifest.json").exists():
+        if not (examiner_golden_directory / "manifest.json").exists():
             licence_problems.append(
-                f"no golden reference at {golden_directory}: run "
-                f"`make pin-golden-views REVISION={PINNED_PROMPT_REVISION}`"
+                f"no golden reference at {examiner_golden_directory}: run "
+                f"`make pin-golden-views REVISION={arguments.revision}`"
             )
         if licence_problems:
             raise SystemExit(
@@ -311,7 +344,7 @@ def main(argv) -> int:
         # only examines.
         verdict = examine_asset(
             VisionDescriber(client, client.config.vision_model),
-            golden_directory,
+            examiner_golden_directory,
             render_directory,
             brief,
             client.config.vision_model,

@@ -163,6 +163,12 @@ CRATE_BODY_HEIGHT_Z_M = 0.40
 CRATE_WALL_THICKNESS_M = 0.02
 CRATE_LID_SIZE_M = 0.50
 CRATE_LID_THICKNESS_M = 0.06
+# How far apart the crate's two parts must be in linear RGB before the
+# lid is visible at all. The signed-off reference measures exactly 0.15
+# (body 0.6/0.4/0.2 against lid 0.5/0.3/0.15), so the floor sits below
+# it with margin: the artifact that earned the pin conforms, and the
+# uniform-colour run that made the lid disappear (distance 0) does not.
+CRATE_LID_MINIMUM_COLOUR_DISTANCE_RGB = 0.10
 # "Resting on" another part, same tolerance as resting on the ground
 # plane — the planter's grounding tolerance.
 CRATE_LID_STACK_TOLERANCE_M = GROUNDING_TOLERANCE_M
@@ -350,6 +356,38 @@ class NoInterpenetrationSpec:
     maximum_intersecting_face_pairs: int = 0
     minimum_separation_m: float | None = None
 
+
+@dataclass(frozen=True)
+class DistinctMaterialSpec:
+    """Two touching parts must be TELLABLE APART in a render.
+
+    The gap this closes, measured 2026-09-05. The crate brief specifies
+    a lid with the body's exact footprint, resting flush on the rim, and
+    every numeric check passed: 0.5000 x 0.5000 x 0.0600 at base_z
+    0.4000, sitting on the body, centred, not sunk. And the render shows
+    ONE CONTINUOUS BOX — no seam, no ledge, no lid. The examiner said so
+    (`missing_feature`) and the geometry gates could not, because
+    nothing was geometrically wrong.
+
+    What makes the signed-off reference readable is COLOUR: its body is
+    (0.6, 0.4, 0.2) and its lid (0.5, 0.3, 0.15), a distance of exactly
+    0.15, while the run that vanished gave both parts (0.45, 0.30, 0.15)
+    — a distance of 0. So the requirement is contrast between the
+    parts, not a particular colour: an asset whose parts cannot be
+    distinguished in any view has not delivered the brief, whatever it
+    measures.
+
+    Distance is Euclidean over linear RGB base colour. Deliberately NOT
+    a required hue or luminance: pinning THOSE would bake one writer's
+    taste into the acceptance spec, and the brief never asked for a
+    particular brown.
+    """
+
+    name: str
+    part_a: str
+    part_b: str
+    minimum_colour_distance_rgb: float
+    why: str
 
 @dataclass(frozen=True)
 class AssetBrief:
@@ -844,7 +882,13 @@ CRATE_WITH_LID_BRIEF = AssetBrief(
         f"not floating above it and not sunk into it — centred on the "
         f"crate so it does not overhang one side. Each object is a single "
         f"watertight manifold mesh under {DEFAULT_PROP_TRIANGLE_BUDGET} "
-        f"triangles with a material assigned. The only mesh objects left "
+        f"triangles with a material assigned. Because the lid has the "
+        f"body's exact footprint and sits flush on the rim, COLOUR is "
+        f"the only thing that makes it visible: give the two objects "
+        f"materials whose base colours differ by at least "
+        f"{CRATE_LID_MINIMUM_COLOUR_DISTANCE_RGB} in linear RGB "
+        f"distance, or the crate renders as one featureless box. The "
+        f"only mesh objects left "
         f"in the scene when you are done are 'CrateBody' and 'CrateLid'."
     ),
     parts=(
@@ -913,6 +957,20 @@ CRATE_WITH_LID_BRIEF = AssetBrief(
             why=(
                 "a lid sunk into the body reads as closed in every "
                 "orthographic view"
+            ),
+        ),
+        DistinctMaterialSpec(
+            name="lid_is_distinguishable_from_the_body",
+            part_a="CrateLid",
+            part_b="CrateBody",
+            minimum_colour_distance_rgb=(
+                CRATE_LID_MINIMUM_COLOUR_DISTANCE_RGB
+            ),
+            why=(
+                "a lid the same colour as the body, flush on the rim and "
+                "the same footprint, is invisible in every view: the "
+                "render shows one continuous box and no measurement "
+                "notices"
             ),
         ),
     ),

@@ -1,15 +1,15 @@
 {
   "blender_series": "5.2",
   "brief": "ribbed_column",
-  "captured_at": "2026-09-06T00:46:53.409532+00:00",
-  "iteration": 59,
+  "captured_at": "2026-09-06T02:34:43.025014+00:00",
+  "iteration": 58,
   "prompt_identity": "v11:d90e5ee9e59d",
   "revision": 11,
   "view_sha256": {
-    "bottom": "d25b3871832112fd7813b0038a6f02d07f1e27b78ec62390d10d767f4a68d96d",
-    "front": "8f6df5c363a3b2660142e85f9a6f78c48b533057e1f4832c4f50f82bb301d2cc",
-    "right": "8f6df5c363a3b2660142e85f9a6f78c48b533057e1f4832c4f50f82bb301d2cc",
-    "three_quarter": "ed65d4acdcf293352ed1ef680bd3875048cbfe6e2f3c1283f75c961040b15427",
-    "top": "ccfa41ac4d2f67b1ce1039d6c80c8a55be4f053d07201636b885161c36223eb2"
+    "bottom": "133efd6df4d357bb5550bf8ca69944fd1c670bd8d8f0e75aa05ecf34edfc67fe",
+    "front": "ef5f83450e1f2286446513608bd0afdd29adec8fbbcedaed9085c0bfe7700b56",
+    "right": "ef5f83450e1f2286446513608bd0afdd29adec8fbbcedaed9085c0bfe7700b56",
+    "three_quarter": "249a8076f1676eeacc80212892e1d8b3078ab914bb75ae4b71663668c3ce45a4",
+    "top": "a2b26e7f8571dac8d0279ccc94b0c062e615087fde3117bbf0bb3e6f8ce3fa51"
   }
 }

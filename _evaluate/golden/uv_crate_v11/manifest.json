@@ -1,15 +1,15 @@
 {
   "blender_series": "5.2",
   "brief": "uv_crate",
-  "captured_at": "2026-09-06T00:46:53.654406+00:00",
-  "iteration": 61,
+  "captured_at": "2026-09-06T02:34:43.265167+00:00",
+  "iteration": 60,
   "prompt_identity": "v11:d90e5ee9e59d",
   "revision": 11,
   "view_sha256": {
-    "bottom": "cc5987de8350f7d534c3063f75ed06eed3376344f135ae7e2be84e15a9192d61",
-    "front": "346dacdc98f9d7c07f1508986ec9e442e1fbf4a9952b635b5b5fda2f5963e8d8",
-    "right": "346dacdc98f9d7c07f1508986ec9e442e1fbf4a9952b635b5b5fda2f5963e8d8",
-    "three_quarter": "51dc1ce50f289c484d2cb6ad32e8b6cac32243d4c4a7c9368b6830a72509c558",
-    "top": "5610a55987af453a9263ca1fac0ab2db706d4239863116cb1fff65e9651e933a"
+    "bottom": "81449e1461bc4f40d6ac9424269cf9cae0aab82da24d765ade6d7da668bff793",
+    "front": "a392da1749e8925cc68f20c8843c0e382ea286a0e947ae830e3d091b42d7a5a8",
+    "right": "a392da1749e8925cc68f20c8843c0e382ea286a0e947ae830e3d091b42d7a5a8",
+    "three_quarter": "1842fb5c5c6d0c6b94dcf1d7624f404bfc61a3b207401ca2792eaa790a2c0c1e",
+    "top": "77cd768b8932812f1a54ec20eae6dd4890ccc0ae9777b5943cdd8ae70a7b2b46"
   }
 }

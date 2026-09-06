@@ -2075,6 +2075,90 @@ MISTAKES: tuple[MistakeRecord, ...] = (
         ),
         recorded_on="2026-09-05",
     ),
+    MistakeRecord(
+        identifier="every-number-was-right-and-the-lid-was-invisible",
+        scope="brief",
+        failure=(
+            "crate_with_lid passed every deterministic check — CrateLid "
+            "0.5000 x 0.5000 x 0.0600 at base_z 0.4000, resting on the "
+            "body, centred, not sunk — and the render showed ONE "
+            "CONTINUOUS BOX. No lid, no seam, no ledge. The examiner "
+            "reported `missing_feature` and no measurement could, which "
+            "halted the v11 convergence attempt as harness_critique."
+        ),
+        cause=(
+            "The brief specified a lid with the body's EXACT footprint "
+            "resting flush on the rim, so nothing about the geometry "
+            "distinguishes the two parts from outside. What made the "
+            "signed-off reference readable was never geometry but "
+            "COLOUR: body (0.6, 0.4, 0.2) against lid (0.5, 0.3, 0.15), "
+            "a distance of 0.15. The run that vanished gave both parts "
+            "(0.45, 0.30, 0.15) — distance 0 — which no check forbade."
+        ),
+        fix=(
+            "DistinctMaterialSpec: two named parts must differ in base "
+            "colour by at least CRATE_LID_MINIMUM_COLOUR_DISTANCE_RGB "
+            "(0.10, set below the reference's measured 0.15 so the "
+            "artifact that earned the pin still conforms), and the brief "
+            "text now says so. Deliberately contrast, NOT a required "
+            "hue or luminance: pinning those would bake one writer's "
+            "taste into the acceptance spec. Verified across two later "
+            "cycles — `missing_feature` never returned."
+        ),
+        guarded_by=(
+            "tests/blender/test_acceptance_gate.py::"
+            "test_a_lid_the_same_colour_as_the_body_fails_even_though_it_"
+            "measures_right (and ::test_a_contrasting_lid_passes, which "
+            "keeps the probe from condemning the reference)"
+        ),
+        recorded_on="2026-09-05",
+    ),
+    MistakeRecord(
+        identifier="the-examiners-licence-did-not-cover-how-it-is-used",
+        scope="harness_code",
+        failure=(
+            "Three convergence cycles on one unchanged configuration "
+            "(15 runs, 14 of them green on every deterministic gate) "
+            "never produced a clean examiner sweep, and the deviations "
+            "MOVED: uv_crate came back `material_missing` in one cycle "
+            "and clean in the next, ribbed_column the reverse, "
+            "planter_box clean then flagged. A pin needs 5/5 clean at "
+            "once, so the loop cannot close — and re-rolling cycles "
+            "until one comes up clean would be selecting on the "
+            "instrument's noise."
+        ),
+        cause=(
+            "calibrate_examiner builds its five clean CONTROLS by "
+            "replaying ONE recorded run and comparing it against the "
+            "reference minted from THAT SAME run — pixel-identical "
+            "inputs. Control specificity 1.00 therefore measures "
+            "'does it stay quiet when shown the same image twice', "
+            "while the loop uses it to compare a FRESH run against an "
+            "exemplar. That regime was never measured, and the "
+            "false-alarm rate in it is plainly not zero: planter_box "
+            "iteration 62 was flagged against planter_box_v11, an "
+            "exemplar minted from iteration 57 — same lane, same "
+            "prompt, same brief, both gate-clean."
+        ),
+        fix=(
+            "NOT YET FIXED, and deliberately not worked around. The "
+            "measurement to make is cross-run control specificity: "
+            "clean run B against an exemplar minted from clean run A. "
+            "If that number is below REQUIRED_CONTROL_SPECIFICITY the "
+            "examiner may not judge unattended at all, which is a "
+            "decision about the loop, not a tuning knob. Until it is "
+            "measured, treat a machine verdict on a fresh run as "
+            "advisory and let the deterministic gates carry the "
+            "qualification (which is the existing order: tool feedback "
+            "outranks model feedback, 10.48550/arXiv.2409.02977)."
+        ),
+        guarded_by=(
+            "_evaluate/verdicts.jsonl iterations 52-65 record the "
+            "hopping deviations; scripts/calibrate_examiner.py is where "
+            "the cross-run control class belongs"
+        ),
+        recorded_on="2026-09-05",
+    ),
 )
 
 

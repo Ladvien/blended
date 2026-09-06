@@ -714,3 +714,87 @@ def test_the_refinement_step_is_reachable_from_the_brief(empty_scene):
     step = brief.refinements[0]
     assert step.instruction_text.strip()
     assert step.changed, "a refinement that changes nothing measures nothing"
+
+
+def _build_crate(lid_colour_rgb):
+    """A geometrically PERFECT crate: only the lid's colour varies."""
+    from blended.evaluate import briefs
+    from blended.ops.booleans import boolean_difference
+    from blended.ops.materials import assign_material
+    from blended.ops.primitives import add_box, link_into_scene
+
+    wall = briefs.CRATE_WALL_THICKNESS_M
+    body = add_box(
+        "CrateBody",
+        width_m=briefs.CRATE_BODY_SIZE_M,
+        depth_m=briefs.CRATE_BODY_SIZE_M,
+        height_m=briefs.CRATE_BODY_HEIGHT_Z_M,
+        location_m=(0.0, 0.0, 0.0),
+    )
+    link_into_scene(body)
+    cavity_height = briefs.CRATE_BODY_HEIGHT_Z_M
+    cavity = add_box(
+        "Cavity",
+        width_m=briefs.CRATE_BODY_SIZE_M - 2 * wall,
+        depth_m=briefs.CRATE_BODY_SIZE_M - 2 * wall,
+        height_m=cavity_height,
+        location_m=(0.0, 0.0, wall),
+    )
+    link_into_scene(cavity)
+    boolean_difference(body, cavity)
+
+    lid = add_box(
+        "CrateLid",
+        width_m=briefs.CRATE_LID_SIZE_M,
+        depth_m=briefs.CRATE_LID_SIZE_M,
+        height_m=briefs.CRATE_LID_THICKNESS_M,
+        location_m=(0.0, 0.0, briefs.CRATE_BODY_HEIGHT_Z_M),
+    )
+    link_into_scene(lid)
+    assign_material(body, "CrateBodyPaint", base_color_rgb=(0.6, 0.4, 0.2))
+    assign_material(lid, "CrateLidPaint", base_color_rgb=lid_colour_rgb)
+    return body, lid
+
+
+def test_a_lid_the_same_colour_as_the_body_fails_even_though_it_measures_right(
+    empty_scene,
+):
+    """The gap that halted the v11 convergence attempt.
+
+    Every number is correct — footprint, thickness, resting on the rim,
+    centred, not sunk — and the render still shows one continuous box,
+    because the lid has the body's exact footprint and its exact
+    colour. The examiner saw it (`missing_feature`) when no
+    measurement could.
+    """
+    from blended.evaluate.acceptance import evaluate_brief
+    from blended.evaluate.briefs import get_brief
+
+    brief = get_brief("crate_with_lid")
+    _build_crate(lid_colour_rgb=(0.6, 0.4, 0.2))
+    report = evaluate_brief(brief)
+
+    # The geometry is beyond reproach: the ONLY complaint is visibility.
+    assert report.relation_failures != (), "an invisible lid passed the gate"
+    assert any(
+        "lid_is_distinguishable_from_the_body" in failure
+        for failure in report.relation_failures
+    ), report.relation_failures
+    assert not any(
+        name in failure
+        for failure in report.relation_failures
+        for name in ("lid_sits_on_the_body", "lid_is_centred", "does_not_sink")
+    ), report.relation_failures
+
+
+def test_a_contrasting_lid_passes(empty_scene):
+    """The signed-off reference's own contrast (0.15) must be accepted,
+    or the probe would condemn the artifact that earned the pin."""
+    from blended.evaluate.acceptance import evaluate_brief
+    from blended.evaluate.briefs import get_brief
+
+    brief = get_brief("crate_with_lid")
+    _build_crate(lid_colour_rgb=(0.5, 0.3, 0.15))
+    report = evaluate_brief(brief)
+
+    assert report.relation_failures == (), report.relation_failures
