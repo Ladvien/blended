@@ -14,9 +14,17 @@ proof is the contact sheet this prints at the end.
 Runs inside `blender --background`: bpy is on the main thread, so
 `dispatch_here` — the AgentSession default — is the right dispatcher.
 
-There is no acceptance spec: a photograph carries no dimensions, so the
-structural gate is REPORTED, not enforced. The one hard failure is
-building nothing at all.
+There is no DIMENSIONAL acceptance spec: a photograph carries no
+dimensions, so the structural gate is REPORTED, not enforced. What the
+lane now does have is a COMPARATIVE one — the examiner reads the
+photograph against the three-quarter render in both orders and keeps
+only the deviations that survive the swap, and a surviving deviation
+exits non-zero. Three hard failures: building nothing at all, a turn
+that raised (including an eye that could not read the photograph, which
+is fatal here because the prompt names no shape), and a surviving
+deviation. Abstention is recorded, never a failure. The gate needs an
+eye that is not the writer, so `--vision-model ''` exits 2 before any
+Blender work.
 """
 
 from __future__ import annotations
@@ -61,6 +69,11 @@ DEFAULT_PROMPT = (
     "and proportions in the photo."
 )
 EVENT_PREVIEW_CHARACTERS = 300
+# The photograph IS the specification, so it is the reference view.
+# examine_view runs the position-swapped double pass and keeps only the
+# tags that survive the swap, which is the whole reason it can be
+# pointed at two arbitrary images.
+EXAMINER_VIEW_NAME = "three_quarter"
 
 
 def parse_arguments(argv):
@@ -82,11 +95,22 @@ def parse_arguments(argv):
 def main(argv) -> int:
     import bpy
 
-    from blended.agent.loop import AgentSession, ModelConfig, OllamaClient
+    from blended.agent.loop import (
+        AgentSession,
+        EyeUnreachable,
+        ModelConfig,
+        OllamaClient,
+        VisionDescriber,
+    )
     from blended.agent.system_prompt import build_system_prompt
     from blended.analyze import MeshBudget, analyze_object
     from blended.capture import CaptureSettings, capture_contact_sheet
     from blended.capture.reference_photo import normalize_reference_photo
+    from blended.evaluate.examiner import (
+        CANNOT_TELL_TAG,
+        HALTING_DEVIATION_TAGS,
+        examine_view,
+    )
     from blended.export.gltf import export_glb
 
     arguments = parse_arguments(argv)
@@ -123,8 +147,22 @@ def main(argv) -> int:
         print(f"[{kind}] {preview}", flush=True)
 
     config = ModelConfig.from_environment(**overrides)
+    # The gate at the end compares the PHOTOGRAPH against a render, and
+    # `examine_view` needs an eye that is not the writer: a writer
+    # grading its own build against the picture it was given is the
+    # "critique held both the evidence and the verdict" failure this
+    # repository has already paid for once. Refused before any Blender
+    # work, so a run that cannot be graded does not cost a build.
+    if not config.uses_separate_eye:
+        print(
+            "[FAIL] the reference-photo gate needs a separate eye: pass "
+            "--vision-model",
+            flush=True,
+        )
+        return 2
+    client = OllamaClient(config)
     session = AgentSession(
-        client=OllamaClient(config),
+        client=client,
         output_directory=output_directory / "agent",
         maximum_tool_calls_per_turn=arguments.max_tool_calls,
         messages=[
@@ -135,6 +173,34 @@ def main(argv) -> int:
         require_plan=True,
     )
 
+    summary: dict = {
+        "photo": str(Path(arguments.photo).resolve()),
+        "normalized_photo": str(reference),
+        "prompt": arguments.prompt,
+        "writer_model": config.model,
+        "vision_model": config.vision_model,
+        "objects": [],
+        "structural_failures": {},
+        "sheet": "",
+        "glb": [],
+        "answer": "",
+        "error": "",
+        "eye_reachable": True,
+        "photo_gate_deviations": [],
+        "photo_gate_abstained": False,
+        "photo_gate_reasoning": "",
+    }
+
+    def write_summary() -> None:
+        """Every exit past the turn leaves a record.
+
+        The no-mesh path used to return 1 with no summary at all, which
+        is exactly the path an unreachable eye now takes — so the run
+        with the most to explain was the one that explained nothing.
+        """
+        summary["tool_calls"] = tool_call_count
+        (output_directory / "summary.json").write_text(json.dumps(summary, indent=1))
+
     print(f"[user] {arguments.prompt}", flush=True)
     answer = ""
     error = ""
@@ -142,9 +208,17 @@ def main(argv) -> int:
         answer = session.send(
             arguments.prompt, on_event=on_event, reference_images=(reference,)
         )
+    except EyeUnreachable:
+        # Structural, not a traceback grep: `deliver_images` is fatal on
+        # the reference-photo path precisely so this is distinguishable.
+        summary["eye_reachable"] = False
+        error = traceback.format_exc()[-1500:]
+        print(f"[FAIL] the eye could not read the photograph:\n{error}", flush=True)
     except Exception:  # noqa: BLE001 — recorded as the run's finding
         error = traceback.format_exc()[-1500:]
         print(f"[FAIL] the turn raised:\n{error}", flush=True)
+    summary["answer"] = answer
+    summary["error"] = error
 
     bpy.context.view_layer.update()
     built = [
@@ -154,6 +228,7 @@ def main(argv) -> int:
     ]
     if not built:
         print("[FAIL] the agent created no mesh", flush=True)
+        write_summary()
         return 1
 
     # Reported, not enforced: a photograph carries no acceptance spec.
@@ -183,22 +258,55 @@ def main(argv) -> int:
             flush=True,
         )
 
-    summary = {
-        "photo": str(Path(arguments.photo).resolve()),
-        "normalized_photo": str(reference),
-        "prompt": arguments.prompt,
-        "writer_model": config.model,
-        "vision_model": config.vision_model,
-        "tool_calls": tool_call_count,
-        "objects": [scene_object.name for scene_object in built],
-        "structural_failures": structural_failures,
-        "sheet": str(sheet),
-        "glb": exported,
-        "answer": answer,
-        "error": error,
-    }
-    (output_directory / "summary.json").write_text(json.dumps(summary, indent=1))
+    # THE ACCEPTANCE SPEC THIS LANE DID NOT HAVE. The photograph is the
+    # reference and the three-quarter render is the candidate;
+    # `examine_view` runs both orders and keeps only the tags that
+    # survive the swap, so a position-biased answer cannot decide the
+    # run. A renamed capture convention must fail loud rather than skip
+    # the gate, so a missing view raises instead of shrugging.
+    test_view = output_directory / f"{EXAMINER_VIEW_NAME}.png"
+    if not test_view.exists():
+        raise FileNotFoundError(
+            f"no {test_view}: capture_views writes one PNG per "
+            f"VIEW_DIRECTIONS entry, so the examiner's view name and the "
+            f"capture convention have drifted apart"
+        )
+    verdict = examine_view(
+        VisionDescriber(client, config.vision_model),
+        golden_view=reference,
+        test_view=test_view,
+        view_name=EXAMINER_VIEW_NAME,
+    )
+    photo_gate_deviations = tuple(
+        tag for tag in verdict.order_consistent_tags
+        if tag in HALTING_DEVIATION_TAGS
+    )
+    abstained = CANNOT_TELL_TAG in verdict.order_consistent_tags
+    for tag in photo_gate_deviations:
+        print(f"[photo-gate] surviving deviation: {tag}", flush=True)
+    if abstained:
+        # Recorded, never a failure — the examiner's semantics
+        # everywhere else in this repository.
+        print("[photo-gate] the examiner abstained", flush=True)
+    if not photo_gate_deviations and not abstained:
+        print("[photo-gate] no surviving deviation", flush=True)
+
+    summary["objects"] = [scene_object.name for scene_object in built]
+    summary["structural_failures"] = structural_failures
+    summary["sheet"] = str(sheet)
+    summary["glb"] = exported
+    summary["photo_gate_deviations"] = list(photo_gate_deviations)
+    summary["photo_gate_abstained"] = abstained
+    summary["photo_gate_reasoning"] = verdict.reference_first_reasoning
+    write_summary()
     print(f"[sheet] {sheet}", flush=True)
+    if error:
+        # A turn that RAISED is a failed run, not a run with a note. The
+        # unreachable eye now lands here, because `deliver_images` is
+        # fatal on the reference-photo path.
+        return 1
+    if photo_gate_deviations:
+        return 1
     return 0
 
 

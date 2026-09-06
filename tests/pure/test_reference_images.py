@@ -23,8 +23,10 @@ from blended.agent.loop import (
     REFERENCE_PHOTO_LEAD_IN,
     REFERENCE_PHOTO_READ_PROMPT,
     AgentSession,
+    EyeUnreachable,
     ModelConfig,
     OllamaClient,
+    deliver_images,
 )
 
 PHOTO_BYTES = b"png-bytes-of-a-three-legged-stool"
@@ -180,3 +182,63 @@ def test_a_turn_without_a_photo_is_untouched(tmp_path, sent_payloads):
         if message["role"] == "user"
     )
     assert user_message == {"role": "user", "content": "Build a crate."}
+
+
+def test_a_blind_eye_on_the_photo_path_raises_instead_of_guessing(
+    tmp_path, monkeypatch, photo
+):
+    """The photograph IS the specification, so no photo means no run.
+
+    Before this, an unreachable eye was swallowed: `deliver_images`
+    substituted EYE_UNREACHABLE_NOTE and the writer — handed a prompt
+    that deliberately names no shape — invented an object, and the lane
+    exited 0. A note is a fine answer about the writer's own render and
+    a lie about the user's photograph.
+    """
+    reached_the_writer: list[dict] = []
+
+    def capture(self, path, payload, timeout_seconds):
+        if payload["model"] == EYE_MODEL:
+            raise RuntimeError("HTTP 404: model not found")
+        reached_the_writer.append(payload)
+        return {"message": {"role": "assistant", "content": "built it"}}
+
+    monkeypatch.setattr(OllamaClient, "_request", capture)
+    session = _session(tmp_path, vision_model=EYE_MODEL)
+
+    with pytest.raises(EyeUnreachable) as raised:
+        session.send("Build this.", reference_images=(photo,))
+
+    assert EYE_MODEL in str(raised.value), "the failure must name the eye"
+    assert reached_the_writer == [], (
+        "the writer was handed a turn about a photograph it never saw"
+    )
+
+
+def test_a_blind_eye_on_the_render_path_still_reports_a_note(tmp_path, monkeypatch):
+    """The scope of the flip: renders keep the note.
+
+    A blind turn about the writer's own render is recoverable — the gate
+    report still describes the mesh — so making that fatal too would
+    turn a recoverable turn into a failed run. This is the control that
+    keeps the change from spreading past the one path that needed it.
+    """
+    def capture(self, path, payload, timeout_seconds):
+        raise RuntimeError("HTTP 404: model not found")
+
+    monkeypatch.setattr(OllamaClient, "_request", capture)
+    client = OllamaClient(
+        ModelConfig.from_environment(model="writer", vision_model=EYE_MODEL)
+    )
+    render = tmp_path / "render.png"
+    render.write_bytes(PHOTO_BYTES)
+    message = {"role": "user", "content": "here is the render"}
+
+    description = deliver_images(message, [render], client, "RENDER")
+
+    assert description.startswith("(The vision model could not be reached"), (
+        description
+    )
+    assert "working blind on this image" in description
+    assert "404" in description, "the note names the failure, not just its shape"
+    assert "RENDER" in message["content"], "the header still frames the note"

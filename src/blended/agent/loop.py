@@ -1141,6 +1141,16 @@ def _turn_cost_from_body(body: dict) -> TurnCost:
 
 
 
+class EyeUnreachable(RuntimeError):
+    """The eye could not be reached on a path where that is fatal.
+
+    A distinct type rather than a traceback a caller has to string-match:
+    `scripts/photo_to_model.py` records `eye_reachable` in its summary,
+    and deciding that by grepping a truncated traceback would be a guess
+    dressed as a measurement.
+    """
+
+
 class VisionDescriber:
     """Turns rendered images into text for a writer that cannot see.
 
@@ -1240,6 +1250,8 @@ def deliver_images(
     header: str,
     question: str = "",
     prompt: str = "",
+    *,
+    eye_failure_is_fatal: bool = False,
 ) -> str:
     """Put images in front of the writer on either eye configuration.
 
@@ -1252,6 +1264,14 @@ def deliver_images(
     images and its description is appended under `header`. Returns the
     eye's text, or "" on the native path. `message["content"]` is
     mutated in place.
+
+    `eye_failure_is_fatal` decides what an unreachable eye MEANS, and
+    the two callers genuinely differ. A blind turn about the writer's
+    own render is recoverable — the gate report still describes the
+    mesh, so a note is honest. A blind turn about the USER'S PHOTOGRAPH
+    has no specification at all: the reference-photo prompt deliberately
+    names no shape, so a writer handed `EYE_UNREACHABLE_NOTE` instead of
+    pixels will invent an object and the run will look like a success.
     """
     if not client.config.uses_separate_eye:
         # Placeholders on this branch too: `claude_code.render_call`
@@ -1264,7 +1284,12 @@ def deliver_images(
     describer = VisionDescriber(client, client.config.vision_model)
     try:
         description = describer.describe(image_paths, question, prompt)
-    except Exception as eye_error:  # noqa: BLE001
+    except Exception as eye_error:
+        if eye_failure_is_fatal:
+            raise EyeUnreachable(
+                f"{client.config.vision_model} could not read the "
+                f"reference image(s): {eye_error}"
+            ) from eye_error
         description = EYE_UNREACHABLE_NOTE.format(error=eye_error)
     message["content"] = (
         f"{message['content']}\n\n"
@@ -1372,12 +1397,16 @@ class AgentSession:
             # ordering the render path uses, so the panel can pair them.
             for reference_path in reference_images:
                 emit("reference", str(reference_path))
+            # FATAL here, unlike the render path: the reference-photo
+            # prompt names no shape, so a writer handed a note instead
+            # of pixels has no specification and invents an object.
             description = deliver_images(
                 user_message,
                 list(reference_images),
                 self.client,
                 REFERENCE_IMAGE_HEADER,
                 prompt=REFERENCE_PHOTO_READ_PROMPT,
+                eye_failure_is_fatal=True,
             )
             if description:
                 emit("vision", description)

@@ -2914,6 +2914,48 @@ MISTAKES: tuple[MistakeRecord, ...] = (
         guarded_by="No unit test can catch this — it is a property of the GUI harness, not of the addon. The guard is the rule: a pixel diff of 0 is reported only alongside a control diff > 0 measured in the same session. Live numbers for the overlay flip: control 1333/619344 differing, composer strip 0/619344, overlay column 64467/732160 empty-vs-painted and 13647/732160 short-vs-long reply.",
         recorded_on="2026-09-06",
     ),
+    MistakeRecord(
+        identifier="a-lane-with-no-acceptance-spec-cannot-fail",
+        scope="harness_code",
+        failure=(
+            "scripts/photo_to_model.py returned 0 whenever ANY mesh "
+            "existed. `error` was set from the turn's traceback and "
+            "written into summary.json but never read for the exit code; "
+            "`structural_failures` was printed and stored but never "
+            "enforced; and an unreachable eye was swallowed upstream — "
+            "deliver_images substituted EYE_UNREACHABLE_NOTE, so the "
+            "writer got a prompt that deliberately names no shape and no "
+            "pixels, invented an object, and the run exited 0. The "
+            "no-mesh path returned 1 while writing NO summary.json at "
+            "all, so the run with the most to explain explained nothing."
+        ),
+        cause=(
+            "The module docstring's own sentence — 'there is no "
+            "acceptance spec: a photograph carries no dimensions' — was "
+            "read as 'therefore nothing can be gated'. But a photograph "
+            "supports a COMPARATIVE spec even though it supports no "
+            "dimensional one, and `examine_view` already existed and "
+            "already takes two arbitrary images."
+        ),
+        fix=(
+            "The photograph is the reference view and the three_quarter "
+            "render is the candidate; examine_view runs both orders and "
+            "only tags surviving the swap count, so a position-biased "
+            "answer cannot decide the run. A surviving HALTING tag exits "
+            "1, abstention is recorded and never a failure, a raised "
+            "turn exits 1, and the gate needs an eye that is not the "
+            "writer (--vision-model '' exits 2 BEFORE any Blender work) "
+            "because a writer grading its own build against the picture "
+            "it was handed holds both the evidence and the verdict. "
+            "deliver_images gained eye_failure_is_fatal, True only at "
+            "the reference-photo call site, raising a dedicated "
+            "EyeUnreachable rather than a traceback the caller has to "
+            "string-match. Every path past the turn now writes "
+            "summary.json."
+        ),
+        guarded_by="tests/pure/test_reference_images.py::test_a_blind_eye_on_the_photo_path_raises_instead_of_guessing (the writer receives NO payload) and ::test_a_blind_eye_on_the_render_path_still_reports_a_note (the control that keeps the change from spreading). Live runs 2026-09-06, exit codes 2 / 1 / 0: --vision-model '' exits 2 naming the flag; --vision-model no-such-model-exists:v0 exits 1 with eye_reachable false, tool_calls 0 and objects []; a real run exits 0 with no surviving deviation. Gate sensitivity proven separately — a stool photograph against a crate render yields the surviving tag missing_part, so the exit 0 is not a gate that cannot fail.",
+        recorded_on="2026-09-06",
+    ),
 )
 
 
