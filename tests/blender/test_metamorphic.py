@@ -55,6 +55,29 @@ REFINED_COUNTS = {
     "pallet": ("deck_board_count", 6),
 }
 
+# The permutable unit each builder unions, and the reversed order.
+# `probe` only ever varies PARAMETERS, so a permutation is reachable
+# only where construction order is one — hence the field name here and
+# the two new parameters in barrel.py and pallet.py.
+#
+# CrateBuilder.build is a single add_box plus a bevel: one part, no
+# boolean sequence, so crate has no permutable unit and is excluded
+# rather than given an invented one. Same pattern as
+# PALLET_SMALL_SCALE_FACTOR, where pallet is excluded from a scale its
+# own validate() refuses.
+PERMUTABLE_BUILD_ORDERS = {
+    "barrel": ("hoop_build_order", (1, 0)),
+    "pallet": ("stringer_build_order", (2, 1, 0)),
+}
+
+# The noise floor a retriangulating boolean leaves on the SOLID when
+# only the operand order changed. Measured 2026-09-06: barrel volume
+# bit-identical and area rel 1.0e-9; pallet volume rel 1.7e-8 and area
+# rel 8.5e-9. 1e-6 is ~60x the worst observed noise and still ~1000x
+# tighter than any shape change worth the name — the 1 mm hoop shift
+# used as this relation's negative control moves the volume by far more.
+CONSTRUCTION_ORDER_REL_TOL = 1.0e-6
+
 
 def _builders():
     from blended.builders import (
@@ -179,6 +202,42 @@ def _topology_relation(before, after):
     )
 
 
+def _construction_order_relation(before, after):
+    """Same parts, different union order: the same SOLID.
+
+    Not the same mesh. Measured 2026-09-06, reversing the union order:
+    the barrel keeps 816 triangles and a bit-identical volume, but the
+    pallet moves 334 -> 336 triangles, and BOTH semantic digests change,
+    because Blender's EXACT boolean retriangulates from whatever
+    intermediate it was handed. Union is commutative on solids, not on
+    tessellations — so triangle_count and semantic_digest are
+    deliberately NOT asserted here, and the module docstring records the
+    falsified first version rather than leaving it to be retried.
+    """
+    from blended.analyze import all_of, measured_the_same, unchanged
+
+    return all_of(
+        *[
+            measured_the_same(
+                label, before[label], after[label], CONSTRUCTION_ORDER_REL_TOL
+            )
+            for label in ("volume_m3", "surface_area_m2")
+        ],
+        *[
+            unchanged(label, before[label], after[label])
+            for label in (
+                "dimension_x_m",
+                "dimension_y_m",
+                "dimension_z_m",
+                "connected_component_count",
+                "non_manifold_edge_count",
+                "boundary_edge_count",
+                "self_intersecting_face_pair_count",
+            )
+        ],
+    )
+
+
 def _relations_for(builder_name, parameters):
     from blended.analyze import Relation
     from blended.builders.pallet import BOOLEAN_EMBED_M
@@ -191,7 +250,7 @@ def _relations_for(builder_name, parameters):
     )
     field_name, refined_value = REFINED_COUNTS[builder_name]
 
-    return (
+    relations = [
         Relation(
             name="uniform_scale_doubles_every_extent",
             transform=lambda parameters: _scale_lengths(parameters, DOUBLE_FACTOR),
@@ -231,7 +290,26 @@ def _relations_for(builder_name, parameters):
                 "object's size in metres."
             ),
         ),
-    )
+    ]
+    if builder_name in PERMUTABLE_BUILD_ORDERS:
+        order_field, reversed_order = PERMUTABLE_BUILD_ORDERS[builder_name]
+        relations.append(
+            Relation(
+                name="construction_order_does_not_change_the_mesh",
+                transform=lambda parameters: dataclasses.replace(
+                    parameters, **{order_field: reversed_order}
+                ),
+                relation=_construction_order_relation,
+                justification=(
+                    "Construction order is exactly what a code-writing "
+                    "agent varies between attempts. Unioning the same "
+                    "parts in a different order must produce the same "
+                    "solid; a digest that moves means the boolean "
+                    "sequence, not the geometry, decided the result."
+                ),
+            )
+        )
+    return tuple(relations)
 
 
 @pytest.mark.parametrize("builder_name", sorted(REFINED_COUNTS))

@@ -11,7 +11,28 @@ A metamorphic relation needs neither. It changes the INPUT in a known
 way and asserts a relation between the two OUTPUTS. Double every length
 and every extent must double. Refine the segment count and the triangle
 count must rise while the extents stay put. Neither claim needs to know
-what the object is, so both survive having no brief.
+what the object is, so both survive having no brief. Permute the boolean
+union order and THE SOLID must not move — volume, surface area, extents
+and topology class.
+
+FALSIFIED, recorded here so it is not retried: the permutative relation
+was first written to assert MESH identity, `semantic_digest` unchanged
+and `triangle_count` unchanged. Measured on 2026-09-06 against both
+multi-part builders, reversing the union order:
+
+  barrel  816 -> 816 tris, volume 0.31573285487001135 both, BIT-IDENTICAL,
+          digest 665a17f1... -> 4f927c63..., area rel 1.0e-9
+  pallet  334 -> 336 tris, volume rel 1.7e-8, area rel 8.5e-9,
+          digest 7213b524... -> 0284e97f...
+
+So union order changes the TRIANGULATION and the vertex order — which is
+all a digest sees — while leaving the solid alone to within float noise.
+Blender's EXACT boolean retriangulates from whatever intermediate it was
+handed, and it is entitled to: union is commutative on solids, not on
+tessellations. `measure_build` therefore carries `volume_m3` and
+`surface_area_m2`, and the `semantic_digest` key added for the killed
+assertion was removed with it rather than left to invite the same
+vacuous relation again.
 
 THE ONE AUTHORING RULE, learned the expensive way: a relation must be
 anchored in the SEMANTICS of what is being built, never in the
@@ -147,6 +168,23 @@ def strictly_increased(label, before, after, margin=STRICT_MARGIN) -> RelationOu
     )
 
 
+def measured_the_same(label, before, after, rel_tol) -> RelationOutcome:
+    """`after` must equal `before` to a CALLER-NAMED tolerance.
+
+    Separate from `unchanged` because `unchanged`'s tolerance is
+    EXACT_REL_TOL — float-storage noise on a quantity that arithmetic
+    says is identical. A quantity a retriangulating boolean recomputes
+    has a wider, MEASURED noise floor, and quoting that floor at the
+    relation site is the only way a reader can tell the two apart.
+    """
+    ok = math.isclose(after, before, rel_tol=rel_tol, abs_tol=rel_tol)
+    return _outcome(
+        label,
+        ok,
+        f"{before} -> {after}, expected the same within {rel_tol:g} relative",
+    )
+
+
 def all_of(*outcomes: RelationOutcome) -> tuple[RelationOutcome, ...]:
     """Every outcome, evaluated. NEVER short-circuits.
 
@@ -164,6 +202,11 @@ def measure_build(blender_object) -> dict:
     dimensions. There is no second measurement path on purpose: a gate
     measuring with its own private probe is a gate whose disagreements
     with the rest of the harness cannot be adjudicated.
+
+    `volume_m3` and `surface_area_m2` are here because THE SOLID and THE
+    MESH are different things, and only the first is invariant under a
+    permutation of boolean operands. A `semantic_digest` key was tried
+    and removed: see the docstring's falsification note.
     """
     import bpy
 
@@ -184,6 +227,8 @@ def measure_build(blender_object) -> dict:
         "dimension_x_m": dimensions[0],
         "dimension_y_m": dimensions[1],
         "dimension_z_m": dimensions[2],
+        "volume_m3": report.volume_m3,
+        "surface_area_m2": report.surface_area_m2,
     }
 
 

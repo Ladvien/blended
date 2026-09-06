@@ -52,7 +52,6 @@ from bench_thresholds import (  # the pre-registered ranking rule
     TARGET_RELATIVE_IMPROVEMENT,
 )
 from compare_3dcode_rolls import (  # shared loader + set intersection
-    NOISE_METRICS,
     load_roll,
     shared_instances,
 )
@@ -63,8 +62,11 @@ from compare_3dcode_rolls import (  # shared loader + set intersection
 # the same axis, and two files disagreeing about what "better" means is
 # how a coin flip gets promoted.
 PRIMARY_METRIC = RANKING_METRIC
-SHAPE_METRIC = "cd_pca"
 ORIENTATION_METRIC = "delta_orient"
+# Every table here lists the ranking metric FIRST and the reported-only
+# axes after it, in the same order `bench_panel.py` uses. Column order is
+# the rule for a reader who skims one table.
+REPORT_METRICS = (RANKING_METRIC,) + REPORTED_METRICS
 # Sample sizes are quoted at both bars, because 2 sigma is the decision
 # bar and 3 sigma is what a pinned, published number should clear.
 RESOLUTION_SIGMA_LEVELS = (2.0, 3.0)
@@ -215,7 +217,7 @@ def render_report(baseline_rolls, candidate_rolls, instances, arguments) -> str:
         "| metric | baseline | candidate | delta |",
         "|---|---|---|---|",
     ]
-    for metric in NOISE_METRICS:
+    for metric in REPORT_METRICS:
         baseline_value = set_mean(baseline_rolls, instances, metric)
         candidate_value = set_mean(candidate_rolls, instances, metric)
         lines.append(
@@ -230,7 +232,7 @@ def render_report(baseline_rolls, candidate_rolls, instances, arguments) -> str:
          "| worse/better |"),
         "|---|---|---|---|---|---|",
     ]
-    for metric in NOISE_METRICS:
+    for metric in REPORT_METRICS:
         statistics_row = paired_delta(baseline_rolls, candidate_rolls,
                                       instances, metric)
         lines.append(

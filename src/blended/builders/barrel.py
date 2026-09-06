@@ -25,6 +25,13 @@ class BarrelParameters:
     ring_count: int = 8
     hoop_protrusion_m: float = 0.015
     hoop_height_m: float = 0.05
+    # WHICH ORDER the hoops are unioned in. Exists so the permutative
+    # metamorphic relation can reorder the boolean sequence without
+    # touching a single dimension: `probe` only ever varies parameters,
+    # so a construction order that is not a parameter is not reachable
+    # by any relation. Construction order is exactly what a code-writing
+    # agent varies between attempts.
+    hoop_build_order: tuple[int, ...] = (0, 1)
     name: str = "Barrel"
 
     def validate(self) -> None:
@@ -39,6 +46,12 @@ class BarrelParameters:
             raise ValueError("Barrel needs at least two profile rings.")
         if self.hoop_height_m <= 0.0 or self.hoop_protrusion_m <= 0.0:
             raise ValueError("Hoop dimensions must be positive.")
+        if sorted(self.hoop_build_order) != list(
+            range(len(HOOP_POSITION_FRACTIONS))
+        ):
+            raise ValueError(
+                "Hoop build order must be a permutation of the hoop positions."
+            )
 
     def radius_at_height(self, height_z_m: float) -> float:
         """Sine-bulged radius: end_radius at the ends, peak at mid-height."""
@@ -75,7 +88,11 @@ class BarrelBuilder:
         link_into_scene(barrel_object)
         self.created_objects.append(barrel_object)
 
-        for hoop_index, height_fraction in enumerate(HOOP_POSITION_FRACTIONS):
+        # Indexed by hoop_index throughout — geometry, name and position
+        # are all functions of the INDEX, never of the position in the
+        # sequence — so hoop i is identical whatever order it is built in.
+        for hoop_index in parameters.hoop_build_order:
+            height_fraction = HOOP_POSITION_FRACTIONS[hoop_index]
             hoop_center_z_m = parameters.height_m * height_fraction
             hoop_radius_m = (
                 parameters.radius_at_height(hoop_center_z_m)

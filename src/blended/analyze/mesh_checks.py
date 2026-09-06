@@ -76,6 +76,16 @@ class MeshReport:
     # rasterization, with 38% of covered pixels multiply-covered).
     uv_coverage_fraction: float = 0.0
     inverted_facet_count: int = 0
+    # THE SOLID, as distinct from the mesh that represents it. Signed
+    # volume is only meaningful on closed manifold geometry (an open mesh
+    # reports whatever its face normals imply), which is why nothing
+    # gates on it — the same caveat flipped_normal_triangle_count
+    # carries. It exists because "same solid, different triangulation"
+    # is otherwise inexpressible: reversing a builder's boolean union
+    # order leaves the volume bit-identical on the barrel while moving
+    # the pallet's triangle count from 334 to 336.
+    volume_m3: float = 0.0
+    surface_area_m2: float = 0.0
 
     def failures(self, budget: MeshBudget) -> list[str]:
         """Return human-readable failures against a budget (empty = pass)."""
@@ -600,6 +610,13 @@ def analyze_object(blender_object) -> MeshReport:
         working_mesh = bmesh.new()
         working_mesh.from_mesh(evaluated_mesh)
         try:
+            # Computed FIRST, off the mesh exactly as loaded: every later
+            # measurement here either mutates or is entitled to, and a
+            # volume read after a weld is a volume of something else.
+            volume_m3 = working_mesh.calc_volume(signed=True)
+            surface_area_m2 = sum(
+                face.calc_area() for face in working_mesh.faces
+            )
             triangle_count = sum(len(face.verts) - 2 for face in working_mesh.faces)
             non_manifold_edge_count = sum(
                 1 for edge in working_mesh.edges if len(edge.link_faces) > 2
@@ -669,4 +686,6 @@ def analyze_object(blender_object) -> MeshReport:
         ],
         uv_out_of_bounds_face_count=uv_measurements["uv_out_of_bounds_face_count"],
         uv_coverage_fraction=uv_measurements["uv_coverage_fraction"],
+        volume_m3=volume_m3,
+        surface_area_m2=surface_area_m2,
     )

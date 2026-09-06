@@ -2833,6 +2833,45 @@ MISTAKES: tuple[MistakeRecord, ...] = (
         guarded_by="No test can guard a shell habit; the guard is the byte-equality assertion at the end of every negative control, and this record. tests/pure/test_canonical_orientation.py::test_the_reading_names_the_axis_holding_the_middle_extent is what reddened under the probe and what proved the restore.",
         recorded_on="2026-09-06",
     ),
+    MistakeRecord(
+        identifier="a-digest-is-mesh-identity-not-solid-identity",
+        scope="harness_code",
+        failure=(
+            "The permutative metamorphic relation, written to assert "
+            "semantic_digest and triangle_count unchanged when the "
+            "boolean union order is reversed, FAILED on both multi-part "
+            "builders on its first run: 2 failed, 4 passed. Measured — "
+            "barrel 816 -> 816 triangles with a BIT-IDENTICAL volume "
+            "(0.31573285487001135 both) but digest 665a17f1 -> "
+            "4f927c63; pallet 334 -> 336 triangles, volume rel 1.7e-8, "
+            "area rel 8.5e-9, digest 7213b524 -> 0284e97f."
+        ),
+        cause=(
+            "Union is commutative on SOLIDS, not on TESSELLATIONS. "
+            "Blender's EXACT boolean retriangulates from whatever "
+            "intermediate mesh it was handed, so operand order decides "
+            "the triangulation and the vertex order — which is all a "
+            "digest sees. The relation asserted mesh identity while its "
+            "own justification claimed to be about geometry, so it would "
+            "have failed forever on correct builders: a gate that cannot "
+            "pass is as useless as one that cannot fail."
+        ),
+        fix=(
+            "MeshReport gained volume_m3 and surface_area_m2 (computed "
+            "first, off the mesh as loaded, in the bmesh analyze_object "
+            "already opens — one measurement path), measure_build "
+            "carries them, and the relation asserts the SOLID: volume "
+            "and area within a MEASURED CONSTRUCTION_ORDER_REL_TOL of "
+            "1e-6 (~60x the worst observed noise), plus extents and the "
+            "four topology counts exactly. triangle_count and the digest "
+            "are deliberately not asserted, and the falsification is "
+            "recorded in the module docstring WITH the numbers so the "
+            "vacuous version is not retried. The semantic_digest key "
+            "added for the dead assertion was removed with it."
+        ),
+        guarded_by="tests/blender/test_metamorphic.py::test_builders_satisfy_their_metamorphic_relations[barrel] and [pallet] carry construction_order_does_not_change_the_mesh. Negative control, run and reverted: making hoop z depend on sequence_position rather than hoop_index reddens it on surface_area_m2 (2.59578341525048 -> 2.5958127349149436, rel 1.1e-5, 11x the tolerance) while volume_m3 stays inside tolerance, because HOOP_POSITION_FRACTIONS 0.2 and 0.8 sit at equal radii on a sine-bulged barrel and the two shifts cancel in volume. Asserting both quantities is what catches it; either one alone would have missed it.",
+        recorded_on="2026-09-06",
+    ),
 )
 
 

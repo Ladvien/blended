@@ -414,8 +414,10 @@ def dispatch_tool(
             tuple(float(extent) for extent in blender_object.dimensions)
         )
         return (
-            f"GATE {verdict}\n{reading}\n"
-            f"{json.dumps(_report_to_dict(report), indent=1)}",
+            (
+                f"GATE {verdict}\n{reading}\n"
+                f"{json.dumps(_report_to_dict(report), indent=1)}"
+            ),
             [],
         )
 

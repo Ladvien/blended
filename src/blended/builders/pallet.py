@@ -28,6 +28,11 @@ class PalletParameters:
     deck_board_count: int = 5
     deck_board_width_m: float = 0.14
     deck_board_thickness_m: float = 0.022
+    # WHICH ORDER the stringers are unioned in. Same reason as the
+    # barrel's hoop_build_order: `probe` only ever varies parameters, so
+    # a construction order that is not a parameter cannot be reordered
+    # by any relation.
+    stringer_build_order: tuple[int, ...] = (0, 1, 2)
     name: str = "Pallet"
 
     def validate(self) -> None:
@@ -46,6 +51,10 @@ class PalletParameters:
             raise ValueError("Stringers wider than the pallet.")
         if self.deck_board_thickness_m <= BOOLEAN_EMBED_M:
             raise ValueError("Deck boards thinner than the boolean embed.")
+        if sorted(self.stringer_build_order) != list(range(STRINGER_COUNT)):
+            raise ValueError(
+                "Stringer build order must be a permutation of the stringers."
+            )
 
     @property
     def deck_board_pitch_m(self) -> float:
@@ -98,7 +107,10 @@ class PalletBuilder:
             0.0,
             parameters.width_m / 2.0 - parameters.stringer_width_m / 2.0,
         )
-        for stringer_index, stringer_center_y_m in enumerate(stringer_center_ys_m):
+        # Indexed by stringer_index throughout, so stringer i is
+        # identical whatever order it is unioned in.
+        for stringer_index in parameters.stringer_build_order:
+            stringer_center_y_m = stringer_center_ys_m[stringer_index]
             stringer_object = add_box(
                 f"{parameters.name}_stringer_{stringer_index}",
                 width_m=parameters.length_m,
