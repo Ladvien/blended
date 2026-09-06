@@ -73,7 +73,10 @@ def main(argv) -> int:
         VisionDescriber,
     )
     from blended.agent.prompt_versions import PINNED_PROMPT_REVISION, get_revision
-    from blended.agent.system_prompt import build_system_prompt
+    from blended.agent.system_prompt import (
+        assembled_prompt_fingerprint,
+        build_system_prompt,
+    )
     from blended.analyze import analyze_object
     from blended.capture import CaptureSettings, capture_contact_sheet
     from blended.evaluate.acceptance import (
@@ -439,6 +442,7 @@ def main(argv) -> int:
         brief_name=brief.name,
         prompt_identity=revision.identity,
         prompt_revision=revision.revision,
+        assembled_prompt_fingerprint=assembled_prompt_fingerprint(revision.revision),
         started_at=started_at,
         writer_model=client.config.model,
         vision_model=client.config.vision_model,

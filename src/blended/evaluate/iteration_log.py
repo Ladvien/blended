@@ -75,6 +75,15 @@ class IterationRecord:
     prompt_identity: str  # e.g. "v2:9fa1c0d3e771"
     prompt_revision: int
     started_at: str  # ISO 8601, supplied by the caller
+    # The PROMPT THE MODEL ACTUALLY READ. `prompt_identity` hashes the
+    # working-agreement body only — 6,955 of the 23,580 characters that
+    # reach the model — so the conventions, the operations manifest, the
+    # drift catalog and the skill modules are all outside it. Editing
+    # one drift row moved the assembled prompt by 695 characters while
+    # `prompt_identity` did not move at all. Defaulted so every
+    # historical record still loads through
+    # `IterationRecord(**json.loads(line))`.
+    assembled_prompt_fingerprint: str = ""
     # WHICH MODELS RAN. A prompt is tuned against a model, not in the
     # abstract: v1-v5 were all scored against deepseek-v4-flash, and a
     # log that does not say so would silently compare runs from

@@ -25,6 +25,8 @@ harness supplies the agreement.
 
 from __future__ import annotations
 
+import hashlib
+
 SYSTEM_PROMPT_TEMPLATE = "system_prompt"
 # Everything from the operations heading up to the one-shot output
 # contract, which tells a script writer to "return only Python" and is
@@ -85,4 +87,33 @@ def build_system_prompt(
         skills=skills_text,
         conventions=conventions_text,
         operations=operations_text,
+    )
+
+
+# The identity in prompt_versions covers the working-agreement body. It
+# does NOT cover the conventions, the operations manifest, the drift
+# catalog or the skill modules, all of which the model reads on every
+# turn: a drift row edited today moved the prompt by 695 characters
+# while the pinned identity did not move at all. This is the hash of
+# the text that actually ran.
+ASSEMBLED_FINGERPRINT_DIGEST_CHARACTERS = 12
+
+
+def assembled_prompt_fingerprint(
+    revision: int | None = None, lane: str | None = None
+) -> str:
+    """Content hash of the assembled system prompt: `a{revision}:{hex12}`.
+
+    Prefixed `a` so it can never be mistaken in a log for the
+    working-agreement identity's `v` prefix.
+    """
+    from blended.agent.prompt_versions import get_revision
+
+    assembled = build_system_prompt(
+        include_operations=True, revision=revision, lane=lane
+    )
+    digest = hashlib.sha256(assembled.encode("utf-8")).hexdigest()
+    return (
+        f"a{get_revision(revision).revision}:"
+        f"{digest[:ASSEMBLED_FINGERPRINT_DIGEST_CHARACTERS]}"
     )

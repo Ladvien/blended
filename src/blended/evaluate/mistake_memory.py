@@ -2759,6 +2759,46 @@ MISTAKES: tuple[MistakeRecord, ...] = (
         guarded_by="tests/blender/test_reset.py::test_a_leftover_object_is_not_a_clean_scene and ::test_a_rewritten_fps_is_not_a_clean_scene and ::test_every_problem_is_reported_in_one_raise",
         recorded_on="2026-09-06",
     ),
+    MistakeRecord(
+        identifier="a-purged-module-is-still-patchable-and-still-dead",
+        scope="harness_code",
+        failure=(
+            "test_the_assembled_fingerprint_covers_the_drift_catalog "
+            "passed alone (pytest tests/pure/test_prompt_templates.py: "
+            "20 passed) and failed in the full suite (1 failed, 402 "
+            "passed) with 'a new drift row did not move the assembled "
+            "fingerprint' — asserting a10:ff1ac8f0e73c != "
+            "a10:ff1ac8f0e73c. Bisecting one file at a time against the "
+            "single test named exactly one interferer: "
+            "tests/pure/test_devreload.py."
+        ),
+        cause=(
+            "test_devreload calls devreload.purge_library_modules(), "
+            "which drops every blended.* entry from sys.modules. A "
+            "module-scope `import blended.drift.catalog` binding in "
+            "another test file survives the purge as a DEAD object, so "
+            "monkeypatch.setattr lands on a module nobody imports "
+            "again, while the deferred `from blended.drift.catalog "
+            "import DRIFT_ENTRIES` inside build_manifest re-imports a "
+            "fresh one. monkeypatch reported success: the attribute was "
+            "really set, on the wrong module. Same defect class as "
+            "a-purged-module-cannot-remove-its-own-draw-handler — a "
+            "purge orphans every reference held outside sys.modules."
+        ),
+        fix=(
+            "Tests resolve the module under test at CALL time through "
+            "_live(name) -> importlib.import_module(name), which "
+            "returns the live sys.modules entry and re-imports after a "
+            "purge, so the patch and the reader agree. The test also "
+            "asserts the probe is VISIBLE (the synthetic row's fix text "
+            "appears in build_manifest()) before interpreting its "
+            "effect: a patch that silently missed would otherwise read "
+            "as 'the drift catalog does not reach the prompt', which is "
+            "the opposite lesson."
+        ),
+        guarded_by="tests/pure/test_prompt_templates.py::test_the_assembled_fingerprint_covers_the_drift_catalog, which asserts the synthetic row reached build_manifest before comparing fingerprints, and is green in file order, after test_devreload, and in the full suite",
+        recorded_on="2026-09-06",
+    ),
 )
 
 
