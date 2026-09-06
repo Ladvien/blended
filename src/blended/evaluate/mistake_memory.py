@@ -2159,6 +2159,52 @@ MISTAKES: tuple[MistakeRecord, ...] = (
         ),
         recorded_on="2026-09-05",
     ),
+    MistakeRecord(
+        identifier="sixty-nine-iterations-with-no-idea-what-they-cost",
+        scope="harness_code",
+        failure=(
+            "Asked whether the harness made good use of prompt caching, "
+            "the answer was that NOBODY HAD EVER CHECKED. 69 logged "
+            "iterations, three convergence cycles in one day, and not "
+            "one token of accounting anywhere: no `usage` parsing on "
+            "any lane, no cost in the iteration record, and the "
+            "`rate_limit_event` frame the Claude Code transport already "
+            "parsed was thrown away. Measured once accounting existed: "
+            "ONE brief costs $1.4182 and 738,839 input tokens across 26 "
+            "API calls, so a 5-brief cycle is ~$7 and 3.7M tokens."
+        ),
+        cause=(
+            "Every gate in this harness measures the ARTIFACT. Nothing "
+            "measured the harness itself, so the one quantity that "
+            "scales with every experiment stayed invisible — and a "
+            "harness whose whole thesis is 'measure, do not assume' was "
+            "assuming. Two specifics only measurement could reveal: one "
+            "harness turn is 2-3 API calls (the CLI runs the model again "
+            "to conform to `--json-schema`), and 85% of the effective "
+            "input cost is cache WRITES at 1.25x rather than reads at "
+            "0.1x."
+        ),
+        fix=(
+            "`TurnCost` + `parse_turn_cost` on the Claude Code lane, "
+            "`_turn_cost_from_body` for the OpenAI/Ollama lanes, "
+            "`OllamaClient.spent` accumulating across a run with the "
+            "eye's client folded in, and six cost fields on "
+            "`IterationRecord`. Also measured and worth keeping: prompt "
+            "caching DOES survive our stateless one-process-per-turn "
+            "design (12,241 tok cost $0.0507 cold, $0.0043 warm — "
+            "11.8x) because the system prompt is byte-stable and "
+            "history is append-only. Those two properties were "
+            "accidental and are now tested."
+        ),
+        guarded_by=(
+            "tests/pure/test_claude_code_lane.py::"
+            "test_a_growing_transcript_keeps_the_previous_turn_as_its_"
+            "prefix, ::test_the_system_prompt_is_byte_stable_across_"
+            "builds, ::test_one_harness_turn_reports_every_api_call_it_"
+            "made; docs/2026-09-06-token-budget-audit.md"
+        ),
+        recorded_on="2026-09-06",
+    ),
 )
 
 

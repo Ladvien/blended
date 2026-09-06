@@ -30,6 +30,7 @@ from blended.agent.claude_code import (
     CLAUDE_CODE_REQUEST_TIMEOUT_SECONDS,
     IMAGE_PLACEHOLDER_TOKEN,
     ClaudeCodeTransport,
+    TurnCost,
     is_claude_code_model,
 )
 
@@ -805,6 +806,13 @@ class OllamaClient:
 
     def __init__(self, config: ModelConfig | None = None) -> None:
         self.config = config or ModelConfig.from_environment()
+        # What this client has spent, accumulated across every call it
+        # makes. Added 2026-09-06 because the harness had NO token
+        # accounting: a turn assembling 12.5k of prompt was billing
+        # 25.8k, and nothing in the loop could see it. The eye's
+        # spending is folded in here too (see VisionDescriber.describe),
+        # so one run's record covers the writer AND its examiner.
+        self.spent = TurnCost()
 
     def _build_request(self, path: str, payload: dict | None) -> urllib.request.Request:
         request = urllib.request.Request(
@@ -1024,9 +1032,11 @@ class OllamaClient:
             # A subprocess, not a socket: the transport owns the frame
             # protocol, the schema-constrained tool calls, and the same
             # on_delta / stop_requested contract.
-            return self._claude_code_transport().chat(
-                messages, tools, on_delta, stop_requested
-            )
+            transport = self._claude_code_transport()
+            message = transport.chat(messages, tools, on_delta, stop_requested)
+            if transport.last_turn_cost is not None:
+                self.spent = self.spent.plus(transport.last_turn_cost)
+            return message
         payload = self._chat_payload(messages, tools)
         streaming = on_delta is not None
         if streaming:
@@ -1049,6 +1059,7 @@ class OllamaClient:
                 f"{url_error}. Is the server running, and is "
                 f"{self.config.model!r} available?"
             ) from url_error
+        self.spent = self.spent.plus(_turn_cost_from_body(body))
         if self.config.uses_openai_protocol:
             return _assistant_message_from_openai(body)
         return body.get("message", {})
@@ -1060,6 +1071,30 @@ class OllamaClient:
         if self.config.uses_openai_protocol:
             return _assemble_openai_stream(lines, on_delta, stop_requested)
         return _assemble_ollama_stream(lines, on_delta, stop_requested)
+
+
+def _turn_cost_from_body(body: dict) -> TurnCost:
+    """One HTTP reply's usage, on either wire protocol.
+
+    Ollama reports `prompt_eval_count` / `eval_count`; the OpenAI
+    protocol reports a `usage` object, and llama-swap fills it in.
+    Neither exposes a cache split or a price, so those stay zero — the
+    point is that a run's record says how many tokens it moved on EVERY
+    lane, not only the one that prices itself.
+    """
+    usage = body.get("usage") or {}
+    if usage:
+        return TurnCost(
+            api_calls=1,
+            input_tokens=int(usage.get("prompt_tokens") or 0),
+            output_tokens=int(usage.get("completion_tokens") or 0),
+        )
+    return TurnCost(
+        api_calls=1,
+        input_tokens=int(body.get("prompt_eval_count") or 0),
+        output_tokens=int(body.get("eval_count") or 0),
+    )
+
 
 
 class VisionDescriber:
@@ -1107,6 +1142,12 @@ class VisionDescriber:
             .eye_config()
         )
         reply = eye_client.chat([message])
+        # The eye rides its own client (its own server, its own key), so
+        # its spending would otherwise vanish from the run's record.
+        # Measured 2026-09-06: examination costs MORE than the build it
+        # judges — 10 calls per brief against the writer's 14 for five
+        # turns — so hiding it would hide the largest line item.
+        self.client.spent = self.client.spent.plus(eye_client.spent)
         return (reply.get("content") or "").strip()
 
 

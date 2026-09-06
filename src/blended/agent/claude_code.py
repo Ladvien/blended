@@ -152,6 +152,9 @@ _FRAME_RESULT = "result"
 _FRAME_RATE_LIMIT = "rate_limit_event"
 _FRAME_STREAM_EVENT = "stream_event"
 _EVENT_CONTENT_BLOCK_DELTA = "content_block_delta"
+# Opens every Anthropic call, so counting these counts the calls one
+# harness turn really makes.
+_EVENT_MESSAGE_START = "message_start"
 _DELTA_TEXT = "text_delta"
 _DELTA_THINKING = "thinking_delta"
 _BLOCK_TEXT = "text"
@@ -422,6 +425,70 @@ def parse_rate_limit(frame: dict) -> RateLimitSnapshot:
     )
 
 
+@dataclass(frozen=True)
+class TurnCost:
+    """What one invocation actually spent.
+
+    Measured 2026-09-06, and the reason this type exists: the harness
+    had no token accounting at all, so nobody could see that ONE
+    harness turn bills two to three API calls. A turn assembling 12.5k
+    of prompt billed 25,851 input tokens — the CLI runs the model once
+    for the turn and again to conform the answer to `--json-schema`.
+    Recording it makes that visible, and makes a cache regression
+    visible too: byte-identical prefixes read at 0.1x while a broken
+    prefix re-writes at 1.25x, an 11.8x swing measured on this lane.
+
+    `api_calls` is counted from `message_start` stream events, one per
+    Anthropic call. The token fields come from the result frame's
+    `usage`, which sums every call in the invocation.
+    """
+
+    api_calls: int = 0
+    input_tokens: int = 0
+    cache_read_tokens: int = 0
+    cache_write_tokens: int = 0
+    output_tokens: int = 0
+    cost_usd: float = 0.0
+
+    @property
+    def billed_input_tokens(self) -> int:
+        """Everything the prompt side cost, cached or not."""
+        return self.input_tokens + self.cache_read_tokens + self.cache_write_tokens
+
+    def plus(self, other: "TurnCost") -> "TurnCost":
+        """Accumulate across the turns of one run."""
+        return TurnCost(
+            api_calls=self.api_calls + other.api_calls,
+            input_tokens=self.input_tokens + other.input_tokens,
+            cache_read_tokens=self.cache_read_tokens + other.cache_read_tokens,
+            cache_write_tokens=self.cache_write_tokens + other.cache_write_tokens,
+            output_tokens=self.output_tokens + other.output_tokens,
+            cost_usd=self.cost_usd + other.cost_usd,
+        )
+
+    def summary(self) -> str:
+        return (
+            f"{self.api_calls} api call(s), "
+            f"{self.billed_input_tokens:,} input tok "
+            f"({self.cache_read_tokens:,} cached), "
+            f"{self.output_tokens:,} out, ${self.cost_usd:.4f}"
+        )
+
+
+def parse_turn_cost(result_frame: dict, api_calls: int) -> TurnCost:
+    """The result frame's `usage`, as a record."""
+    usage = result_frame.get("usage") or {}
+    return TurnCost(
+        api_calls=api_calls,
+        input_tokens=int(usage.get("input_tokens") or 0),
+        cache_read_tokens=int(usage.get("cache_read_input_tokens") or 0),
+        cache_write_tokens=int(usage.get("cache_creation_input_tokens") or 0),
+        output_tokens=int(usage.get("output_tokens") or 0),
+        cost_usd=float(result_frame.get("total_cost_usd") or 0.0),
+    )
+
+
+
 class ClaudeCodeTransport:
     """One headless `claude -p` invocation per chat call.
 
@@ -455,6 +522,7 @@ class ClaudeCodeTransport:
         self.timeout_seconds = timeout_seconds
         self.working_directory = working_directory
         self.last_rate_limit: RateLimitSnapshot | None = None
+        self.last_turn_cost: TurnCost | None = None
 
     def command(self, system_prompt: str, tools: list[dict] | None) -> list[str]:
         """The argv for one turn. Pure, so a test can read the flags."""
@@ -571,6 +639,7 @@ class ClaudeCodeTransport:
                 _absorb_assistant(frame.get("message") or {}, assembled)
             elif kind == _FRAME_RESULT:
                 assembled.result = frame
+                self.last_turn_cost = parse_turn_cost(frame, assembled.api_calls)
             if stop_requested is not None and stop_requested():
                 assembled.cancelled = True
                 process.kill()
@@ -667,6 +736,10 @@ class _Assembled:
     thinking: list[str] = field(default_factory=list)
     result: dict | None = None
     cancelled: bool = False
+    # One per Anthropic call. A harness turn is NOT one call: the CLI
+    # runs the model again to conform the answer to `--json-schema`,
+    # measured at 2-3 calls per turn on 2026-09-06.
+    api_calls: int = 0
 
     def partial_message(self) -> dict:
         """What arrived before the user's Stop landed."""
@@ -693,6 +766,9 @@ def _write_frame(process, frame: dict) -> None:
 
 
 def _absorb_stream_event(event: dict, assembled: _Assembled, on_delta) -> None:
+    if event.get("type") == _EVENT_MESSAGE_START:
+        assembled.api_calls += 1
+        return
     if event.get("type") != _EVENT_CONTENT_BLOCK_DELTA:
         return
     delta = event.get("delta") or {}

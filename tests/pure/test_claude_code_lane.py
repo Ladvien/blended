@@ -637,3 +637,89 @@ def test_the_stub_binary_is_not_the_real_one(fake_binary):
     """Guard the guard: these tests must never reach the real CLI."""
     assert os.access(fake_binary, os.X_OK)
     assert "canned frames" in fake_binary.read_text()
+
+
+# --- token economics ----------------------------------------------------
+
+
+def test_a_growing_transcript_keeps_the_previous_turn_as_its_prefix():
+    """The property prompt caching depends on, pinned.
+
+    Measured 2026-09-06: a byte-identical prefix reads at 0.1x while a
+    changed one re-writes at 1.25x — 12,241 tokens cost $0.0507 cold
+    and $0.0043 warm, an 11.8x swing. The cache hits only because
+    `render_call` folds append-only, so turn N+1's wire bytes start
+    with turn N's. Pruning history, summarising early turns or moving
+    an image would silently forfeit that, and this is the test that
+    would fail.
+    """
+    first_turn = [
+        {"role": "system", "content": "the working agreement"},
+        {"role": "user", "content": "make a crate"},
+    ]
+    second_turn = first_turn + [
+        {
+            "role": "assistant",
+            "content": "",
+            "tool_calls": [
+                {"id": "a", "function": {"name": "run_python", "arguments": {}}}
+            ],
+        },
+        {
+            "role": "tool",
+            "tool_name": "run_python",
+            "tool_call_id": "a",
+            "content": "built Crate",
+        },
+        {"role": "user", "content": "now bevel it"},
+    ]
+    first_system, first_frame = render_call(first_turn)
+    second_system, second_frame = render_call(second_turn)
+
+    assert first_system == second_system, "the system prompt must not move"
+    first_text = first_frame["message"]["content"][0]["text"]
+    second_text = second_frame["message"]["content"][0]["text"]
+    # The cue closes each fold, so the shared part is everything before
+    # it — which is what the cache matches on.
+    shared = first_text[: first_text.index(CONTINUATION_CUE)]
+    assert second_text.startswith(shared)
+
+
+def test_the_system_prompt_is_byte_stable_across_builds():
+    """A volatile system prompt would re-write the whole cached prefix.
+
+    Nothing in it may vary per call: no timestamp, no counter, no live
+    scene state. Measured cost of getting this wrong: the 12,241-token
+    prefix moves from a 0.1x read to a 1.25x write on every turn.
+    """
+    from blended.agent.system_prompt import build_system_prompt
+
+    assert build_system_prompt() == build_system_prompt()
+
+
+def test_one_harness_turn_reports_every_api_call_it_made():
+    """A turn is not a call: the CLI runs the model again to conform to
+    `--json-schema`, measured at 2-3 calls per turn on 2026-09-06.
+
+    A cost record that assumed one call per turn would under-report the
+    single largest inefficiency in the loop by half.
+    """
+    from blended.agent.claude_code import parse_turn_cost
+
+    cost = parse_turn_cost(
+        {
+            "usage": {
+                "input_tokens": 2,
+                "cache_read_input_tokens": 25_092,
+                "cache_creation_input_tokens": 755,
+                "output_tokens": 856,
+            },
+            "total_cost_usd": 0.0178,
+        },
+        api_calls=2,
+    )
+    assert cost.api_calls == 2
+    assert cost.billed_input_tokens == 25_849
+    assert cost.plus(cost).billed_input_tokens == 51_698
+    assert cost.plus(cost).api_calls == 4
+    assert "2 api call(s)" in cost.summary()

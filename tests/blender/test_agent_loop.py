@@ -30,8 +30,11 @@ class ScriptedClient:
 
         from blended.agent import ModelConfig
 
+        from blended.agent.claude_code import TurnCost
+
         self.replies = list(replies)
         self.seen_messages = []
+        self.spent = TurnCost()
         self.config = dataclasses.replace(
             ModelConfig.from_environment(),
             model="vision-writer",
@@ -321,6 +324,12 @@ class TwoModelClient:
         self.writer_replies = list(writer_replies)
         self.eye_reply = eye_reply
         self.calls: list[tuple[str, bool]] = []  # (model, had_images)
+        # Part of the client contract since 2026-09-06: the eye folds
+        # its usage back into the client that owns the run, so a double
+        # that stands in for one has to carry the accumulator.
+        from blended.agent.claude_code import TurnCost
+
+        self.spent = TurnCost()
 
     def chat(self, messages, tools=None):
         had_images = any("images" in message for message in messages)

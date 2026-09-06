@@ -452,6 +452,15 @@ def main(argv) -> int:
         refinement_failures=tuple(refinement_failures),
         refinement_summary="\n".join(refinement_summaries),
         refinement_locality=tuple(refinement_locality),
+        # Writer AND eye: VisionDescriber folds its own client's usage
+        # back into this one, so a row covers everything the iteration
+        # spent. See docs/2026-09-06-token-budget-audit.md.
+        api_calls=client.spent.api_calls,
+        input_tokens=client.spent.input_tokens,
+        cache_read_tokens=client.spent.cache_read_tokens,
+        cache_write_tokens=client.spent.cache_write_tokens,
+        output_tokens=client.spent.output_tokens,
+        cost_usd=client.spent.cost_usd,
     )
     IterationLog(Path(arguments.log)).append(record)
 
@@ -469,6 +478,7 @@ def main(argv) -> int:
         flush=True,
     )
     print(f"tool calls : {len(tool_calls)}", flush=True)
+    print(f"spent      : {client.spent.summary()}", flush=True)
     print(
         f"STRUCTURAL : {'PASS' if structural_passed else 'FAIL'}",
         flush=True,

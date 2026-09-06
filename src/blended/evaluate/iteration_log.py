@@ -119,6 +119,18 @@ class IterationRecord:
     hypothesis: str = ""
     prompt_change: str = ""
     notes: str = ""
+    # WHAT IT SPENT. Added 2026-09-06 after an audit found the harness
+    # had no token accounting at all: one measured brief billed 243,137
+    # input tokens to convey ~22.5k of assembled prompt, and 14 API
+    # calls for 7 harness turns, none of it visible anywhere. Zero on
+    # older rows means "not recorded", not "free" — the log is
+    # append-only, so history stays as it was written.
+    api_calls: int = 0
+    input_tokens: int = 0
+    cache_read_tokens: int = 0
+    cache_write_tokens: int = 0
+    output_tokens: int = 0
+    cost_usd: float = 0.0
 
     def __post_init__(self) -> None:
         if self.classification and self.classification not in CLASSIFICATIONS:
