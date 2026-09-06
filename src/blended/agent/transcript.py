@@ -36,6 +36,7 @@ EVENT_HEADINGS = {
     "plan": "📋 plan",
     "step": "▶ step",
     "render": "🖼 render",
+    "reference": "📷 reference photo",
     "error": "⚠️ error",
 }
 

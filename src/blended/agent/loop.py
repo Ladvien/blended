@@ -415,6 +415,50 @@ right, say so plainly rather than inventing problems.
 Be specific and brief: 3-6 sentences."""
 
 
+# Headers under which an eye's description is appended to the message
+# that carried the pictures. Two, because the writer must never confuse
+# a photograph of the real object with a render of its own work.
+RENDER_IMAGE_HEADER = "what the render shows"
+REFERENCE_IMAGE_HEADER = "what the reference photo shows"
+# What the writer is told the attached pixels ARE. Without this a photo
+# arrives looking exactly like the harness's own render, and the writer
+# reads it as feedback on a scene it has not built yet.
+REFERENCE_PHOTO_LEAD_IN = (
+    "Reference photo of the object to build — the user's own picture of a "
+    "real object, not a render of the scene:"
+)
+# What the eye is asked when the picture is the user's, not ours. The
+# render prompt above asks "does it read as the intended thing?", which
+# is meaningless for a photograph: here the photo IS the intent, so the
+# eye is asked for the things a modeller needs — silhouette, parts,
+# attachment, ratios, up-axis, symmetry — and explicitly not for
+# colour, lighting or background, none of which the writer models.
+REFERENCE_PHOTO_READ_PROMPT = """\
+You are the eyes for another agent that cannot see. It must model the
+object in this photograph in Blender.
+
+Report only what is visible:
+- What the object is, and its overall silhouette.
+- The parts it is made of, and how they attach.
+- Proportions as ratios of the whole (e.g. "the legs are about two
+  thirds of the total height"), not absolute sizes.
+- Which way is up in the picture, and whether the object is symmetric.
+- Surface features that change the geometry: bevels, ribs, holes,
+  handles, cutouts.
+
+Do not guess a real-world size unless a familiar object gives the scale;
+say so if nothing does. Do not describe colour, lighting, or background.
+Be concrete and complete: 8-14 short lines."""
+# What the writer is told when the eye cannot be reached at all. One
+# constant, both call sites: a turn where the eye is down must say so in
+# the history the writer reads, or the writer silently invents detail.
+EYE_UNREACHABLE_NOTE = (
+    "(The vision model could not be reached: {error}. You are working "
+    "blind on this image — rely on the gate report and ask the user to "
+    "look.)"
+)
+
+
 @dataclass(frozen=True)
 class ModelConfig:
     model: str = RECOMMENDED_MODELS["writer"][0]
@@ -1189,6 +1233,47 @@ def _encode_images(image_paths: list[Path]) -> list[str]:
     return encoded
 
 
+def deliver_images(
+    message: dict,
+    image_paths: list[Path],
+    client: OllamaClient,
+    header: str,
+    question: str = "",
+    prompt: str = "",
+) -> str:
+    """Put images in front of the writer on either eye configuration.
+
+    ONE place decides how pixels reach a model, because there are two
+    kinds of caller now — a tool result carrying renders and a user
+    message carrying a reference photo — and they must not drift apart.
+
+    Native (`message["images"]`, placeholders spliced into the content)
+    when the writer is its own eye; otherwise the eye describes the
+    images and its description is appended under `header`. Returns the
+    eye's text, or "" on the native path. `message["content"]` is
+    mutated in place.
+    """
+    if not client.config.uses_separate_eye:
+        # Placeholders on this branch too: `claude_code.render_call`
+        # splices real image blocks at each `[img]` and only appends
+        # leftovers at the end, so placing them decides where the
+        # writer sees the picture relative to the text.
+        message["content"] = _image_placeholders(len(image_paths)) + message["content"]
+        message["images"] = _encode_images(image_paths)
+        return ""
+    describer = VisionDescriber(client, client.config.vision_model)
+    try:
+        description = describer.describe(image_paths, question, prompt)
+    except Exception as eye_error:  # noqa: BLE001
+        description = EYE_UNREACHABLE_NOTE.format(error=eye_error)
+    message["content"] = (
+        f"{message['content']}\n\n"
+        f"--- {header} ({client.config.vision_model}) ---\n"
+        f"{description}"
+    )
+    return description
+
+
 # Where a tool call is executed. The loop runs on a worker thread (the
 # model call blocks for seconds to minutes) but `bpy` is main-thread
 # only, so the live-Blender frontend has to move execution somewhere
@@ -1252,15 +1337,27 @@ class AgentSession:
 
             self.messages.append({"role": "system", "content": build_system_prompt()})
 
-    def send(self, user_text: str, on_event=None) -> str:
+    def send(
+        self,
+        user_text: str,
+        on_event=None,
+        reference_images: tuple[Path, ...] = (),
+    ) -> str:
         """Run one user turn to completion, executing tool calls.
+
+        `reference_images` are the USER's pictures of the object to
+        build — normalized PNGs from
+        `blended.capture.reference_photo.normalize_reference_photo` —
+        not renders of the scene. They ride the user message, so they
+        stay in the history for every later refinement turn and are
+        never re-sent.
 
         `on_event(kind, text)` is called for streaming UI updates with
         kind in {"thinking", "tool", "result", "answer", "vision",
-        "plan", "step", "render"} plus, when `stream_replies` is on,
-        {"content_delta", "thinking_delta"} fragments that precede the
-        whole "thinking"/"answer" event. Returns the assistant's final
-        text.
+        "plan", "step", "render", "reference"} plus, when
+        `stream_replies` is on, {"content_delta", "thinking_delta"}
+        fragments that precede the whole "thinking"/"answer" event.
+        Returns the assistant's final text.
         """
         from blended.agent.tools import TOOL_SCHEMAS
 
@@ -1268,7 +1365,23 @@ class AgentSession:
             if on_event is not None:
                 on_event(kind, text)
 
-        self.messages.append({"role": "user", "content": user_text})
+        user_message: dict = {"role": "user", "content": user_text}
+        if reference_images:
+            user_message["content"] = f"{REFERENCE_PHOTO_LEAD_IN}\n\n{user_text}"
+            # Picture first, then what the eye said about it — the same
+            # ordering the render path uses, so the panel can pair them.
+            for reference_path in reference_images:
+                emit("reference", str(reference_path))
+            description = deliver_images(
+                user_message,
+                list(reference_images),
+                self.client,
+                REFERENCE_IMAGE_HEADER,
+                prompt=REFERENCE_PHOTO_READ_PROMPT,
+            )
+            if description:
+                emit("vision", description)
+        self.messages.append(user_message)
 
         self.cancel_requested.clear()
         executed_tool_call_count = 0
@@ -1386,30 +1499,15 @@ class AgentSession:
                     # the render either way.
                     for image_path in image_paths:
                         emit("render", str(image_path))
-                    if self.client.config.uses_separate_eye:
-                        describer = VisionDescriber(
-                            self.client, self.client.config.vision_model
-                        )
-                        try:
-                            description = describer.describe(
-                                image_paths, arguments.get("look_for", "")
-                            )
-                        except Exception as eye_error:  # noqa: BLE001
-                            description = (
-                                f"(The vision model could not be reached: "
-                                f"{eye_error}. You are working blind on this "
-                                f"render — rely on the gate report and ask "
-                                f"the user to look.)"
-                            )
+                    description = deliver_images(
+                        tool_message,
+                        image_paths,
+                        self.client,
+                        RENDER_IMAGE_HEADER,
+                        question=arguments.get("look_for", ""),
+                    )
+                    if description:
                         emit("vision", description)
-                        tool_message["content"] = (
-                            f"{result_text}\n\n"
-                            f"--- what the render shows "
-                            f"({self.client.config.vision_model}) ---\n"
-                            f"{description}"
-                        )
-                    else:
-                        tool_message["images"] = _encode_images(image_paths)
                 self.messages.append(tool_message)
 
         exhausted = (

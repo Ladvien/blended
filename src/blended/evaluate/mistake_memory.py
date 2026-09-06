@@ -1832,19 +1832,24 @@ MISTAKES: tuple[MistakeRecord, ...] = (
         fix=(
             "The record moved into its own DEFAULT_CLOSED panel "
             "(BLENDED_PT_history) so the working surface cannot grow "
-            "with the conversation; the answer is capped by "
-            "_answer_row_budget(region.height, ui_scale, …), which "
-            "subtracts the cards above and the controls below from the "
-            "region's real row count; and the plan collapses to header + "
-            "progress bar once the turn ends, giving its rows back to "
-            "the answer. Verified by screenshot: every control plus both "
-            "panel headers visible."
+            "with the conversation, and the plan collapses to header + "
+            "progress bar once the turn ends. The row-budget half of "
+            "this fix — _answer_row_budget(region.height, ui_scale, …) "
+            "subtracting the cards above and the controls below — is "
+            "GONE as of 2026-09-06: the replies left the sidebar "
+            "entirely for a GPU overlay in the viewport, so there is no "
+            "unbounded content left to budget. Final measurement: the "
+            "whole 561 x 1104 px sidebar is 0 differing pixels between "
+            "a one-line reply and a sixty-line reply, while the overlay "
+            "column differs by 577,780 px (so the diff was sensitive)."
         ),
         guarded_by=(
+            "tests/blender/test_addon_draw.py::"
+            "test_the_working_surface_holds_the_prompt_and_no_reply_text "
+            "(no reply text on the pinned surface at all) and "
             "tests/blender/test_chat_panel_heuristics.py::"
-            "test_the_answer_budget_comes_from_the_region_not_a_guess, "
             "test_the_working_surface_does_not_grow_with_the_turn, "
-            "test_a_finished_plan_gives_its_rows_back_to_the_answer"
+            "::test_a_finished_plan_gives_its_rows_back_to_the_answer"
         ),
         recorded_on="2026-09-05",
     ),
@@ -2356,9 +2361,232 @@ MISTAKES: tuple[MistakeRecord, ...] = (
             "test_the_composer_is_the_first_thing_the_surface_draws "
             "(the prompt box is at draw index 0 across empty, short, "
             "long, and answer-plus-plan-plus-renders states), "
-            "::test_replies_stack_newest_first_under_the_composer, "
-            "::test_the_newest_reply_is_read_before_the_cards, and "
-            "::test_the_stack_is_bounded_and_the_record_keeps_the_rest"
+            "::test_the_working_surface_does_not_grow_with_the_turn, "
+            "::test_the_record_keeps_every_message, and "
+            "tests/blender/test_addon_draw.py::"
+            "test_the_working_surface_holds_the_prompt_and_no_reply_text"
+        ),
+        recorded_on="2026-09-06",
+    ),
+    MistakeRecord(
+        identifier="ui-scale-is-zero-when-preferences-are-not-ready",
+        scope="harness_code",
+        failure=(
+            "The GPU transcript's column came out 56 px wide instead of "
+            "640 and the wheel hit test answered False for a point the "
+            "column visibly contained: "
+            "bpy.context.preferences.system.ui_scale reads 0.0 in "
+            "--background (measured 2026-09-06; pixel_size reads 1.0 in "
+            "the same call)."
+        ),
+        cause=(
+            "TranscriptStyle.scaled clamped with max(ui_scale, 0.1), "
+            "copying the addon's own _characters_per_line idiom. That "
+            "clamp treats 0.0 as a very small SCALE rather than as "
+            "'not told yet', so every _px field was multiplied by a "
+            "tenth: a 320 px minimum column became 32 px."
+        ),
+        fix=(
+            "A non-positive ui_scale is read as DEFAULT_UI_SCALE = 1.0. "
+            "The clamp constant was deleted rather than lowered — there "
+            "is no legitimate sub-unity scale to defend, and Blender's "
+            "own preference floor is 0.5."
+        ),
+        guarded_by=(
+            "tests/pure/test_transcript_layout.py::"
+            "test_an_uninitialised_ui_scale_is_read_as_one"
+        ),
+        recorded_on="2026-09-06",
+    ),
+    MistakeRecord(
+        identifier="a-purged-module-cannot-remove-its-own-draw-handler",
+        scope="harness_code",
+        failure=(
+            "After one hot reload, sys.modules held a DIFFERENT "
+            "blended.ui.transcript_overlay object than the earlier "
+            "import, with the live RNA_HANDLE capsule in the stale one "
+            "and _HANDLER None in the fresh one (measured 2026-09-06). "
+            "Every reload would therefore have added a second draw "
+            "handler, painting the pre-reload session's state from the "
+            "pre-reload code, forever."
+        ),
+        cause=(
+            "devreload.purge_library_modules() drops every blended.* "
+            "entry so the next import reads disk. The draw handler's "
+            "handle lived in the module's globals, which is exactly "
+            "what the purge throws away — so register_overlay's "
+            "'remove the previous handler first' rule could never see "
+            "a handler installed before the purge."
+        ),
+        fix=(
+            "The addon owns the lifetime, not the library: "
+            "_remove_overlay() runs immediately before BOTH purge "
+            "sites (_reload_library and _hot_reload_unlocked) while the "
+            "owning module is still importable, and _install_overlay() "
+            "runs after the re-import — including on the import-failure "
+            "path, so a failed reload reports itself in the panel's "
+            "alert row instead of silently leaving the viewport blank."
+        ),
+        guarded_by=(
+            "tests/blender/test_transcript_overlay.py::"
+            "test_a_library_reload_never_orphans_the_overlay "
+            "(asserts the pre-reload module's _HANDLER is None AND the "
+            "post-reload module's is not)"
+        ),
+        recorded_on="2026-09-06",
+    ),
+    MistakeRecord(
+        identifier="an-absolute-colour-cannot-contrast-with-a-themed-one",
+        scope="harness_code",
+        failure=(
+            "The code band behind a fenced block was invisible in the "
+            "live screenshot. Blender's own dark theme reported "
+            "wcol_box.inner at 0.1137 and the band was pinned at 0.11 "
+            "— a 0.004 step (measured 2026-09-06, confirmed by a vision "
+            "read of the capture: 'no distinctly darker band')."
+        ),
+        cause=(
+            "Half the palette was theme-derived and half was pinned. A "
+            "pinned colour can be checked against the OTHER pinned "
+            "colours at authoring time, and against nothing at all once "
+            "a theme moves the value it was supposed to contrast with."
+        ),
+        fix=(
+            "shifted_for_contrast() derives the band from the agent "
+            "bubble by CODE_BAND_CONTRAST = 0.10, darkening by default "
+            "and lightening only when there is no room to darken, so a "
+            "light theme is not a second code path. The default "
+            "CODE_BAND_RGBA is now computed from AGENT_BUBBLE_RGBA "
+            "through the same function — one source of truth."
+        ),
+        guarded_by=(
+            "tests/blender/test_transcript_overlay.py::"
+            "test_the_code_band_contrasts_with_the_themed_bubble "
+            "(against the REAL theme, because that is the value that "
+            "was wrong) and tests/pure/test_transcript_layout.py::"
+            "test_the_code_band_always_contrasts_with_the_bubble"
+        ),
+        recorded_on="2026-09-06",
+    ),
+    MistakeRecord(
+        identifier="a-stream-capped-by-lines-loses-its-own-cursor",
+        scope="harness_code",
+        failure=(
+            "A 31-row streaming reply in a 28-row column rendered rows "
+            "0-27 and put the block cursor below the fold — the one "
+            "thing a stream exists to show was the one thing off-screen "
+            "(measured by screenshot, 2026-09-06; bubble height 1165 px "
+            "in a 1144 px column, bottom edge at y=-21)."
+        ),
+        cause=(
+            "prefer_tail was implemented as a TRUNCATION rule only: it "
+            "chose which end to keep once a body exceeded "
+            "maximum_lines_newest (40). Below that budget nothing was "
+            "capped at all, so the bubble was free to grow taller than "
+            "the column while its top stayed pinned to the column's "
+            "top edge. The replaced native panel had applied "
+            "_tail_lines unconditionally, so this was a regression the "
+            "line budget hid."
+        ),
+        fix=(
+            "_tail_row_budget(column, style) caps a tail-kept message "
+            "by what the COLUMN can show — min(line budget, rows that "
+            "fit) — holding TRUNCATION_NOTE_ROWS = 1 back because the "
+            "note is itself a row (forgetting it overflowed by exactly "
+            "one line). The note also moved ABOVE a tail-kept message, "
+            "since a note at the bottom of a stream points down at "
+            "rows that are actually above it. A FINISHED reply is "
+            "deliberately not capped this way: it keeps its full line "
+            "budget and is reached by scrolling, so nothing the model "
+            "said is dropped at a small window size."
+        ),
+        guarded_by=(
+            "tests/pure/test_transcript_layout.py::"
+            "test_a_streaming_reply_is_capped_to_what_the_column_can_show "
+            "(the cursor row is last AND the bubble fits the column), "
+            "::test_a_finished_reply_is_not_capped_by_the_column, and "
+            "::test_prefer_tail_keeps_the_last_lines"
+        ),
+        recorded_on="2026-09-06",
+    ),
+    MistakeRecord(
+        identifier="a-screenshot-lags-the-state-that-produced-it",
+        scope="process",
+        failure=(
+            "Three GUI verification rounds read the WRONG frame: a "
+            "screenshot taken in the same probe command that mutated "
+            "_STATE showed the PREVIOUS command's transcript, and a "
+            "vision read of it reported a missing code band that the "
+            "in-session layout dump proved was present."
+        ),
+        cause=(
+            "bpy.ops.screen.screenshot captures the swap chain, and one "
+            "bpy.ops.wm.redraw_timer(type='DRAW_WIN_SWAP') pass inside "
+            "the mutating command is not enough to land the new frame "
+            "in the buffer that gets read."
+        ),
+        fix=(
+            "Capture TWICE in the command — redraw_timer + screenshot, "
+            "then redraw_timer + screenshot to the same path — and keep "
+            "the second. Always cross-check a vision read against an "
+            "in-session dump of the laid-out runs; the numbers are "
+            "ground truth and the picture is the confirmation, never "
+            "the other way round."
+        ),
+        guarded_by=(
+            "No test can guard a screenshot harness, so the guard is "
+            "procedural and pinned here: every GUI verification in this "
+            "repository double-captures and asserts against an "
+            "in-session numeric dump (the layout dump that caught this "
+            "is layout_transcript(...).texts, printed through "
+            "outputs/gui_cmd.py)."
+        ),
+        recorded_on="2026-09-06",
+    ),
+    MistakeRecord(
+        identifier="writing-the-prompt-property-sends-a-real-turn",
+        scope="process",
+        failure=(
+            "A GUI check of the new reference-photo row set "
+            "scene.blended_chat.reference_image and then .prompt from "
+            "Python to stage a screenshot. The screenshot came back "
+            "with BOTH fields already empty, the operator the script "
+            "then called returned CANCELLED, and the stub session had "
+            "recorded nothing — because a turn had already run against "
+            "the configured writer and consumed the photo."
+        ),
+        cause=(
+            "`prompt` carries update=_on_prompt_confirmed, which is how "
+            "'Enter sends' reaches out of a Blender text field (a "
+            "focused field swallows keystrokes, so no keymap entry can "
+            "see them). An RNA write from Python is indistinguishable "
+            "from a user confirming the field, so it queued "
+            "bpy.ops.blended.send_message() on a 0 s timer — and "
+            "_STATE.session was still None at that moment, so the "
+            "operator built a REAL session from preferences."
+        ),
+        fix=(
+            "Install the stub session BEFORE writing any chat property, "
+            "and let the auto-send fire THROUGH it: the check then "
+            "exercises the real Enter-sends path instead of a "
+            "hand-called operator. Code that must fill the field "
+            "without sending sets _STATE.suppress_prompt_send first, "
+            "which is what prompt-history recall already does."
+        ),
+        guarded_by=(
+            "Partly procedural, and deliberately so: the auto-send "
+            "cannot fire headlessly (_on_prompt_confirmed returns early "
+            "when context.preferences.addons[__name__] raises KeyError, "
+            "which is every test that loads the addon as a plain "
+            "module), so no headless test can catch a GUI script doing "
+            "this. The executable part is that the surface is now "
+            "asserted WITHOUT writing `prompt` at all — "
+            "tests/blender/test_chat_panel_heuristics.py::"
+            "test_the_photo_picker_is_one_fixed_height_row_under_the_"
+            "composer and ::test_a_reference_photo_is_drawn_as_its_own_"
+            "picture_in_the_record set reference_image, show_details "
+            "and the transcript only. Any future GUI probe stubs "
+            "_STATE.session before touching a chat property."
         ),
         recorded_on="2026-09-06",
     ),

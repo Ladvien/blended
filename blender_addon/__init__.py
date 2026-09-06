@@ -235,11 +235,19 @@ def _reload_library(preferences) -> str:
     )
     conversation = devreload.snapshot_conversation(_STATE.session)
 
+    # The handler's handle lives in a module this purge drops, and its
+    # code is what the reload exists to replace: down before, up after.
+    _remove_overlay()
     result = devreload.purge_library_modules()
 
     import_error = _ensure_blended_importable(
         preferences.repository_path, preferences.developer_mode
     )
+    # Back up on the FRESH module, so the viewport draws the code that
+    # was just reloaded — and on the FAILURE path too, so the panel's
+    # alert row carries the reason instead of the viewport silently
+    # losing its transcript.
+    _install_overlay()
     if import_error:
         return f"Reload FAILED: {import_error}"
 
@@ -428,6 +436,9 @@ def _hot_reload_unlocked(preferences) -> str:
     if bpy.app.timers.is_registered(_drain_tool_requests):
         bpy.app.timers.unregister(_drain_tool_requests)
     _unregister_keymaps()
+    # The overlay's handle lives in a `blended.*` module the purge below
+    # is about to drop, so it comes down here or never.
+    _remove_overlay()
     if hasattr(bpy.types.Scene, "blended_chat"):
         del bpy.types.Scene.blended_chat
     for class_object in reversed(_CLASSES):
@@ -791,6 +802,28 @@ class BLENDED_OT_send(bpy.types.Operator):
             self.report({"WARNING"}, "The agent is still working.")
             return {"CANCELLED"}
 
+        # The photo is read and re-encoded HERE, on the main thread:
+        # normalization is `bpy` (Blender's image API is the only
+        # decoder available without pip), and the turn itself runs on a
+        # worker. A bad path must stop the send rather than surface as
+        # an exception inside the worker, where the user sees only a
+        # transcript line.
+        reference_images: tuple = ()
+        photo_path = scene_properties.reference_image.strip()
+        if photo_path:
+            from blended.capture.reference_photo import normalize_reference_photo
+
+            try:
+                reference_images = (
+                    normalize_reference_photo(
+                        Path(bpy.path.abspath(photo_path)),
+                        Path(bpy.app.tempdir) / "blended_agent",
+                    ),
+                )
+            except (ValueError, FileNotFoundError, RuntimeError) as photo_error:
+                self.report({"ERROR"}, str(photo_error))
+                return {"CANCELLED"}
+
         if _STATE.session is None:
             try:
                 _STATE.session = _build_session(preferences)
@@ -831,6 +864,10 @@ class BLENDED_OT_send(bpy.types.Operator):
             _STATE.prompt_history.append(user_text)
         _STATE.history_index = None
         scene_properties.prompt = ""
+        # Cleared on send: the photo is in the conversation history from
+        # here on, and re-attaching it every turn would bill the same
+        # image tokens again.
+        scene_properties.reference_image = ""
         _STATE.plan = None
         _STATE.busy = True
         _STATE.revision += 1
@@ -849,6 +886,7 @@ class BLENDED_OT_send(bpy.types.Operator):
                 _STATE.session.send(
                     model_text,
                     on_event=lambda kind, text: _STATE.log(kind, text),
+                    reference_images=reference_images,
                 )
             except Exception as run_error:  # noqa: BLE001
                 _STATE.log("error", str(run_error))
@@ -859,6 +897,16 @@ class BLENDED_OT_send(bpy.types.Operator):
 
         _STATE.worker = threading.Thread(target=worker, daemon=True)
         _STATE.worker.start()
+        return {"FINISHED"}
+
+
+class BLENDED_OT_clear_reference(bpy.types.Operator):
+    bl_idname = "blended.clear_reference"
+    bl_label = "Clear reference photo"
+    bl_description = "Forget the picked photo; the next message goes without it"
+
+    def execute(self, context):
+        context.scene.blended_chat.reference_image = ""
         return {"FINISHED"}
 
 
@@ -1182,6 +1230,7 @@ _KIND_SPEAKERS = {
     "context": "Scene",
     "plan": "Plan",
     "render": "Render",
+    "reference": "Reference photo",
 }
 
 _KIND_ICONS = {
@@ -1197,6 +1246,7 @@ _KIND_ICONS = {
     "context": "RESTRICT_SELECT_OFF",
     "plan": "PRESET",
     "render": "IMAGE_DATA",
+    "reference": "IMAGE_REFERENCE",
 }
 # Event kinds that are TRAFFIC, not conversation: each one is its own
 # collapsed sub-panel, so the header line says what happened and the
@@ -1219,8 +1269,43 @@ _COMPACT_KINDS = (
     "context",
     "plan",
 )
+# Event kinds whose text is an image PATH, not prose: drawn as a
+# thumbnail, summarized by file name. `render` is the harness's own
+# picture of the scene; `reference` is the user's picture of the real
+# object they want built. One tuple, because every place that treats a
+# path as pixels must treat both the same way.
+_IMAGE_KINDS = ("render", "reference")
 # Progress and plan steps drive the plan card, not the conversation.
 _STATE_ONLY_KINDS = ("step",)
+# Conversation, not traffic: what the GPU overlay paints unless the
+# user asks for details. The traffic kinds stay in the record panel,
+# where a header line says what happened and the body is one click
+# away (DOI 10.1109/21.156574).
+_OVERLAY_KINDS = ("user", "answer", "error")
+# The cursor the overlay appends while a reply is still streaming.
+_LIVE_CURSOR = " ▍"
+# Non-empty when the transcript overlay could not be installed. Drawn
+# as an alert row on the pinned surface — a draw handler that cannot
+# start would otherwise be an empty viewport with no explanation.
+_OVERLAY_ERROR = ""
+# --- Shelved: the GPU transcript overlay ---------------------------------
+#
+# Built and verified end to end on 2026-09-06 — see
+# `docs/2026-09-06-gpu-transcript-overlay.md` for the design, the
+# measured Blender 5.2 substrate, and the numbers (the whole 561 x 1104
+# px sidebar is 0 differing pixels between a one-line and a sixty-line
+# reply). Switched OFF at the user's request while other work is in
+# flight; flip this one flag to bring it back, no other edit needed.
+#
+# While it is off the replies live in the record panel only, and the
+# pinned surface says so in one fixed-height row. The surface does NOT
+# grow a second reply-rendering path: two paths for the same replies is
+# what the "one path" rule forbids, and the native stack is exactly
+# where the measured composer-walks-down-the-panel defect came from.
+TRANSCRIPT_OVERLAY_ENABLED = False
+# What the pinned surface says instead of the replies while the overlay
+# is shelved.
+_OVERLAY_OFF_HINT = "Replies are in Conversation, below."
 # A compact row is icon + label + copy button: this many characters of
 # the row's width are not text.
 _COMPACT_ROW_CHROME_CHARACTERS = 8
@@ -1244,21 +1329,14 @@ _UI_ROW_HEIGHT_PX = 20.0
 # (measured 2026-09-06: the user reported the input box walking down
 # the panel on every reply).
 #
-# Messages therefore stack ASCENDING: the newest sits directly under
-# the composer and older ones recede downward, off the bottom, which
-# is the one direction growth costs nothing. Pointing time grows with
-# distance to a target (Fitts, DOI 10.48550/arXiv.2308.12515,
+# The replies are now off this surface entirely: they are painted by a
+# GPU handler in the viewport, so the only thing whose height the model
+# decides no longer shares a region with the prompt box. Pointing time
+# grows with distance to a target (Fitts, DOI 10.48550/arXiv.2308.12515,
 # DOI 10.48550/arXiv.1906.00905) and a target that MOVES has to be
-# re-acquired visually before it can be pointed at, so a fixed
-# composer is strictly cheaper than a well-fitted one
-# (interaction-cost adaptation, DOI 10.48550/arXiv.2204.09162).
-_NEWEST_MESSAGE_ROWS = 14
-# Older messages are context, not the thing being read: a few rows
-# each, expandable in the record below.
-_OLDER_MESSAGE_ROWS = 4
-# How deep the stack goes on the pinned surface. The record panel holds
-# every message; this is the working window.
-_STACK_DEPTH = 4
+# re-acquired visually before it can be pointed at, so a fixed composer
+# is strictly cheaper than a well-fitted one (interaction-cost
+# adaptation, DOI 10.48550/arXiv.2204.09162).
 # One preview collection for the addon's lifetime, loaded in register()
 # and unloaded in unregister(); a panel redraws several times a second
 # and must never reload a PNG to draw it.
@@ -1297,7 +1375,7 @@ def _summarize_event(kind: str, text: str, limit: int) -> str:
             if arguments.get("source"):
                 parts.append(f"{len(str(arguments['source']).splitlines())} lines")
         return _preview(" · ".join(parts), limit)
-    if kind == "render":
+    if kind in _IMAGE_KINDS:
         return _preview(Path(text).name, limit)
     if kind == "plan":
         try:
@@ -1411,10 +1489,117 @@ def _panel_rows(region_height_px, ui_scale) -> int:
     return int(region_height_px / (_UI_ROW_HEIGHT_PX * max(ui_scale, 0.1)))
 
 
-def _tail_lines(text: str, limit: int) -> str:
-    """The LAST `limit` non-empty lines: what a stream is writing now."""
-    lines = [line for line in text.splitlines() if line.strip()]
-    return "\n".join(lines[-limit:])
+def _transcript_messages():
+    """`_STATE.transcript` as overlay messages, oldest first.
+
+    The overlay's input, and the one place that decides what belongs in
+    the CONVERSATION as opposed to the record: replies and the user's
+    own prompts always, the traffic kinds only when `show_details` is
+    on. Progress events never — they move the plan card.
+
+    The reply being streamed right now is appended last with
+    `prefer_tail`, because the words being written are at the END of
+    the text and the cursor has to stay visible.
+    """
+    try:
+        from blended.ui.transcript_layout import TranscriptMessage
+    except Exception:  # noqa: BLE001 — a draw handler must never raise
+        return ()
+
+    try:
+        show_details = bool(bpy.context.scene.blended_chat.show_details)
+    except (AttributeError, KeyError):
+        show_details = False
+    shown_kinds = _OVERLAY_KINDS + (_COMPACT_KINDS if show_details else ())
+
+    messages = [
+        TranscriptMessage(
+            kind=kind,
+            label=_KIND_SPEAKERS.get(kind, kind),
+            body=body_text,
+            index=index,
+        )
+        for index, (kind, body_text) in enumerate(_STATE.transcript)
+        if kind in shown_kinds and kind not in _STATE_ONLY_KINDS
+    ]
+    if _STATE.live_text:
+        live_kind = "answer" if _STATE.live_kind == "content" else _STATE.live_kind
+        messages.append(
+            TranscriptMessage(
+                kind=live_kind,
+                label=_KIND_SPEAKERS.get(live_kind, live_kind),
+                body=_STATE.live_text + _LIVE_CURSOR,
+                index=len(_STATE.transcript),
+                prefer_tail=True,
+            )
+        )
+    return tuple(messages)
+
+
+def _overlay_status():
+    """What the transcript overlay is failing at: (message, too_narrow).
+
+    Two states are worth a row on the pinned surface — the handler
+    could not be installed, and the handler ran but the viewport is too
+    narrow for a readable column. Everything else the overlay does is
+    visible in the viewport, which is where it belongs.
+    """
+    if _OVERLAY_ERROR:
+        return _OVERLAY_ERROR, False
+    try:
+        from blended.ui import transcript_overlay
+    except Exception:  # noqa: BLE001 — draw() must never raise
+        return "", False
+    return transcript_overlay.LAST_DRAW_ERROR, transcript_overlay.COLUMN_TOO_NARROW
+
+
+def _install_overlay() -> None:
+    """(Re)install the GPU transcript handler, recording any failure.
+
+    Called from `register()` and after every library reload, because
+    the overlay's CODE lives in `blended.ui.transcript_overlay`: a
+    reload that left the old handler running would keep drawing the old
+    code, which is the whole point of reloading.
+
+    Removes first, unconditionally, so flipping
+    `TRANSCRIPT_OVERLAY_ENABLED` off and reloading actually stops the
+    painting instead of leaving the previous handler behind.
+
+    A failure here must never propagate: an exception in `register()`
+    silently kills the whole panel (the "no blended tab" symptom), so
+    it is recorded and drawn as an alert row instead.
+    """
+    global _OVERLAY_ERROR
+    _remove_overlay()
+    _OVERLAY_ERROR = ""
+    if not TRANSCRIPT_OVERLAY_ENABLED:
+        return
+    try:
+        from blended.ui.transcript_overlay import register_overlay
+
+        register_overlay(_transcript_messages, lambda: _STATE.revision)
+    except Exception as overlay_error:  # noqa: BLE001 — surfaced in the panel
+        _OVERLAY_ERROR = str(overlay_error)
+
+
+def _remove_overlay() -> None:
+    """Take the transcript handler down while its owner is importable.
+
+    `devreload.purge_library_modules()` drops every `blended.*` module,
+    and the draw handler's handle lives in the module's globals — so
+    the FRESH `transcript_overlay` cannot remove a handler installed by
+    the module it replaced. Measured 2026-09-06: after one hot reload,
+    `sys.modules` held a different module object than the earlier
+    import, with the live handle in the stale one. Removing the handler
+    BEFORE the purge is what keeps a reload from stacking a second
+    overlay that paints the old session's state.
+    """
+    try:
+        from blended.ui.transcript_overlay import unregister_overlay
+
+        unregister_overlay()
+    except Exception:  # noqa: BLE001 — a reload must never be blocked
+        pass
 
 
 
@@ -1500,7 +1685,7 @@ class _ChatDrawing:
         """The text of one event, wrapped to the region — the one place
         a body is rendered, so a bubble and a disclosed panel can never
         disagree about what an event says."""
-        if kind == "render":
+        if kind in _IMAGE_KINDS:
             self._draw_thumbnail(layout, Path(body_text), label=Path(body_text).name)
             return
         if kind == "plan":
@@ -1641,7 +1826,7 @@ class _ChatDrawing:
             if kind in _STATE_ONLY_KINDS:
                 # Progress, not conversation: it moves the plan card.
                 continue
-            if kind in _COMPACT_KINDS or kind == "render":
+            if kind in _COMPACT_KINDS or kind in _IMAGE_KINDS:
                 self._draw_traffic(
                     layout,
                     kind,
@@ -1729,90 +1914,16 @@ class _ChatDrawing:
                 BLENDED_OT_open_workspace.bl_idname, icon="WORKSPACE"
             )
 
-    def _reply_indices(self):
-        """Transcript positions of the replies, NEWEST FIRST, bounded.
-
-        A working window, not the whole history: the panel redraws
-        several times a second, and the record panel holds every event.
-        """
-        found = []
-        for index in range(len(_STATE.transcript) - 1, -1, -1):
-            if len(found) >= _STACK_DEPTH:
-                break
-            if _STATE.transcript[index][0] in ("answer", "error"):
-                found.append(index)
-        return found
-
-    def _draw_newest_reply(self, layout, region_width, ui_scale):
-        """The reply the user is waiting for, directly under the composer.
-
-        It goes here — above the render and plan cards — because it is
-        the one thing on the surface that exists nowhere else: the
-        renders are already open in the Image Editor beside the chat,
-        and the plan is in the record. Measured 2026-09-06: with the
-        cards above it, a 22-line reply was clipped by the bottom of a
-        1104 px sidebar. Review cost is what decides whether the agent
-        helped at all (DOI 10.48550/arXiv.2507.09089).
-        """
-        if _STATE.live_text:
-            live_kind = "answer" if _STATE.live_kind == "content" else _STATE.live_kind
-            if live_kind == "thinking":
-                limit = (
-                    _characters_per_line(region_width, ui_scale)
-                    - _COMPACT_ROW_CHROME_CHARACTERS
-                )
-                layout.label(
-                    text=_preview(_STATE.live_text, limit),
-                    icon=_KIND_ICONS["thinking"],
-                )
-                return
-            # Streaming shows the TAIL: the newest words are the ones
-            # being written, and the cursor has to stay visible.
-            self._draw_message(
-                layout,
-                live_kind,
-                _tail_lines(_STATE.live_text, _NEWEST_MESSAGE_ROWS) + " ▍",
-                region_width,
-                ui_scale,
-                len(_STATE.transcript),
-                max_rows=_NEWEST_MESSAGE_ROWS,
-            )
-            return
-        for index in self._reply_indices()[:1]:
-            kind, body_text = _STATE.transcript[index]
-            self._draw_message(
-                layout,
-                kind,
-                body_text,
-                region_width,
-                ui_scale,
-                index,
-                max_rows=_NEWEST_MESSAGE_ROWS,
-            )
-
-    def _draw_older_replies(self, layout, region_width, ui_scale):
-        """The stack under the cards: previous replies, a few rows each.
-
-        ASCENDING — each new reply is inserted at the TOP, so these
-        recede DOWNWARD, off the bottom, which is the one direction
-        growth costs nothing. Nothing above them ever moves.
-        """
-        skip = 0 if _STATE.live_text else 1
-        for index in self._reply_indices()[skip:]:
-            kind, body_text = _STATE.transcript[index]
-            self._draw_message(
-                layout,
-                kind,
-                body_text,
-                region_width,
-                ui_scale,
-                index,
-                max_rows=_OLDER_MESSAGE_ROWS,
-            )
-
 
 class BLENDED_PT_chat(_ChatDrawing, bpy.types.Panel):
-    """The working surface: composer FIRST, then the replies beneath it."""
+    """The working surface: composer FIRST, then fixed-height controls.
+
+    It draws NO reply text. The replies are painted by a GPU handler in
+    the viewport (`blended.ui.transcript_overlay`), which is the only
+    way to give them real padding, measured wrapping and a scroll
+    position — and it keeps everything that grows with a turn out of
+    the region that holds the prompt box.
+    """
 
     bl_label = "Agent Chat"
     bl_idname = "BLENDED_PT_chat"
@@ -1829,11 +1940,11 @@ class BLENDED_PT_chat(_ChatDrawing, bpy.types.Panel):
         ui_scale = context.preferences.system.ui_scale
 
         # Order matters, and the ONE rule is that the composer is
-        # drawn first. Everything the agent produces is drawn after it,
-        # so no reply, plan or render can move the primary interaction
-        # space (DOI 10.48550/arXiv.2410.22370): its position is fixed
-        # by construction rather than fitted by a budget. Growth goes
-        # DOWNWARD, off the bottom, where it costs nothing.
+        # drawn first. Everything after it is FIXED height — status,
+        # Settings, the renders card, the plan card — so nothing on
+        # this surface can move the primary interaction space
+        # (DOI 10.48550/arXiv.2410.22370). The replies, the one thing
+        # whose height the model decides, are not drawn here at all.
         controls = layout.column()
 
         composer = controls.column(align=True)
@@ -1855,14 +1966,49 @@ class BLENDED_PT_chat(_ChatDrawing, bpy.types.Panel):
                 BLENDED_OT_send.bl_idname, text="Send   ⌘⏎", icon="PLAY"
             )
 
+        # The picker, one fixed-height row under the Send button:
+        # Blender's own file browser IS the "give it a picture" surface,
+        # so nothing here reimplements one. No thumbnail on this
+        # surface — a preview is three UI units tall and the whole
+        # pinned budget is 27 rows at ui_scale 2.0; the picture appears
+        # in the Conversation record as a `reference` event.
+        photo_row = controls.row(align=True)
+        photo_row.prop(
+            scene_properties, "reference_image", text="", icon="IMAGE_REFERENCE"
+        )
+        if scene_properties.reference_image:
+            photo_row.operator(
+                BLENDED_OT_clear_reference.bl_idname, text="", icon="X"
+            )
+
         self._draw_session_controls(controls, scene_properties, preferences)
+
+        # The overlay's failure modes, reported where the user is
+        # looking rather than in the console — and, while it is
+        # shelved, one row saying where the replies went. Every one of
+        # them is a single fixed-height row, so none can move the
+        # composer.
+        if not TRANSCRIPT_OVERLAY_ENABLED:
+            if _STATE.transcript or _STATE.live_text:
+                controls.label(text=_OVERLAY_OFF_HINT, icon="TEXT")
+        else:
+            overlay_error, column_too_narrow = _overlay_status()
+            if overlay_error:
+                alert_row = controls.row()
+                alert_row.alert = True
+                alert_row.label(
+                    text=f"Transcript overlay failed: {overlay_error}", icon="ERROR"
+                )
+            if column_too_narrow:
+                controls.label(
+                    text="Viewport too narrow for the transcript — widen it.",
+                    icon="AREA_SWAP",
+                )
 
         if region_width < _NARROW_SIDEBAR_PIXELS:
             controls.label(text="Drag the sidebar edge wider.", icon="AREA_SWAP")
 
-        if _STATE.transcript or _STATE.live_text:
-            self._draw_newest_reply(controls, region_width, ui_scale)
-        else:
+        if not (_STATE.transcript or _STATE.live_text):
             empty_box = controls.box()
             empty_box.label(text="Ask for an asset to get started.", icon="INFO")
             for example in (
@@ -1887,8 +2033,6 @@ class BLENDED_PT_chat(_ChatDrawing, bpy.types.Panel):
         # record keeps every step.
         if _STATE.plan is not None:
             self._draw_plan(controls, _STATE.plan, _STATE.busy, steps=_STATE.busy)
-
-        self._draw_older_replies(controls, region_width, ui_scale)
 
 
 class BLENDED_PT_history(_ChatDrawing, bpy.types.Panel):
@@ -2290,6 +2434,14 @@ class BLENDED_ChatProperties(bpy.types.PropertyGroup):
         default="",
         update=_on_prompt_confirmed,
     )
+    reference_image: bpy.props.StringProperty(
+        name="Reference photo",
+        description=(
+            "A picture of the object to build; sent with your next message"
+        ),
+        default="",
+        subtype="FILE_PATH",
+    )
     visible_messages: bpy.props.IntProperty(
         name="Visible messages",
         description="How many recent messages to show",
@@ -2365,6 +2517,38 @@ class BLENDED_OT_history(bpy.types.Operator):
         return {"FINISHED"}
 
 
+class BLENDED_OT_scroll_transcript(bpy.types.Operator):
+    """Scroll the GPU transcript under the pointer.
+
+    The overlay is not a region, so Blender's own scrolling does not
+    reach it — and a modal operator to capture the wheel would take the
+    viewport hostage. A keymap item that PASSES THROUGH outside the
+    transcript column costs nothing everywhere else: the wheel keeps
+    zooming the scene exactly as it did.
+    """
+
+    bl_idname = "blended.scroll_transcript"
+    bl_label = "Scroll transcript"
+    bl_options = {"INTERNAL"}
+
+    delta_px: bpy.props.IntProperty(default=0)
+
+    def invoke(self, context, event):
+        from blended.ui.transcript_overlay import (
+            cursor_is_over_transcript,
+            scroll_by,
+        )
+
+        if not cursor_is_over_transcript(
+            context, event.mouse_region_x, event.mouse_region_y
+        ):
+            # The wheel still zooms the viewport everywhere else.
+            return {"PASS_THROUGH"}
+        scroll_by(self.delta_px)
+        context.area.tag_redraw()
+        return {"FINISHED"}
+
+
 def _register_keymaps():
     key_configuration = bpy.context.window_manager.keyconfigs.addon
     if key_configuration is None:
@@ -2379,6 +2563,7 @@ def _register_keymaps():
         if existing.idname in {
             BLENDED_OT_send.bl_idname,
             BLENDED_OT_history.bl_idname,
+            BLENDED_OT_scroll_transcript.bl_idname,
         }:
             keymap.keymap_items.remove(existing)
     for modifier in ("oskey", "ctrl"):
@@ -2398,6 +2583,25 @@ def _register_keymaps():
         )
         keymap_item.properties.direction = direction
         _KEYMAP_ENTRIES.append((keymap, keymap_item))
+    # The wheel scrolls the transcript when the pointer is inside its
+    # column and zooms the viewport everywhere else — the operator
+    # returns PASS_THROUGH outside the column, so this steals nothing.
+    # Wheel UP moves toward the newest reply, which is at the top.
+    #
+    # Not bound at all while the overlay is shelved: with no handler
+    # painting, `cursor_is_over_transcript` still answers True for the
+    # column's geometry, so the item would swallow viewport zoom over a
+    # strip of screen with nothing drawn in it.
+    if not TRANSCRIPT_OVERLAY_ENABLED:
+        return
+    from blended.ui.transcript_style import SCROLL_STEP_PX
+
+    for key_type, direction in (("WHEELUPMOUSE", -1), ("WHEELDOWNMOUSE", 1)):
+        keymap_item = keymap.keymap_items.new(
+            BLENDED_OT_scroll_transcript.bl_idname, type=key_type, value="PRESS"
+        )
+        keymap_item.properties.delta_px = direction * SCROLL_STEP_PX
+        _KEYMAP_ENTRIES.append((keymap, keymap_item))
 
 
 def _unregister_keymaps():
@@ -2414,6 +2618,7 @@ _CLASSES = (
     BLENDED_Preferences,
     BLENDED_ChatProperties,
     BLENDED_OT_send,
+    BLENDED_OT_clear_reference,
     BLENDED_OT_stop,
     BLENDED_OT_reset,
     BLENDED_OT_reload,
@@ -2424,6 +2629,7 @@ _CLASSES = (
     BLENDED_OT_revert_turn,
     BLENDED_OT_show_render,
     BLENDED_OT_open_workspace,
+    BLENDED_OT_scroll_transcript,
     BLENDED_PT_chat,
     BLENDED_PT_history,
 )
@@ -2481,11 +2687,19 @@ def register():
         _PREVIEWS.load()
     except Exception:  # noqa: BLE001 — an unconfigured library is reported on use
         _PREVIEWS = None
+    # The transcript is drawn by a GPU handler in the VIEWPORT, not by
+    # this panel: `UILayout` has no pixel vocabulary and a Blender
+    # region cannot be scrolled from Python, so a conversation drawn in
+    # the sidebar eventually pushes its own prompt box off the bottom.
+    _install_overlay()
     _register_keymaps()
 
 
 def unregister():
     global _PREVIEWS
+    # Before the keymaps, so the wheel items and the handler they drive
+    # come down together.
+    _remove_overlay()
     _unregister_keymaps()
     if bpy.app.timers.is_registered(_drain_tool_requests):
         bpy.app.timers.unregister(_drain_tool_requests)

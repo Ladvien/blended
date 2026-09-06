@@ -104,6 +104,7 @@ class RecordingLayout:
 
 class _ChatProperties:
     prompt = ""
+    reference_image = ""
     visible_messages = 24
     show_settings = False
     show_details = False
@@ -316,11 +317,17 @@ def test_a_failed_tool_result_is_tinted_even_when_collapsed():
     )
 
 
-def test_the_working_surface_holds_the_answer_and_the_prompt_but_not_the_record():
+def test_the_working_surface_holds_the_prompt_and_no_reply_text():
     """The split that fixes the measured off-screen failure: the panel
-    the user works on carries the answer and the prompt box and NO
-    traffic, so it cannot be pushed out of view by a long turn. The
-    record is a separate, closed-by-default panel below it."""
+    the user works on carries the prompt box, the status and the cards
+    — all fixed height — and NO traffic and NO reply text, so it cannot
+    be pushed out of view by a long turn. The record is a separate,
+    closed-by-default panel below it, and the replies belong to the GPU
+    overlay in the viewport.
+
+    While that overlay is shelved (`TRANSCRIPT_OVERLAY_ENABLED` False)
+    the surface has to SAY where the replies are, or the state reads as
+    a bug rather than a switch — but it still does not draw them."""
     module = _load_addon("blended_draw_split")
     module._STATE.transcript = [
         ("user", "Build a crate"),
@@ -332,17 +339,25 @@ def test_the_working_surface_holds_the_answer_and_the_prompt_but_not_the_record(
 
     labels = [text for kind, text, _ in pinned if kind == "label"]
     kinds = [kind for kind, _, _ in pinned]
-    assert "Built it." in labels, "the answer must be on the working surface"
     assert "textbox" in kinds
     assert "panel" not in kinds, (
         "traffic belongs to the record panel: anything that grows with "
         "the turn must not share a region with the prompt box"
     )
-    assert labels.index("Ready") < labels.index("Built it."), (
-        "the composer and status read ABOVE the answer: this assertion "
-        "used to say the opposite, and the opposite is exactly the "
-        "defect the user reported — a reply drawn above the prompt box "
-        "moves the prompt box by its own length (2026-09-06)"
+    assert "Built it." not in labels, (
+        "replies render in the GPU overlay, not on the pinned surface: a "
+        "reply drawn here moves the prompt box by its own length, which "
+        "is exactly the defect the user reported (2026-09-06)"
+    )
+    assert "Ready" in labels, "the status line stays on the surface"
+    assert labels.count(module._OVERLAY_OFF_HINT) == 1, (
+        "a shelved overlay must point at the record, exactly once"
+    )
+
+    module._STATE.transcript = []
+    empty = [text for kind, text, _ in _draw(module, _make_context("blended_draw_split")) if kind == "label"]
+    assert module._OVERLAY_OFF_HINT not in empty, (
+        "nothing to point at before the first turn"
     )
 
     assert module.BLENDED_PT_history.bl_order > module.BLENDED_PT_chat.bl_order
@@ -383,9 +398,15 @@ def test_tool_call_renders_escaped_newlines_as_lines():
 
 def test_error_bubbles_use_the_alert_tint():
     """Errors must read at a glance — the alert tint is the one
-    per-widget emphasis Blender exposes."""
+    per-widget emphasis Blender exposes.
+
+    Drawn through BOTH panels because the pinned surface no longer
+    renders replies at all; the record does, and the GPU overlay paints
+    its own `error_bubble_rgba` (asserted in
+    tests/pure/test_transcript_layout.py).
+    """
     module = _load_addon("blended_draw_alert")
     module._STATE.transcript = [("error", "boom")]
-    emitted = _draw(module, _make_context("blended_draw_alert"))
+    emitted = _draw_all(module, _make_context("blended_draw_alert"))
     alerts = [value for kind, value, _ in emitted if kind == "alert"]
     assert any(alerts), "error bubble must set the alert tint"

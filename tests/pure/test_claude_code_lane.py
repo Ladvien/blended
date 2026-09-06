@@ -164,8 +164,12 @@ def test_images_land_at_their_placeholder_positions():
 
 
 def test_tool_result_images_without_placeholders_still_arrive():
-    """`AgentSession` attaches renders to a tool result with no
-    placeholder text when the writer is its own eye."""
+    """A message carrying images but no `[img]` must not lose them.
+
+    `AgentSession` places a placeholder per image on every path now
+    (`loop.deliver_images`), so this is the fallback: any caller that
+    attaches images to bare text gets them appended after the text
+    rather than dropped."""
     _, frame = render_call(
         [
             {

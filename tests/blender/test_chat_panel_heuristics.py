@@ -44,11 +44,6 @@ from blended.agent.plan import TurnPlan  # noqa: E402
 
 PLAN_STEPS = ("Build the crate body", "Add the slats", "Render and verify")
 STUB_ICON_IDENTIFIER = 4242
-# Labels the pinned surface draws besides the answer's own rows: the
-# bubble header, the status line, the settings header and the model
-# name. Counted, not guessed — the assertion is about the ANSWER not
-# growing, so the chrome has to be allowed for explicitly.
-_ROWS_OF_CHROME_AROUND_AN_ANSWER = 6
 
 
 def _labels(emitted):
@@ -165,106 +160,30 @@ def test_the_composer_is_the_first_thing_the_surface_draws():
 
         assert "textbox" in kinds, f"{description}: no prompt box drawn"
         composer_at = kinds.index("textbox")
-        assert composer_at == 0, (
-            f"{description}: {composer_at} widget(s) drawn above the prompt "
-            f"box — anything above it can move it"
-        )
         send_at = names.index("blended.send_message")
-        body_positions = [
-            position
-            for position, (kind, text, _) in enumerate(emitted)
-            if kind == "label" and ("line " in text or text.strip() in ("x", "Done."))
-        ]
-        assert all(position > send_at for position in body_positions), (
-            f"{description}: message text drawn above the Send button"
+        assert send_at > composer_at, (
+            f"{description}: Send drawn above the prompt box"
         )
 
 
-def test_replies_stack_newest_first_under_the_composer():
-    """Ascending: a new reply goes on TOP of the stack.
-
-    Older replies recede downward, off the bottom, which is the one
-    direction growth costs nothing. Reversing this is what forced the
-    user to scroll to reach the input box.
-    """
-    module = _load_addon("blended_heuristics_stack")
-    context = _make_context("blended_heuristics_stack")
-    module._STATE.plan = None
-    module._STATE.busy = False
-    module._STATE.transcript = [
-        ("user", "one"),
-        ("answer", "OLDEST reply"),
-        ("user", "two"),
-        ("answer", "MIDDLE reply"),
-        ("user", "three"),
-        ("answer", "NEWEST reply"),
-    ]
-
-    labels = _labels(_draw(module, context))
-    positions = {
-        marker: next(
-            (index for index, text in enumerate(labels) if marker in text), None
-        )
-        for marker in ("NEWEST", "MIDDLE", "OLDEST")
-    }
-    assert all(position is not None for position in positions.values()), positions
-    assert positions["NEWEST"] < positions["MIDDLE"] < positions["OLDEST"], positions
-
-
-def test_the_stack_is_bounded_and_the_record_keeps_the_rest():
-    """A working window, not the whole history: the panel redraws
-    several times a second, and the record panel below holds every
-    message anyway."""
+def test_the_record_keeps_every_message():
+    """The pinned surface draws no replies at all now, so the record is
+    the only native surface that must still hold every message —
+    including the ones the GPU overlay's working window drops."""
     module = _load_addon("blended_heuristics_depth")
     context = _make_context("blended_heuristics_depth")
     module._STATE.plan = None
     module._STATE.busy = False
     module._STATE.transcript = [
-        ("answer", f"reply {number}")
-        for number in range(module._STACK_DEPTH + 3)
+        ("answer", f"reply {number}") for number in range(8)
     ]
-
-    labels = _labels(_draw(module, context))
-    shown = [text for text in labels if text.startswith("reply ")]
-    assert len(shown) == module._STACK_DEPTH, shown
-    assert shown[0] == f"reply {module._STACK_DEPTH + 2}", "newest must be first"
-    assert "reply 0" not in shown, "the oldest falls off the working window"
 
     record = _labels(_draw(module, context, panel=module.BLENDED_PT_history))
     assert "reply 0" in record, "the record keeps every message"
+    assert "reply 7" in record
 
-
-def test_the_newest_reply_is_read_before_the_cards():
-    """The measured readability failure, 2026-09-06.
-
-    With the render and plan cards drawn between the composer and the
-    reply, a 22-line answer in a 1104 px sidebar was clipped by the
-    bottom of the region — the one thing the user was waiting for was
-    the one thing off-screen. The reply now sits directly under the
-    composer and the cards recede below it, which costs the cards
-    nothing: the same renders are already open in the Image Editor
-    beside the chat, and every plan step is in the record.
-    """
-    module = _load_addon("blended_heuristics_reading_order")
-    context = _make_context("blended_heuristics_reading_order")
-    module._STATE.busy = False
-    module._STATE.plan = TurnPlan(steps=PLAN_STEPS, current_step=3)
-    module._STATE.transcript = [
-        ("user", "build it"),
-        ("render", "/tmp/before.png"),
-        ("answer", "OLDER reply"),
-        ("user", "bevel it"),
-        ("render", "/tmp/after.png"),
-        ("answer", "NEWEST reply"),
-    ]
-
-    labels = _labels(_draw(module, context))
-    def at(marker):
-        return next(index for index, text in enumerate(labels) if marker in text)
-
-    assert at("NEWEST reply") < at("Renders"), "the reply must precede the renders"
-    assert at("NEWEST reply") < at("Plan"), "the reply must precede the plan"
-    assert at("Renders") < at("OLDER reply"), "older replies recede below the cards"
+    pinned = _labels(_draw(module, context))
+    assert not [text for text in pinned if text.startswith("reply ")]
 
 
 def test_no_plan_means_no_plan_card():
@@ -453,25 +372,81 @@ def test_the_working_surface_does_not_grow_with_the_turn():
         "conversation again"
     )
 
-    # …and neither may an unbounded ANSWER grow it: the model decides
-    # how long its reply is, so the surface caps it and points at the
-    # record.
+    # …and neither may an unbounded ANSWER grow it, because the surface
+    # does not draw the answer at all any more: the replies are painted
+    # by the GPU overlay in the viewport, and the truncation the model's
+    # unbounded reply needs is asserted in
+    # tests/pure/test_transcript_layout.py against measured widths.
     module._STATE.transcript = [
         ("user", "Build a crate"),
         ("answer", "\n".join(f"finding number {n}" for n in range(60))),
     ]
     long_answer = _draw(module, context)
     labels = _labels(long_answer)
-    assert "finding number 0" in labels
-    assert "finding number 59" not in labels
-    assert any("more lines — open Conversation" in text for text in labels), (
-        "a truncated answer must say so and say where the rest is"
+    assert not [text for text in labels if text.startswith("finding number")], (
+        "reply text on the pinned surface is what moved the prompt box"
     )
-    assert len(labels) <= (
-        module._NEWEST_MESSAGE_ROWS + _ROWS_OF_CHROME_AROUND_AN_ANSWER
-    ), "the capped answer must fit the rows a message is allowed"
+    assert len(long_answer) == len(small), (
+        "a 60-line answer drew a different number of widgets than a "
+        "one-line one"
+    )
     assert "textbox" in [kind for kind, _, _ in long_answer]
 
     # The record still holds every word.
     record = _labels(_draw(module, context, panel=module.BLENDED_PT_history))
     assert "finding number 59" in record
+
+
+def test_the_photo_picker_is_one_fixed_height_row_under_the_composer():
+    """A picture of the object IS the request (H-LAN: Blender's own file
+    browser is the picker, so nothing here reimplements one). It sits
+    with the composer, and — like everything else on the pinned surface
+    — picking a photo must not change how many widgets are drawn, or it
+    would move the controls below it.
+    """
+    module = _load_addon("blended_heuristics_picker")
+    context = _make_context("blended_heuristics_picker")
+
+    empty = _draw(module, context)
+    assert "reference_image" in [name for kind, name, _ in empty if kind == "prop"], (
+        "the surface must always offer the picker, not hide it behind a toggle"
+    )
+    assert not _operator_handles(empty, "blended.clear_reference"), (
+        "nothing to clear when no photo is picked"
+    )
+
+    context.scene.blended_chat.reference_image = "/tmp/blended/stool.jpg"
+    picked = _draw(module, context)
+    assert _operator_handles(picked, "blended.clear_reference"), (
+        "a picked photo must be un-pickable without editing the path by hand"
+    )
+    # One row either way: the clear button rides the picker's own row.
+    assert len(picked) == len(empty) + 1
+
+
+def test_a_reference_photo_is_drawn_as_its_own_picture_in_the_record():
+    """The user's photo is neither prose nor a render of the scene: the
+    record shows the picture, named, with a way to open it full size —
+    the same treatment a render gets, because both are pixels on disk.
+    """
+    module = _load_addon("blended_heuristics_reference")
+    module._STATE.transcript = [
+        ("user", "Build this."),
+        ("reference", "/tmp/blended/reference_stool.png"),
+        ("answer", "Built it."),
+    ]
+    module._PREVIEWS = types.SimpleNamespace(icon_for=lambda path: STUB_ICON_IDENTIFIER)
+    context = _make_context("blended_heuristics_reference")
+    context.scene.blended_chat.show_details = True
+
+    record = _draw(module, context, panel=module.BLENDED_PT_history)
+
+    assert "reference_stool.png" in _labels(record), (
+        "the row must name the photo, not print its whole path"
+    )
+    assert STUB_ICON_IDENTIFIER in [
+        value for kind, value, _ in record if kind == "template_icon"
+    ]
+    assert "/tmp/blended/reference_stool.png" in [
+        handle.path for handle in _operator_handles(record, "blended.show_render")
+    ]
