@@ -8,6 +8,7 @@ These tests read the in-repo logs, which are the evidence the pin rests
 on, so the rule is measured against the history it describes.
 """
 
+from dataclasses import replace
 from pathlib import Path
 
 from blended.agent import prompt_versions
@@ -245,3 +246,78 @@ def test_only_runs_that_executed_a_revision_may_mint_its_reference():
     # A revision nothing ran gets nothing — the caller refuses loudly
     # rather than stamping someone else's geometry with its name.
     assert clean_cycle_for_identity(records, names, "v12:absent") == {}
+
+
+def test_the_preflight_refuses_an_examiner_that_flags_clean_runs(monkeypatch):
+    """The route, not just the number.
+
+    `Calibration.problems()` reporting a cross-run miss is worth
+    nothing if the loop's preflight does not consult it. Measured
+    2026-09-06: with cross-run specificity 0.75 on disk,
+    `converge_auto.py` printed "PREFLIGHT REFUSED … cross-run control
+    specificity 0.75 < 1.0" and exited 2 without spending a token.
+    This pins that wiring so a future licence field cannot be added to
+    `problems()` and silently bypass the gate.
+    """
+    import importlib.util
+    import sys
+    from types import SimpleNamespace
+
+    from blended.evaluate import examiner as examiner_module
+
+    specification = importlib.util.spec_from_file_location(
+        "converge_auto_under_test",
+        Path(__file__).resolve().parents[2] / "scripts" / "converge_auto.py",
+    )
+    module = importlib.util.module_from_spec(specification)
+    sys.modules[specification.name] = module
+    specification.loader.exec_module(module)
+
+    unlicensed = examiner_module.Calibration(
+        examiner_identity="eye+examiner:deadbeef1234",
+        vision_model="eye",
+        recorded_at="2026-09-06T00:00:00+00:00",
+        view_names=examiner_module.EXAMINED_VIEW_NAMES,
+        sensitivity=1.0,
+        control_specificity=1.0,
+        cross_run_control_specificity=0.75,
+    )
+    monkeypatch.setattr(
+        examiner_module, "load_calibration", lambda *a, **k: unlicensed
+    )
+    monkeypatch.setattr(
+        examiner_module, "examiner_identity", lambda model: unlicensed.examiner_identity
+    )
+    # Everything else the preflight touches, stubbed to "fine": the
+    # examiner licence must be the ONLY reason it refuses here.
+    monkeypatch.setattr(module, "_client", lambda *a, **k: SimpleNamespace(
+        config=SimpleNamespace(
+            vision_model="eye", eye_config=lambda: SimpleNamespace(vision_model="eye")
+        ),
+        check_connection=lambda: SimpleNamespace(ok=True, detail=""),
+    ))
+    monkeypatch.setattr(examiner_module, "verify_golden_manifest", lambda *a: "v11:x")
+
+    arguments = SimpleNamespace(
+        revision=prompt_versions.latest_revision().revision,
+        model="writer",
+        vision_model="eye",
+    )
+    problems = module.preflight(arguments, ())
+    cross_run = [p for p in problems if "cross-run control specificity" in p]
+    assert cross_run, problems
+    assert cross_run[0].startswith("examiner: ")
+
+    # Non-vacuity: the SAME preflight, the same stubs, a licensed
+    # cross-run number — and the refusal disappears. Without this the
+    # test would still pass if the preflight refused for any reason at
+    # all.
+    licensed = replace(unlicensed, cross_run_control_specificity=1.0)
+    monkeypatch.setattr(
+        examiner_module, "load_calibration", lambda *a, **k: licensed
+    )
+    assert not [
+        problem
+        for problem in module.preflight(arguments, ())
+        if "cross-run control specificity" in problem
+    ]
