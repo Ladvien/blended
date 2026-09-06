@@ -122,82 +122,149 @@ def test_a_finished_plan_gives_its_rows_back_to_the_answer():
     assert f"1. {PLAN_STEPS[0]}" in record, "the record keeps every step"
 
 
-def test_the_pinned_surface_always_leaves_room_for_the_composer():
-    """The invariant four live sessions have now broken.
+def test_the_composer_is_the_first_thing_the_surface_draws():
+    """The invariant four live sessions broke, now structural.
 
-    The old budget shrank only the ANSWER and drew the cards
-    unconditionally, so on a short sidebar the surface still overflowed
-    and the prompt box went off the bottom — measured 2026-09-06 in the
-    shipped `blended` workspace, whose own layout left a 618 px sidebar
-    (15 rows at ui_scale 2.0) while the surface wanted 23. This asserts
-    the property directly, across every height a real window produces:
-    what the panel draws never exceeds the rows the region has.
+    Every earlier attempt BUDGETED the composer — reserve rows, shrink
+    the answer, make the cards yield — and every one of them still let
+    it move, because a control drawn after a variable-height message
+    has a variable position by construction. The user reported it
+    plainly (2026-09-06): "when you send a message, it moves the input
+    box down every response message".
+
+    So the composer is drawn FIRST and this test says so across every
+    state that used to move it. Nothing about heights, scales or
+    budgets appears here: position is now a property of the draw ORDER,
+    which is why there is nothing left to compute wrongly.
     """
-    module = _load_addon("blended_heuristics_budget")
+    module = _load_addon("blended_heuristics_first")
+    context = _make_context("blended_heuristics_first")
 
-    def drawn_rows(budget, plan_step_count, has_plan, has_renders):
-        rows = module._COMPOSER_RESERVED_ROWS + budget.answer_rows
-        if has_plan and budget.show_plan:
-            rows += module._PLAN_CARD_FIXED_ROWS
-            if budget.show_plan_steps:
-                rows += plan_step_count
-        if has_renders and budget.show_renders:
-            rows += module._RENDER_CARD_ROWS
-        return rows
+    for description, transcript, plan, renders in (
+        ("empty", [], None, False),
+        ("one short answer", [("user", "hi"), ("answer", "Done.")], None, False),
+        (
+            "a long answer",
+            [("user", "hi"), ("answer", "\n".join(f"line {n}" for n in range(80)))],
+            None,
+            False,
+        ),
+        (
+            "answer, plan and renders",
+            [("user", "hi"), ("render", "/tmp/a.png"), ("answer", "x\n" * 40)],
+            TurnPlan(steps=PLAN_STEPS, current_step=2),
+            True,
+        ),
+    ):
+        module._STATE.transcript = list(transcript)
+        module._STATE.plan = plan
+        module._STATE.busy = False
+        emitted = _draw(module, context)
+        kinds = [kind for kind, _, _ in emitted]
+        names = [name for _, name, _ in emitted]
 
-    for height_px in (240, 400, 618, 800, 1104, 2160):
-        for ui_scale in (1.0, 2.0):
-            for plan_step_count, has_plan in ((0, False), (0, True), (5, True)):
-                for has_renders in (False, True):
-                    budget = module._pinned_surface_budget(
-                        height_px,
-                        ui_scale,
-                        plan_step_count=plan_step_count,
-                        has_plan=has_plan,
-                        has_renders=has_renders,
-                    )
-                    available = int(
-                        height_px / (module._UI_ROW_HEIGHT_PX * ui_scale)
-                    )
-                    used = drawn_rows(
-                        budget, plan_step_count, has_plan, has_renders
-                    )
-                    if available >= (
-                        module._COMPOSER_RESERVED_ROWS
-                        + module._MINIMUM_ANSWER_ROWS
-                    ):
-                        assert used <= available, (
-                            f"{height_px}px @{ui_scale} plan={has_plan}/"
-                            f"{plan_step_count} renders={has_renders}: "
-                            f"drew {used} rows into {available}"
-                        )
-                    assert budget.answer_rows >= module._MINIMUM_ANSWER_ROWS
+        assert "textbox" in kinds, f"{description}: no prompt box drawn"
+        composer_at = kinds.index("textbox")
+        assert composer_at == 0, (
+            f"{description}: {composer_at} widget(s) drawn above the prompt "
+            f"box — anything above it can move it"
+        )
+        send_at = names.index("blended.send_message")
+        body_positions = [
+            position
+            for position, (kind, text, _) in enumerate(emitted)
+            if kind == "label" and ("line " in text or text.strip() in ("x", "Done."))
+        ]
+        assert all(position > send_at for position in body_positions), (
+            f"{description}: message text drawn above the Send button"
+        )
 
 
-def test_the_cards_yield_in_order_and_the_answer_keeps_the_surplus():
-    """Renders go first because the Image Editor beside the chat already
-    has the same images; the plan is only ever here."""
-    module = _load_addon("blended_heuristics_budget_order")
+def test_replies_stack_newest_first_under_the_composer():
+    """Ascending: a new reply goes on TOP of the stack.
 
-    # The measured 618 px sidebar: nothing but composer and answer fits.
-    cramped = module._pinned_surface_budget(
-        618, 2.0, plan_step_count=4, has_plan=True, has_renders=True
-    )
-    assert not cramped.show_renders
-    assert not cramped.show_plan_steps
+    Older replies recede downward, off the bottom, which is the one
+    direction growth costs nothing. Reversing this is what forced the
+    user to scroll to reach the input box.
+    """
+    module = _load_addon("blended_heuristics_stack")
+    context = _make_context("blended_heuristics_stack")
+    module._STATE.plan = None
+    module._STATE.busy = False
+    module._STATE.transcript = [
+        ("user", "one"),
+        ("answer", "OLDEST reply"),
+        ("user", "two"),
+        ("answer", "MIDDLE reply"),
+        ("user", "three"),
+        ("answer", "NEWEST reply"),
+    ]
 
-    # The measured full sidebar: everything fits at once.
-    roomy = module._pinned_surface_budget(
-        1104, 2.0, plan_step_count=4, has_plan=True, has_renders=True
-    )
-    assert roomy.show_renders and roomy.show_plan and roomy.show_plan_steps
+    labels = _labels(_draw(module, context))
+    positions = {
+        marker: next(
+            (index for index, text in enumerate(labels) if marker in text), None
+        )
+        for marker in ("NEWEST", "MIDDLE", "OLDEST")
+    }
+    assert all(position is not None for position in positions.values()), positions
+    assert positions["NEWEST"] < positions["MIDDLE"] < positions["OLDEST"], positions
 
-    # Nothing above the answer means the answer gets the whole surplus.
-    bare = module._pinned_surface_budget(
-        1104, 2.0, plan_step_count=0, has_plan=False, has_renders=False
-    )
-    assert bare.answer_rows == 27 - module._COMPOSER_RESERVED_ROWS
-    assert bare.answer_rows > roomy.answer_rows
+
+def test_the_stack_is_bounded_and_the_record_keeps_the_rest():
+    """A working window, not the whole history: the panel redraws
+    several times a second, and the record panel below holds every
+    message anyway."""
+    module = _load_addon("blended_heuristics_depth")
+    context = _make_context("blended_heuristics_depth")
+    module._STATE.plan = None
+    module._STATE.busy = False
+    module._STATE.transcript = [
+        ("answer", f"reply {number}")
+        for number in range(module._STACK_DEPTH + 3)
+    ]
+
+    labels = _labels(_draw(module, context))
+    shown = [text for text in labels if text.startswith("reply ")]
+    assert len(shown) == module._STACK_DEPTH, shown
+    assert shown[0] == f"reply {module._STACK_DEPTH + 2}", "newest must be first"
+    assert "reply 0" not in shown, "the oldest falls off the working window"
+
+    record = _labels(_draw(module, context, panel=module.BLENDED_PT_history))
+    assert "reply 0" in record, "the record keeps every message"
+
+
+def test_the_newest_reply_is_read_before_the_cards():
+    """The measured readability failure, 2026-09-06.
+
+    With the render and plan cards drawn between the composer and the
+    reply, a 22-line answer in a 1104 px sidebar was clipped by the
+    bottom of the region — the one thing the user was waiting for was
+    the one thing off-screen. The reply now sits directly under the
+    composer and the cards recede below it, which costs the cards
+    nothing: the same renders are already open in the Image Editor
+    beside the chat, and every plan step is in the record.
+    """
+    module = _load_addon("blended_heuristics_reading_order")
+    context = _make_context("blended_heuristics_reading_order")
+    module._STATE.busy = False
+    module._STATE.plan = TurnPlan(steps=PLAN_STEPS, current_step=3)
+    module._STATE.transcript = [
+        ("user", "build it"),
+        ("render", "/tmp/before.png"),
+        ("answer", "OLDER reply"),
+        ("user", "bevel it"),
+        ("render", "/tmp/after.png"),
+        ("answer", "NEWEST reply"),
+    ]
+
+    labels = _labels(_draw(module, context))
+    def at(marker):
+        return next(index for index, text in enumerate(labels) if marker in text)
+
+    assert at("NEWEST reply") < at("Renders"), "the reply must precede the renders"
+    assert at("NEWEST reply") < at("Plan"), "the reply must precede the plan"
+    assert at("Renders") < at("OLDER reply"), "older replies recede below the cards"
 
 
 def test_no_plan_means_no_plan_card():
@@ -400,12 +467,9 @@ def test_the_working_surface_does_not_grow_with_the_turn():
     assert any("more lines — open Conversation" in text for text in labels), (
         "a truncated answer must say so and say where the rest is"
     )
-    budget = module._pinned_surface_budget(
-        1104, 1.0, plan_step_count=0, has_plan=False, has_renders=False
-    ).answer_rows
-    assert len(labels) <= budget + _ROWS_OF_CHROME_AROUND_AN_ANSWER, (
-        "the capped answer must fit the budget the region actually has"
-    )
+    assert len(labels) <= (
+        module._NEWEST_MESSAGE_ROWS + _ROWS_OF_CHROME_AROUND_AN_ANSWER
+    ), "the capped answer must fit the rows a message is allowed"
     assert "textbox" in [kind for kind, _, _ in long_answer]
 
     # The record still holds every word.

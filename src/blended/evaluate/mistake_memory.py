@@ -2283,25 +2283,82 @@ MISTAKES: tuple[MistakeRecord, ...] = (
             "render beside the thumbnails that open it. Assign the two "
             "products by WIDTH, not by `area.x`: read straight after "
             "the operator, x returned them in the opposite order to "
-            "their final geometry. `_pinned_surface_budget` now makes "
-            "the CARDS yield, renders first (the same images are in the "
-            "Image Editor pane), then the plan's steps, then the plan "
-            "card; the composer never yields. Two more ordering facts: "
+            "their final geometry. Two more ordering facts: "
             "assigning `area.type` swaps the area's active space, so a "
             "`show_region_ui` written right after the split lands on "
             "the replaced space (sidebar came back 1x1) — it is set in "
             "`activate_chat_tab`, which is already deferred a frame; "
             "and the tab needs one frame MORE than the layout, so the "
             "operator's timer re-arms until `active_panel_category` "
-            "takes, bounded by `_WORKSPACE_TAB_ATTEMPTS`."
+            "takes, bounded by `_WORKSPACE_TAB_ATTEMPTS`. The row "
+            "budget this record originally added was later DELETED: "
+            "see `the-composer-moved-because-it-was-drawn-last`, which "
+            "replaced it with a draw-order guarantee."
         ),
         guarded_by=(
             "tests/blender/test_chat_panel_heuristics.py::"
-            "test_the_pinned_surface_always_leaves_room_for_the_composer "
-            "(asserts drawn rows <= region rows across six heights, two "
-            "ui_scales and every card combination — the property, not a "
-            "single case) and ::test_the_cards_yield_in_order_and_the_"
-            "answer_keeps_the_surplus"
+            "test_the_composer_is_the_first_thing_the_surface_draws and "
+            "tests/blender/test_chat_panel_heuristics.py::workspace "
+            "coverage in tests/blender/test_workspace.py"
+        ),
+        recorded_on="2026-09-06",
+    ),
+    MistakeRecord(
+        identifier="the-composer-moved-because-it-was-drawn-last",
+        scope="harness_code",
+        failure=(
+            "The user reported it in one sentence: \"when you send a "
+            "message, it moves the input box down every response "
+            "message, so it forces the user to have to scroll down to "
+            "type again\". Measured on the shipped panel: the prompt "
+            "box was the LAST thing `BLENDED_PT_chat.draw` emitted, "
+            "after the render card, the plan card and the reply, so "
+            "its screen position was a function of the reply's length "
+            "— a 1-line reply and a 22-line reply put it ~21 rows "
+            "apart. Four live sessions had already lost the composer "
+            "off the bottom for the same reason."
+        ),
+        cause=(
+            "Every previous fix BUDGETED the composer instead of "
+            "placing it: reserve 12 rows, shrink the answer, make the "
+            "cards yield. A budget can only decide whether a control "
+            "FITS; it cannot make it STAY, because a widget drawn "
+            "after a variable-height widget has a variable position by "
+            "construction. Three rounds of arithmetic defended the "
+            "wrong property, and each round's test pinned the wrong "
+            "property too — test_the_working_surface_holds_the_answer_"
+            "and_the_prompt_but_not_the_record actually ASSERTED that "
+            "the answer reads above the composer."
+        ),
+        fix=(
+            "Draw the composer FIRST, unconditionally, then the "
+            "session controls, then the newest reply, then the cards, "
+            "then older replies. Replies stack ASCENDING: a new one "
+            "goes on top and its predecessors recede downward, off the "
+            "bottom, the one direction growth costs nothing. Position "
+            "is now a property of draw ORDER, so `_SurfaceBudget`, "
+            "`_pinned_surface_budget` and the four row constants were "
+            "DELETED rather than corrected — there is nothing left to "
+            "compute wrongly. The newest reply sits ABOVE the render "
+            "and plan cards for a second measured reason: with the "
+            "cards above it, a 22-line reply was clipped by the bottom "
+            "of the 1104 px sidebar, and the cards lose nothing (the "
+            "same renders are open in the Image Editor beside the "
+            "chat, every plan step is in the record). Proof: two live "
+            "turns, replies of 1 and 22 lines, screenshots diffed — "
+            "the composer strip is 0 differing pixels of 94,350, the "
+            "only change being a 6 px scrollbar stripe at x 1402-1407 "
+            "that spans 1101 of 1104 rows; a control band lower down "
+            "differed by 13.2 percent, so the diff was sensitive."
+        ),
+        guarded_by=(
+            "tests/blender/test_chat_panel_heuristics.py::"
+            "test_the_composer_is_the_first_thing_the_surface_draws "
+            "(the prompt box is at draw index 0 across empty, short, "
+            "long, and answer-plus-plan-plus-renders states), "
+            "::test_replies_stack_newest_first_under_the_composer, "
+            "::test_the_newest_reply_is_read_before_the_cards, and "
+            "::test_the_stack_is_bounded_and_the_record_keeps_the_rest"
         ),
         recorded_on="2026-09-06",
     ),

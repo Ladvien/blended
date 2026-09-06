@@ -190,7 +190,8 @@ def _open_sidebar(screen, window) -> None:
 
     `Region.width` is READ-ONLY in the RNA — the sidebar's width is the
     user's to drag, and the panel is built to fit the 27-row sidebar a
-    default window gives it (see `_answer_row_budget` in the addon).
+    default window gives it (the addon draws the composer first, so this
+# only affects how much of a reply is readable without scrolling).
 
     Selecting the `blended` TAB is a separate call: a freshly copied
     screen's regions are not realised until Blender has drawn them once,

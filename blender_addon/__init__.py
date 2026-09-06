@@ -61,7 +61,6 @@ import threading
 import traceback
 from dataclasses import replace
 from pathlib import Path
-from typing import NamedTuple
 
 import bpy
 
@@ -1233,26 +1232,33 @@ _EVENT_PANEL_IDNAME = "blended_event_{index}"
 _PLAN_STEP_SCALE_Y = 0.9
 _EVIDENCE_BEFORE_LABEL = "before"
 _EVIDENCE_LATEST_LABEL = "now"
-# The pinned surface must fit the region it is drawn in. Blender's row
-# unit is UI_UNIT_Y = 20 px before `ui_scale`, and a real sidebar is
-# far smaller than it looks: 561 x 1104 px at ui_scale 2.0 is 27 ROWS
-# (measured in a live GUI session, 2026-09-05). An unbounded answer ate
-# all of them and pushed the prompt box off the bottom — three times,
-# each time because a cost here was estimated instead of measured.
+# Blender's row unit is UI_UNIT_Y = 20 px before `ui_scale`, and a real
+# sidebar is far smaller than it looks: 561 x 1104 px at ui_scale 2.0
+# is 27 ROWS (measured in a live GUI session, 2026-09-05).
 _UI_ROW_HEIGHT_PX = 20.0
-# Panel header, box padding, textbox (2.5), send button (1.3), status
-# row, settings header — AND one row for the record panel's own header,
-# because a record the user cannot see the way into is not reachable.
-# Measured against the 27-row sidebar, twice.
-_COMPOSER_RESERVED_ROWS = 12
-# Renders card: header + labels + the thumbnails + the Open buttons.
-# The pair sits side by side, so the cost is the same for one or two.
-_RENDER_CARD_ROWS = 6
-# A plan being worked through: header + progress bar, plus a row per
-# step. A FINISHED plan collapses to its header and bar.
-_PLAN_CARD_FIXED_ROWS = 2
-# Below this an answer is not worth drawing at all; the record has it.
-_MINIMUM_ANSWER_ROWS = 3
+# The composer is drawn FIRST, so nothing above it can move it: its
+# position is structural, not budgeted. Three earlier attempts budgeted
+# it instead — reserve rows for it, shrink the answer, make the cards
+# yield — and each one still moved it, because a control drawn after a
+# variable-height message sits at a variable height by construction
+# (measured 2026-09-06: the user reported the input box walking down
+# the panel on every reply).
+#
+# Messages therefore stack ASCENDING: the newest sits directly under
+# the composer and older ones recede downward, off the bottom, which
+# is the one direction growth costs nothing. Pointing time grows with
+# distance to a target (Fitts, DOI 10.48550/arXiv.2308.12515,
+# DOI 10.48550/arXiv.1906.00905) and a target that MOVES has to be
+# re-acquired visually before it can be pointed at, so a fixed
+# composer is strictly cheaper than a well-fitted one
+# (interaction-cost adaptation, DOI 10.48550/arXiv.2204.09162).
+_NEWEST_MESSAGE_ROWS = 14
+# Older messages are context, not the thing being read: a few rows
+# each, expandable in the record below.
+_OLDER_MESSAGE_ROWS = 4
+# How deep the stack goes on the pinned surface. The record panel holds
+# every message; this is the working window.
+_STACK_DEPTH = 4
 # One preview collection for the addon's lifetime, loaded in register()
 # and unloaded in unregister(); a panel redraws several times a second
 # and must never reload a PNG to draw it.
@@ -1395,53 +1401,14 @@ def _thumbnail_icon(image_path) -> int:
         return 0
 
 
-class _SurfaceBudget(NamedTuple):
-    """What the pinned surface may draw in the region it actually has."""
+def _panel_rows(region_height_px, ui_scale) -> int:
+    """How many UI rows the region can show at once.
 
-    answer_rows: int
-    show_plan: bool
-    show_plan_steps: bool
-    show_renders: bool
-
-
-def _pinned_surface_budget(
-    region_height_px, ui_scale, plan_step_count, has_plan, has_renders
-) -> _SurfaceBudget:
-    """Fit the pinned surface into the region, composer FIRST.
-
-    Rows, not source lines: the live sessions that lost the prompt box
-    did it with a SINGLE paragraph that wrapped to ten rows, so a
-    line-count cap protects nothing.
-
-    The earlier version shrank only the ANSWER and drew the cards
-    unconditionally, which is why a fourth live session lost the
-    composer anyway — measured 2026-09-06: the shipped `blended`
-    workspace split the viewport in half, leaving a 618 px sidebar (15
-    rows at ui_scale 2.0) while the surface wanted 12 composer + 6
-    renders + 2 plan + 3 answer = 23. The cards now YIELD, in reverse
-    order of what the user cannot get anywhere else: renders go first
-    because the same images are already open in the Image Editor beside
-    the chat, then the plan's step list, then the plan card itself. The
-    composer never yields — it is the primary interaction space
-    (DOI 10.48550/arXiv.2410.22370).
+    Used for reporting and for tests, never to decide whether the
+    composer is drawn: the composer is drawn first, unconditionally.
+    A number that decides nothing cannot be wrong about anything.
     """
-    rows = int(region_height_px / (_UI_ROW_HEIGHT_PX * max(ui_scale, 0.1)))
-    spare = rows - _COMPOSER_RESERVED_ROWS - _MINIMUM_ANSWER_ROWS
-    show_plan = has_plan and spare >= _PLAN_CARD_FIXED_ROWS
-    if show_plan:
-        spare -= _PLAN_CARD_FIXED_ROWS
-    show_plan_steps = show_plan and plan_step_count > 0 and spare >= plan_step_count
-    if show_plan_steps:
-        spare -= plan_step_count
-    show_renders = has_renders and spare >= _RENDER_CARD_ROWS
-    if show_renders:
-        spare -= _RENDER_CARD_ROWS
-    return _SurfaceBudget(
-        answer_rows=_MINIMUM_ANSWER_ROWS + max(0, spare),
-        show_plan=show_plan,
-        show_plan_steps=show_plan_steps,
-        show_renders=show_renders,
-    )
+    return int(region_height_px / (_UI_ROW_HEIGHT_PX * max(ui_scale, 0.1)))
 
 
 def _tail_lines(text: str, limit: int) -> str:
@@ -1694,155 +1661,13 @@ class _ChatDrawing:
                 visible_offset + index,
             )
 
-    def _draw_latest_answer(self, layout, region_width, ui_scale, max_rows):
-        """The reply the user is waiting for, on the pinned surface.
+    def _draw_session_controls(self, controls, scene_properties, preferences):
+        """Status, the session actions, and Settings — all fixed height.
 
-        The whole point of the split: the answer must be readable
-        without scrolling past the turn's traffic, because review cost
-        is what decides whether the agent helped at all
-        (DOI 10.48550/arXiv.2507.09089).
-
-        `max_rows` comes from `_answer_row_budget` — what the region has
-        left once the cards above and the controls below are paid for.
-        The full text is always in the record panel and on the copy
-        button, so nothing is lost by cutting it here.
+        Drawn immediately under the composer so every CLICKABLE control
+        on the surface has a position that does not depend on what the
+        agent said. Only the message stack below can grow.
         """
-        if _STATE.live_text:
-            live_kind = "answer" if _STATE.live_kind == "content" else _STATE.live_kind
-            if live_kind == "thinking":
-                limit = (
-                    _characters_per_line(region_width, ui_scale)
-                    - _COMPACT_ROW_CHROME_CHARACTERS
-                )
-                layout.label(
-                    text=_preview(_STATE.live_text, limit),
-                    icon=_KIND_ICONS["thinking"],
-                )
-                return
-            # Streaming shows the TAIL: the newest words are the ones
-            # being written, and the cursor has to stay visible.
-            self._draw_message(
-                layout,
-                live_kind,
-                _tail_lines(_STATE.live_text, max_rows) + " ▍",
-                region_width,
-                ui_scale,
-                len(_STATE.transcript),
-                max_rows=max_rows,
-            )
-            return
-        for index in range(len(_STATE.transcript) - 1, -1, -1):
-            kind, body_text = _STATE.transcript[index]
-            if kind in ("answer", "error"):
-                self._draw_message(
-                    layout,
-                    kind,
-                    body_text,
-                    region_width,
-                    ui_scale,
-                    index,
-                    max_rows=max_rows,
-                )
-                return
-
-
-class BLENDED_PT_chat(_ChatDrawing, bpy.types.Panel):
-    """The pinned surface: status, plan, renders, answer, prompt."""
-
-    bl_label = "Agent Chat"
-    bl_idname = "BLENDED_PT_chat"
-    bl_space_type = "VIEW_3D"
-    bl_region_type = "UI"
-    bl_category = "blended"
-    bl_order = 0
-
-    def draw(self, context):
-        layout = self.layout
-        scene_properties = context.scene.blended_chat
-        preferences = context.preferences.addons[__name__].preferences
-        region_width = context.region.width
-        ui_scale = context.preferences.system.ui_scale
-
-        # Order matters: what the agent is doing (plan), what it made
-        # (renders) and what it said (answer) sit directly above the
-        # prompt box, which is the conversational UI's primary
-        # interaction space (DOI 10.48550/arXiv.2410.22370). None of it
-        # scrolls away, because the growing record lives in its own
-        # panel below this one.
-        controls = layout.column()
-
-        try:
-            from blended.ui.previews import paired_render_paths
-
-            previous_render, latest_render = paired_render_paths(_STATE.transcript)
-        except Exception:  # noqa: BLE001 — draw() must never raise
-            previous_render = latest_render = None
-
-        # ONE decision about what fits, taken before anything is drawn:
-        # the composer must survive every combination of cards, and it
-        # only does if the cards are asked to yield up front.
-        budget = _pinned_surface_budget(
-            context.region.height,
-            ui_scale,
-            plan_step_count=(
-                len(_STATE.plan.steps)
-                if _STATE.plan is not None and _STATE.busy
-                else 0
-            ),
-            has_plan=_STATE.plan is not None,
-            has_renders=latest_render is not None,
-        )
-
-        if latest_render is not None and budget.show_renders:
-            self._draw_evidence(controls, previous_render, latest_render)
-
-        # The step list is what a user watches while the agent works.
-        # Once the turn is over it competes for rows with the answer,
-        # so it collapses to its header and bar; the record keeps it.
-        if _STATE.plan is not None and budget.show_plan:
-            self._draw_plan(
-                controls,
-                _STATE.plan,
-                _STATE.busy,
-                steps=_STATE.busy and budget.show_plan_steps,
-            )
-
-        if _STATE.transcript or _STATE.live_text:
-            self._draw_latest_answer(
-                controls,
-                region_width,
-                ui_scale,
-                max_rows=budget.answer_rows,
-            )
-        else:
-            empty_box = controls.box()
-            empty_box.label(text="Ask for an asset to get started.", icon="INFO")
-            for example in (
-                '"Build a wooden crate, 0.8 m, and show me the renders."',
-                '"Make this thinner and re-check it."',
-            ):
-                for line in _wrap_for_region(example, region_width, ui_scale):
-                    empty_box.label(text=line)
-
-        composer = controls.column(align=True)
-        composer.textbox(
-            scene_properties,
-            "prompt",
-            initial_visible_lines=2,
-            placeholder="Ask for an asset, or a change to make…  (Ctrl+↑ recalls)",
-        )
-        send_row = composer.row(align=True)
-        send_row.scale_y = 1.3
-        if _STATE.busy:
-            send_row.operator(BLENDED_OT_stop.bl_idname, icon="CANCEL")
-        else:
-            # The binding is printed ON the button: showing hotkeys in
-            # place is what moves a user from pointing to expert
-            # keyboard use (ExposeHK, DOI 10.1145/2470654.2470735).
-            send_row.operator(
-                BLENDED_OT_send.bl_idname, text="Send   ⌘⏎", icon="PLAY"
-            )
-
         # One short status line that cannot truncate at any sidebar
         # width, then the session actions as icons.
         status_row = controls.row(align=True)
@@ -1870,9 +1695,6 @@ class BLENDED_PT_chat(_ChatDrawing, bpy.types.Panel):
         )
         status_row.operator(BLENDED_OT_open_transcript.bl_idname, text="", icon="TEXT")
         status_row.operator(BLENDED_OT_reset.bl_idname, text="", icon="TRASH")
-
-        if region_width < _NARROW_SIDEBAR_PIXELS:
-            controls.label(text="Drag the sidebar edge wider.", icon="AREA_SWAP")
 
         settings_header = controls.row(align=True)
         settings_header.prop(
@@ -1906,6 +1728,167 @@ class BLENDED_PT_chat(_ChatDrawing, bpy.types.Panel):
             settings_column.operator(
                 BLENDED_OT_open_workspace.bl_idname, icon="WORKSPACE"
             )
+
+    def _reply_indices(self):
+        """Transcript positions of the replies, NEWEST FIRST, bounded.
+
+        A working window, not the whole history: the panel redraws
+        several times a second, and the record panel holds every event.
+        """
+        found = []
+        for index in range(len(_STATE.transcript) - 1, -1, -1):
+            if len(found) >= _STACK_DEPTH:
+                break
+            if _STATE.transcript[index][0] in ("answer", "error"):
+                found.append(index)
+        return found
+
+    def _draw_newest_reply(self, layout, region_width, ui_scale):
+        """The reply the user is waiting for, directly under the composer.
+
+        It goes here — above the render and plan cards — because it is
+        the one thing on the surface that exists nowhere else: the
+        renders are already open in the Image Editor beside the chat,
+        and the plan is in the record. Measured 2026-09-06: with the
+        cards above it, a 22-line reply was clipped by the bottom of a
+        1104 px sidebar. Review cost is what decides whether the agent
+        helped at all (DOI 10.48550/arXiv.2507.09089).
+        """
+        if _STATE.live_text:
+            live_kind = "answer" if _STATE.live_kind == "content" else _STATE.live_kind
+            if live_kind == "thinking":
+                limit = (
+                    _characters_per_line(region_width, ui_scale)
+                    - _COMPACT_ROW_CHROME_CHARACTERS
+                )
+                layout.label(
+                    text=_preview(_STATE.live_text, limit),
+                    icon=_KIND_ICONS["thinking"],
+                )
+                return
+            # Streaming shows the TAIL: the newest words are the ones
+            # being written, and the cursor has to stay visible.
+            self._draw_message(
+                layout,
+                live_kind,
+                _tail_lines(_STATE.live_text, _NEWEST_MESSAGE_ROWS) + " ▍",
+                region_width,
+                ui_scale,
+                len(_STATE.transcript),
+                max_rows=_NEWEST_MESSAGE_ROWS,
+            )
+            return
+        for index in self._reply_indices()[:1]:
+            kind, body_text = _STATE.transcript[index]
+            self._draw_message(
+                layout,
+                kind,
+                body_text,
+                region_width,
+                ui_scale,
+                index,
+                max_rows=_NEWEST_MESSAGE_ROWS,
+            )
+
+    def _draw_older_replies(self, layout, region_width, ui_scale):
+        """The stack under the cards: previous replies, a few rows each.
+
+        ASCENDING — each new reply is inserted at the TOP, so these
+        recede DOWNWARD, off the bottom, which is the one direction
+        growth costs nothing. Nothing above them ever moves.
+        """
+        skip = 0 if _STATE.live_text else 1
+        for index in self._reply_indices()[skip:]:
+            kind, body_text = _STATE.transcript[index]
+            self._draw_message(
+                layout,
+                kind,
+                body_text,
+                region_width,
+                ui_scale,
+                index,
+                max_rows=_OLDER_MESSAGE_ROWS,
+            )
+
+
+class BLENDED_PT_chat(_ChatDrawing, bpy.types.Panel):
+    """The working surface: composer FIRST, then the replies beneath it."""
+
+    bl_label = "Agent Chat"
+    bl_idname = "BLENDED_PT_chat"
+    bl_space_type = "VIEW_3D"
+    bl_region_type = "UI"
+    bl_category = "blended"
+    bl_order = 0
+
+    def draw(self, context):
+        layout = self.layout
+        scene_properties = context.scene.blended_chat
+        preferences = context.preferences.addons[__name__].preferences
+        region_width = context.region.width
+        ui_scale = context.preferences.system.ui_scale
+
+        # Order matters, and the ONE rule is that the composer is
+        # drawn first. Everything the agent produces is drawn after it,
+        # so no reply, plan or render can move the primary interaction
+        # space (DOI 10.48550/arXiv.2410.22370): its position is fixed
+        # by construction rather than fitted by a budget. Growth goes
+        # DOWNWARD, off the bottom, where it costs nothing.
+        controls = layout.column()
+
+        composer = controls.column(align=True)
+        composer.textbox(
+            scene_properties,
+            "prompt",
+            initial_visible_lines=2,
+            placeholder="Ask for an asset, or a change to make…  (Ctrl+↑ recalls)",
+        )
+        send_row = composer.row(align=True)
+        send_row.scale_y = 1.3
+        if _STATE.busy:
+            send_row.operator(BLENDED_OT_stop.bl_idname, icon="CANCEL")
+        else:
+            # The binding is printed ON the button: showing hotkeys in
+            # place is what moves a user from pointing to expert
+            # keyboard use (ExposeHK, DOI 10.1145/2470654.2470735).
+            send_row.operator(
+                BLENDED_OT_send.bl_idname, text="Send   ⌘⏎", icon="PLAY"
+            )
+
+        self._draw_session_controls(controls, scene_properties, preferences)
+
+        if region_width < _NARROW_SIDEBAR_PIXELS:
+            controls.label(text="Drag the sidebar edge wider.", icon="AREA_SWAP")
+
+        if _STATE.transcript or _STATE.live_text:
+            self._draw_newest_reply(controls, region_width, ui_scale)
+        else:
+            empty_box = controls.box()
+            empty_box.label(text="Ask for an asset to get started.", icon="INFO")
+            for example in (
+                '"Build a wooden crate, 0.8 m, and show me the renders."',
+                '"Make this thinner and re-check it."',
+            ):
+                for line in _wrap_for_region(example, region_width, ui_scale):
+                    empty_box.label(text=line)
+
+        try:
+            from blended.ui.previews import paired_render_paths
+
+            previous_render, latest_render = paired_render_paths(_STATE.transcript)
+        except Exception:  # noqa: BLE001 — draw() must never raise
+            previous_render = latest_render = None
+
+        if latest_render is not None:
+            self._draw_evidence(controls, previous_render, latest_render)
+
+        # The step list is what a user watches while the agent works.
+        # Once the turn is over it collapses to its header and bar; the
+        # record keeps every step.
+        if _STATE.plan is not None:
+            self._draw_plan(controls, _STATE.plan, _STATE.busy, steps=_STATE.busy)
+
+        self._draw_older_replies(controls, region_width, ui_scale)
 
 
 class BLENDED_PT_history(_ChatDrawing, bpy.types.Panel):

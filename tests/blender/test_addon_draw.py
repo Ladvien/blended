@@ -338,8 +338,11 @@ def test_the_working_surface_holds_the_answer_and_the_prompt_but_not_the_record(
         "traffic belongs to the record panel: anything that grows with "
         "the turn must not share a region with the prompt box"
     )
-    assert labels.index("Built it.") < labels.index("Ready"), (
-        "the answer reads above the status line and the composer"
+    assert labels.index("Ready") < labels.index("Built it."), (
+        "the composer and status read ABOVE the answer: this assertion "
+        "used to say the opposite, and the opposite is exactly the "
+        "defect the user reported — a reply drawn above the prompt box "
+        "moves the prompt box by its own length (2026-09-06)"
     )
 
     assert module.BLENDED_PT_history.bl_order > module.BLENDED_PT_chat.bl_order
