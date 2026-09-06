@@ -2362,6 +2362,175 @@ MISTAKES: tuple[MistakeRecord, ...] = (
         ),
         recorded_on="2026-09-06",
     ),
+    MistakeRecord(
+        identifier="vertex-penetration-is-not-surface-penetration",
+        scope="harness_code",
+        failure=(
+            "scp measured 28-vertex shoulder straps at 0 deep pokes and "
+            "1.6 mm max depth — green — while triangle-vs-triangle "
+            "counted 1,200 pairs with their centroid inside the "
+            "shoulder. Palm-to-weapon read 60 mm against vertices "
+            "and 6.5 mm against the surface. The gap widens as "
+            "geometry gets coarser."
+        ),
+
+        cause=(
+            "A vertex-penetration probe samples the query object's "
+            "vertices against the target's closest surface point. "
+            "When the query mesh is sparse (28 vertices on a strap), "
+            "no vertex falls inside the target, so the probe reads "
+            "zero penetration even though the surfaces fully "
+            "intersect. The triangle-vs-triangle broad phase sees "
+            "the real overlap but is gated behind an AABB depth "
+            "threshold (CONTACT_DEPTH_TOLERANCE_M, 2 mm) that a "
+            "shallow overlap never reaches, so it reports zero too."
+        ),
+        fix=(
+            "PairReport reports aabb_penetration_depth_m (the "
+            "world-AABB minimum translation depth) alongside "
+            "intersecting_face_pair_count. NoInterpenetrationSpec "
+            "gates on maximum_aabb_penetration_depth_m, and "
+            "evaluate.acceptance compares it — so a caller sees the "
+            "shallow overlap that the vertex probe misses and the "
+            "face-pair count gates. The surface-distance probe "
+            "remains for separation, not penetration."
+        ),
+        guarded_by="blended.evaluate.acceptance (NoInterpenetrationSpec.maximum_aabb_penetration_depth_m) and tests/blender/test_pair_checks.py",
+        recorded_on="2026-09-06",
+    ),
+    MistakeRecord(
+        identifier="a-separation-measure-must-be-symmetric",
+        scope="harness_code",
+        failure=(
+            "scp measured analyze_pair sampling only the first "
+            "argument's vertices as query points, so the same pair "
+            "measured differently depending on argument order. On the "
+            "local fixture (24-segment cylinder vs 8-vertex cube, "
+            "overlapping) the one-directional readings were "
+            "0.0224 m one way and 0.3274 m the other — a 14.6x "
+            "spread on the same pair."
+        ),
+        cause=(
+            "When the two meshes differ in vertex density, the "
+            "sparse object's vertices miss the close approach that "
+            "the dense object's vertices find. Sampling only one "
+            "direction picks whichever density the argument order "
+            "happened to give, so the measure is not a function of "
+            "the pair but of the call."
+        ),
+        fix=(
+            "analyze_pair now samples BOTH objects' vertices via "
+            "_sampled_minimum_distance_m (the extracted helper) and "
+            "reports the minimum of the two directional readings. "
+            "It also reports aabb_penetration_depth_m, the "
+            "world-AABB minimum translation depth that gates the "
+            "face-pair count."
+        ),
+        guarded_by="tests/blender/test_pair_checks.py::test_separation_does_not_depend_on_argument_order",
+        recorded_on="2026-09-06",
+    ),
+    MistakeRecord(
+        identifier="a-gate-sharing-a-derivation-cannot-fail",
+        scope="process",
+        failure=(
+            "scp measured read_hand_frame's palm_out at ~150 degrees "
+            "from the real palm normal; every grip gate measured "
+            "against that same vector and all passed (1.8 mm, "
+            "0.0 mm, 'palm faces up') while a render showed the "
+            "weapon gripped from the wrong side. The same pattern "
+            "recurred in this repo: every shipped Provenance passed "
+            "value=<the constant itself>, so validate_briefs read the "
+            "constant back through the Provenance and compared it to "
+            "itself — a tautology that passed until the values became "
+            "literals and a constant edit reddened it ('claims value "
+            "0.32, constant holds 0.36')."
+        ),
+        cause=(
+            "The gate and the pose reader shared the same "
+            "derivation: palm_out was computed once and then every "
+            "check compared against it. A derivation that is wrong "
+            "in the same way as the thing it validates produces "
+            "self-consistent green readings on a wrong result. "
+            "Defining the 'must not move' set by reading it off the "
+            "artefact under test (zero weight on a bone) was "
+            "vacuous — 200 deliberately bled vertices produced "
+            "zero violations."
+        ),
+        fix=(
+            "A relation must be anchored in the semantics of what "
+            "is being built, never in the implementation's own "
+            "arithmetic. The metamorphic gate transforms the input "
+            "and asserts a relation between the two outputs, "
+            "reaching outside the artefact's own derivation."
+        ),
+        guarded_by="tests/blender/test_metamorphic.py (a relation anchored outside the artefact)",
+        recorded_on="2026-09-06",
+    ),
+    MistakeRecord(
+        identifier="hashing-raw-floats-cries-wolf",
+        scope="harness_code",
+        failure=(
+            "Inherited doctrine, not a local measurement: blended "
+            "never had a byte or float hash to fail. scp measured "
+            "that .blend bytes carry a version stamp and floats "
+            "carry last-bit noise, so a byte or float hash reports "
+            "drift on an unchanged build; bmesh emits geometry in "
+            "pointer-hash order, so face order is not signal. The "
+            "lesson is why blended.evaluate.digest was designed to "
+            "hash quantized semantic tuples from the start."
+        ),
+        cause=(
+            "Hashing raw floats or .blend bytes treats last-bit "
+            "noise and Blender version stamps as semantic drift. "
+            "The hash fires on every rebuild even when the shipped "
+            "geometry is identical, so it is switched off inside a "
+            "week — and the real drift it was meant to catch goes "
+            "unguarded."
+        ),
+        fix=(
+            "blended.evaluate.digest hashes quantized semantic "
+            "tuples (positions to 0.1 mm, UVs to 1e-5, matrices to "
+            "1e-5, weights to 1e-4), with faces canonicalized by "
+            "rotating each face's index cycle to start at its "
+            "lowest index before sorting. Winding direction is "
+            "preserved so a flipped face still changes the digest."
+        ),
+        guarded_by="scripts/rebuild_twice.py / make test-repro (two fresh Blenders, PYTHONHASHSEED 0 vs 1) and tests/blender/test_rebuild_in_session.py",
+        recorded_on="2026-09-06",
+    ),
+    MistakeRecord(
+        identifier="undo-is-not-a-reset",
+        scope="harness_code",
+        failure=(
+            "Inherited doctrine, not a local measurement: blended "
+            "never had a rebuild that trusted the undo stack. scp "
+            "measured Blender's undo stack as unreliable from "
+            "script-driven operators, so a rebuild that trusts it "
+            "measures residue from the previous build. The lesson is "
+            "why blended.reset.reset_scene wipes every collection in "
+            "dependency order and asserts the wipe took, rather than "
+            "relying on undo."
+        ),
+        cause=(
+            "bpy.ops.wm.read_factory_settings(use_empty=True) "
+            "wipes the scene but does not assert the wipe took, and "
+            "Blender's undo stack does not reliably unwind "
+            "script-driven operators. A rebuild that assumes the "
+            "scene is clean measures the previous build's orphaned "
+            "datablocks alongside the new one."
+        ),
+        fix=(
+            "blended.reset.reset_scene wipes every collection in "
+            "dependency order (objects before meshes before "
+            "materials), calls orphans_purge, sets the canonical "
+            "FPS, and finishes with assert_clean_scene, which "
+            "raises SceneNotClean listing every non-empty "
+            "MUST_BE_EMPTY collection and a non-canonical FPS at "
+            "once."
+        ),
+        guarded_by="tests/blender/test_reset.py::test_a_leftover_object_is_not_a_clean_scene and ::test_a_rewritten_fps_is_not_a_clean_scene and ::test_every_problem_is_reported_in_one_raise",
+        recorded_on="2026-09-06",
+    ),
 )
 
 

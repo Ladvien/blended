@@ -46,6 +46,23 @@ GLB_CHUNK_HEADER_SIZE_BYTES = 8
 POSITION_WELD_DECIMALS = 6
 # glTF core primitives are triangles in every file this harness ships.
 GLTF_MODE_TRIANGLES = 4
+# Per-influence tolerance for the weight-sum check.  glTF 2.0 §5.31
+# Skinned Mesh Attributes (Specification.adoc line ~1902, Implementation
+# Note): "The threshold in the official validation tool is set to 2e-7
+# times the number of non-zero weights per vertex."  For unorm8/unorm16
+# the pre-normalization sum MUST be exactly 255 or 65535 (line 1897), so
+# the old 1e-3 tolerance was 5000x too loose and hid real violations.
+# The per-vertex bound is WEIGHT_SUM_TOLERANCE_PER_INFLUENCE * max(1,
+# non_zero_influences).
+WEIGHT_SUM_TOLERANCE_PER_INFLUENCE = 2.0e-7
+# An influence is a weight strictly above this floor.  Derived from the
+# same spec threshold as the weight-sum tolerance (one source of truth):
+# 2e-7 is far below the smallest legitimate quantized weight in either
+# format — unorm8 step 1/255 ≈ 3.9e-3, unorm16 step 1/65535 ≈ 1.5e-5 —
+# and a raw byte of 0 dequantizes to exactly 0.0 (no quantization dust
+# exists to suppress).  1e-4, the old value, was ABOVE 1/65535 and so
+# discarded real influences.
+WEIGHT_INFLUENCE_FLOOR = WEIGHT_SUM_TOLERANCE_PER_INFLUENCE
 
 _COMPONENT_FORMATS = {
     5120: ("b", 1),  # BYTE
@@ -74,6 +91,30 @@ class GlbMeshReport:
     # must report them: an unwrapped scene that ships without its UV
     # layer is exactly the export-time drift this module exists to see.
     uv_set_count: int
+    # max number of WEIGHTS_* attribute sets on any primitive. glTF
+    # 2.0 §5.31 (Specification.adoc line 1911) makes multiple sets
+    # conformant: vertices influenced by more than four joints store the
+    # extra data in JOINTS_1/WEIGHTS_1, and the count of JOINTS_n sets
+    # MUST equal the count of WEIGHTS_n sets. But §5.31 (line 1913) also
+    # says clients MAY support only a single set, so >1 is a
+    # runtime-portability risk, not a validity error.
+    weight_set_count: int = 0
+    # skinned vertices whose weight sum falls outside the spec-derived
+    # per-vertex bound: WEIGHT_SUM_TOLERANCE_PER_INFLUENCE * max(1,
+    # non_zero_influences).  See the constant for the spec citation.
+    weight_sum_violation_count: int = 0
+    # vertices with any negative weight component.  glTF 2.0 §5.31
+    # (Specification.adoc line 1890): "The joint weights for each vertex
+    # MUST NOT be negative."  A negative weight explodes under
+    # linear-blend skinning; this count must be zero.
+    negative_weight_vertex_count: int = 0
+    # fraction of skinned vertices riding exactly one bone. 1.0 on
+    # correctly bound rigid gear; less means barycentric weights leaked
+    # into something that must move as one piece.  0.0 is ambiguous:
+    # it means "nothing is skinned" (every prop this harness ships)
+    # AND "worst possible multi-bone skinning".  Only meaningful when
+    # weight_set_count is non-zero.
+    single_influence_vertex_fraction: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -91,6 +132,10 @@ class GlbAssetReport:
     # From the POSITION accessors' min/max, which glTF requires.
     minimum_corner_m: tuple[float, float, float] = (0.0, 0.0, 0.0)
     maximum_corner_m: tuple[float, float, float] = (0.0, 0.0, 0.0)
+    # Animation clip names in document order, because a runtime that
+    # loads clips by index can have every name match while the indices
+    # shuffle.
+    animation_names: list = field(default_factory=list)
 
     @property
     def triangle_count(self) -> int:
@@ -201,6 +246,11 @@ def mesh_reports(gltf: dict, binary: bytes) -> dict[str, GlbMeshReport]:
         triangles = inverted = boundary = nonmanifold = 0
         has_normals = has_tangents = False
         uv_set_count = 0
+        weight_set_count = 0
+        skinned_vertex_count = 0
+        weight_sum_violation_count = 0
+        negative_weight_vertex_count = 0
+        single_influence_vertex_count = 0
         edge_uses: dict = {}
 
         for primitive in mesh["primitives"]:
@@ -224,6 +274,39 @@ def mesh_reports(gltf: dict, binary: bytes) -> dict[str, GlbMeshReport]:
                 sum(1 for key in attributes if key.startswith("TEXCOORD_")),
             )
 
+            weight_keys = sorted(
+                key for key in attributes if key.startswith("WEIGHTS_")
+            )
+            weight_set_count = max(weight_set_count, len(weight_keys))
+            if weight_keys:
+                weights_all = [
+                    read_accessor(gltf, binary, attributes[key])
+                    for key in weight_keys
+                ]
+                vertex_count = len(weights_all[0])
+                for vertex_index in range(vertex_count):
+                    vertex_weights: list[float] = []
+                    for weight_set in weights_all:
+                        vertex_weights.extend(weight_set[vertex_index])
+                    if any(w < 0.0 for w in vertex_weights):
+                        negative_weight_vertex_count += 1
+                    weight_sum = sum(vertex_weights)
+                    non_zero_influences = sum(
+                        1 for w in vertex_weights if w > WEIGHT_INFLUENCE_FLOOR
+                    )
+                    per_vertex_tolerance = (
+                        WEIGHT_SUM_TOLERANCE_PER_INFLUENCE
+                        * max(1, non_zero_influences)
+                    )
+                    if not math.isclose(
+                        weight_sum, 1.0,
+                        rel_tol=0.0, abs_tol=per_vertex_tolerance,
+                    ):
+                        weight_sum_violation_count += 1
+                    if non_zero_influences == 1:
+                        single_influence_vertex_count += 1
+                    skinned_vertex_count += 1
+
             indices = [i[0] for i in read_accessor(gltf, binary, primitive["indices"])]
             remap = _weld(positions)
             for corner in range(0, len(indices), 3):
@@ -243,6 +326,11 @@ def mesh_reports(gltf: dict, binary: bytes) -> dict[str, GlbMeshReport]:
 
         boundary = sum(1 for uses in edge_uses.values() if uses == 1)
         nonmanifold = sum(1 for uses in edge_uses.values() if uses > 2)
+        single_influence_fraction = (
+            single_influence_vertex_count / skinned_vertex_count
+            if skinned_vertex_count > 0
+            else 0.0
+        )
         name = mesh.get("name", "<unnamed>")
         reports[name] = GlbMeshReport(
             name=name,
@@ -253,6 +341,10 @@ def mesh_reports(gltf: dict, binary: bytes) -> dict[str, GlbMeshReport]:
             has_normals=has_normals,
             has_tangents=has_tangents,
             uv_set_count=uv_set_count,
+            weight_set_count=weight_set_count,
+            weight_sum_violation_count=weight_sum_violation_count,
+            negative_weight_vertex_count=negative_weight_vertex_count,
+            single_influence_vertex_fraction=single_influence_fraction,
         )
     return reports
 
@@ -309,6 +401,9 @@ def asset_report(path: Path) -> GlbAssetReport:
         node_names=[node.get("name", "") for node in nodes],
         minimum_corner_m=minimum_corner,
         maximum_corner_m=maximum_corner,
+        animation_names=[
+            anim.get("name", "") for anim in gltf.get("animations", [])
+        ],
     )
 
 
@@ -329,6 +424,12 @@ def format_glb_report(
         f"  root node(s) .......... {report.root_node_names}",
         f"  extents (m) ........... "
         f"{', '.join(f'{value:.4f}' for value in report.dimensions_m)}",
+        f"  animations ............ {len(report.animation_names)} "
+        f"{report.animation_names}",
+        f"  skin: sets/violations/neg .. "
+        f"{max((m.weight_set_count for m in report.meshes.values()), default=0)}/"
+        f"{sum(m.weight_sum_violation_count for m in report.meshes.values())}/"
+        f"{sum(m.negative_weight_vertex_count for m in report.meshes.values())}",
         ]
     if baseline is not None:
         removed = sorted(set(baseline.mesh_names) - set(report.mesh_names))
@@ -339,8 +440,29 @@ def format_glb_report(
             f"    meshes removed: {removed or 'none'}",
             f"    meshes added:   {added or 'none'}",
         ]
+        # Report the count change BEFORE any per-item comparison: a
+        # bare zip() over two name lists compares only the shorter one
+        # and calls an 8-clip file identical to a 20-clip baseline.
+        if len(baseline.animation_names) != len(report.animation_names):
+            lines.append(
+                f"    animation count changed: "
+                f"{len(baseline.animation_names)} -> {len(report.animation_names)}"
+            )
+        # Per-index mismatch over the overlapping range: same-length
+        # reordered clips print nothing from the count check above, but
+        # a runtime loading by index sees them in different order.
+        for i in range(min(len(baseline.animation_names), len(report.animation_names))):
+            if baseline.animation_names[i] != report.animation_names[i]:
+                lines.append(
+                    f"    animation[{i}]: "
+                    f"{baseline.animation_names[i]!r} -> {report.animation_names[i]!r}"
+                )
 
-    lines += ["", "  per mesh (tris / boundary / non-manifold / inverted / UV sets):"]
+    lines += [
+        "",
+        "  per mesh (tris / boundary / non-manifold / inverted / UV sets / "
+        "weight-sets / sum-viol / neg-wt / 1-infl):",
+    ]
     for name in sorted(report.meshes):
         mesh = report.meshes[name]
         if baseline is not None:
@@ -350,16 +472,27 @@ def format_glb_report(
                 was.welded_boundary_edge_count,
                 was.non_manifold_edge_count,
                 was.inverted_facet_count,
+                was.weight_set_count,
+                was.weight_sum_violation_count,
+                was.negative_weight_vertex_count,
+                was.single_influence_vertex_fraction,
             ) == (
                 mesh.triangle_count,
                 mesh.welded_boundary_edge_count,
                 mesh.non_manifold_edge_count,
                 mesh.inverted_facet_count,
+                mesh.weight_set_count,
+                mesh.weight_sum_violation_count,
+                mesh.negative_weight_vertex_count,
+                mesh.single_influence_vertex_fraction,
             ):
                 continue
         lines.append(
             f"    {name:28s} {mesh.triangle_count:6d} "
             f"{mesh.welded_boundary_edge_count:6d} {mesh.non_manifold_edge_count:5d} "
-            f"{mesh.inverted_facet_count:5d}  {mesh.uv_set_count}"
+            f"{mesh.inverted_facet_count:5d}  {mesh.uv_set_count}  "
+            f"{mesh.weight_set_count} {mesh.weight_sum_violation_count} "
+            f"{mesh.negative_weight_vertex_count} "
+            f"{mesh.single_influence_vertex_fraction:.2f}"
         )
     return "\n".join(lines)

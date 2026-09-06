@@ -177,6 +177,8 @@ SKILL_MODULES: tuple[SkillModule, ...] = (
             "10.48550_arxiv.2406.10163",  # MeshAnything: avg 318 faces
             "10.48550_arxiv.2409.18114",  # EdgeRunner: ~4000 face ceiling
             "10.1109/visual.1998.745312",  # QEM needs a boundary penalty
+            "10.1145/1061347.1061350",  # boundary error terms are not optional
+            "10.48550/arxiv.2409.15458",  # Simplifying Textured Meshes in the Wild
         ),
     ),
     SkillModule(
@@ -219,6 +221,29 @@ SKILL_MODULES: tuple[SkillModule, ...] = (
             "10.48550/arXiv.2305.16291",  # Voyager: 4 rounds, behind a verifier
         ),
     ),
+    SkillModule(
+        name="mesh_construction",
+        subsystem="builders, ops",
+        purpose=(
+            "The transferable technique rules for authored mesh "
+            "construction: overlap order, centred-section clearance, "
+            "and the three independent appearance metrics."
+        ),
+        hypothesis=(
+            "Expect fewer non-manifold junctions and fewer wrongly-sized "
+            "shells, because the rules are measured counter-examples to the "
+            "obvious move — butting shells, capping open boundaries — "
+            "and each names the number that measured it."
+        ),
+        outcome="",
+        evidence=(
+            "[measured] scp_characters .claude/skills/modeling/SKILL.md",
+            "[measured] scp_characters .claude/skills/game-ready/SKILL.md",
+            "10.1145/1061347.1061350",  # boundary error terms are not optional
+            "10.1109/visual.1999.809869",  # Hoppe: appearance-attribute quadric
+            "10.48550/arxiv.2409.15458",  # Simplifying Textured Triangle Meshes in the Wild
+        ),
+    ),
 )
 
 
@@ -241,6 +266,10 @@ LANE_MODULES: dict[str, tuple[str, ...]] = {
     "export": ("game_ready_export", "mesh_validity", "api_drift"),
     "inspect": ("visual_critique", "mesh_validity", "iteration_and_memory"),
     "refine": ("iteration_and_memory", "visual_critique", "mesh_validity"),
+    # Awaits measurement: nothing selects lanes at runtime yet, so this is
+    # a registry addition, not a prompt change — the opt-in-until-measured
+    # design the module docstring argues for.
+    "construct": ("mesh_construction", "api_drift", "mesh_validity"),
 }
 
 

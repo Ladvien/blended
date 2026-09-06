@@ -1,6 +1,6 @@
 .PHONY: test test-pure test-blender test-blender-app converge converge-local \
 	replay calibrate-eye calibrate-visual-gate pin-golden-views converge-auto \
-	pin bench-3dcode chat-e2e provider-smoke
+	pin bench-3dcode chat-e2e photo-to-model provider-smoke test-repro
 PY ?= .venv/bin/python
 BLENDER ?= /Applications/Blender.app/Contents/MacOS/Blender
 
@@ -25,6 +25,15 @@ test-blender:
 test-blender-app:
 	$(BLENDER) --background --factory-startup \
 		--python scripts/run_tests_in_blender.py -- $(ARGS)
+
+# Build twice in two fresh Blenders under different PYTHONHASHSEED and
+# require identical semantic digests. Slow: two full Blender launches,
+# which is why it is not part of `test` — it is a gate you run before a
+# pin, not on every change.
+#   make test-repro ARGS="--builder barrel"
+#   make test-repro ARGS="--iteration 10"
+test-repro:
+	$(PY) scripts/rebuild_twice.py $(ARGS)
 
 # One convergence iteration: run a brief through the agent inside a real
 # Blender, gate it structurally and by form, render it, log the record.
@@ -132,6 +141,15 @@ bench-3dcode:
 #     (the CLI lane, writer as its own eye: 6/6 in 2m53s, 2026-09-05)
 chat-e2e:
 	$(BLENDER) --background --factory-startup --python scripts/chat_e2e.py -- $(ARGS)
+
+# Photo in, model out: the agent reads a picture of a real object and
+# builds it. The default prompt names no shape, so the picture is what
+# drove the build; the proof is the contact sheet it prints.
+#   make photo-to-model ARGS="--photo path/to/thing.jpg"
+#   make photo-to-model ARGS="--photo thing.jpg --model deepseek-v4-pro:cloud \
+#       --vision-model kimi-k2.7-code:cloud"   (text-only writer, eye reads it)
+photo-to-model:
+	$(BLENDER) --background --factory-startup --python scripts/photo_to_model.py -- $(ARGS)
 
 # One text chat and one image call per model lane (OpenRouter, bmb, big,
 # claude-code). The claude-code lane needs no key and no endpoint: it

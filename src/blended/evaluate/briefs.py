@@ -34,9 +34,14 @@ those constants. No literal appears inside an assertion.
 
 from __future__ import annotations
 
+import math
+import re
+import sys
+
 from dataclasses import dataclass, field
 
 from blended.analyze.mesh_checks import DEFAULT_PROP_TRIANGLE_BUDGET, MeshBudget
+from blended.analyze.pair_checks import CONTACT_DEPTH_TOLERANCE_M
 
 # --- Shared tolerances -------------------------------------------------
 # Proportion tolerance: the agent is given target dimensions in the
@@ -346,7 +351,18 @@ class NoInterpenetrationSpec:
     6.5 mm — on box geometry the nearest vertex is a far corner).
 
     ``minimum_separation_m`` is None when contact is correct (a lid
-    rests on its crate): only interpenetration is a failure then.
+    rests on its crate): only interpenetration is a failure then. It is
+    also an UPPER bound on the true separation, not the separation
+    itself — see `analyze.pair_checks.analyze_pair`.
+
+    ``maximum_aabb_penetration_depth_m`` is the only number that sees a
+    crossing whose face pairs the contact tolerance suppresses: two
+    1 mm-thick plates passing through each other report 0 intersecting
+    pairs and 0.999 m of separation, and 0.001 m of depth (measured,
+    Blender 5.2.0). Opt-in like the separation bound, because AABB depth
+    is meaningless for parts that legitimately share a bounding volume —
+    a hoop around a barrel overlaps its AABB on every axis without
+    touching it.
     """
 
     name: str
@@ -355,6 +371,7 @@ class NoInterpenetrationSpec:
     why: str
     maximum_intersecting_face_pairs: int = 0
     minimum_separation_m: float | None = None
+    maximum_aabb_penetration_depth_m: float | None = None
 
 
 @dataclass(frozen=True)
@@ -389,6 +406,64 @@ class DistinctMaterialSpec:
     minimum_colour_distance_rgb: float
     why: str
 
+
+# --- Provenance: where each number came from ---------------------------
+# A brief's `prompt_text` carries executable specs, but nothing currently
+# answers *where each number came from* or *what a human asked to change*.
+# Provenance is the worked example the next brief copies: each entry pins
+# one number in the brief to the requester's own words, the module constant
+# that holds it, and the source class (measured, literature, reference, or
+# art direction). A Correction records what moved when a human asked for a
+# change. Both are frozen and defaulted empty so no existing construction
+# breaks.
+
+SOURCE_MEASURED = "measured"
+SOURCE_LITERATURE = "literature"
+SOURCE_REFERENCE = "reference"
+SOURCE_ART_DIRECTION = "art-direction"
+SOURCES = (SOURCE_MEASURED, SOURCE_LITERATURE, SOURCE_REFERENCE, SOURCE_ART_DIRECTION)
+# A provenance value is a claim about a constant, written as a literal
+# so the claim and the constant are two independent sources. Compared at
+# this tolerance because a literal typed to the constant's own precision
+# must match exactly; anything looser would accept a typo in the last
+# digit of a millimetre.
+PROVENANCE_VALUE_REL_TOL = 1.0e-9
+# Dates are ISO so a sign-off is sortable and unambiguous. Format only —
+# whether the date is real is not something this module can know.
+_ISO_DATE = re.compile(r"\d{4}-\d{2}-\d{2}")
+
+
+@dataclass(frozen=True)
+class Provenance:
+    """Where one number in this brief came from.
+
+    `phrase` is the requester's own words (a substring of the brief's
+    `prompt_text`), not a paraphrase. `symbol` is the constant in this
+    module, e.g. ``STOOL_LEG_COUNT``, so `validate_briefs` can check the
+    constant still exists and still holds the value the provenance claims.
+    `cites` is REQUIRED when the source is literature or reference.
+    """
+
+    phrase: str
+    symbol: str
+    value: float | int | str
+    source: str
+    cites: str = ""
+
+
+@dataclass(frozen=True)
+class Correction:
+    """A human asked for a change; this is what moved.
+
+    `changed` is the symbol that moved, or ``""`` when nothing did (the
+    human asked, but the number was already right). `on` is an ISO date.
+    """
+
+    said: str
+    changed: str
+    on: str
+
+
 @dataclass(frozen=True)
 class AssetBrief:
     """A prompt plus its executable acceptance spec.
@@ -412,6 +487,13 @@ class AssetBrief:
     # slot list is the single cheapest thing to forget. Checked
     # deterministically so it never reaches the visual pass.
     require_material: bool = True
+    # Where each number in this brief came from, and what a human asked
+    # to change. Both default empty so existing constructions keep working;
+    # `validate_briefs` tolerates an empty tuple.
+    provenance: tuple[Provenance, ...] = ()
+    corrections: tuple[Correction, ...] = ()
+    # ISO date, empty until a human signs off on the brief.
+    signed_off: str = ""
 
     @property
     def part_names(self) -> tuple[str, ...]:
@@ -752,6 +834,47 @@ THREE_LEG_STOOL_BRIEF = AssetBrief(
     ),
     parts=(_stool_part(),),
     refinements=_stool_refinements(),
+    # The worked example: each number the prompt states, pinned to the
+    # requester's own words and the constant that holds it. `value` is
+    # written as a LITERAL, never as the constant itself: a provenance
+    # that reads `value=STOOL_SEAT_DIAMETER_M` is the same object the
+    # validator reads back, so the check is a tautology under any source
+    # edit. The literal makes the claim and the constant two independent
+    # sources, which is the only arrangement that can disagree. Checked
+    # by validate_briefs from tests/pure/test_briefs_provenance.py — not
+    # at import; nothing calls it at module scope.
+    provenance=(
+        Provenance(
+            phrase="The round seat is 0.32 m across",
+            symbol="STOOL_SEAT_DIAMETER_M",
+            value=0.32,
+            source=SOURCE_ART_DIRECTION,
+        ),
+        Provenance(
+            phrase="0.04 m thick",
+            symbol="STOOL_SEAT_THICKNESS_M",
+            value=0.04,
+            source=SOURCE_ART_DIRECTION,
+        ),
+        Provenance(
+            phrase="Total height is 0.45 m",
+            symbol="STOOL_TOTAL_HEIGHT_Z_M",
+            value=0.45,
+            source=SOURCE_ART_DIRECTION,
+        ),
+        Provenance(
+            phrase="3 legs splay outward",
+            symbol="STOOL_LEG_COUNT",
+            value=3,
+            source=SOURCE_ART_DIRECTION,
+        ),
+        Provenance(
+            phrase="circle of radius 0.14 m",
+            symbol="STOOL_FOOT_CIRCLE_RADIUS_M",
+            value=0.14,
+            source=SOURCE_ART_DIRECTION,
+        ),
+    ),
 )
 
 UV_CRATE_BRIEF = AssetBrief(
@@ -954,6 +1077,12 @@ CRATE_WITH_LID_BRIEF = AssetBrief(
             second_part="CrateBody",
             maximum_intersecting_face_pairs=0,
             minimum_separation_m=None,  # the lid rests ON the body: contact is correct
+            # The lid's footprint matches the body's, so the AABBs overlap
+            # on x and y in every correct build and the minimum-axis depth
+            # IS the sink depth. The signed-off reference sits ~1 mm into
+            # the rim, so the bound is the same resting tolerance the pair
+            # module uses to suppress the face-pair count.
+            maximum_aabb_penetration_depth_m=CONTACT_DEPTH_TOLERANCE_M,
             why=(
                 "a lid sunk into the body reads as closed in every "
                 "orthographic view"
@@ -993,3 +1122,117 @@ def get_brief(name: str) -> AssetBrief:
     if name not in BRIEFS:
         raise UnknownBrief(f"No brief {name!r}. Available: {', '.join(sorted(BRIEFS))}.")
     return BRIEFS[name]
+
+
+def _validate_brief(brief: AssetBrief) -> list[str]:
+    """Problems for one brief (empty list = healthy).
+
+    Factored out of `validate_briefs` so a test can call it with a
+    constructed brief rather than mutating module state.
+    """
+    problems: list[str] = []
+    for prov in brief.provenance:
+        if prov.source not in SOURCES:
+            problems.append(
+                f"{brief.name}: provenance symbol {prov.symbol!r} has "
+                f"unknown source {prov.source!r}"
+            )
+        if prov.source in (SOURCE_LITERATURE, SOURCE_REFERENCE) and not prov.cites.strip():
+            problems.append(
+                f"{brief.name}: provenance symbol {prov.symbol!r} is "
+                f"{prov.source} but carries no citation"
+            )
+        if not hasattr(sys.modules[__name__], prov.symbol):
+            problems.append(
+                f"{brief.name}: provenance symbol {prov.symbol!r} does not "
+                f"resolve to a module-level name in blended.evaluate.briefs"
+            )
+            continue
+        current = getattr(sys.modules[__name__], prov.symbol)
+        both_numeric = isinstance(current, (int, float)) and isinstance(
+            prov.value, (int, float)
+        )
+        if both_numeric:
+            if not math.isclose(
+                float(current), float(prov.value), rel_tol=PROVENANCE_VALUE_REL_TOL
+            ):
+                problems.append(
+                    f"{brief.name}: provenance symbol {prov.symbol!r} claims "
+                    f"value {prov.value}, constant holds {current}"
+                )
+        elif type(current) is not type(prov.value):
+            problems.append(
+                f"{brief.name}: provenance symbol {prov.symbol!r} claims a "
+                f"{type(prov.value).__name__} but the constant holds a "
+                f"{type(current).__name__} ({current!r}) — the symbol names "
+                f"the wrong module-level object"
+            )
+        elif current != prov.value:
+            problems.append(
+                f"{brief.name}: provenance symbol {prov.symbol!r} claims "
+                f"value {prov.value!r}, constant holds {current!r}"
+            )
+        # A number with no words is not provenance. Required, not
+        # skipped-when-empty: an optional phrase is an opt-out from the
+        # only check that ties the number to what was actually asked for.
+        if not prov.phrase.strip():
+            problems.append(
+                f"{brief.name}: provenance symbol {prov.symbol!r} has an "
+                f"empty phrase"
+            )
+        elif prov.phrase not in brief.prompt_text:
+            problems.append(
+                f"{brief.name}: provenance symbol {prov.symbol!r} phrase "
+                f"{prov.phrase!r} is not a substring of the brief's "
+                f"prompt_text"
+            )
+    for correction in brief.corrections:
+        if not correction.said.strip():
+            problems.append(
+                f"{brief.name}: correction with empty `said` — a change "
+                f"nobody asked for is not a change"
+            )
+        if not _ISO_DATE.fullmatch(correction.on):
+            problems.append(
+                f"{brief.name}: correction dated {correction.on!r} is not an "
+                f"ISO date (YYYY-MM-DD)"
+            )
+    # signed_off is empty until a human signs off; when it is set it is a
+    # date, and an unparseable one makes the sign-off unauditable.
+    if brief.signed_off and not _ISO_DATE.fullmatch(brief.signed_off):
+        problems.append(
+            f"{brief.name}: signed_off {brief.signed_off!r} is not an ISO "
+            f"date (YYYY-MM-DD)"
+        )
+    return problems
+
+
+def validate_briefs() -> list[str]:
+    """Return a list of provenance problems (empty list = healthy).
+
+    Mirrors `drift.catalog.validate_catalog` and
+    `agent.skill_modules.validate_modules` in shape: returns problems
+    rather than raising. Every `Provenance.source` is in `SOURCES`;
+    `cites` is non-empty for literature or reference; `symbol` resolves
+    to a module-level name in this module (checked with `hasattr`, so a
+    renamed constant is a red test rather than silent fiction); the
+    provenance `value` equals that constant's current value and is of
+    the same type; every `phrase` is non-empty and appears verbatim in
+    `prompt_text`; no brief carries a `Correction` with an empty `said`;
+    dates are ISO; and every registry KEY matches the brief's own name.
+
+    The key check, not a name-uniqueness check: `BRIEFS` is a dict, so
+    its keys are unique by construction and a uniqueness loop over them
+    can never fire. What can go wrong is disagreement — `get_brief`
+    looks up by key while every message here prints `brief.name`, so a
+    mismatch reports a brief the caller cannot fetch.
+    """
+
+    problems: list[str] = []
+    for name, brief in BRIEFS.items():
+        problems.extend(_validate_brief(brief))
+        if brief.name != name:
+            problems.append(
+                f"registry key {name!r} holds a brief named {brief.name!r}"
+            )
+    return problems

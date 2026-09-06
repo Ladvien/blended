@@ -9,6 +9,10 @@
 - Pin verified behavior — After the user signs off on a behavior in the viewport, capture it as a regression test immediately, without asking.
 - Mistake memory — After every fix, capture error + cause + fix. Carry this forward across sessions so the same mistake never recurs.
 - One path — One execution path per feature. No fallbacks, no stubs, no legacy branches. When the primary path fails, fail loudly.
+- Ground truth, not your own derivation — A gate that shares a derivation with the thing it gates cannot fail; reach outside, to the mesh. Assert a probe *varies* before interpreting it: N different inputs yielding one identical value means the probe is broken, not that the data is uniform. Never state a root cause from a single measurement.
+- A render settles art direction — A metric does not. When a human says it looks wrong and the number says it is fine, the number is wrong until proven otherwise.
+- Write the number, and the wrong number too — "55 mm" teaches nothing; "20 mm failed by 2.6 mm, 35 mm failed because the push radius is 28 mm, 55 mm works" teaches the shape of the problem. When a gate passes and the render disagrees, record the *mechanism* of the blindness: "vertex penetration is not surface penetration" transfers, "the straps were broken" does not.
+- No unmeasured claim as doctrine — An unmeasured claim enters under a PROPOSED banner, and the banner comes off in the same change that measures it. Delete what measurement kills and record the falsification in place; never append a contradiction below a live claim, because the reader trusts the first thing they read. Never write an unverified claim into a doc or comment: a doc claiming a fix that is not there is a gate that lies.
 
 ## Rules for how the harness should be coded
 - One class per part — Every object/assembly is a class owning its Blender objects, exposing named build steps. No flat top-to-bottom scripts.

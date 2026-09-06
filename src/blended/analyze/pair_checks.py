@@ -45,6 +45,7 @@ class PairReport:
     second_object_name: str
     intersecting_face_pair_count: int
     minimum_separation_m: float
+    aabb_penetration_depth_m: float
 
 
 def _world_bounds(first_mesh, first_to_world, second_mesh, second_to_world):
@@ -90,6 +91,48 @@ def _penetration_depth_m(first_bounds, second_bounds) -> float:
     return min(overlaps)
 
 
+def _sampled_minimum_distance_m(
+    query_mesh, query_to_world, target_evaluated, target_to_world
+) -> float | None:
+    """World distance from the query mesh's sampled vertices to the
+    target object's SURFACE, or None when the query mesh has no
+    vertices or no closest-point query ever lands.
+
+    Samples every ``ceil(count / PAIR_SEPARATION_SAMPLE_LIMIT)``-th
+    vertex so a dense mesh does not make the measurement
+    O(vertices) against the other object's BVH. The step is re-derived
+    from the caller's own mesh, so the limit is PER DIRECTION:
+    ``analyze_pair`` calls this twice and samples at most
+    ``2 * PAIR_SEPARATION_SAMPLE_LIMIT`` points.
+    ``closest_point_on_mesh`` is an OBJECT method and wants the point
+    in the target's LOCAL space; the distance is taken back in world
+    space so a scaled object cannot flatter itself.
+    """
+    vertex_count = len(query_mesh.vertices)
+    if not vertex_count:
+        return None
+    target_to_local = target_to_world.inverted()
+    sample_step = (
+        1
+        if vertex_count <= PAIR_SEPARATION_SAMPLE_LIMIT
+        else -(-vertex_count // PAIR_SEPARATION_SAMPLE_LIMIT)
+    )
+    minimum_world_distance = None
+    for vertex_index in range(0, vertex_count, sample_step):
+        world_point = query_to_world @ query_mesh.vertices[vertex_index].co
+        target_local_point = target_to_local @ world_point
+        hit, location, _normal, _index = target_evaluated.closest_point_on_mesh(
+            target_local_point
+        )
+        if not hit:
+            continue
+        world_closest = target_to_world @ location
+        distance_m = (world_closest - world_point).length
+        if minimum_world_distance is None or distance_m < minimum_world_distance:
+            minimum_world_distance = distance_m
+    return minimum_world_distance
+
+
 def analyze_pair(first_object, second_object) -> PairReport:
     """Measure one object against another.
 
@@ -99,11 +142,47 @@ def analyze_pair(first_object, second_object) -> PairReport:
     ``CONTACT_DEPTH_TOLERANCE_M``. Resting contact (a lidar on its
     crate, sink within 2 mm) reads zero.
 
-    ``minimum_separation_m``: for the first object's evaluated vertices
-    in world space — all of them when under
-    ``PAIR_SEPARATION_SAMPLE_LIMIT``, else every
-    ``ceil(count / limit)``-th — the closest surface point of the
-    second object, in world distance. Surface, never nearest-vertex.
+    ``minimum_separation_m``: each object's evaluated vertices in world
+    space (all of them when under ``PAIR_SEPARATION_SAMPLE_LIMIT``,
+    else every ``ceil(count / limit)``-th) measured to the other
+    object's closest SURFACE point, minimised over both directions.
+    Surface, never nearest-vertex. An UPPER BOUND on the true
+    surface-to-surface separation, not the separation itself: the
+    closest approach between two coarse solids is edge-to-edge and
+    touches no vertex, and above the sample limit most vertices are
+    never probed. Measured: two crossing 1 mm plates that share volume
+    — true separation 0 — report 0.999 m in both argument orders.
+    Direction matters, because `evaluate.acceptance` fails a relation
+    on ``minimum_separation_m < required``, so an over-estimate makes
+    that gate lenient and never strict.
+
+    Both directions on purpose: sampling one side only made
+    ``analyze_pair(a, b)`` and ``analyze_pair(b, a)`` disagree whenever
+    the meshes differed in vertex density (measured 0.0224 m one way,
+    0.3274 m the other), and a separation measure that depends on
+    argument order is not a measure. The MINIMUM of the two one-sided
+    readings, not the maximum: each is an over-estimate of the same
+    infimum, so the smaller is the better estimate. That is the
+    opposite convention to the two-sided Hausdorff distance
+    (``max`` of the one-sided distances), which measures shape
+    dissimilarity rather than closest approach.
+
+    ``aabb_penetration_depth_m``: the world-AABB minimum translation
+    depth, the same number that gates the pair count. It is the
+    residual limit made visible — a genuine interpenetration whose
+    AABB min-axis overlap stays under ``CONTACT_DEPTH_TOLERANCE_M``
+    (parts thinner than 2 mm, or a grazing crossing) is reported by
+    neither ``intersecting_face_pair_count`` nor a shrunken
+    ``minimum_separation_m``. Gated by
+    ``NoInterpenetrationSpec.maximum_aabb_penetration_depth_m``, which
+    the crate-with-lid brief sets: opt-in, because AABB depth is
+    meaningless for parts that legitimately share a bounding volume.
+    An AABB depth is a PROXY for penetration depth; the principled
+    measure is a signed distance field, which would also give the sign
+    this pair of numbers lacks — `10.1109/tvcg.2006.56` (Jones,
+    Bærentzen & Šrámek, 3D distance fields: a survey of techniques and
+    applications) surveys the construction if that trade is ever worth
+    making.
     """
     import bpy
     from mathutils.bvhtree import BVHTree
@@ -153,30 +232,23 @@ def analyze_pair(first_object, second_object) -> PairReport:
                 )
                 intersecting_pair_count = len(first_tree.overlap(second_tree))
 
-        second_to_local = second_to_world.inverted()
-        minimum_world_distance = None
-        vertex_count = len(first_mesh.vertices)
-        if vertex_count:
-            sample_step = (
-                1
-                if vertex_count <= PAIR_SEPARATION_SAMPLE_LIMIT
-                else -(-vertex_count // PAIR_SEPARATION_SAMPLE_LIMIT)
+        # Both directions, minimised: see the docstring on why one
+        # direction is not a measurement.
+        sampled_distances = [
+            distance_m
+            for distance_m in (
+                _sampled_minimum_distance_m(
+                    first_mesh, first_to_world, second_evaluated, second_to_world
+                ),
+                _sampled_minimum_distance_m(
+                    second_mesh, second_to_world, first_evaluated, first_to_world
+                ),
             )
-            for vertex_index in range(0, vertex_count, sample_step):
-                world_point = first_to_world @ first_mesh.vertices[vertex_index].co
-                second_local_point = second_to_local @ world_point
-                hit, location, _normal, _index = (
-                    second_evaluated.closest_point_on_mesh(second_local_point)
-                )
-                if not hit:
-                    continue
-                world_closest = second_to_world @ location
-                distance_m = (world_closest - world_point).length
-                if (
-                    minimum_world_distance is None
-                    or distance_m < minimum_world_distance
-                ):
-                    minimum_world_distance = distance_m
+            if distance_m is not None
+        ]
+        minimum_world_distance = (
+            min(sampled_distances) if sampled_distances else None
+        )
     finally:
         first_evaluated.to_mesh_clear()
         second_evaluated.to_mesh_clear()
@@ -190,4 +262,5 @@ def analyze_pair(first_object, second_object) -> PairReport:
             if minimum_world_distance is not None
             else float("inf")
         ),
+        aabb_penetration_depth_m=penetration_m,
     )

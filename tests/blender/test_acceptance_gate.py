@@ -854,3 +854,116 @@ def test_an_oversized_seat_fails_the_form_gate_without_the_eye(empty_scene):
     oversize = [f for f in failures if f.startswith("seat_diameter_x")]
     assert oversize, failures
     assert f"{seat_diameter * SEAT_OVERSIZE_FACTOR:.4f}" in oversize[0], oversize
+
+
+# Two plates, each thinner than pair_checks.CONTACT_DEPTH_TOLERANCE_M,
+# crossing at the origin. They genuinely share volume, and both other
+# interpenetration numbers call them clean: the face-pair count is
+# suppressed below the contact tolerance, and every vertex is a whole
+# span from the other plate's surface because the closest approach is
+# edge-to-edge.
+PLATE_HALF_SPAN_M = 1.0
+PLATE_THICKNESS_M = 0.001
+# The bound the brief sets. Under the plates' 1 mm depth, so the gate
+# has something to fail on; a bound above it would make this test pass
+# while measuring nothing.
+DEPTH_BOUND_M = 0.0005
+
+
+def _crossing_plate_brief():
+    """A two-part brief whose only relation is the depth bound."""
+    from blended.evaluate.briefs import (
+        AssetBrief,
+        NoInterpenetrationSpec,
+        PartSpec,
+    )
+
+    return AssetBrief(
+        name="crossing_plates",
+        prompt_text="Two plates that must not pass through each other.",
+        parts=(PartSpec(name="PlateA"), PartSpec(name="PlateB")),
+        relations=(
+            NoInterpenetrationSpec(
+                name="plates_do_not_cross",
+                first_part="PlateA",
+                second_part="PlateB",
+                maximum_intersecting_face_pairs=0,
+                maximum_aabb_penetration_depth_m=DEPTH_BOUND_M,
+                why="two plates passing through each other are one solid",
+            ),
+        ),
+        require_material=False,
+    )
+
+
+def _plate(name, minimum_corner_m, maximum_corner_m):
+    from blended.ops.primitives import link_into_scene
+
+    x_min, y_min, z_min = minimum_corner_m
+    x_max, y_max, z_max = maximum_corner_m
+    mesh_data = bpy.data.meshes.new(name)
+    mesh_data.from_pydata(
+        [
+            (x_min, y_min, z_min),
+            (x_max, y_min, z_min),
+            (x_max, y_max, z_min),
+            (x_min, y_max, z_min),
+            (x_min, y_min, z_max),
+            (x_max, y_min, z_max),
+            (x_max, y_max, z_max),
+            (x_min, y_max, z_max),
+        ],
+        [],
+        [
+            (0, 1, 2, 3),
+            (7, 6, 5, 4),
+            (0, 4, 5, 1),
+            (1, 5, 6, 2),
+            (2, 6, 7, 3),
+            (3, 7, 4, 0),
+        ],
+    )
+    mesh_data.update()
+    plate = bpy.data.objects.new(name, mesh_data)
+    link_into_scene(plate)
+    return plate
+
+
+def test_a_shallow_crossing_fails_only_on_the_penetration_depth(empty_scene):
+    """The gate that reads `aabb_penetration_depth_m`.
+
+    Two 1 mm plates passing through each other are reported clean by
+    the face-pair count AND by the separation, so this relation is the
+    only thing between a fused pair of parts and a passing build.
+    Deleting the depth comparison in `_measure_relations` leaves the
+    failure list empty and reddens this test.
+    """
+    from blended.analyze.pair_checks import CONTACT_DEPTH_TOLERANCE_M, analyze_pair
+    from blended.evaluate.acceptance import evaluate_brief
+
+    assert PLATE_THICKNESS_M < CONTACT_DEPTH_TOLERANCE_M, (
+        "fixture no longer exercises the blind spot: the plates are "
+        "thicker than the tolerance that suppresses the pair count"
+    )
+
+    first = _plate(
+        "PlateA",
+        (-PLATE_HALF_SPAN_M, -PLATE_HALF_SPAN_M, 0.0),
+        (PLATE_HALF_SPAN_M, PLATE_HALF_SPAN_M, PLATE_THICKNESS_M),
+    )
+    second = _plate(
+        "PlateB",
+        (-PLATE_HALF_SPAN_M, 0.0, -PLATE_HALF_SPAN_M),
+        (PLATE_HALF_SPAN_M, PLATE_THICKNESS_M, PLATE_HALF_SPAN_M),
+    )
+    bpy.context.view_layer.update()
+
+    # The other two numbers see nothing: that is why the depth exists.
+    pair_report = analyze_pair(first, second)
+    assert pair_report.intersecting_face_pair_count == 0
+    assert pair_report.minimum_separation_m > PLATE_HALF_SPAN_M / 2.0
+
+    failures = evaluate_brief(_crossing_plate_brief()).relation_failures
+    depth_failures = [f for f in failures if "AABB penetration depth" in f]
+    assert depth_failures, failures
+    assert f"{PLATE_THICKNESS_M:.6f}" in depth_failures[0], depth_failures

@@ -755,6 +755,17 @@ def _measure_relations(brief: AssetBrief, bpy, Vector) -> tuple[str, ...]:
                     f"{pair_report.minimum_separation_m:.6f} m, expected at "
                     f"least {relation.minimum_separation_m:.6f} m"
                 )
+            if (
+                relation.maximum_aabb_penetration_depth_m is not None
+                and pair_report.aabb_penetration_depth_m
+                > relation.maximum_aabb_penetration_depth_m
+            ):
+                failures.append(
+                    f"AABB penetration depth "
+                    f"{pair_report.aabb_penetration_depth_m:.6f} m, allowed "
+                    f"at most "
+                    f"{relation.maximum_aabb_penetration_depth_m:.6f} m"
+                )
             if failures:
                 found.append(
                     f"{relation.name}: {relation.first_part} against "

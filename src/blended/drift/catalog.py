@@ -309,6 +309,66 @@ DRIFT_ENTRIES: tuple[DriftEntry, ...] = (
         ),
         source="[measured] blended iterations 5 and 6, 2026-08-22",
     ),
+# The six entries below come from scp_characters. Only the first
+# is a genuine `match_traceback` matcher: Blender's own IndexError
+# reads "outdated internal index table, run ensure_lookup_table()
+# first", so that signature really appears in a traceback. The
+# other two name SILENT failures — the wrong space, stored
+# instead of evaluated values — which raise nothing at all. Their
+# signature is the symbol fragment, and they earn their place as
+# retry context the agent reads before re-attempting, not as
+# matchers.
+#
+# Three of the original six rows were removed:
+#   - evaluated_get: DUPLICATED the pre-existing "empty scene /
+#     evaluated_get on unlinked object" row (same error_signature);
+#     match_traceback on a traceback containing `evaluated_get(`
+#     returned BOTH, and retry.py printed the same advice twice.
+#   - Scene.render.fps / FBX: this repo's ingest lane is GLB
+#     (`grep -rn fbx src scripts` returns nothing), and the fps
+#     fact is already load-bearing in src/blended/reset.py's module
+#     docstring and CANONICAL_FPS.
+#   - view3d.view_axis: `grep -rn "view_axis|view_rotation|region_3d"
+#     src scripts` finds these nowhere outside this catalog.
+DriftEntry(
+    symbol="bmesh.types.BMVert.index",
+    changed_in="all",
+    error_signature="ensure_lookup_table",
+    fix=(
+        "ensure_lookup_table() makes lookup by index valid but "
+        "does NOT assign v.index; only bm.verts.index_update() "
+        "does. Prefer holding BMVert identities over indices — "
+        "an index read before index_update() is stale or -1, and "
+        "the IndexError (\"outdated internal index table\") comes "
+        "from the index LOOKUP, while the stale .index read is "
+        "silent and returns -1."
+    ),
+    source="[measured] scp_characters bmesh ops, 2026-09-06",
+),
+DriftEntry(
+    symbol="bpy.types.Object.parent_type='BONE'",
+    changed_in="all",
+    error_signature="parent_type",
+    fix=(
+        "Bone parenting anchors at the bone TAIL, not the head. "
+        "Compensate by -bone.length along the bone's LOCAL Y, "
+        "and set matrix_parent_inverse to identity rather than "
+        "fighting it."
+    ),
+    source="[measured] scp_characters rigging, 2026-09-06",
+),
+DriftEntry(
+    symbol="bpy.types.Bone.matrix_local",
+    changed_in="all",
+    error_signature="matrix_local",
+    fix=(
+        "matrix_local is REST space. Posed world space is "
+        "armature.matrix_world @ pose_bone.matrix; reading rest "
+        "data after posing silently measures the bind pose, "
+        "producing identical numbers with no error."
+    ),
+    source="[measured] scp_characters rigging, 2026-09-06",
+),
 )
 
 

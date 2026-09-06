@@ -25,6 +25,30 @@ magnitude in the other direction. Neither lands on a budget by accident.
    - a base for retopology.
    Say which one you chose and why, in numbers.
 
+## Cleanup technique
+
+These are harness-side operations the writer does not call directly;
+each carries the number that measured it.
+
+- Weld BEFORE decimating: as-imported decimation tore 4,668 boundary
+  edges open where weld-then-decimate left 0, with 4.6x less shading
+  error.
+- Cull invisible geometry before spending any decimation budget: 81%
+  of one body's 26,756 triangles were buried, and removing them changed
+  nothing visible. Probe by ray-casting along normals, not
+  closest-point-plus-dot (read 9.7% covered where truth was 81.1%).
+- Convert triangles to quads BEFORE decimating (79.6% quads first vs
+  23.6% after); never use UNSUBDIV, which collapsed 79.6% to 33.5%.
+- Retopology is a topology tool, not a reduction tool: remesh-then-
+  decimate measured 0.1358 shading RMSE where weld-then-decimate
+  measured 0.0293.
+- Do not protect vertex-group regions during decimation: at a fixed
+  triangle budget protection is zero-sum and measured worse (0.9889/
+  0.0993 with all three protections vs 0.9953/0.0657 with none) — one
+  body, one budget. Boundary error terms are NOT optional
+  (10.1145/1061347.1061350): without them the core quadric metric
+  degrades all open boundaries.
+
 ## What not to do
 
 Do not decimate your way to a budget and call it done. Decimation on

@@ -32,15 +32,17 @@ review is a failure you will repeat.
 ```
 src/blended/
   harness.py     run_chunk / run_builder - the one-call loop
-  version.py     Blender series pin (5.0) + skew assertion
+  version.py     Blender series pin (5.2) + skew assertion
+  reset.py       wipe to a canonical empty scene, with the wipe ASSERTED
   drift/         API drift catalog — grows with every instructive traceback
   ops/           reusable construction vocabulary (bmesh/data API, no bpy.ops)
   builders/      Parameters + Builder pairs (first prop: the crate)
-  analyze/       the mesh analyzer — the hard gate
+  analyze/       the mesh analyzer (the hard gate) + metamorphic relations
   capture/       front/right/top/three-quarter renders
   run/           executor, retry loop, JSONL session log
   ingest/        GLB import + bounded cleanup (the generated-mesh lane)
   export/        glTF export with welded round-trip verification
+  evaluate/      briefs, acceptance, mistake memory, reproducibility digest
 tests/pure/      no Blender required, runs anywhere
 tests/blender/   requires `import bpy` (pip wheel or Blender's Python)
 docs/            roadmap + research
@@ -50,9 +52,21 @@ docs/            roadmap + research
 
 ```sh
 make test-pure                 # any machine
-pip install bpy                # Blender 5.0 as a module (Python 3.11)
-make test-blender              # build → analyze → render, end to end
+make test-blender-app          # build → analyze → render, inside the
+                               # installed Blender 5.2 (its own Python
+                               # 3.13, bundled numpy, no pip)
+make test                      # both layers; this is the gate
+make test-repro ARGS="--builder barrel"
+                               # build twice in two fresh Blenders under
+                               # different PYTHONHASHSEED; identical
+                               # semantic digests or exit 1
 ```
+
+`make test-blender` runs the same Blender-tier suite against a
+pip-installed `bpy` wheel instead. It needs a venv whose Python matches
+the wheel's (Blender 5.2 is cp313; this repo's `.venv` is 3.11, so
+`pip install bpy` there cannot produce 5.2), and a bare run with no
+wheel collects nothing and exits 5 — which is not a pass.
 
 ## Read
 
