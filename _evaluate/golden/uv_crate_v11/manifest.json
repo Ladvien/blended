@@ -1,0 +1,15 @@
+{
+  "blender_series": "5.2",
+  "brief": "uv_crate",
+  "captured_at": "2026-09-06T00:46:53.654406+00:00",
+  "iteration": 61,
+  "prompt_identity": "v11:d90e5ee9e59d",
+  "revision": 11,
+  "view_sha256": {
+    "bottom": "cc5987de8350f7d534c3063f75ed06eed3376344f135ae7e2be84e15a9192d61",
+    "front": "346dacdc98f9d7c07f1508986ec9e442e1fbf4a9952b635b5b5fda2f5963e8d8",
+    "right": "346dacdc98f9d7c07f1508986ec9e442e1fbf4a9952b635b5b5fda2f5963e8d8",
+    "three_quarter": "51dc1ce50f289c484d2cb6ad32e8b6cac32243d4c4a7c9368b6830a72509c558",
+    "top": "5610a55987af453a9263ca1fac0ab2db706d4239863116cb1fff65e9651e933a"
+  }
+}

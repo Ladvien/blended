@@ -70,12 +70,25 @@ def main(argv) -> int:
     assert_supported_blender()
 
     revision = get_revision(arguments.revision)
-    from blended.agent import prompt_versions
+    from blended.evaluate.briefs import BRIEFS
+    from blended.evaluate.iteration_log import (
+        IterationLog,
+        clean_cycle_for_identity,
+    )
 
-    converging_runs = {
-        brief_name: iteration
-        for iteration, brief_name in prompt_versions.CONVERGENCE_RUNS
-    }
+    brief_names = tuple(sorted(BRIEFS))
+    converging_runs = clean_cycle_for_identity(
+        IterationLog(Path(arguments.log)).records(), brief_names, revision.identity
+    )
+    missing_briefs = sorted(set(brief_names) - set(converging_runs))
+    if missing_briefs:
+        raise SystemExit(
+            f"no clean run of {revision.identity} for {missing_briefs} in "
+            f"{arguments.log}: a reference may only be minted from runs that "
+            f"EXECUTED the revision being stamped. Run the suite at this "
+            f"revision first (scripts/run_agent_task.py --revision "
+            f"{arguments.revision} per brief), then mint."
+        )
     briefs = sorted(converging_runs)
 
     for brief_name in briefs:

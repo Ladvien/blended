@@ -288,6 +288,45 @@ def fold_verdict(
     )
 
 
+def clean_cycle_for_identity(
+    records: list[IterationRecord],
+    brief_names: tuple[str, ...],
+    prompt_identity: str,
+) -> dict[str, int]:
+    """The newest clean run per brief that RAN this prompt identity.
+
+    Which runs may mint a golden reference for a revision? Only runs
+    that executed that revision's text. `CONVERGENCE_RUNS` cannot
+    answer it: that tuple names the runs of the CURRENTLY PINNED
+    revision, which by definition executed the old text, so sourcing
+    from it and then asserting the identity matches can only ever
+    succeed for the revision already pinned — which deadlocked the loop
+    against advancing to a candidate at all (measured 2026-09-05: every
+    door refused, `pin-golden-views REVISION=11` with "iteration 51 ran
+    'v10:...', not 'v11:...'").
+
+    Clean means the deterministic gates only — structural, form and
+    refinement. The examiner's verdict is deliberately not consulted:
+    its judgement is made AGAINST a reference, so requiring it here
+    would ask a reference to exist before it is minted.
+    """
+    newest: dict[str, int] = {}
+    for record in records:
+        if record.brief_name not in set(brief_names):
+            continue
+        if record.prompt_identity != prompt_identity:
+            continue
+        if not (
+            record.structural_gate_passed
+            and record.form_gate_passed
+            and record.refinement_gate_passed
+        ):
+            continue
+        if record.iteration >= newest.get(record.brief_name, -1):
+            newest[record.brief_name] = record.iteration
+    return newest
+
+
 def converged_suite_cycles(
     records: list[IterationRecord],
     brief_names: tuple[str, ...],

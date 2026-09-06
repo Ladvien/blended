@@ -2033,6 +2033,48 @@ MISTAKES: tuple[MistakeRecord, ...] = (
         ),
         recorded_on="2026-09-05",
     ),
+    MistakeRecord(
+        identifier="the-pin-loop-could-not-advance-a-revision",
+        scope="harness_code",
+        failure=(
+            "Every door to pinning a candidate revision refused, in a "
+            "cycle: `converge_auto --revision 11` refused because "
+            "_evaluate/golden/<brief>_v11 did not exist; "
+            "`make pin-golden-views REVISION=11` refused with 'iteration "
+            "51 ran v10:b6627b38f4c1, not v11:d90e5ee9e59d — refusing to "
+            "pin the wrong text'; and `make pin` refuses a proposal "
+            "'composed by hand'. The loop could not advance past the "
+            "revision it had already pinned."
+        ),
+        cause=(
+            "pin_golden_views sourced its runs from "
+            "prompt_versions.CONVERGENCE_RUNS — the runs of the "
+            "CURRENTLY PINNED revision, which by definition executed the "
+            "old text — and then asserted the recorded identity equals "
+            "the revision being stamped. Those two rules can only both "
+            "hold for the revision already pinned. CONVERGENCE_RUNS is "
+            "rewritten by `make pin`, which needs the proposal, which "
+            "needs the reference: a genuine deadlock, introduced by "
+            "tightening the identity guard (correct) while leaving the "
+            "run SOURCE as the previous pin (wrong)."
+        ),
+        fix=(
+            "The source is now the log, scoped to the identity being "
+            "stamped: `clean_cycle_for_identity` takes the newest run "
+            "per brief that EXECUTED that revision with all three "
+            "deterministic gates green, and pin_golden_views refuses "
+            "loudly, naming the briefs, when the suite has not been run "
+            "at that revision yet. The identity guard is kept — it was "
+            "always the right check, just applied to the wrong "
+            "candidates. Bootstrap order for a new revision: run the "
+            "suite at it, mint from those runs, then converge."
+        ),
+        guarded_by=(
+            "tests/pure/test_convergence_rule.py::"
+            "test_only_runs_that_executed_a_revision_may_mint_its_reference"
+        ),
+        recorded_on="2026-09-05",
+    ),
 )
 
 
