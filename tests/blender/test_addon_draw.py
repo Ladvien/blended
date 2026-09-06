@@ -323,11 +323,12 @@ def test_the_working_surface_holds_the_prompt_and_no_reply_text():
     — all fixed height — and NO traffic and NO reply text, so it cannot
     be pushed out of view by a long turn. The record is a separate,
     closed-by-default panel below it, and the replies belong to the GPU
-    overlay in the viewport.
+    overlay in the viewport, which now ships on.
 
-    While that overlay is shelved (`TRANSCRIPT_OVERLAY_ENABLED` False)
-    the surface has to SAY where the replies are, or the state reads as
-    a bug rather than a switch — but it still does not draw them."""
+    The assertions about the off-state hint row are DELETED rather than
+    re-pointed: the row existed only while the overlay was switched off,
+    and re-pinning them to the shipped text would pin the switch this
+    change removed."""
     module = _load_addon("blended_draw_split")
     module._STATE.transcript = [
         ("user", "Build a crate"),
@@ -350,15 +351,6 @@ def test_the_working_surface_holds_the_prompt_and_no_reply_text():
         "is exactly the defect the user reported (2026-09-06)"
     )
     assert "Ready" in labels, "the status line stays on the surface"
-    assert labels.count(module._OVERLAY_OFF_HINT) == 1, (
-        "a shelved overlay must point at the record, exactly once"
-    )
-
-    module._STATE.transcript = []
-    empty = [text for kind, text, _ in _draw(module, _make_context("blended_draw_split")) if kind == "label"]
-    assert module._OVERLAY_OFF_HINT not in empty, (
-        "nothing to point at before the first turn"
-    )
 
     assert module.BLENDED_PT_history.bl_order > module.BLENDED_PT_chat.bl_order
     assert "DEFAULT_CLOSED" in module.BLENDED_PT_history.bl_options

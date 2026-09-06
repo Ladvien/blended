@@ -242,12 +242,23 @@ def _chat_column(context, style: TranscriptStyle):
 def cursor_is_over_transcript(
     context, mouse_region_x: int, mouse_region_y: int
 ) -> bool:
-    """True when the pointer is inside the transcript column.
+    """True when the pointer is inside the PAINTED transcript column.
 
     The scroll operator asks this before consuming a wheel event, so
     the wheel keeps zooming the viewport everywhere else.
+
+    The emptiness test is the same one `_draw` uses, and it is load
+    bearing: with nothing painted, the geometry alone answers True over
+    a measured 353 x 868 px strip of empty viewport, so the wheel keymap
+    would swallow viewport zoom there on every fresh session before the
+    user has sent a single message. That hazard is the reason the
+    shelving comment gave for not binding the keymap at all; the fix is
+    to make the hit test agree with the paint, not to leave the keymap
+    unbound.
     """
     try:
+        if _MESSAGES_PROVIDER is None or not _MESSAGES_PROVIDER():
+            return False
         style = style_from_theme(bpy.context.preferences.system.ui_scale)
         column = _chat_column(context, style)
     except Exception:  # noqa: BLE001 — an operator must never raise on a wheel

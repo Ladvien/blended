@@ -32,7 +32,11 @@ import blf
 from test_addon_draw import _load_addon
 
 from blended.ui import transcript_overlay as overlay
-from blended.ui.transcript_layout import column_rect, layout_transcript
+from blended.ui.transcript_layout import (
+    TranscriptMessage,
+    column_rect,
+    layout_transcript,
+)
 from blended.ui.transcript_style import CODE_BAND_CONTRAST
 
 PROSE = (
@@ -79,14 +83,11 @@ def _stub_context(
 def addon():
     """The addon registered for real, so `blended_chat` exists.
 
-    `TRANSCRIPT_OVERLAY_ENABLED` is flipped ON here because the overlay
-    is shelved by default (2026-09-06). Its wiring still has to be
-    guarded — a shelved feature with no live tests is a feature that
-    quietly rots — so the flag is set on the freshly loaded module
-    before `register()` reads it.
+    No flag to set: the overlay ships on, so this fixture exercises the
+    shipped configuration. That is the point of the flip — a fixture
+    that had to switch something on was testing a path no user ran.
     """
     module = _load_addon("blended_overlay_provider")
-    module.TRANSCRIPT_OVERLAY_ENABLED = True
     module.register()
     try:
         yield module
@@ -213,26 +214,61 @@ def test_unregistering_twice_is_harmless():
     assert overlay._HANDLER is None
 
 
-def test_the_overlay_is_shelved_until_the_flag_is_set():
-    """The switch the user asked for: `register()` installs nothing and
-    the panel says where the replies are, with no handler left painting
-    over the viewport."""
-    module = _load_addon("blended_overlay_shelved")
-    assert module.TRANSCRIPT_OVERLAY_ENABLED is False, (
-        "the overlay is shelved: see docs/2026-09-06-gpu-transcript-overlay.md"
-    )
-    module.register()
+def test_the_wheel_is_not_captured_before_the_first_message():
+    """The hazard that kept the keymap unbound, now fixed instead.
+
+    `cursor_is_over_transcript` used to answer True for the column's
+    GEOMETRY whether or not anything was painted there, so binding the
+    wheel would swallow viewport zoom over a measured 353 x 868 px strip
+    of empty viewport on every fresh session — before the user had sent
+    a single message. The hit test now shares `_draw`'s emptiness
+    condition, so the wheel is bound unconditionally and still only
+    consumes events where there is something to scroll.
+    """
+    context = _stub_context()
+    column = overlay._chat_column(context, _live_style())
+    centre_x = column.x_px + column.width_px // 2
+    centre_y = column.y_px + column.height_px // 2
+
+    overlay.register_overlay(lambda: (), lambda: 0)
     try:
-        assert _live_overlay()._HANDLER is None, "a shelved overlay still installed"
-        assert module._OVERLAY_ERROR == ""
-        assert not [
-            item
-            for _, item in module._KEYMAP_ENTRIES
-            if item.idname == module.BLENDED_OT_scroll_transcript.bl_idname
-        ], "the wheel would swallow viewport zoom with nothing drawn"
+        assert not overlay.cursor_is_over_transcript(context, centre_x, centre_y), (
+            "the wheel would swallow viewport zoom with nothing drawn"
+        )
     finally:
-        module.unregister()
-    assert _live_overlay()._HANDLER is None
+        overlay.unregister_overlay()
+
+    painted = (
+        TranscriptMessage(
+            kind="answer",
+            label="blended",
+            body="one reply, so there is something to scroll",
+            index=0,
+        ),
+    )
+    overlay.register_overlay(lambda: painted, lambda: 0)
+    try:
+        assert overlay.cursor_is_over_transcript(context, centre_x, centre_y), (
+            "the same point must be inside the column once it is painted"
+        )
+    finally:
+        overlay.unregister_overlay()
+
+
+def test_the_overlay_ships_installed_and_the_wheel_is_bound(addon):
+    """The flip: `register()` installs the handler and binds the wheel.
+
+    The flag this replaces (`TRANSCRIPT_OVERLAY_ENABLED = False`) is
+    deleted rather than re-pointed — a test re-pinned to the new value
+    would pin the same one-path-with-a-switch mistake.
+    """
+    assert _live_overlay()._HANDLER is not None, "the overlay did not install"
+    assert addon._OVERLAY_ERROR == ""
+    assert [
+        item
+        for _, item in addon._KEYMAP_ENTRIES
+        if item.idname == addon.BLENDED_OT_scroll_transcript.bl_idname
+    ], "the wheel is not bound, so the transcript cannot be scrolled"
 
 
 def test_drawing_without_a_viewport_is_a_silent_no_op():
@@ -355,25 +391,42 @@ def test_the_wheel_is_captured_only_over_the_transcript_column():
     The column is built from the LIVE `ui_scale` because that is what
     `cursor_is_over_transcript` reads — a test that assumed 1.0 while
     the preference said something else compared two different columns.
+
+    A painted transcript is registered first because the hit test now
+    requires one: this test is about the column's BOUNDARY, and without
+    a provider every answer would be False for the emptiness reason
+    instead, which would make the boundary assertions vacuous.
     """
     context = _stub_context()
     column = overlay._chat_column(context, _live_style())
-
-    assert overlay.cursor_is_over_transcript(context, column.x_px + 5, column.y_px + 5)
-    assert overlay.cursor_is_over_transcript(
-        context,
-        column.x_px + column.width_px - 1,
-        column.y_px + column.height_px - 1,
+    overlay.register_overlay(
+        lambda: (
+            TranscriptMessage(
+                kind="answer", label="blended", body="painted", index=0
+            ),
+        ),
+        lambda: 0,
     )
-    assert not overlay.cursor_is_over_transcript(
-        context, column.x_px - 5, column.y_px + 5
-    )
-    assert not overlay.cursor_is_over_transcript(
-        context, column.x_px + 5, column.y_px + column.height_px + 5
-    )
-    assert not overlay.cursor_is_over_transcript(
-        _stub_context(category="Item"), column.x_px + 5, column.y_px + 5
-    )
+    try:
+        assert overlay.cursor_is_over_transcript(
+            context, column.x_px + 5, column.y_px + 5
+        )
+        assert overlay.cursor_is_over_transcript(
+            context,
+            column.x_px + column.width_px - 1,
+            column.y_px + column.height_px - 1,
+        )
+        assert not overlay.cursor_is_over_transcript(
+            context, column.x_px - 5, column.y_px + 5
+        )
+        assert not overlay.cursor_is_over_transcript(
+            context, column.x_px + 5, column.y_px + column.height_px + 5
+        )
+        assert not overlay.cursor_is_over_transcript(
+            _stub_context(category="Item"), column.x_px + 5, column.y_px + 5
+        )
+    finally:
+        overlay.unregister_overlay()
 
 
 # --- The addon's provider --------------------------------------------------

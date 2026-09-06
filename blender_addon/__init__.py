@@ -1288,24 +1288,6 @@ _LIVE_CURSOR = " ▍"
 # as an alert row on the pinned surface — a draw handler that cannot
 # start would otherwise be an empty viewport with no explanation.
 _OVERLAY_ERROR = ""
-# --- Shelved: the GPU transcript overlay ---------------------------------
-#
-# Built and verified end to end on 2026-09-06 — see
-# `docs/2026-09-06-gpu-transcript-overlay.md` for the design, the
-# measured Blender 5.2 substrate, and the numbers (the whole 561 x 1104
-# px sidebar is 0 differing pixels between a one-line and a sixty-line
-# reply). Switched OFF at the user's request while other work is in
-# flight; flip this one flag to bring it back, no other edit needed.
-#
-# While it is off the replies live in the record panel only, and the
-# pinned surface says so in one fixed-height row. The surface does NOT
-# grow a second reply-rendering path: two paths for the same replies is
-# what the "one path" rule forbids, and the native stack is exactly
-# where the measured composer-walks-down-the-panel defect came from.
-TRANSCRIPT_OVERLAY_ENABLED = False
-# What the pinned surface says instead of the replies while the overlay
-# is shelved.
-_OVERLAY_OFF_HINT = "Replies are in Conversation, below."
 # A compact row is icon + label + copy button: this many characters of
 # the row's width are not text.
 _COMPACT_ROW_CHROME_CHARACTERS = 8
@@ -1561,8 +1543,7 @@ def _install_overlay() -> None:
     reload that left the old handler running would keep drawing the old
     code, which is the whole point of reloading.
 
-    Removes first, unconditionally, so flipping
-    `TRANSCRIPT_OVERLAY_ENABLED` off and reloading actually stops the
+    Removes first, unconditionally, so a reload actually stops the old
     painting instead of leaving the previous handler behind.
 
     A failure here must never propagate: an exception in `register()`
@@ -1572,8 +1553,6 @@ def _install_overlay() -> None:
     global _OVERLAY_ERROR
     _remove_overlay()
     _OVERLAY_ERROR = ""
-    if not TRANSCRIPT_OVERLAY_ENABLED:
-        return
     try:
         from blended.ui.transcript_overlay import register_overlay
 
@@ -1984,26 +1963,20 @@ class BLENDED_PT_chat(_ChatDrawing, bpy.types.Panel):
         self._draw_session_controls(controls, scene_properties, preferences)
 
         # The overlay's failure modes, reported where the user is
-        # looking rather than in the console — and, while it is
-        # shelved, one row saying where the replies went. Every one of
-        # them is a single fixed-height row, so none can move the
-        # composer.
-        if not TRANSCRIPT_OVERLAY_ENABLED:
-            if _STATE.transcript or _STATE.live_text:
-                controls.label(text=_OVERLAY_OFF_HINT, icon="TEXT")
-        else:
-            overlay_error, column_too_narrow = _overlay_status()
-            if overlay_error:
-                alert_row = controls.row()
-                alert_row.alert = True
-                alert_row.label(
-                    text=f"Transcript overlay failed: {overlay_error}", icon="ERROR"
-                )
-            if column_too_narrow:
-                controls.label(
-                    text="Viewport too narrow for the transcript — widen it.",
-                    icon="AREA_SWAP",
-                )
+        # looking rather than in the console. Each is a single
+        # fixed-height row, so none can move the composer.
+        overlay_error, column_too_narrow = _overlay_status()
+        if overlay_error:
+            alert_row = controls.row()
+            alert_row.alert = True
+            alert_row.label(
+                text=f"Transcript overlay failed: {overlay_error}", icon="ERROR"
+            )
+        if column_too_narrow:
+            controls.label(
+                text="Viewport too narrow for the transcript — widen it.",
+                icon="AREA_SWAP",
+            )
 
         if region_width < _NARROW_SIDEBAR_PIXELS:
             controls.label(text="Drag the sidebar edge wider.", icon="AREA_SWAP")
@@ -2588,12 +2561,11 @@ def _register_keymaps():
     # returns PASS_THROUGH outside the column, so this steals nothing.
     # Wheel UP moves toward the newest reply, which is at the top.
     #
-    # Not bound at all while the overlay is shelved: with no handler
-    # painting, `cursor_is_over_transcript` still answers True for the
-    # column's geometry, so the item would swallow viewport zoom over a
-    # strip of screen with nothing drawn in it.
-    if not TRANSCRIPT_OVERLAY_ENABLED:
-        return
+    # Safe to bind unconditionally only because
+    # `cursor_is_over_transcript` now shares `_draw`'s emptiness test:
+    # before that fix it answered True for the column's geometry with
+    # nothing painted, which would swallow viewport zoom over a measured
+    # 353 x 868 px strip of empty viewport on every fresh session.
     from blended.ui.transcript_style import SCROLL_STEP_PX
 
     for key_type, direction in (("WHEELUPMOUSE", -1), ("WHEELDOWNMOUSE", 1)):

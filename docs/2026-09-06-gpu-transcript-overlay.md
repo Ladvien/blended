@@ -1,9 +1,11 @@
-# GPU transcript overlay — built, verified, currently off (2026-09-06)
+# GPU transcript overlay — shipped (2026-09-06)
 
 Replaces the `UILayout`-drawn reply stack in the chat sidebar with a GPU-drawn transcript
-(`gpu` + `blf` + `SpaceView3D.draw_handler_add`) painted in the 3D viewport. Built and
-verified end to end on 2026-09-06; the runtime switch is **off** pending other work — see
-[Turning it on and off](#turning-it-on-and-off).
+(`gpu` + `blf` + `SpaceView3D.draw_handler_add`) painted in the 3D viewport. Built,
+verified end to end, and SHIPPED ON on 2026-09-06. There is no runtime switch: the
+`TRANSCRIPT_OVERLAY_ENABLED` flag that briefly shelved it was deleted on the flip, along
+with the off-state hint row and the tests that pinned the off state — see
+[The flag, and why it is gone](#the-flag-and-why-it-is-gone).
 
 Supersedes row 24 of `docs/harness_design.md` (which this doc is the long form of) and the
 row-budget half of the mistake-memory record `the-sidebar-is-twenty-seven-rows-not-a-page`.
@@ -163,43 +165,47 @@ Plus one process record, `a-screenshot-lags-the-state-that-produced-it`: double-
 cross-check every GUI read against an in-session numeric dump. A vision read of a stale
 frame reported a missing code band that `layout_transcript(...).texts` proved was present.
 
-## Turning it on and off
+## The flag, and why it is gone
 
-One flag in `blender_addon/__init__.py`:
+The overlay shipped ON on 2026-09-06 and `TRANSCRIPT_OVERLAY_ENABLED` was DELETED in the
+same change — flag, off-state hint, both guards, and the two tests that pinned the off
+state. A clean cutover on purpose: a switch left in place is a second execution path that
+nobody runs and every later change has to keep working.
 
-```python
-TRANSCRIPT_OVERLAY_ENABLED = False   # shelved 2026-09-06
-```
+While it existed the flag was a module constant in `blender_addon/__init__.py`, set to
+`False`, read by `_install_overlay()` and `_register_keymaps()`. Three consequences
+followed from it being off, and all three are worth keeping on the record:
 
-Flip it to `True` and reload (Settings → Reload, or restart Blender). No other edit is
-needed: `_install_overlay()` reads it and `_register_keymaps()` reads it.
+- **No handler was installed.** `_install_overlay()` removed any existing handler first
+  and then returned, so flipping off and reloading really did stop the painting. That
+  remove-first order survives the flag's deletion, because it is also what stops a hot
+  reload from stacking a second handler.
+- **The wheel items were not bound** — and this was the real reason to shelve rather than
+  ship. `cursor_is_over_transcript` answered `True` for the column's GEOMETRY whether or
+  not anything was drawn there, so a bound wheel item would have swallowed viewport zoom
+  over a measured 353 x 868 px strip of empty viewport on every fresh session, before the
+  user had sent a single message. **That is fixed rather than avoided:** the hit test now
+  shares the emptiness condition `_draw` already used (`_MESSAGES_PROVIDER is None or not
+  _MESSAGES_PROVIDER()`), so it answers `False` over an empty column and the keymap binds
+  unconditionally. The broad `except Exception: return False` stays — an operator must
+  never raise on a wheel event.
+- **The pinned surface said where the replies went**, in one fixed-height row. That row is
+  deleted with the flag; with the overlay on there is nothing to point at, and the surface
+  still draws no reply text at all.
 
-A module constant rather than a preference on purpose — this is shelved work, not a
-supported user option, and a half-exposed checkbox would have to be maintained as if it
-were one. Flipping the flag is a one-line diff with no RNA, no UI, and no migration.
+Guards after the flip:
+`tests/blender/test_transcript_overlay.py::test_the_wheel_is_not_captured_before_the_first_message`
+(the same column-centre coordinates answer `False` with a provider returning `()` and
+`True` with one message) and `::test_the_overlay_ships_installed_and_the_wheel_is_bound`
+(a real `register()` installs the handler, records no error, and binds the scroll items).
+The `addon` fixture no longer sets anything: it exercises the shipped configuration, which
+is the point of flipping. `test_the_wheel_is_captured_only_over_the_transcript_column`
+gained a registered transcript, because a boundary test whose every answer is `False` for
+the emptiness reason would be vacuous.
 
-Three things follow from the flag being off, each asserted:
-
-- **No handler is installed.** `_install_overlay()` removes any existing handler first and
-  then returns, so flipping the flag off and reloading actually stops the painting.
-- **The wheel items are not bound.** `cursor_is_over_transcript` still answers True for the
-  column's geometry whether or not anything is drawn there, so a bound item would swallow
-  viewport zoom over a strip of screen with nothing in it.
-- **The pinned surface says where the replies went** — one fixed-height row,
-  `_OVERLAY_OFF_HINT`, drawn only once there is something to point at. A switch that
-  silently removes the replies reads as a bug.
-
-Guards: `tests/blender/test_transcript_overlay.py::test_the_overlay_is_shelved_until_the_flag_is_set`
-(no handler, no keymap items, no error after a real `register()`/`unregister()` cycle) and
-`tests/blender/test_addon_draw.py::test_the_working_surface_holds_the_prompt_and_no_reply_text`
-(the hint row appears exactly once, and not before the first turn). Every other test in
-`test_transcript_overlay.py` runs through the `addon` fixture, which sets the flag ON — a
-shelved feature with no live tests is a feature that quietly rots.
-
-With it off, replies are in the record panel (`Conversation`, `DEFAULT_CLOSED`) only. The
-pinned surface deliberately does **not** grow a second reply-rendering path — two paths for
-the same replies is what the repo's "one path" rule forbids, and re-adding the native stack
-is exactly where the measured composer-walks-down-the-panel defect came from.
+The pinned surface still does **not** grow a second reply-rendering path — two paths for
+the same replies is what the repo's "one path" rule forbids, and re-adding the native
+stack is exactly where the measured composer-walks-down-the-panel defect came from.
 
 ## Known limitations
 

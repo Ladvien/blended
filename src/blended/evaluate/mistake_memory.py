@@ -2872,6 +2872,48 @@ MISTAKES: tuple[MistakeRecord, ...] = (
         guarded_by="tests/blender/test_metamorphic.py::test_builders_satisfy_their_metamorphic_relations[barrel] and [pallet] carry construction_order_does_not_change_the_mesh. Negative control, run and reverted: making hoop z depend on sequence_position rather than hoop_index reddens it on surface_area_m2 (2.59578341525048 -> 2.5958127349149436, rel 1.1e-5, 11x the tolerance) while volume_m3 stays inside tolerance, because HOOP_POSITION_FRACTIONS 0.2 and 0.8 sit at equal radii on a sine-bulged barrel and the two shifts cancel in volume. Asserting both quantities is what catches it; either one alone would have missed it.",
         recorded_on="2026-09-06",
     ),
+    MistakeRecord(
+        identifier="a-file-loaded-addon-draws-nothing-and-every-pixel-diff-is-zero",
+        scope="process",
+        failure=(
+            "The live GUI check for shipping the transcript overlay "
+            "reported the sidebar as 0 differing pixels out of 619,344 "
+            "between a one-line and a sixty-line reply — the exact "
+            "'the composer did not move' result wanted. It also "
+            "reported 0 between an EMPTY session and a painted one, "
+            "which cannot be true: the empty-state box disappears. A "
+            "positive control (toggle _STATE.busy, which must change "
+            "the status row) also read 0, and the FULL-WINDOW diff read "
+            "0 as well."
+        ),
+        cause=(
+            "The harness loaded blender_addon/__init__.py by file path "
+            "(importlib.spec_from_file_location) and called register(). "
+            "That registers the classes but creates no "
+            "bpy.context.preferences.addons[<module>] entry, so "
+            "BLENDED_PT_chat.draw raised KeyError "
+            "('bpy_prop_collection[key]: key \"...\" not found') on "
+            "EVERY frame. Blender swallows a panel draw exception, so "
+            "the sidebar simply rendered no addon content and no "
+            "sidebar pixel could ever change. The overlay's numbers in "
+            "the same run were real — a draw handler does not read "
+            "preferences — which is what made the mixed result "
+            "believable."
+        ),
+        fix=(
+            "A GUI check installs the addon the way a user does: "
+            "package it, extract the zip into "
+            "bpy.utils.user_resource('SCRIPTS', path='addons'), verify "
+            "the installed __init__.py sha256 against the zip member "
+            "(addon_install has been seen keeping a stale build), then "
+            "bpy.ops.preferences.addon_enable(module=...). And every "
+            "pixel-zero claim ships with a POSITIVE CONTROL measured in "
+            "the same run: after the fix the control read 1,333 "
+            "differing sidebar pixels, which is what licenses the 0."
+        ),
+        guarded_by="No unit test can catch this — it is a property of the GUI harness, not of the addon. The guard is the rule: a pixel diff of 0 is reported only alongside a control diff > 0 measured in the same session. Live numbers for the overlay flip: control 1333/619344 differing, composer strip 0/619344, overlay column 64467/732160 empty-vs-painted and 13647/732160 short-vs-long reply.",
+        recorded_on="2026-09-06",
+    ),
 )
 
 
