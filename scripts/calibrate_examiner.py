@@ -74,11 +74,15 @@ def _fixtures() -> dict:
             ("floating_part", "offset_part"),
             lambda objects: _translate_seat(objects[0], 0.05),
         ),
-        "fat_seat": (
-            "three_leg_stool",
-            ("wrong_proportion",),
-            lambda objects: _scale_seat(objects[0], 1.5),
-        ),
+        # fat_seat (seat scaled 1.5x -> wrong_proportion) is NOT here.
+        # `wrong_proportion` is owned by the form gate, which measures
+        # every named dimension against a tolerance: the damaged seat
+        # fails at seat_diameter_x 0.6000 against 0.4000 +/- 0.0200
+        # (measured 2026-09-06, outputs/gate_covers_fixture.py). A
+        # fixture whose defect a measurement catches exactly is not the
+        # eye's job, so it moved to
+        # tests/blender/test_acceptance_gate.py — see
+        # MEASURED_DEVIATION_TAGS in evaluate/examiner.py.
         "sealed_drain": (
             "planter_box",
             ("missing_feature",),
@@ -185,22 +189,6 @@ def _translate_seat(blender_object, offset_z_m: float) -> None:
         for vertex in working_mesh.verts:
             if vertex.co.z > 0.505:
                 vertex.co.z += offset_z_m
-        working_mesh.to_mesh(blender_object.data)
-    finally:
-        working_mesh.free()
-
-
-def _scale_seat(blender_object, factor: float) -> None:
-    """Scale the seat (everything above the leg tops) about the Z axis."""
-    import bmesh
-
-    working_mesh = bmesh.new()
-    working_mesh.from_mesh(blender_object.data)
-    try:
-        for vertex in working_mesh.verts:
-            if vertex.co.z > 0.505:
-                vertex.co.x *= factor
-                vertex.co.y *= factor
         working_mesh.to_mesh(blender_object.data)
     finally:
         working_mesh.free()
@@ -429,6 +417,11 @@ def main(argv) -> int:
                 "deviations": list(verdict.deviations),
                 "detected": detected,
                 "abstained": verdict.abstained,
+                # Advisory tags a gate owns; recorded so a re-licence
+                # shows whether restricting the vocabulary worked.
+                "measured_property_reports": list(
+                    verdict.measured_property_reports
+                ),
             }
         )
         print(verdict.summary(), flush=True)
@@ -457,6 +450,13 @@ def main(argv) -> int:
     sensitivity = sum(f["detected"] for f in defective) / len(defective)
     control_specificity = sum(f["detected"] for f in controls) / len(controls)
 
+    # The regime the loop actually uses is measured in the SAME run, so
+    # a licence can never again be issued on same-run controls alone.
+    cross_run_records = _measure_cross_run_controls()
+    cross_run_specificity = sum(r["clean"] for r in cross_run_records) / len(
+        cross_run_records
+    )
+
     calibration = {
         "examiner_identity": examiner_identity(vision_model),
         "vision_model": vision_model,
@@ -465,6 +465,8 @@ def main(argv) -> int:
         "fixtures": fixture_records,
         "sensitivity": sensitivity,
         "control_specificity": control_specificity,
+        "cross_run_control_specificity": cross_run_specificity,
+        "cross_run_controls": cross_run_records,
     }
     output_path.write_text(
         json.dumps(calibration, indent=2, sort_keys=True) + "\n", encoding="utf-8"
@@ -472,17 +474,25 @@ def main(argv) -> int:
 
     print("\n================ EXAMINER CALIBRATION ================", flush=True)
     print(
-        f"sensitivity          : {sensitivity:.2f} "
+        f"sensitivity              : {sensitivity:.2f} "
         f"({sum(f['detected'] for f in defective)}/{len(defective)})",
         flush=True,
     )
     print(
-        f"control specificity  : {control_specificity:.2f} "
+        f"control specificity      : {control_specificity:.2f} "
         f"({sum(f['detected'] for f in controls)}/{len(controls)})",
         flush=True,
     )
-    print(f"examiner identity    : {calibration['examiner_identity']}", flush=True)
-    print(f"calibration written  : {output_path}", flush=True)
+    print(
+        f"CROSS-RUN specificity    : {cross_run_specificity:.2f} "
+        f"({sum(r['clean'] for r in cross_run_records)}/"
+        f"{len(cross_run_records)}) "
+        f"[threshold {CROSS_RUN_CONTROL_MINIMUM_SPECIFICITY}]",
+        flush=True,
+    )
+    print(f"examiner identity        : {calibration['examiner_identity']}", flush=True)
+    print(f"spent                    : {client.spent.summary()}", flush=True)
+    print(f"calibration written      : {output_path}", flush=True)
     return 0
 
 

@@ -51,6 +51,16 @@ rejected — write 1,374/5,369/5,169 merged vs 2,057/3,242/6,102
 per-message); pruning transcript history (Phase D only, and only with
 the cache trade written down); touching the pinned system prompt text.
 
+## Decisions the user signed, 2026-09-06
+
+| question | answer | consequence |
+|---|---|---|
+| Phase B branch | **B2'** — restrict the eye to vision-only defects | implemented below |
+| Phase C timing | **Sequential** — prove B, then batch | C waits for a clean B re-licence; costs one extra calibration run (~$1) and buys unambiguous attribution |
+| Binding currency | **Neither** — $7/cycle and the window are both acceptable | **Phases D and E are DROPPED.** Effort goes to capability. Phase A already fixed the thing that was actually wasting money, and the accounting stays because it is how a regression becomes visible |
+| Criterion 4 | **>=3-roll mean +/- SD** | restated in the success criteria; a claimed bench improvement must exceed its own spread |
+| Criterion 5 | **Live walkthrough first** | a driven turn with per-step screenshots before sign-off |
+
 ## Phase A — measure the instrument where it is used
 
 **Files.** `scripts/calibrate_examiner.py`,
@@ -180,6 +190,61 @@ stay 1.00, cross-run must reach
 deterministic gate catches. Any fixture that the gates already catch
 moves to a gate test and stops being the eye's job.
 
+### B2' RESULT, measured 2026-09-06 — improved, did NOT pass
+
+Implemented: `MEASURED_DEVIATION_TAGS` (`wrong_proportion`,
+`material_missing`) split out of `HALTING_DEVIATION_TAGS`, recorded as
+`AssetVerdict.measured_property_reports` (evidence, never a gate); the
+examiner prompt now frames the reference as a signed-off EXAMPLE of
+the brief rather than how the asset "should look", and states that
+colour, finish and any dimension inside tolerance are measured exactly
+elsewhere and must not be reported. `fat_seat` left the zoo for
+`tests/blender/test_acceptance_gate.py` after the gate coverage was
+measured, not assumed.
+
+Re-licence (130 eye calls, 857,480 input tok, $1.3856):
+
+| metric | before | after | threshold |
+|---|---|---|---|
+| sensitivity | 0.80 (4/5) | 0.75 (3/4) | >= 0.60 PASS |
+| same-run specificity | 1.00 | 1.00 (5/5) | 1.00 PASS |
+| **cross-run specificity** | **0.50** | **0.75 (3/4)** | 1.00 **FAIL** |
+
+planter_box is now clean — the colour false alarm is gone, so the
+diagnosis was right and the fix worked on that class. three_leg_stool
+still fires, now as `intersecting_parts, surface_artifact` instead of
+`wrong_proportion`.
+
+**And it is right again.** Reading both renders independently: the
+exemplar's legs are roughly seat-thickness in diameter with a notch on
+the front rim; the clean candidate's are 15-20% of seat diameter,
+narrower than the rim, with a visible gap where the rear leg meets the
+seat underside. Two gate-clean stools that genuinely differ in leg
+thickness and junction quality.
+
+So the residual leak is a CLASS no prompt can close: geometric
+variation the brief leaves free. Telling the eye to ignore geometry is
+telling it to ignore the only thing it is for — sensitivity already
+slipped to 0.75 with `floating_seat` missed.
+
+**State: the examiner is unlicensed for the loop's regime, and the
+harness behaves correctly about it.** The measured 0.75 IS written
+into `_evaluate/eye_calibration.json`, `problems()` names it, and
+`converge_auto` refuses to gate on it. The strict guard test is marked
+`xfail(strict=True)` with the number and this document named, so the
+state is loud rather than papered over.
+
+**Recommendation — B4', a strict improvement on the pre-approved B4.**
+The re-licence shows exactly where the instrument IS reliable:
+same-run controls 1.00 and 3/4 seeded defects detected. It is
+excellent at "did this asset change from this reference" and unreliable
+at "is this different asset defective". The loop uses only the second.
+So: machine verdicts become ADVISORY on fresh-vs-exemplar (plain B4,
+already signed as the fallback), and the examiner KEEPS gate authority
+in the same-run regime it measured 1.00 on — the refinement turn, where
+before-and-after are the same asset. That preserves the visual net
+that caught the invisible crate lid instead of discarding it.
+
 ## Phase C — batch the views: 10 calls -> 2 per brief
 
 **Files.** `src/blended/evaluate/examiner.py`,
@@ -203,56 +268,30 @@ tie-discounted (`10.48550/arXiv.2305.11206`), must be reported. Any
 degradation and the batching is reverted — a cheaper instrument that
 sees less is not a saving, it is a higher cost-of-pass (D1).
 
-## Phase D — the image budget, measured before touched
+## Phases D and E — DROPPED 2026-09-06
 
-**Files.** `src/blended/ops/render.py` (sheet layout constants),
-`src/blended/agent/loop.py` (history retention), `tests/pure/`.
+The user ruled that neither the subscription window nor the dollar
+meter binds at these amounts. Both remaining phases were pure `C`
+reductions — the image budget (sheet resolution, pruning superseded
+renders) and rate-limit visibility with a `cost-report` script — and
+cost-of-pass says a `C` reduction is worthless next to an `R` that is
+still being repaired (D1). Effort goes to capability instead.
 
-Two independent questions, each answered with a measurement:
-
-1. **Sheet resolution.** Sheets are 1048x1568 = 2,191 image tokens.
-   A 2x2 sheet at 768x768 costs 786. Run the fixture zoo at both;
-   adopt the smaller only if sensitivity and specificity hold. A sheet
-   the writer cannot read costs a whole run.
-2. **Superseded renders in history.** By turn 7 the transcript carries
-   four sheets (~8.8k tok, 4.4 MB of base64 per turn). Pruning them
-   would break the append-only prefix that earns the 11.8x — the exact
-   thing Phase A's guard test forbids. So this is an A/B with the new
-   accounting: same brief, pruned vs not, compare recorded
-   `cache_write_tokens` and `cost_usd`. If pruning loses, the guard
-   test stands unchanged and the question is closed with a number.
-
-**Acceptance.** Either a recorded cost reduction with gates unchanged,
-or a recorded rejection written into the audit doc. No change on
-intuition.
-
-## Phase E — make the window visible, then decide the lane
-
-**Files.** `src/blended/agent/claude_code.py` (already parses
-`rate_limit_event` and throws it away),
-`src/blended/evaluate/iteration_log.py`, new `scripts/cost_report.py`.
-
-**Change.** Record the rate-limit snapshot per run
-(`five_hour_used_fraction`, `seven_day_used_fraction`, `resets_at`).
-`scripts/cost_report.py` reads `_evaluate/iterations.jsonl` and prints
-cost-of-pass per brief, per cycle and per prompt revision: dollars,
-tokens, API calls, and the fraction of the subscription window a cycle
-burns.
-
-**Then, and only then, the lane question** the audit raised: the double
-call and the 4,867-token CLI overhead are removable only by leaving the
-CLI for the direct API, which trades subscription budget for metered
-dollars. Phase E supplies both numbers; the choice is the user's.
-
-**Acceptance.** `make cost-report` prints the table; a cycle's window
-burn is a number in the log rather than a guess.
+What stays from that work, because it is how a regression becomes
+visible rather than an optimisation: the per-turn accounting landed in
+commit `14ba140` (`TurnCost`, `OllamaClient.spent`, six cost fields on
+`IterationRecord`, the `spent:` line) and the two tests that guard the
+11.8x caching property. The measurements that would have opened D and
+E are recorded in the audit doc, so reopening them needs no rework:
+sheets are 2,191 image tokens against 786 for a 2x2 at 768x768, and
+the transport already parses the `rate_limit_event` frame it discards.
 
 ## Order, and why
 
-A -> B -> C -> D -> E. A is the only phase that can move `R` off zero,
-and C's licence depends on A's baseline. D and E are pure `C`
-reductions and are worthless until `R > 0` (D1). E is last because its
-output is an input to a decision, not a change.
+A -> B -> C. A was the only phase that could move `R` off zero, and
+C's licence depends on B's re-licensed baseline — which is why the
+user chose sequential over combined: a specificity change after two
+simultaneous edits cannot be attributed to either.
 
 ## Mistake-memory hook
 

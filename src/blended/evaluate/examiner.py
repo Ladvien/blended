@@ -44,6 +44,42 @@ DEVIATION_TAGS: tuple[str, ...] = (
     "surface_artifact",
     "material_missing",
 )
+# TAGS A DETERMINISTIC GATE ALREADY OWNS. The eye is not asked about
+# these and they never halt a cycle — they are recorded as advisory
+# evidence, the way `refinement_locality` is.
+#
+# Measured 2026-09-06, and this split exists because of it: cross-run
+# control specificity was 0.50, and BOTH false alarms were TRUE
+# observations of variation the brief leaves free — planter_box's
+# exemplar is base colour (0.45, 0.28, 0.15) and the flagged clean
+# candidate is (0.35, 0.22, 0.12), identical dimensions; the stool
+# pair shares a bbox and differs inside it. Asking "does this match
+# the exemplar?" manufactures a deviation for every property the brief
+# leaves unspecified, so the question is restricted to what only
+# vision can adjudicate.
+#
+# The coverage cost was measured before the tags moved, not assumed
+# (outputs/gate_covers_fixture.py): the zoo's `fat_seat` fixture (seat
+# scaled 1.5x) fails the FORM gate at seat_diameter_x 0.6000 against
+# 0.4000 +/- 0.0200, so `wrong_proportion` is fully covered by a
+# measurement. `material_missing` is covered by the material gate's
+# assignment check plus `DistinctMaterialSpec`'s colour-contrast probe.
+# Tool feedback outranks model feedback (10.48550/arXiv.2409.02977),
+# and a 0.66-alignment judge must not adjudicate what a gate measures
+# exactly (10.48550/arXiv.2504.01786).
+MEASURED_DEVIATION_TAGS: tuple[str, ...] = (
+    "wrong_proportion",
+    "material_missing",
+)
+# What the eye is asked about, and the only tags that halt a cycle:
+# defects no measurement models. `missing_feature` stays here even
+# though the planter's drain hole happens to have a probe — nobody can
+# write a probe for a feature nobody thought of, and that blind spot is
+# exactly what the visual net is for (it is what caught the invisible
+# crate lid).
+HALTING_DEVIATION_TAGS: tuple[str, ...] = tuple(
+    tag for tag in DEVIATION_TAGS if tag not in MEASURED_DEVIATION_TAGS
+)
 NO_DEVIATION_TAG = "no_deviation"
 CANNOT_TELL_TAG = "cannot_tell"
 VALID_TAGS = DEVIATION_TAGS + (NO_DEVIATION_TAG, CANNOT_TELL_TAG)
@@ -130,6 +166,11 @@ class AssetVerdict:
     views: tuple[ViewVerdict, ...]
     deviations: tuple[str, ...]
     abstained: bool
+    # Tags a deterministic gate owns (MEASURED_DEVIATION_TAGS), which
+    # the eye saw anyway. Evidence, never a gate: recorded so a real
+    # regression in a measured property is not silently discarded, but
+    # it cannot halt a cycle — the gate that owns it decides.
+    measured_property_reports: tuple[str, ...] = field(default_factory=tuple)
 
     def summary(self) -> str:
         lines = [
@@ -143,6 +184,11 @@ class AssetVerdict:
             "ABSTAINED" if self.abstained else f"deviations {list(self.deviations)}"
         )
         lines.append(f"  aggregate: {aggregate}")
+        if self.measured_property_reports:
+            lines.append(
+                f"  advisory (a gate owns these): "
+                f"{list(self.measured_property_reports)}"
+            )
         return "\n".join(lines)
 
 
@@ -448,7 +494,13 @@ def examine_asset(
         tag
         for view in views
         for tag in view.order_consistent_tags
-        if tag not in (NO_DEVIATION_TAG, CANNOT_TELL_TAG)
+        if tag in HALTING_DEVIATION_TAGS
+    }
+    measured_property_tags = {
+        tag
+        for view in views
+        for tag in view.order_consistent_tags
+        if tag in MEASURED_DEVIATION_TAGS
     }
     abstained = any(
         CANNOT_TELL_TAG in view.order_consistent_tags for view in views
@@ -460,4 +512,5 @@ def examine_asset(
         views=tuple(views),
         deviations=tuple(sorted(deviation_tags)),
         abstained=abstained,
+        measured_property_reports=tuple(sorted(measured_property_tags)),
     )

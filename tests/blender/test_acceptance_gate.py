@@ -798,3 +798,59 @@ def test_a_contrasting_lid_passes(empty_scene):
     report = evaluate_brief(brief)
 
     assert report.relation_failures == (), report.relation_failures
+
+
+# --- defects the EYE used to judge, now owned by a measurement --------
+#
+# The calibration zoo's `fat_seat` fixture (three_leg_stool with the
+# seat scaled 1.5x) expected the examiner tag `wrong_proportion`. That
+# tag moved to MEASURED_DEVIATION_TAGS on 2026-09-06 — the form gate
+# measures every named dimension against a tolerance, so asking a
+# 0.66-alignment judge about it manufactured false alarms (cross-run
+# control specificity 0.50, both false alarms being TRUE observations
+# of variation the brief leaves free). A fixture whose defect a
+# measurement catches exactly stops being the eye's job and becomes
+# this test instead.
+
+SEAT_OVERSIZE_FACTOR = 1.5
+
+
+def test_an_oversized_seat_fails_the_form_gate_without_the_eye(empty_scene):
+    """The measurement that licensed dropping `wrong_proportion`.
+
+    Measured 2026-09-06: the damaged seat fails at seat_diameter_x
+    0.6000 m against 0.4000 +/- 0.0200. If this test ever passes
+    silently, the form gate has stopped covering the defect the eye is
+    no longer asked about, and the tag must go back into
+    HALTING_DEVIATION_TAGS.
+    """
+    from blended.evaluate.acceptance import evaluate_brief, refine_brief
+    from blended.evaluate.briefs import get_brief
+    from blended.ops.primitives import add_cylinder, link_into_scene
+
+    brief = get_brief("three_leg_stool")
+    refined = brief
+    for step in brief.refinements:
+        refined = refine_brief(refined, step)
+    seat_diameter = next(
+        dimension.expected_m
+        for part in refined.parts
+        for dimension in part.dimensions
+        if dimension.name == "seat_diameter_x"
+    )
+
+    # One cylinder standing in for the seat, at the oversized diameter:
+    # the gate reads dimensions, so the defect is the diameter itself.
+    seat = add_cylinder(
+        "Stool",
+        radius_m=(seat_diameter * SEAT_OVERSIZE_FACTOR) / 2.0,
+        height_m=0.04,
+        location_m=(0.0, 0.0, 0.0),
+    )
+    link_into_scene(seat)
+    bpy.context.view_layer.update()
+
+    failures = evaluate_brief(refined).failures(refined)
+    oversize = [f for f in failures if f.startswith("seat_diameter_x")]
+    assert oversize, failures
+    assert f"{seat_diameter * SEAT_OVERSIZE_FACTOR:.4f}" in oversize[0], oversize

@@ -77,9 +77,32 @@ Ground truth from the code map (scouts, 2026-09-04):
   chat/streaming/cancel UX.
 
 ### P8 — Gates
-- `make test`; `scripts/provider_smoke.py`; `make chat-e2e`; one
-  3DCodeBench frozen-20 roll (≤ 0.0706 guard) after prompt v11; GUI launch
+- `make test`; `scripts/provider_smoke.py`; `make chat-e2e`; the
+  3DCodeBench frozen-20 gate (see below) after prompt v11; GUI launch
   for user visual confirmation.
+
+### P8a — the 3DCodeBench gate, restated 2026-09-06
+
+A SINGLE roll is not a measurement. Measured across iterations: v1
+0.0706, iter1 0.0903, iter2 0.0714, iter3 0.0761 — a spread of 0.02
+that swamps every claimed improvement, so single-roll deltas under
+0.02 are per-roll noise (recorded in mistake memory). The guard is
+therefore restated, by the user's decision:
+
+> cd_yawmin_cond as a MEAN over at least three rolls, reported with
+> its standard deviation, and executability 20/20 on every roll. A
+> claimed improvement must exceed its own spread.
+
+It costs three times the bench time per claim and makes every number
+afterwards actionable; a cheap number nobody can act on has infinite
+cost per decision (`10.48550/arXiv.2504.13359`).
+
+Also settled by measurement, so it is not re-litigated: the holdout's
+ORIENTATION FLOOR alone is 0.0590 (dev split 0.0311), because only 7
+of its 20 references hold their middle extent on the depth axis.
+Adding the measured mean shape error (cd_pca 0.0273) puts any
+orientation-only target above 0.060, so a target below that floor is
+unreachable through placement and must not be pre-registered again.
 
 ## Mutations declared up front
 - `~/.blended/openrouter_api_key` chmod 600 (read-only for others).
