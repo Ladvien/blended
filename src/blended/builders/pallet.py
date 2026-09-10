@@ -73,8 +73,7 @@ class PalletBuilder:
         self.created_objects: list = []
 
     def build(self):
-        from blended.ops import add_box, boolean_union, link_into_scene
-        from blended.ops.arrays import linear_array
+        from blended.ops import add_box, boolean_union, linear_array, link_into_scene
 
         parameters = self.parameters
 

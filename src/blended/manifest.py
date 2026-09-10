@@ -34,6 +34,7 @@ OP_MODULE_NAMES = (
     "rigging",
     "weights",
     "animation",
+    "canonical_orientation",
 )
 
 # Config dataclasses that an operation takes as an argument. Listed

@@ -13,10 +13,20 @@ agent is shown is exactly this one.
 """
 
 import importlib
+import inspect
+import pkgutil
+import re
+from pathlib import Path
 
 import pytest
 
+import blended.ops as ops_facade
 from blended.manifest import OP_MODULE_NAMES, _public_functions
+
+SOURCE_ROOT = Path(__file__).resolve().parents[2] / "src" / "blended"
+BUILDERS_ROOT = SOURCE_ROOT / "builders"
+# A builder reaching past the facade: `from blended.ops.<module> import`.
+_SUBMODULE_IMPORT_PATTERN = re.compile(r"^\s*from blended\.ops\.\w+ import", re.MULTILINE)
 
 # The vocabulary an agent is handed. Every entry must be the only way
 # to do what it does — see CLAUDE.md, one path per feature.
@@ -54,4 +64,59 @@ def test_no_operation_advertises_a_second_path(marker):
         f"operation docstrings mention {marker!r}, which is how a "
         f"compatibility branch announces itself: {offenders}. One path "
         f"per feature — delete the shim and make the primary right."
+    )
+
+
+def _public_symbols_defined_in_ops():
+    """Every public function or class whose home is an ops submodule."""
+    for module_info in pkgutil.iter_modules(ops_facade.__path__):
+        module = importlib.import_module(f"blended.ops.{module_info.name}")
+        for symbol_name, symbol in vars(module).items():
+            if symbol_name.startswith("_"):
+                continue
+            if not (inspect.isfunction(symbol) or inspect.isclass(symbol)):
+                continue
+            if symbol.__module__ != module.__name__:
+                continue
+            yield module_info.name, symbol_name
+
+
+def test_every_ops_submodule_is_in_the_manifest():
+    on_disk = {m.name for m in pkgutil.iter_modules(ops_facade.__path__)}
+    assert on_disk == set(OP_MODULE_NAMES), (
+        "OP_MODULE_NAMES and src/blended/ops/*.py disagree: a module the "
+        "manifest never introspects is a vocabulary the agent never sees."
+    )
+
+
+def test_every_public_op_is_reachable_from_the_facade():
+    """OT-1: the whitelist is the facade, so the facade must be whole."""
+    missing = sorted(
+        f"blended.ops.{module_name}.{symbol_name}"
+        for module_name, symbol_name in _public_symbols_defined_in_ops()
+        if symbol_name not in ops_facade.__all__
+        or getattr(ops_facade, symbol_name, None) is None
+    )
+    assert not missing, (
+        f"public ops not re-exported by blended.ops: {missing}. "
+        f"Anything off the facade is invisible to the agent and to the "
+        f"schema generator."
+    )
+
+
+def test_facade_exports_nothing_it_does_not_define():
+    """The reverse direction: `__all__` names must resolve to ops code."""
+    defined = {symbol for _, symbol in _public_symbols_defined_in_ops()}
+    stray = sorted(set(ops_facade.__all__) - defined)
+    assert not stray, f"__all__ names with no ops definition: {stray}"
+
+
+@pytest.mark.parametrize(
+    "builder_path", sorted(BUILDERS_ROOT.glob("*.py")), ids=lambda p: p.name
+)
+def test_builders_import_only_the_facade(builder_path):
+    offending = _SUBMODULE_IMPORT_PATTERN.findall(builder_path.read_text())
+    assert not offending, (
+        f"{builder_path.name} imports an ops submodule directly: "
+        f"{offending}. Builders use `from blended.ops import ...` only."
     )

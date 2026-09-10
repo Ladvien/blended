@@ -55,8 +55,7 @@ class CrateBuilder:
 
     def build(self):
         """Build the crate and return its object, base at z=0."""
-        from blended.ops.modifiers import add_bevel, apply_all_modifiers
-        from blended.ops.primitives import add_box, link_into_scene
+        from blended.ops import add_bevel, add_box, apply_all_modifiers, link_into_scene
 
         parameters = self.parameters
         crate_object = add_box(

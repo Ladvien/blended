@@ -69,10 +69,10 @@ class BarrelBuilder:
     def build(self):
         from blended.ops import (
             add_cylinder,
+            add_lathe,
             boolean_union,
             link_into_scene,
         )
-        from blended.ops.lathe import add_lathe
 
         parameters = self.parameters
         profile = [
