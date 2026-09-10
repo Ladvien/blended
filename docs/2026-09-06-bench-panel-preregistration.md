@@ -277,3 +277,10 @@ was cut there after 87 s (`done_reason=length`); stopped, directory removed. Fix
 cloud chain relaunched from `/Users/ladvien/blended-bench-v4` (`c6e4bfc`), same model
 directories; the local chain still runs from v2 (unaffected: llama-swap sends
 `max_tokens` as before, and its window is table-driven).
+15:52: local disclosed roll 1, instance 1 (AquariumTank): `ERR_MODEL_CALL` after 1,732 s
+with zero turns completed — the writer's planning turn hit the lane's 16,384-token
+completion ceiling (`finish_reason=length`, the OT-22 rule: a cut reply is an error, not
+an answer). At the measured 10.5 tok/s that is ≈ 26 min of generation on one turn. This
+is the local writer's thinking budget on a bench brief, not the surface; the same ceiling
+applies to the incumbent, and the roll continues as pre-registered. Recorded as the
+per-request finding this section said it would record.
