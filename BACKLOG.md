@@ -59,6 +59,7 @@ python3 scripts/bench_panel.py \
 ```
 
 Then fill the **Outcome** line of the ops-lane pre-registration (H1 executability, H2 `cd_pca` within 0.0021) from that panel, and move this item.
+**STOPPED 2026-09-10 ~13:50 CDT, roll 1 complete but VOID:** two bridge defects, found by reading the roll before scoring it. (1) `scripts/run_3dcode_instance.py` builds the standalone script from `run_python` chunks only, so every op-tool call is absent from what the bench re-bakes — in roll 1 the writer made 34 op calls on Bottle, 37 on Pillar, 14 on Tap. (2) The chain never ran the bench's bake (`core/render.py`, which writes `renders/render_log.json` and the GLBs the scorers read), so `executability.py` reported "no render_log.json" for 20/20. Fixed by OT-20 and OT-21 below; the rolls are re-launched after both land. Roll 1's scripts stay on disk as the record of the defect.
 **Hypothesis to state:** executability stays at parity or better; `cd_pca` moves within noise on the cloud writer (the cloud writer already executes 120/120, so the gain there is expected to be small). The real gain is expected in OT-10.
 
 ### OT-10 Local-lane roll
@@ -68,6 +69,7 @@ Then fill the **Outcome** line of the ops-lane pre-registration (H1 executabilit
 **Done means:** ≥ `MINIMUM_PAIRED_ROLLS` rolls of ≥ `MINIMUM_INSTANCES_FOR_RANKING` instances each, reported on the panel with executability and `cd_pca`; the hypothesis (executability on the local lane improves by more than the per-roll noise band) is filled with an outcome. No paid lane (NFR-27).
 **Launched 2026-09-10 12:17 CDT:** paired holdout rolls on bmb's llama-swap, writer `qwen3.8-27b` as its own eye (big's GPU is under a `coding` claim and is not touched), alternating the ops surface (frozen `/Users/ladvien/blended-bench`, model dirs `blended-local-qwen38-ops-roll{1,2,3}`) and the `run_python`-only incumbent (worktree `/Users/ladvien/blended-bench-old` at `4277aa3`, the OT-1 close, model dirs `blended-local-qwen38-hatch-roll{1,2,3}`), per-instance timeout 3000 s, scored the same way. Chain: `outputs/bench/logs/ot10_local_chain.sh`; progress in `outputs/bench/logs/ot10_chain.log`. The incumbent's own local noise band comes from the `hatch` rolls.
 Measured pace: instance 2/20 after 50 min (≈ 25 min per instance, ≈ 8 h per sweep, six sweeps ≈ 2 days). To finish: `bench_panel.py --group "local-hatch=<the three diagnose_blended-local-qwen38-hatch-roll*.json>" --group "local-ops=<the three ...ops-roll*.json>" --instances-file bench_sets/instances_holdout.txt`; H3 (executability on the local lane improves by more than the hatch rolls' own per-roll band) is read off that panel. If two days is too long, one paired roll each (`roll1` only) is reported, never ranked (BEN-6), and the chain can be stopped after `blended-local-qwen38-hatch-roll1 scored` appears in `ot10_chain.log`.
+**STOPPED with OT-9 (same two defects), plus a third seen on the local lane:** AquariumTank timed out inside `urllib` at the lane's 900 s per-request ceiling (`LLAMA_SWAP_REQUEST_TIMEOUT_SECONDS`), and CabinetDoorIkea finished in one 794 s turn with one chunk. The local roll was measuring the request ceiling and the bridge, not the surface. Re-launch after OT-20, OT-21 and OT-22.
 
 ---
 
@@ -80,6 +82,63 @@ All Phase 4 items (OT-12, OT-13, OT-14) are closed — see `BACKLOG_DONE.md`.
 ## Phase 5 — Bounding cost (cheap, and the ops lane makes it safe to do)
 
 Both Phase 5 items (OT-16, OT-17) are closed — see `BACKLOG_DONE.md`.
+
+---
+
+## Phase 7 — Context proportional to the task (the surface must fit the lanes it was built for)
+
+**Measured 2026-09-10 (bmb's own `qwen3.8-27b` tokenizer, via llama-server `/tokenize`):** a fresh call carries 7,569 tokens of system prompt (working agreement v12 1,770; manifest 5,843, of which the ops section is 3,074) plus 7,407 tokens of tool schemas (48 op tools 6,254; 8 service tools 1,155): **15.0k static tokens before any scene or history, and every op described twice.** On the Claude Code lane the same surface billed 58,241 tokens per harness call against 25,851 with eight tools (91 % cache reads). The five briefs that pass with the hatch withheld used 4–8 distinct ops each (planter 5, stool 8, column 4, crate_with_lid 5, uv_crate 7), 15 distinct in all, out of 48. bmb serves `qwen3.8-27b` at 65,536 context; the Ollama-native lane sends `num_ctx` 32,768; no lane preflights the prompt against either. Two dependencies come first, because the benchmark cannot measure the surface until they land.
+
+### OT-20 The bench bridge carries op calls
+
+**What:** `scripts/run_3dcode_instance.py` MUST emit the standalone script from the recorded call SEQUENCE — every executed `run_python` chunk AND every successful op-tool call, in order, the op calls as `from blended.ops import <op>` plus the call with its validated arguments (the encoding `evaluate.replay.calls_from` already reads) — so the bench re-bakes what the agent built. A chunk or op call whose result was not OK is excluded, as today.
+**Why:** the bridge predates the op tools; a roll that drops 37 op calls from a script measures a different program than the one the gates passed. Found by reading OT-9's roll 1 before scoring it.
+**Amends:** BEN-1 (the bridge), CNV-11 (replay and the bridge read one encoding).
+**Done means:** `tests/blender/test_bench_bridge.py` builds a brief with op calls only, runs the bridge's script assembly, executes the emitted script in a fresh scene, and the form gate passes on the re-baked object; a run with zero op calls emits byte-identical output to today's.
+
+### OT-21 The bench chain bakes before it scores
+
+**What:** the sweep chain MUST run the bench's own bake (`/Users/ladvien/3dcodebench/.venv/bin/python core/render.py --model <dir> --results-root <root> --blender <Blender>`) between the sweep and the scorers, and MUST refuse to score a model dir whose instances lack `renders/render_log.json`.
+**Why:** `executability.py` and `shape_chamfer.py` read what the bake wrote; without it they report 0/20 with a fingerprint that reads like a model failure.
+**Done means:** `outputs/bench/logs/*_chain.sh` carry the step; a dry run on roll 1's existing scripts produces 20 render logs; the scorer step is guarded.
+
+### OT-22 Context preflight and truncation as failures
+
+**What:** every lane MUST know its model context (`ModelConfig.context_tokens`: 65,536 for bmb's `qwen3.8-27b`, `num_ctx` for Ollama-native, the CLI's for Claude Code) and the loop MUST refuse to send a request whose prompt tokens plus tool schema plus the reply ceiling exceed it, naming the sizes; a transport reply that reports truncation MUST be an error, never a result. The per-request ceiling on the llama-swap lane (`LLAMA_SWAP_REQUEST_TIMEOUT_SECONDS` = 900) MUST be measured against a real 27B turn and re-derived the way the token budget was.
+**Why:** the one place the fail-loud rule is missing. A 65k-context lane holding 15k of static prefix reaches its limit inside a long turn, and the OT-10 roll's first instance died at the request ceiling instead.
+**Amends:** NFR-13; adds `AGT-23`.
+**Done means:** `tests/pure/test_context_preflight.py` refuses an oversize prompt with the sizes named and passes one that fits; a fake transport reporting `truncated` is an error.
+
+### OT-23 Measure the composition of a call, per lane
+
+**What:** `scripts/context_composition.py` MUST split one call's tokens into working agreement, manifest sections, tool schemas, scene block and history, per lane, using each lane's own tokenizer where one is reachable (bmb's `/tokenize`) and the transport's `usage` otherwise, and write the row into the spec's measured-state table.
+**Why:** everything in this phase is sized by this number; `TurnCost` measures the total only.
+**Done means:** the script is self-checking (the parts sum to the assembled whole within the tokenizer's join error) and its output is in the spec.
+
+### OT-24 One description per op: drop the manifest's ops section
+
+**What:** the manifest MUST stop rendering the operations section into the prompt (3,074 tokens); the generated schema is the one description of each op. Conventions, gate fields, budget knobs and the drift catalog stay. Register the prompt change with a hypothesis before the run.
+**Why:** "nothing is written twice" applies to the context window as much as to source.
+**Amends:** PRM-1, PRM-2; a new prompt revision is NOT needed (the `.j2` does not change) but the assembled fingerprint moves and is re-pinned.
+**Done means:** the five briefs still pass with the hatch withheld; `tests/pure/test_manifest.py` asserts no op signature appears in the assembled prompt.
+
+### OT-25 Progressive disclosure of op tools
+
+**What:** the loop MUST offer the service tools, the readers and a CORE set of op tools on every call, and expose the rest through `search_ops` (which already returns the schema). The core set MUST be derived from `tool_events` frequency across gate-passing runs, never listed by hand, and the offered set MUST be fingerprinted per turn so the pin tests see a change.
+**Why:** 15 of 48 ops carried all five briefs; the other 33 cost 4k+ tokens per call on every lane and a `oneOf` variant each on the CLI lane.
+**Hypothesis to register before the roll:** executability on the local lane rises, per-call tokens fall below the 8-tool baseline (25,851 on the CLI lane), and hatch calls per gate-passing brief do not change.
+**Done means:** `tests/pure/test_tool_disclosure.py` covers the derivation, the per-turn fingerprint and a search-then-call round trip; the five briefs pass no-hatch on the disclosed set.
+
+### OT-26 Cache-friendly prefix order
+
+**What:** on lanes with prefix caching (Claude Code, OpenRouter) the static content — working agreement, conventions, tool set — MUST precede everything that changes per turn (scene block, history), and the cache-read fraction MUST be reported per run.
+**Why:** measured today on the CLI lane: 89 % of input tokens were already cache reads (iteration 74: 331,796 of 372,080), so the remaining lever is the last 11 %; this item is ranked last for that reason and is closed by measurement, not by reordering on faith.
+**Done means:** `TurnCost` cache-read fraction per run is in the record; a paired comparison shows the fraction did not fall.
+
+### OT-27 Re-run OT-9 and OT-10 on the disclosed surface
+
+**What:** after OT-20–OT-25, re-launch both chains from fresh frozen worktrees against the same incumbent, under a new pre-registration that names the disclosed surface.
+**Why:** the rolls stopped today measured the full-surface bridge before it carried op calls; nothing from them ranks.
 
 ---
 
@@ -128,6 +187,12 @@ flowchart LR
   OT3 --> OT15
   OT4 --> OT16 --> OT17
   OT10 --> OT18 --> OT19
+  OT8 --> OT20 --> OT27
+  OT21 --> OT27
+  OT23 --> OT22 --> OT27
+  OT23 --> OT24 --> OT25 --> OT27
+  OT25 --> OT26
+  OT27 --> OT18
 ```
 
 ## Closing rule
