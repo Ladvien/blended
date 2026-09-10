@@ -484,6 +484,13 @@ class TurnCost:
     cache_read_tokens: int = 0
     cache_write_tokens: int = 0
     output_tokens: int = 0
+    # Of `output_tokens`, the share the model spent thinking before its
+    # first content token. A reasoning model can spend a whole
+    # completion ceiling here and return nothing — which is how the
+    # local arm died (two bench instances, zero turns, cut at 16,384) and
+    # how the provider smoke starved at 32. Recorded so the next such
+    # failure is read off a number instead of inferred from a corpse.
+    reasoning_tokens: int = 0
     cost_usd: float = 0.0
 
     @property
@@ -508,6 +515,7 @@ class TurnCost:
             cache_read_tokens=self.cache_read_tokens + other.cache_read_tokens,
             cache_write_tokens=self.cache_write_tokens + other.cache_write_tokens,
             output_tokens=self.output_tokens + other.output_tokens,
+            reasoning_tokens=self.reasoning_tokens + other.reasoning_tokens,
             cost_usd=self.cost_usd + other.cost_usd,
         )
 
@@ -518,7 +526,9 @@ class TurnCost:
             f"({self.cache_read_tokens:,} cached"
             + (f", {self.cache_read_fraction:.0%}" if self.billed_input_tokens else "")
             + "), "
-            f"{self.output_tokens:,} out, ${self.cost_usd:.4f}"
+            f"{self.output_tokens:,} out"
+            + (f" ({self.reasoning_tokens:,} reasoning)" if self.reasoning_tokens else "")
+            + f", ${self.cost_usd:.4f}"
         )
 
 

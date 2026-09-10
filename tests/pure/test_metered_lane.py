@@ -121,6 +121,33 @@ def test_cost_comes_off_the_usage_object_and_stays_zero_where_none_is_reported()
     assert ollama.cost_usd == 0.0 and ollama.output_tokens == 3
 
 
+def test_the_cache_split_and_the_thinking_share_are_read_too():
+    """A real usage object from this lane (2026-09-10). `prompt_tokens`
+    is the whole prompt side and the details are subsets of it, so the
+    three token fields must still add up to what was billed — otherwise
+    OT-26's cache-read fraction divides by an invented number."""
+    cost = _turn_cost_from_body(
+        {
+            "usage": {
+                "prompt_tokens": 34,
+                "completion_tokens": 29,
+                "cost": 2.662e-05,
+                "prompt_tokens_details": {"cached_tokens": 10, "cache_write_tokens": 4},
+                "completion_tokens_details": {"reasoning_tokens": 24},
+            }
+        }
+    )
+    assert cost.billed_input_tokens == 34  # the provider's own number, unchanged
+    assert cost.input_tokens == 20 and cost.cache_read_tokens == 10 and cost.cache_write_tokens == 4
+    assert cost.reasoning_tokens == 24 and cost.output_tokens == 29
+    assert "(24 reasoning)" in cost.summary()
+
+    # A lane that reports no details: everything fresh, nothing thought.
+    plain = _turn_cost_from_body({"usage": {"prompt_tokens": 100, "completion_tokens": 20}})
+    assert plain.input_tokens == 100 and plain.cache_read_tokens == 0
+    assert plain.reasoning_tokens == 0 and "reasoning" not in plain.summary()
+
+
 def test_a_metered_run_stops_at_its_cap_with_both_numbers_named(monkeypatch):
     expensive = {
         "choices": [{"message": {"role": "assistant", "content": "..."}}],

@@ -153,6 +153,9 @@ class IterationRecord:
     cache_read_tokens: int = 0
     cache_write_tokens: int = 0
     output_tokens: int = 0
+    # Of `output_tokens`, what the model spent thinking (OT-28). Zero on
+    # a lane that does not report it and on rows written before it did.
+    reasoning_tokens: int = 0
     cost_usd: float = 0.0
 
     def __post_init__(self) -> None:

@@ -1358,10 +1358,21 @@ def _turn_cost_from_body(body: dict) -> TurnCost:
     """
     usage = body.get("usage") or {}
     if usage:
+        prompt_details = usage.get("prompt_tokens_details") or {}
+        completion_details = usage.get("completion_tokens_details") or {}
+        cache_read = int(prompt_details.get("cached_tokens") or 0)
+        cache_write = int(prompt_details.get("cache_write_tokens") or 0)
+        # `prompt_tokens` is the WHOLE prompt side and the details are
+        # subsets of it, so the fresh part is what is left: the three
+        # fields must still sum to what the provider billed
+        # (`billed_input_tokens`), which is what OT-26's fraction divides.
         return TurnCost(
             api_calls=1,
-            input_tokens=int(usage.get("prompt_tokens") or 0),
+            input_tokens=int(usage.get("prompt_tokens") or 0) - cache_read - cache_write,
+            cache_read_tokens=cache_read,
+            cache_write_tokens=cache_write,
             output_tokens=int(usage.get("completion_tokens") or 0),
+            reasoning_tokens=int(completion_details.get("reasoning_tokens") or 0),
             cost_usd=float(usage.get("cost") or 0.0),
         )
     return TurnCost(

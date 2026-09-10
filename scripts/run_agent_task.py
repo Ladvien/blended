@@ -481,6 +481,7 @@ def main(argv) -> int:
         cache_read_tokens=client.spent.cache_read_tokens,
         cache_write_tokens=client.spent.cache_write_tokens,
         output_tokens=client.spent.output_tokens,
+        reasoning_tokens=client.spent.reasoning_tokens,
         cost_usd=client.spent.cost_usd,
     )
     IterationLog(Path(arguments.log)).append(record)
