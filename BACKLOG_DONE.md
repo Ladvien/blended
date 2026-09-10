@@ -372,7 +372,7 @@ regression reopens the item in `BACKLOG.md` with a pointer back to this entry.
 **Shape of the change:** `tool_disclosure.py` derives the core (scene-changing ops used successfully in ≥ 2 gate-passing briefs) and writes it as the generated module `core_tools.py` (`CORE_OPS`: add_box, add_cylinder, assign_material, boolean_difference, link_into_scene, rename_object, snap_base_to_ground); `AgentSession.offered_tools()` = service + readers + core − withheld, fingerprinted per turn and stamped on every `ToolEvent` and the `IterationRecord`; the door and the binder are untouched, so any facade op runs by name once `search_ops` has shown it; the Claude Code envelope gains one catch-all variant (enum of the undisclosed names, free-form arguments). Hypotheses H4–H7 pre-registered before the runs; H5 holds (mean 18,891 tokens per call, four of five briefs under 25,851), H7 read 1.09 per op, H4/H6 wait for OT-27.
 **Measured:** offered 29 of 56 (8 service + 14 readers + 7 core); static per call 13,727 → 8,646 (OpenAI/Ollama) and 14,967 → 9,626 (Claude Code) tokens on bmb's tokenizer; the Claude Code lane billed 16,880–17,833 tokens per API call on the four single-turn briefs (24,248–30,498 on the whole set at v14).
 **Layers:** recorded in the closing commit message (both by exit code).
-**Commit:** implementation `e7b6d5e`; closing commit recorded in the follow-up commit.
+**Commit:** implementation `e7b6d5e`; closing `1016942`.
 
 ## OT-26 Cache-friendly prefix order
 
@@ -397,4 +397,4 @@ mean cache-read delta -0.050 over 5 paired brief(s); fell on 5; mean writes/call
 
 The **Done means** as written ("the fraction did not fall") is NOT met: it fell on all five briefs. The mechanism is the ratio, not the order: the numerator is the static prefix, and OT-25 cut that prefix by ~5,300 tokens per call while each turn's new content (tool results, `search_ops` pages) stayed, so a smaller share of a smaller call is cached even though every call is cheaper (planter: 24,933 → 17,833 tokens per call). The number a volatile prefix would inflate — cache WRITES per call — moved −104 on average (rose on three briefs by 48–447 tokens, the extra `search_ops` result text; fell on two by 527–715). Recorded as the wrong number and the right one; the criterion for any future reorder is writes per call, and the fraction is reported per run as the item asked.
 **Layers:** recorded in the closing commit message (both by exit code).
-**Commit:** recorded in the follow-up commit.
+**Commit:** `1016942`.
