@@ -246,4 +246,4 @@ regression reopens the item in `BACKLOG.md` with a pointer back to this entry.
 **Shape of the change:** `AgentSession.disabled_tools` withholds a tool from the schemas offered to the model and refuses a call to it with `DISABLED_TOOL_REFUSAL` (counted, recorded as a refused tool event). `scripts/chat_e2e.py --no-hatch` sets it for `run_python`, counts hatch attempts per scenario, and prints the scenarios that failed or reached for the hatch as missing-op evidence; its default revision is now v12.
 **Measured beside it:** v12's outcome is recorded on the revision as measured once — the E2E passes without the hatch, while the five-brief roll sits at 3.00 hatch calls per gate-passing brief and the planter fails the form gate on the `location_m` convention (OT-13's first evidence).
 **Layers:** pure passing with the revision outcome filled (below); Blender 323 passed / 3 skipped (unchanged since OT-14).
-**Commit:** recorded in the follow-up commit.
+**Commit:** `485917e`.
