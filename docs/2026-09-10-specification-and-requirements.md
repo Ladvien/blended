@@ -442,6 +442,7 @@ The form gate answers "does the object deliver the brief", deterministically, be
 | AGT-20 | The loop MUST stop a turn after `MAXIMUM_GATE_FAILURES_PER_OBJECT` (3) consecutive gate verdicts on the same object that did not reach `done` (a passing verdict resets the count), rendering that object's contact sheet, answering every queued tool call with `GATE_CAP_TOOL_RESULT`, and reporting `GATE_CAP_ANSWER` as the turn's text — the working agreement's "three honest attempts" as code (OT-16). | `src/blended/agent/loop.py` (`MAXIMUM_GATE_FAILURES_PER_OBJECT`, `_stop_at_gate_cap`) | `tests/pure/test_turn_caps.py`, `tests/blender/test_agent_loop.py::test_a_builder_that_always_fails_the_gate_trips_the_cap` |
 | AGT-21 | `dispatch_tool` MUST route a generated op tool to its facade function on the main thread (AGT-2); MUST bind the JSON arguments against the signature's type hints — the hints the schema was generated from — failing loud on an unknown, missing or mistyped parameter (NFR-13); MUST refuse a name that is neither a service tool nor a facade op before touching bpy; MUST run the op through the executor's one capture path; and MUST report `stage_reached` from `blended.stages` (`execute` on failure, `done` on return; gating is OT-5). (OT-4) | `src/blended/agent/op_call.py`, `src/blended/agent/tools.py` (`OP_FUNCTIONS`, `SERVICE_TOOL_NAMES`), `src/blended/run/executor.py` (`execute_captured`) | `tests/pure/test_agent_dispatch.py::test_an_op_tool_call_binds_runs_and_reports_done`, `::test_an_unregistered_tool_is_refused_at_the_door_without_bpy`, `::test_a_mistyped_argument_fails_at_execute_with_the_cause_and_no_traceback`, `::test_an_op_tool_off_the_main_thread_is_refused_like_any_tool`; `tests/blender/test_agent_loop.py::test_a_brief_reaches_gate_pass_with_op_tools_only` |
 | AGT-22 | A session MAY withhold tools (`AgentSession.disabled_tools`): a withheld tool MUST NOT be offered to the model and a call to it anyway MUST be refused with `DISABLED_TOOL_REFUSAL`, counted against the budget and recorded as a refused tool event. `scripts/chat_e2e.py --no-hatch` withholds `run_python` and MUST list every scenario that failed or reached for the hatch as missing-op evidence (OT-11). | `src/blended/agent/loop.py` (`disabled_tools`), `scripts/chat_e2e.py` | `tests/pure/test_turn_caps.py::test_a_disabled_tool_is_neither_offered_nor_dispatched`, `make chat-e2e ARGS="--no-hatch"` |
+| AGT-23 | Every lane MUST expose the model context it serves (`ModelConfig.context_tokens`: the served `-c` per model on the llama-swap lanes, `num_ctx` on the Ollama lanes, the documented 200k on the Claude Code lane; `None` where no measured number exists). Before every model call the loop MUST estimate the request (characters / `CHARS_PER_TOKEN_ESTIMATE`, the measured ratio) and refuse to send when the estimate plus the reserved completion exceeds the context, naming every number; a lane with no measured context MUST be reported once per turn, not checked silently. After every reply, a completion cut at the ceiling (`finish_reason`/`done_reason` = `length`), a `truncated` flag, or a reported prompt larger than the context MUST be an error, never a result. The llama-swap request ceiling MUST be derived from a measured turn (OT-22). | `src/blended/agent/context_preflight.py`, `src/blended/agent/loop.py` (`CONTEXT_TOKENS_BY_MODEL`, `context_tokens`, the seam in `send`, `check_reply_fits` in `chat`) | `tests/pure/test_context_preflight.py` |
 
 ## 3.11 The prompt system (`PRM`)
 
@@ -572,7 +573,7 @@ The form gate answers "does the object deliver the brief", deterministically, be
 
 | ID | Requirement | Evidence | Verified by |
 |---|---|---|---|
-| NFR-13 | Fail loud: no fallbacks, no stubs, no legacy branches. When the primary path fails, it fails with the cause named. | `CLAUDE.md:11`, `src/blended/agent/loop.py:98,128` (key readers), `src/blended/export/glb_report.py:365` (loud parse) | `tests/pure/test_import_integrity.py`, `tests/pure/test_glb_report.py` |
+| NFR-13 | Fail loud: no fallbacks, no stubs, no legacy branches. When the primary path fails, it fails with the cause named. The transports are no exception: a request that would not fit is refused before it is sent and a reply that was cut is an error (AGT-23). | `CLAUDE.md:11`, `src/blended/agent/loop.py:98,128` (key readers), `src/blended/export/glb_report.py:365` (loud parse) | `tests/pure/test_import_integrity.py`, `tests/pure/test_glb_report.py` |
 | NFR-14 | One execution path per feature; a shipped feature's flag MUST be deleted rather than flipped. | `CLAUDE.md:11`, `docs/harness_design.md` row 24 | `tests/pure/test_one_path_ops.py`, `tests/blender/test_transcript_overlay.py` |
 | NFR-15 | A gate MUST be able to fail, proven by a seeded-defect fixture; a control that cannot fail is not evidence. | `docs/2026-08-21-harness-roadmap.md:18`, `scripts/calibrate_visual_gate.py:181` | `scripts/calibrate_visual_gate.py` (self-checking), `tests/blender/test_analyzer_fixtures.py` |
 | NFR-16 | Ground truth MUST come from outside the thing being gated; an instrument MUST be shown to vary before its readings are interpreted. | `CLAUDE.md:12`, `src/blended/evaluate/examiner.py:196` (`problems()`), `scripts/calibrate_examiner.py` | `make calibrate-eye`, `tests/pure/test_examiner.py` |
@@ -676,7 +677,9 @@ Every value below was resolved from its definition line in the tree at this revi
 | `MAXIMUM_TURN_TOKENS` | `1_700_000` (24 calls × 58,241 tokens per call measured with 50 tools on the Claude Code lane ≈ 1.40M, plus a fifth; the 8-tool figure was 25,851 per call, 750k) | `src/blended/agent/loop.py` |
 | `DISABLED_TOOL_REFUSAL` | the loop's refusal of a withheld tool (OT-11) | `src/blended/agent/loop.py` |
 | `REQUEST_TIMEOUT_SECONDS` | `300` | `src/blended/agent/loop.py:68` |
-| `LLAMA_SWAP_REQUEST_TIMEOUT_SECONDS` | `900` | `src/blended/agent/loop.py:80` |
+| `LLAMA_SWAP_REQUEST_TIMEOUT_SECONDS` | `2000` (cold load ~240 s + measured cold prefill 143 s + 16,384 completion tokens at the measured 10.5 tok/s ≈ 1,943 s; was 900) | `src/blended/agent/loop.py` |
+| `CONTEXT_TOKENS_BY_MODEL` / `CLAUDE_CODE_CONTEXT_TOKENS` | bmb `-c` per model (65,536 for `qwen3.8-27b`, 32,768 for the 32B and smaller) / `200_000` (documented) | `src/blended/agent/loop.py` |
+| `CHARS_PER_TOKEN_ESTIMATE` | `3.8` (measured: 29,064 chars / 7,569 tokens and 35,147 / 9,245 on bmb's tokenizer) | `src/blended/agent/context_preflight.py` |
 | `PREFLIGHT_TIMEOUT_SECONDS` | `90` | `src/blended/agent/loop.py:88` |
 | `MAXIMUM_SCENE_OBJECTS_LISTED` | `40` | `src/blended/agent/tools.py:36` |
 | `MAXIMUM_SEARCH_RESULTS` | `8` | `src/blended/agent/tools.py:37` |
@@ -789,7 +792,7 @@ The document holds **224 requirements**, of which **6 have no automated check**:
 | EXP | 4 | 4 | 0 |
 | ING | 4 | 4 | 0 |
 | OPS | 25 | 25 | 0 |
-| AGT | 22 | 21 | 1 |
+| AGT | 23 | 22 | 1 |
 | PRM | 15 | 15 | 0 |
 | VIS | 14 | 14 | 0 |
 | CNV | 14 | 14 | 0 |
@@ -815,6 +818,7 @@ Two of the three rows this section held at the baseline closed on 2026-09-10: th
 
 | Gap | Evidence | Consequence |
 |---|---|---|
+| OpenRouter models, Ollama Cloud models and big's `qwen3-vl` have no measured context entry, so the preflight reports "context not checked" on those lanes and only the after-the-fact cut checks apply. | `src/blended/agent/loop.py` (`CONTEXT_TOKENS_BY_MODEL`) | a provider-side truncation on those lanes is caught only if the reply reports it |
 | Lane skill modules are registered but never selected at runtime. | `src/blended/agent/skill_modules.py:263` | module evidence is not yet earning its place in the live prompt |
 
 ## 7.3 Two paths where the spec says one

@@ -33,6 +33,7 @@ from blended.agent.claude_code import (
     TurnCost,
     is_claude_code_model,
 )
+from blended.agent.context_preflight import ContextExceeded, check_reply_fits, preflight
 from blended.agent.intermediates import IntermediateLedger
 from blended.agent.outcome import ToolOutcome
 from blended.agent.plan import (
@@ -77,7 +78,34 @@ REQUEST_TIMEOUT_SECONDS = 300
 # tool call. Cloud writers answer the same turn in well under 60 s and
 # keep the tight ceiling, so a dead cloud endpoint is still reported
 # rather than waited on.
-LLAMA_SWAP_REQUEST_TIMEOUT_SECONDS = 900
+# Derived, not guessed (OT-22). One full-prefix request on bmb's
+# qwen3.8-27b, measured 2026-09-10: cold prefill 142.9 s for 16,997
+# prompt tokens (119 tok/s) and generation at 10.5 tok/s (711 tokens in
+# 67.7 s); the same request warm read its prefix from llama-server's
+# cache in 0.3 s. A ceiling has to hold the worst legal call: a cold
+# model load (~240 s), the cold prefill, and a completion that runs to
+# max_completion_tokens — 16,384 / 10.5 = 1,560 s — so 240 + 143 + 1,560
+# ~= 1,943 s. The previous 900 s was measured on a 353.7 s first turn
+# and killed OT-10's first instance mid-generation.
+LLAMA_SWAP_REQUEST_TIMEOUT_SECONDS = 2000
+
+# The context each served model actually has, for the preflight (OT-22).
+# Read from the servers' own configs, never assumed: bmb
+# ~/llm/llama-swap.yaml `-c` per model, read 2026-09-10. A model with no
+# entry cannot be preflighted and `ModelConfig.context_tokens` says so
+# (None); the loop reports it rather than guess.
+CONTEXT_TOKENS_BY_MODEL = {
+    "qwen3.8-27b": 65_536,
+    "qwen3.8-27b-q4xl": 65_536,
+    "gpt-oss-20b": 65_536,
+    "qwen3-32b": 32_768,
+    "hermes-4-14b": 32_768,
+    "gemma-4-26b-a4b": 32_768,
+    "glm-ocr": 32_768,
+}
+# The CLI lane's models: Anthropic's documented 200k context for the
+# Claude models the CLI serves (docs.anthropic.com, model overview).
+CLAUDE_CODE_CONTEXT_TOKENS = 200_000
 # The preflight sends a real one-token chat, so it pays whatever the
 # model's cold start costs. Measured 2026-08-22: a cloud model proxied
 # through a local daemon answered `ping` in 23.3 s from cold, against a
@@ -586,6 +614,16 @@ class ModelConfig:
         return REQUEST_TIMEOUT_SECONDS
 
     @property
+    def context_tokens(self) -> int | None:
+        """The lane's model context for the preflight (OT-22), or None when
+        no measured number exists for this model on this lane."""
+        if self.uses_claude_code:
+            return CLAUDE_CODE_CONTEXT_TOKENS
+        if self.uses_openai_protocol:
+            return CONTEXT_TOKENS_BY_MODEL.get(self.model)
+        return self.context_length  # what the Ollama request sends as num_ctx
+
+    @property
     def uses_separate_eye(self) -> bool:
         """True when a distinct vision model handles images."""
         return bool(self.vision_model) and self.vision_model != self.model
@@ -760,6 +798,7 @@ def _assemble_openai_stream(lines, on_delta, stop_requested) -> dict:
     """
     content: list[str] = []
     thinking: list[str] = []
+    finish_reason = ""
     calls_by_index: dict[int, dict] = {}
     stopped = False
     for line in lines:
@@ -773,6 +812,8 @@ def _assemble_openai_stream(lines, on_delta, stop_requested) -> dict:
             break
         frame = json.loads(data)
         choice = (frame.get("choices") or [{}])[0]
+        if choice.get("finish_reason"):
+            finish_reason = choice["finish_reason"]
         delta = choice.get("delta") or {}
         text = delta.get("content")
         if text:
@@ -795,6 +836,7 @@ def _assemble_openai_stream(lines, on_delta, stop_requested) -> dict:
             if function.get("arguments"):
                 call["function"]["arguments"] += function["arguments"]
     message: dict = {
+        "finish_reason": finish_reason,
         "role": "assistant",
         "content": "".join(content),
         "tool_calls": [] if stopped else [calls_by_index[i] for i in sorted(calls_by_index)],
@@ -816,6 +858,7 @@ def _assemble_ollama_stream(lines, on_delta, stop_requested) -> dict:
     thinking: list[str] = []
     tool_calls: list[dict] = []
     stopped = False
+    done_reason = ""
     for line in lines:
         if stop_requested is not None and stop_requested():
             stopped = True
@@ -832,8 +875,10 @@ def _assemble_ollama_stream(lines, on_delta, stop_requested) -> dict:
             on_delta("thinking", reasoning)
         tool_calls.extend(message.get("tool_calls") or [])
         if frame.get("done"):
+            done_reason = frame.get("done_reason") or ""
             break
     assembled: dict = {
+        "done_reason": done_reason,
         "role": "assistant",
         "content": "".join(content),
         "tool_calls": [] if stopped else tool_calls,
@@ -1107,6 +1152,8 @@ class OllamaClient:
                 f"{self.config.model!r} available?"
             ) from url_error
         self.spent = self.spent.plus(_turn_cost_from_body(body))
+        # OT-22: a cut reply is an error, never a result.
+        check_reply_fits(body, self.config.context_tokens, self.config.endpoint)
         if self.config.uses_openai_protocol:
             return _assistant_message_from_openai(body)
         return body.get("message", {})
@@ -1116,8 +1163,12 @@ class OllamaClient:
             self._chat_path(), payload, self.config.request_timeout_seconds
         )
         if self.config.uses_openai_protocol:
-            return _assemble_openai_stream(lines, on_delta, stop_requested)
-        return _assemble_ollama_stream(lines, on_delta, stop_requested)
+            message = _assemble_openai_stream(lines, on_delta, stop_requested)
+        else:
+            message = _assemble_ollama_stream(lines, on_delta, stop_requested)
+        # The assemblers carry the stream's own end signal (OT-22).
+        check_reply_fits(message, self.config.context_tokens, self.config.endpoint)
+        return message
 
 
 def _turn_cost_from_body(body: dict) -> TurnCost:
@@ -1497,7 +1548,25 @@ class AgentSession:
         # Where this turn's spending starts (OT-17). `spent` accumulates
         # for the session; the budget is per turn.
         spent_at_turn_start = self.client.spent
+        preflight_reported = False
         while executed_tool_call_count < self.maximum_tool_calls_per_turn:
+            # OT-22: refuse to send what will not fit, with the sizes named,
+            # rather than let the transport truncate. A lane with no
+            # measured context is reported once and not checked.
+            try:
+                report = preflight(
+                    self.messages,
+                    offered_tools,
+                    self.client.config.context_tokens,
+                    self.client.config.max_completion_tokens,
+                    self.client.config.endpoint,
+                )
+            except ContextExceeded as too_big:
+                emit("answer", str(too_big))
+                return str(too_big)
+            if not report.checked and not preflight_reported:
+                preflight_reported = True
+                emit("preflight", f"context not checked: {report.reason}")
             if self.stream_replies:
                 assistant_message = self.client.chat(
                     self.messages,

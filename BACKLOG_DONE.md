@@ -323,3 +323,20 @@ regression reopens the item in `BACKLOG.md` with a pointer back to this entry.
 **Shape of the change:** `blended.agent.context_budget` splits the assembled prompt into verbatim substrings plus a measured scaffolding remainder, renders the tool set the way each lane sends it, counts with an injected tokenizer (`bmb_tokenizer` binds to llama-server's `/tokenize` and raises `TokenizerUnreachable` rather than estimate), and writes one idempotent spec row.
 **Layers:** as OT-21.
 **Commit:** `cc28cf1` (OT-23 code landed with OT-21's commit `3c76b39`).
+
+---
+
+## OT-22 Context preflight and truncation as failures
+
+**What:** every lane MUST know its model context (`ModelConfig.context_tokens`: 65,536 for bmb's `qwen3.8-27b`, `num_ctx` for Ollama-native, the CLI's for Claude Code) and the loop MUST refuse to send a request whose prompt tokens plus tool schema plus the reply ceiling exceed it, naming the sizes; a transport reply that reports truncation MUST be an error, never a result. The per-request ceiling on the llama-swap lane (`LLAMA_SWAP_REQUEST_TIMEOUT_SECONDS` = 900) MUST be measured against a real 27B turn and re-derived the way the token budget was.
+**Why:** the one place the fail-loud rule is missing. A 65k-context lane holding 15k of static prefix reaches its limit inside a long turn, and the OT-10 roll's first instance died at the request ceiling instead.
+**Amends:** NFR-13; adds `AGT-23`.
+**Done means:** `tests/pure/test_context_preflight.py` refuses an oversize prompt with the sizes named and passes one that fits; a fake transport reporting `truncated` is an error.
+
+**Closed:** 2026-09-10.
+**Gating tests:** `tests/pure/test_context_preflight.py::test_context_tokens_come_from_each_lanes_own_number`, `::test_the_estimate_is_the_measured_ratio`, `::test_preflight_refuses_with_every_number_named`, `::test_a_cut_reply_is_an_error_on_every_wire` (finish_reason/done_reason length, `truncated`, prompt larger than the context), `::test_the_loop_refuses_before_calling_the_model` (a 32k lane with 16k reserved and ~20k of history: the model is never called, the answer names the sizes), `::test_an_unmeasured_lane_is_reported_once_and_still_runs`.
+**Spec:** AGT-23 added; NFR-13 amended; §5.4 (`LLAMA_SWAP_REQUEST_TIMEOUT_SECONDS`, `CONTEXT_TOKENS_BY_MODEL`, `CLAUDE_CODE_CONTEXT_TOKENS`, `CHARS_PER_TOKEN_ESTIMATE`); §6.3 AGT 22 → 23; §7.2 gains the unmeasured-lane row.
+**Shape of the change:** `ModelConfig.context_tokens` reads the served `-c` per model from bmb's llama-swap config (65,536 for `qwen3.8-27b`, 32,768 for the 32B and smaller), `num_ctx` on the Ollama lanes, the documented 200k on the Claude Code lane, and `None` for a model with no measured entry. `blended.agent.context_preflight` estimates the request at the measured 3.8 characters per token, refuses at the seam before the model call when the estimate plus the reserved completion exceeds the context (every number in the message), reports an unmeasured lane once per turn on a `preflight` event, and turns a cut reply into an error on both wire protocols and both streamed paths (the assemblers now carry `finish_reason` / `done_reason`).
+**Measured (bmb `qwen3.8-27b`, one real full-prefix request, 16,997 prompt tokens):** cold 226.1 s — prefill 142.9 s (119 tok/s), 711 completion tokens in 67.7 s (10.5 tok/s); warm 17.6 s with the prefix read from llama-server's cache in 0.3 s. The request ceiling is re-derived from that: cold load ~240 s + prefill 143 s + 16,384 completion tokens at 10.5 tok/s ≈ 1,943 s → `LLAMA_SWAP_REQUEST_TIMEOUT_SECONDS` = 2000 (was 900, which killed OT-10's first instance mid-generation). The model's first move on that request was `declare_plan`.
+**Layers:** pure 704 passed / 1 skipped / 1 xfailed; Blender 329 passed / 3 skipped.
+**Commit:** recorded in the follow-up commit.

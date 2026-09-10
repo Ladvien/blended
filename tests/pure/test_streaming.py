@@ -126,7 +126,9 @@ def test_the_session_forwards_deltas_only_when_streaming_is_on(monkeypatch):
     session = live_loop.AgentSession(client=client, stream_replies=True)
     answer = session.send("hi", on_event=lambda k, t: events.append((k, t)))
     assert answer == "Building"
-    assert events == [
+    # The preflight's one-time context note (OT-22) is informational and
+    # not part of the streaming contract under test.
+    assert [event for event in events if event[0] != "preflight"] == [
         ("thinking_delta", "plan "),
         ("content_delta", "Build"),
         ("content_delta", "ing"),
