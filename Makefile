@@ -113,6 +113,14 @@ pin-golden-views:
 converge-auto:
 	$(PY) scripts/converge_auto.py --revision $(REVISION) $(ARGS)
 
+# Rank the ops the escape hatch is asking for, from v2 records (OT-12).
+# A record without structured tool events is refused, so name the range.
+#   make mine-ops FROM=68
+#   make mine-ops FROM=68 ARGS="--transcript logs/chat-....jsonl"
+FROM ?= 68
+mine-ops:
+	$(PY) scripts/mine_candidate_ops.py --from-iteration $(FROM) $(ARGS)
+
 # Apply a pin proposal. The one human act the loop leaves behind: a
 # machine verdict may run the loop, but it may not mint the golden
 # reference every later examination is compared against.

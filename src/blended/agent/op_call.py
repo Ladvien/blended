@@ -112,6 +112,10 @@ def convert_argument(hint, value, path: str):
         return pathlib.Path(value)
     origin = typing.get_origin(hint)
     members = typing.get_args(hint)
+    if origin is typing.Literal:
+        if value not in members:
+            raise ArgumentError(f"{path}: expected one of {list(members)}, got {value!r}")
+        return value
     if origin in (types.UnionType, typing.Union):
         failures: list[str] = []
         for member in members:

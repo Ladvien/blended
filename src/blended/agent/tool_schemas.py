@@ -92,6 +92,11 @@ def json_schema_for_type(hint) -> dict:
         return {"type": "string", "description": "Filesystem path."}
     origin = typing.get_origin(hint)
     arguments = typing.get_args(hint)
+    if origin is typing.Literal:
+        # A closed set of strings (a selector's `kind`): an enum.
+        if not arguments or not all(isinstance(member, str) for member in arguments):
+            raise UnsupportedAnnotation(f"Literal {hint!r}: only string literals map to an enum")
+        return {"type": "string", "enum": list(arguments)}
     if origin in (types.UnionType, typing.Union):
         return {"anyOf": [json_schema_for_type(member) for member in arguments]}
     if origin is tuple:
@@ -150,6 +155,11 @@ def _json_value(value):
         return [_json_value(item) for item in value]
     if value is None or isinstance(value, (str, int, float, bool)):
         return value
+    if dataclasses.is_dataclass(value) and not isinstance(value, type):
+        # A config default (`VertexSelector(kind="all")`): its fields.
+        return _json_value(dataclasses.asdict(value))
+    if isinstance(value, dict):
+        return {str(key): _json_value(item) for key, item in value.items()}
     raise UnsupportedAnnotation(f"default {value!r} is not JSON")
 
 

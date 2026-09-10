@@ -43,7 +43,6 @@ UNITLESS_NUMERIC_NAMES = frozenset(
         "scale",
         "weight",
         "island_margin",
-        "vertex_indices",
         "base_color_rgb",
         "color_a_rgb",
         "color_b_rgb",

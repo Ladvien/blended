@@ -2,10 +2,15 @@
 
     make chat-e2e
     make chat-e2e ARGS="--only rig,animation"
+    make chat-e2e ARGS="--no-hatch"      # run_python withheld entirely (OT-11)
+
+With --no-hatch, run_python is not offered to the writer and is refused
+if called anyway; a scenario that then fails, or that reached for the
+hatch, is listed at the end as MISSING-OP EVIDENCE for OT-12.
 
 Each scenario starts from an EMPTY scene and a FRESH AgentSession
-(prompt revision `--revision`, default the v11 candidate that names the
-rig/weights/animation/material lanes), sends the user's words through
+(prompt revision `--revision`, default the v12 candidate: op tools first,
+run_python as the escape hatch), sends the user's words through
 `AgentSession.send` exactly as the addon does, then measures the scene
 with the same reports `inspect_domain` gives the writer. A scenario
 passes only when every assertion holds; the script exits 0 only when
@@ -53,7 +58,8 @@ sys.path.insert(0, str(REPOSITORY_ROOT / "src"))
 os.chdir(REPOSITORY_ROOT)
 
 OUTPUT_ROOT = REPOSITORY_ROOT / "outputs" / "chat_e2e"
-DEFAULT_PROMPT_REVISION = 11
+# v12: the op-tools-first candidate (OT-7). v11 remains runnable with --revision 11.
+DEFAULT_PROMPT_REVISION = 12
 # One extra failed chunk over the converged mesh budget: a rig or an
 # animation is two builds (mesh, then the domain) in one turn.
 MAXIMUM_TOOL_CALLS_PER_TURN = 36
@@ -87,6 +93,8 @@ class ScenarioResult:
     passed: bool
     failures: list[str] = field(default_factory=list)
     tool_calls: int = 0
+    # run_python calls the writer attempted (OT-11): dispatched or refused.
+    hatch_attempts: int = 0
     answers: list[str] = field(default_factory=list)
     error: str = ""
 
@@ -345,11 +353,18 @@ SCENARIOS = (
 # --- driver ------------------------------------------------------------------
 
 
-def run_scenario(scenario: Scenario, revision: int, output_directory: Path, overrides: dict) -> ScenarioResult:
+def run_scenario(
+    scenario: Scenario,
+    revision: int,
+    output_directory: Path,
+    overrides: dict,
+    disabled_tools: frozenset[str] = frozenset(),
+) -> ScenarioResult:
     import bpy
 
     from blended.agent.loop import AgentSession, ModelConfig, OllamaClient
     from blended.agent.system_prompt import build_system_prompt
+    from blended.agent.tool_event import TOOL_EVENT_KIND
 
     bpy.ops.wm.read_factory_settings(use_empty=True)
     result = ScenarioResult(name=scenario.name, passed=False)
@@ -360,6 +375,10 @@ def run_scenario(scenario: Scenario, revision: int, output_directory: Path, over
             handle.write(json.dumps({"kind": kind, "text": text}) + "\n")
         if kind == "tool":
             result.tool_calls += 1
+            if text.startswith("run_python("):
+                result.hatch_attempts += 1
+        if kind == TOOL_EVENT_KIND:
+            return  # the structured copy of the pair just printed
         preview = text if len(text) <= 300 else text[:300] + " ..."
         print(f"[{scenario.name}] [{kind}] {preview}", flush=True)
 
@@ -373,6 +392,7 @@ def run_scenario(scenario: Scenario, revision: int, output_directory: Path, over
         # first. The 3DCodeBench batch driver deliberately does not —
         # see AgentSession.require_plan.
         require_plan=True,
+        disabled_tools=disabled_tools,
     )
     try:
         for prompt in scenario.prompts:
@@ -395,6 +415,11 @@ def parse_arguments(argv):
     # means "no separate eye — the writer looks at its own renders",
     # which is exactly how a vision-capable writer runs.
     parser.add_argument("--vision-model", default=None)
+    parser.add_argument(
+        "--no-hatch",
+        action="store_true",
+        help="withhold run_python entirely; the op vocabulary has to carry every scenario (OT-11)",
+    )
     return parser.parse_args(argv)
 
 
@@ -416,23 +441,38 @@ def main(argv) -> int:
     output_directory = OUTPUT_ROOT / stamp
     output_directory.mkdir(parents=True, exist_ok=True)
 
-    results = [run_scenario(s, arguments.revision, output_directory, overrides) for s in scenarios]
+    disabled_tools = frozenset({"run_python"}) if arguments.no_hatch else frozenset()
+    results = [
+        run_scenario(s, arguments.revision, output_directory, overrides, disabled_tools)
+        for s in scenarios
+    ]
 
     summary = {
         "revision": arguments.revision,
+        "no_hatch": arguments.no_hatch,
         "results": [r.__dict__ for r in results],
     }
     (output_directory / "summary.json").write_text(json.dumps(summary, indent=1))
     print("\n=== chat E2E ===")
     for r in results:
         status = "PASS" if r.passed else "FAIL"
-        print(f"{status} {r.name:<10} {r.tool_calls:>3} tool calls")
+        print(f"{status} {r.name:<10} {r.tool_calls:>3} tool calls, {r.hatch_attempts} hatch")
         for failure in r.failures:
             print(f"      - {failure}")
         if r.error:
             print(f"      ! {r.error.strip().splitlines()[-1]}")
     passed = sum(r.passed for r in results)
     print(f"{passed}/{len(results)} scenarios passed — {output_directory}")
+    # OT-11: the scenarios the vocabulary did not carry. Under --no-hatch
+    # a failure IS the evidence; with the hatch offered, an attempt is.
+    needing_hatch = [r for r in results if r.hatch_attempts or (arguments.no_hatch and not r.passed)]
+    if needing_hatch:
+        print("MISSING-OP EVIDENCE (for OT-12): " + ", ".join(
+            f"{r.name} ({r.hatch_attempts} hatch attempt(s), {'PASS' if r.passed else 'FAIL'})"
+            for r in needing_hatch
+        ))
+    else:
+        print("MISSING-OP EVIDENCE (for OT-12): none — every scenario built on op tools alone")
     return 0 if passed == len(results) else 1
 
 

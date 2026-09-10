@@ -12,6 +12,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from blended.ops._contract import op
+from blended.ops.selectors import VertexSelector
 
 MINIMUM_WEIGHT = 0.0
 MAXIMUM_WEIGHT = 1.0
@@ -40,16 +41,18 @@ def assign_vertex_group_weights(
     object_name: str,
     group_name: str,
     weight: float,
-    vertex_indices: tuple[int, ...] | None = None,
+    vertices: VertexSelector = VertexSelector(kind="all"),
 ) -> str:
-    """Create or reuse a vertex group on the named mesh and assign ``weight`` to vertices.
+    """Create or reuse a vertex group on the named mesh and assign ``weight`` to the selected vertices.
 
-    ``vertex_indices`` of None means *all* vertices.  Weight must be in
-    [0, 1].  Uses ``group.add(indices, weight, 'REPLACE')`` — the data
-    API equivalent of painting, no mode switch required.  Returns the
-    vertex group's name.
+    ``vertices`` is a VertexSelector (OT-14): by vertex-group name
+    pattern, by height range, or all.  Weight must be in [0, 1].  Uses
+    ``group.add(indices, weight, 'REPLACE')`` — the data API equivalent
+    of painting, no mode switch required.  Returns the vertex group's
+    name.
     """
     from blended.ops._objects import object_by_name
+    from blended.ops.selectors import select_vertices
 
     mesh_object = object_by_name(object_name, "MESH")
     if weight < MINIMUM_WEIGHT or weight > MAXIMUM_WEIGHT:
@@ -62,10 +65,7 @@ def assign_vertex_group_weights(
     if group is None:
         group = mesh_object.vertex_groups.new(name=group_name)
 
-    if vertex_indices is None:
-        indices = list(range(len(mesh_object.data.vertices)))
-    else:
-        indices = list(vertex_indices)
+    indices = list(select_vertices(object_name, vertices))
 
     if indices:
         group.add(indices, weight, "REPLACE")

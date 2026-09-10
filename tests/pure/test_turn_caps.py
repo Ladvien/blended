@@ -119,3 +119,42 @@ def test_queued_calls_after_the_cap_get_a_not_run_result(tmp_path):
     tool_messages = [m for m in session.messages if m.get("role") == "tool"]
     assert [m["tool_call_id"] for m in tool_messages] == ["c0", "m0", "m1", "m2"]
     assert tool_messages[-1]["content"] == GATE_CAP_TOOL_RESULT
+
+
+# --- withheld tools (OT-11) --------------------------------------------------
+
+
+def test_a_disabled_tool_is_neither_offered_nor_dispatched(tmp_path):
+    from blended.agent.loop import DISABLED_TOOL_REFUSAL, AgentSession
+    from blended.agent.tool_event import TOOL_EVENT_KIND, decode_tool_event
+
+    offered = []
+
+    class Recording:
+        def __init__(self, replies):
+            self.replies = list(replies)
+            self.spent = TurnCost()
+            from blended.agent.loop import ModelConfig
+
+            self.config = dataclasses.replace(ModelConfig.from_environment(), model="scripted", vision_model="")
+
+        def chat(self, messages, tools=None):
+            offered.append([tool["function"]["name"] for tool in tools])
+            return self.replies.pop(0)
+
+    dispatched = []
+    session = AgentSession(
+        client=Recording([_call("run_python", "h1", source="pass", reason="x"), ANSWER]),
+        output_directory=tmp_path,
+        dispatch=lambda name, *a: dispatched.append(name) or ToolOutcome("ok"),
+        disabled_tools=frozenset({"run_python"}),
+    )
+    events = []
+    session.send("build", on_event=lambda k, t: events.append((k, t)))
+
+    assert "run_python" not in offered[0] and "add_box" in offered[0]
+    assert dispatched == []
+    refusal = DISABLED_TOOL_REFUSAL.format(tool_name="run_python")
+    assert [t for k, t in events if k == "result"] == [refusal]
+    [event] = [decode_tool_event(t) for k, t in events if k == TOOL_EVENT_KIND]
+    assert event.refusal == refusal and not event.ok

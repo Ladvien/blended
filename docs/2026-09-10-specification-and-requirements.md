@@ -178,7 +178,8 @@ Routing is by model id (`src/blended/agent/loop.py:337-360`); credentials come f
 | `make calibrate-visual-gate` | `scripts/calibrate_visual_gate.py --revision` | writes the pixel-gate thresholds (`Makefile:89`) |
 | `make pin-golden-views` | `scripts/pin_golden_views.py --revision` | mints per-view golden references (`Makefile:97`) |
 | `make bench-3dcode` | `scripts/sweep_3dcode.py --bench-root --instances-file` | the external benchmark sweep (`Makefile:129-132`) |
-| `make chat-e2e` | `scripts/chat_e2e.py` | six interactive scenarios, hard-asserted (`Makefile:142`) |
+| `make chat-e2e` | `scripts/chat_e2e.py` | six interactive scenarios, hard-asserted; `ARGS="--no-hatch"` withholds `run_python` and lists missing-op evidence (OT-11) |
+| `make mine-ops` | `scripts/mine_candidate_ops.py --from-iteration` | the candidate-op report from v2 records (OT-12) |
 | `make photo-to-model` | `scripts/photo_to_model.py` | photo in, gated model out (`Makefile:151`) |
 | `make provider-smoke` | `scripts/provider_smoke.py` | one text + one image call per lane (`Makefile:160`) |
 
@@ -349,6 +350,7 @@ The form gate answers "does the object deliver the brief", deterministically, be
 | OPS-19 | `bpy.ops` MUST appear in exactly two documented places — the UV unwrap solvers and heat-map skinning — each wrapped once with a documented `temp_override`. | `src/blended/ops/uv.py:1-10`, `src/blended/ops/rigging.py:1-20` | `tests/pure/test_one_path_ops.py` |
 | OPS-20 | Every CSG result MUST be re-analyzed before it is treated as an asset; through the op tools this is automatic — `boolean_*` return `ObjectName` and are gated (OT-5). | `src/blended/ops/booleans.py:1-20`, `src/blended/agent/op_call.py` | `tests/blender/test_csg_ops.py`, `tests/blender/test_agent_loop.py::test_a_gate_failure_on_an_op_result_is_reported_at_gate` |
 | OPS-21 | Every facade op MUST satisfy a machine-checkable signature contract: every parameter annotated, an explicit return annotation, a unit suffix on every numeric quantity (NFR-8) unless the name is in the declared unitless allowlist, a one-line docstring summary, and no `bpy` type anywhere in the signature — object references travel as names (`str`) and are resolved through `blended.ops._objects.object_by_name`, which raises `UnknownObject` / `WrongObjectType` rather than letting a bad reference surface as whichever attribute error bpy hits first (OT-2). | `src/blended/ops/_objects.py`, `src/blended/ops/primitives.py:28,53` | `tests/pure/test_ops_signature_contract.py::test_facade_op_satisfies_the_signature_contract`, `::test_the_contract_trips_on_a_seeded_defect` (NFR-15) |
+| OPS-22 | An op that acts on a subset of geometry MUST take a typed selector, never indices: `EdgeSelector` (dihedral angle, material slot, vertex-group name pattern, all), `FaceSelector` (axis-aligned normal, material slot, vertex-group pattern, all), `VertexSelector` (vertex-group pattern, height range, all). Each is a frozen dataclass whose `kind` is a `Literal` enum, validated in `__post_init__` (`InvalidSelector`), mapped by the schema generator to an object with an enum and bound back from JSON; `select_edges` / `select_faces` / `select_vertices` resolve one to sorted indices and are readers (OT-14). | `src/blended/ops/selectors.py`, `src/blended/ops/weights.py` (`assign_vertex_group_weights` takes a `VertexSelector`) | `tests/blender/test_selectors.py`, `tests/pure/test_tool_schemas.py::test_a_selector_round_trips_as_an_object_with_an_enum_of_kinds`, `::test_the_select_ops_are_readers_with_selector_parameters` |
 
 ## 3.10 The agent loop and its tools (`AGT`)
 
@@ -362,7 +364,7 @@ The form gate answers "does the object deliver the brief", deterministically, be
 | AGT-6 | A plan MUST hold at most `MAXIMUM_PLAN_STEPS` (8) non-empty steps; a malformed plan MUST raise rather than truncate. | `src/blended/agent/plan.py:39,104` | `tests/pure/test_turn_plan.py` |
 | AGT-7 | Plan progress MUST be reported as a clamped 0.0–1.0 fraction plus `step n/total`, and MUST survive an out-of-range step index without raising. Every plan-requiring tool — the service action tools and every generated scene-changing op tool — MUST accept `plan_step` (`PLAN_STEP_SCHEMA`, defined once); for an op tool it is stripped before binding, so the op never sees it (OT-6). | `src/blended/agent/plan.py` (`PLAN_STEP_SCHEMA`), `src/blended/agent/tool_schemas.py`, `src/blended/agent/tools.py` | `tests/pure/test_turn_plan.py`, `::test_an_op_tool_call_with_plan_step_reports_progress`, `::test_dispatch_strips_plan_step_before_binding`, `tests/pure/test_tool_schemas.py::test_the_parameter_set_equals_the_signature` |
 | AGT-8 | `AgentSession.send` MUST run one turn to completion, executing tool calls until an answer is reached or the tool-call budget is exhausted. | `src/blended/agent/loop.py:1365,1420` | `tests/blender/test_agent_loop.py` |
-| AGT-9 | A turn MUST be capped at `maximum_tool_calls_per_turn` (24) and at `maximum_turn_tokens` (`MAXIMUM_TURN_TOKENS`, 750,000 tokens billed since the turn started: input including cache reads and writes, plus output), checked at the seam after every model reply; a reply that wants more tool calls over either budget is refused (its calls answered `TOKEN_CAP_TOOL_RESULT`) and the exhaustion MUST be reported as text asking the user to narrow the task; a reply that already answers ends the turn whatever it cost (OT-17). | `src/blended/agent/loop.py` (`MAXIMUM_TURN_TOKENS`, `_tokens_since`) | `tests/blender/test_agent_loop.py`, `tests/pure/test_agent_cancel.py::test_the_turn_stops_at_the_seam_when_the_token_budget_is_exceeded`, `::test_an_answer_over_budget_is_still_returned`, `::test_the_budget_is_per_turn_not_per_session` |
+| AGT-9 | A turn MUST be capped at `maximum_tool_calls_per_turn` (24) and at `maximum_turn_tokens` (`MAXIMUM_TURN_TOKENS`, 1,700,000 tokens billed since the turn started: input including cache reads and writes, plus output), checked at the seam after every model reply; a reply that wants more tool calls over either budget is refused (its calls answered `TOKEN_CAP_TOOL_RESULT`) and the exhaustion MUST be reported as text asking the user to narrow the task; a reply that already answers ends the turn whatever it cost (OT-17). | `src/blended/agent/loop.py` (`MAXIMUM_TURN_TOKENS`, `_tokens_since`) | `tests/blender/test_agent_loop.py`, `tests/pure/test_agent_cancel.py::test_the_turn_stops_at_the_seam_when_the_token_budget_is_exceeded`, `::test_an_answer_over_budget_is_still_returned`, `::test_the_budget_is_per_turn_not_per_session` |
 | AGT-10 | `cancel()` MUST stop the turn at the next seam, and the turn MUST be closed consistently: every issued tool call gets a result, and the cancelled answer is appended. | `src/blended/agent/loop.py:1356` | `tests/pure/test_agent_cancel.py` |
 | AGT-11 | Streaming MUST emit typed events — `thinking`, `tool`, `result`, `answer`, `vision`, `plan`, `step`, `render`, `reference` — plus `content_delta` / `thinking_delta` when streaming is on. | `src/blended/agent/loop.py:1365` | `tests/pure/test_streaming.py` |
 | AGT-12 | A half-received tool call MUST be dropped according to the lane's own rule (OpenAI: on stop; Ollama: only if the stream cut before `done`). | `src/blended/agent/loop.py:843` | `tests/pure/test_streaming.py`, `tests/pure/test_openai_transport.py` |
@@ -375,6 +377,7 @@ The form gate answers "does the object deliver the brief", deterministically, be
 | AGT-19 | The session MUST NOT volunteer work: no proactive suggestions and no auto-continuation; a turn runs only from an explicit user act. | `docs/harness_design.md` row 22 | `(unverified)` |
 | AGT-20 | The loop MUST stop a turn after `MAXIMUM_GATE_FAILURES_PER_OBJECT` (3) consecutive gate verdicts on the same object that did not reach `done` (a passing verdict resets the count), rendering that object's contact sheet, answering every queued tool call with `GATE_CAP_TOOL_RESULT`, and reporting `GATE_CAP_ANSWER` as the turn's text — the working agreement's "three honest attempts" as code (OT-16). | `src/blended/agent/loop.py` (`MAXIMUM_GATE_FAILURES_PER_OBJECT`, `_stop_at_gate_cap`) | `tests/pure/test_turn_caps.py`, `tests/blender/test_agent_loop.py::test_a_builder_that_always_fails_the_gate_trips_the_cap` |
 | AGT-21 | `dispatch_tool` MUST route a generated op tool to its facade function on the main thread (AGT-2); MUST bind the JSON arguments against the signature's type hints — the hints the schema was generated from — failing loud on an unknown, missing or mistyped parameter (NFR-13); MUST refuse a name that is neither a service tool nor a facade op before touching bpy; MUST run the op through the executor's one capture path; and MUST report `stage_reached` from `blended.stages` (`execute` on failure, `done` on return; gating is OT-5). (OT-4) | `src/blended/agent/op_call.py`, `src/blended/agent/tools.py` (`OP_FUNCTIONS`, `SERVICE_TOOL_NAMES`), `src/blended/run/executor.py` (`execute_captured`) | `tests/pure/test_agent_dispatch.py::test_an_op_tool_call_binds_runs_and_reports_done`, `::test_an_unregistered_tool_is_refused_at_the_door_without_bpy`, `::test_a_mistyped_argument_fails_at_execute_with_the_cause_and_no_traceback`, `::test_an_op_tool_off_the_main_thread_is_refused_like_any_tool`; `tests/blender/test_agent_loop.py::test_a_brief_reaches_gate_pass_with_op_tools_only` |
+| AGT-22 | A session MAY withhold tools (`AgentSession.disabled_tools`): a withheld tool MUST NOT be offered to the model and a call to it anyway MUST be refused with `DISABLED_TOOL_REFUSAL`, counted against the budget and recorded as a refused tool event. `scripts/chat_e2e.py --no-hatch` withholds `run_python` and MUST list every scenario that failed or reached for the hatch as missing-op evidence (OT-11). | `src/blended/agent/loop.py` (`disabled_tools`), `scripts/chat_e2e.py` | `tests/pure/test_turn_caps.py::test_a_disabled_tool_is_neither_offered_nor_dispatched`, `make chat-e2e ARGS="--no-hatch"` |
 
 ## 3.11 The prompt system (`PRM`)
 
@@ -432,6 +435,7 @@ The form gate answers "does the object deliver the brief", deterministically, be
 | CNV-11 | A scored iteration MUST be replayable from its own recorded call sequence — `run_python` sources re-executed, op-tool calls re-bound and re-run through `call_op` with plan_step stripped, the non-changing service tools skipped — and a replay that leaves no named object MUST raise (OT-8). | `src/blended/evaluate/replay.py` (`calls_from`, `replay_record`) | `tests/blender/test_replay_op_calls.py`, `tests/blender/test_golden_convergence.py`, `scripts/replay_iteration.py` |
 | CNV-12 | The mistake memory MUST be consulted before an adjustment, and every record MUST carry failure, cause, fix, a guarding assertion, and a scope from `SCOPES`. | `src/blended/evaluate/mistake_memory.py:26,30,2981` | `tests/pure/test_object_identity.py`, `validate_memory()` |
 | CNV-13 | A gap discovered by an instrument MUST be closed by a **numeric probe** in `briefs.py` + `acceptance.py`, never by tuning the prompt to satisfy the instrument. | `_evaluate/halt_report.md` | `_evaluate/halt_report.md` |
+| CNV-14 | `scripts/mine_candidate_ops.py` MUST read v2 iteration records and schema-2 chat transcripts, MUST refuse a record without structured tool events rather than read it as empty, MUST group hatch calls by normalized reason and by source shape (the API the chunk called, literals and builtins excluded), rank each group by frequency × gate-pass rate, and report hatch calls per gate-passing brief — the v12 hypothesis metric — as a dated Markdown report (OT-12). | `src/blended/evaluate/candidate_ops.py`, `scripts/mine_candidate_ops.py` | `tests/pure/test_candidate_ops.py` |
 
 ## 3.14 The external benchmark (`BEN`)
 
@@ -604,7 +608,8 @@ Every value below was resolved from its definition line in the tree at this revi
 |---|---|---|
 | `maximum_tool_calls_per_turn` | `24` | `src/blended/agent/loop.py:1333` |
 | `MAXIMUM_GATE_FAILURES_PER_OBJECT` | `3` | `src/blended/agent/loop.py` |
-| `MAXIMUM_TURN_TOKENS` | `750_000` (24 calls × 25,851 measured input tokens per call ≈ 620k, plus a fifth) | `src/blended/agent/loop.py` |
+| `MAXIMUM_TURN_TOKENS` | `1_700_000` (24 calls × 58,241 tokens per call measured with 50 tools on the Claude Code lane ≈ 1.40M, plus a fifth; the 8-tool figure was 25,851 per call, 750k) | `src/blended/agent/loop.py` |
+| `DISABLED_TOOL_REFUSAL` | the loop's refusal of a withheld tool (OT-11) | `src/blended/agent/loop.py` |
 | `REQUEST_TIMEOUT_SECONDS` | `300` | `src/blended/agent/loop.py:65` |
 | `LLAMA_SWAP_REQUEST_TIMEOUT_SECONDS` | `900` | `src/blended/agent/loop.py:77` |
 | `PREFLIGHT_TIMEOUT_SECONDS` | `90` | `src/blended/agent/loop.py:85` |
@@ -643,6 +648,7 @@ Every value below was resolved from its definition line in the tree at this revi
 | `ISLAND_MARGIN_FRACTION` | `1/512` | `src/blended/ops/uv.py:36` |
 | `DEPTH_AXIS_EXTENT_RANK` | `1` (middle extent), `DEPTH_AXIS_INDEX` = Blender Y | `src/blended/ops/canonical_orientation.py:53` |
 | `POST_CONDITION_TOLERANCE_RATIO` | `1e-6` | `src/blended/ops/canonical_orientation.py:56` |
+| `DEFAULT_MINIMUM_DIHEDRAL_ANGLE_DEG` / `DEFAULT_NORMAL_TOLERANCE_DEG` / `MAXIMUM_DIHEDRAL_ANGLE_DEG` | `30.0` / `5.0` / `180.0` | `src/blended/ops/selectors.py` |
 | `UNIT_SUFFIXES` / `UNITLESS_NUMERIC_NAMES` / `FORBIDDEN_TYPE_TOKENS` / `MAXIMUM_SUMMARY_CHARACTERS` (OPS-21 contract) | `("_m", "_deg", "_rad", "_px", "_s", "_m2", "_m3")` / 14 names / `("bpy", "Object", "Mesh", "Scene", "Material", "Any")` / `120` | `tests/pure/test_ops_signature_contract.py:28,33,56,75` |
 | `MAXIMUM_BEVEL_FRACTION_OF_SMALLEST_DIMENSION` | `0.25` | `src/blended/builders/crate.py:16` |
 | `BOOLEAN_EMBED_M` / `STRINGER_COUNT` | `0.0005` / `3` | `src/blended/builders/pallet.py:16,17` |
@@ -716,11 +722,11 @@ The document holds **215 requirements**, of which **8 have no automated check**:
 | CAP | 7 | 6 | 1 |
 | EXP | 4 | 4 | 0 |
 | ING | 4 | 4 | 0 |
-| OPS | 21 | 21 | 0 |
-| AGT | 21 | 20 | 1 |
+| OPS | 22 | 22 | 0 |
+| AGT | 22 | 21 | 1 |
 | PRM | 15 | 15 | 0 |
 | VIS | 14 | 14 | 0 |
-| CNV | 13 | 13 | 0 |
+| CNV | 14 | 14 | 0 |
 | BEN | 10 | 9 | 1 |
 | UI | 20 | 20 | 0 |
 | NFR | 30 | 26 | 4 |

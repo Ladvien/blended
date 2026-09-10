@@ -80,12 +80,6 @@ All Phase 2 items (OT-4 through OT-8) are closed — see `BACKLOG_DONE.md`.
 **Amends:** adds one `OPS-n` row per op, each with a fixture that trips its validation (GATE-18 discipline applied to ops).
 **Done means:** `make converge` on each brief reaches structural + form gate pass with `run_python` disabled.
 
-### OT-14 Selection as a first-class parameter type
-
-**What:** Ops that act on a subset of geometry MUST accept a typed `EdgeSelector` / `FaceSelector` (by dihedral angle, by material slot, by axis-aligned face normal, by name pattern) rather than indices.
-**Why:** Vertex indices are not something a model can reason about from a manifest; selectors are. This is the difference between an op vocabulary a 7B model can drive and one it cannot.
-**Done means:** selector round-trips through the schema generator (OT-3) with an enum of selector kinds; `tests/blender/test_selectors.py` covers each kind against a fixture mesh.
-
 ---
 
 ## Phase 5 — Bounding cost (cheap, and the ops lane makes it safe to do)

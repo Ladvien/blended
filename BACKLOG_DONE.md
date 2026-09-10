@@ -199,3 +199,19 @@ regression reopens the item in `BACKLOG.md` with a pointer back to this entry.
 **Shape of the change:** `MAXIMUM_TURN_TOKENS` = 750,000, derived from measurement (24 calls × 25,851 tokens measured per call on the Claude Code lane ≈ 620k, plus a fifth). The loop snapshots `client.spent` at turn start and, at the seam after every reply, compares tokens billed since (input including cache reads and writes, plus output); a reply that wants more tool calls over budget has them answered `TOKEN_CAP_TOOL_RESULT` and the turn ends with `TOKEN_CAP_ANSWER`, the same shape as the tool-call exhaustion; a reply that already answers ends the turn whatever it cost. Every scripted client in the pure tests now carries `spent` like the real ones. `_answer_pending_tool_calls` finds the reply being closed as the LATEST occurrence in history — measured: a scripted client replaying one dict object twice made the first-occurrence search skip the pending calls.
 **Layers:** pure 659 passed / 1 skipped / 1 xfailed; Blender 318 passed / 3 skipped.
 **Commit:** `2922411`.
+
+---
+
+## OT-14 Selection as a first-class parameter type
+
+**What:** Ops that act on a subset of geometry MUST accept a typed `EdgeSelector` / `FaceSelector` (by dihedral angle, by material slot, by axis-aligned face normal, by name pattern) rather than indices.
+**Why:** Vertex indices are not something a model can reason about from a manifest; selectors are. This is the difference between an op vocabulary a 7B model can drive and one it cannot.
+**Done means:** selector round-trips through the schema generator (OT-3) with an enum of selector kinds; `tests/blender/test_selectors.py` covers each kind against a fixture mesh.
+
+**Closed:** 2026-09-10.
+**Gating tests:** `tests/blender/test_selectors.py` — `::test_edge_selectors_resolve_each_kind`, `::test_face_selectors_resolve_each_kind`, `::test_vertex_selectors_resolve_each_kind` (every kind against one fixture box: 12 edges / 6 faces / 8 vertices with a marked top face and a `top_ring` group), `::test_weights_take_a_selector_not_indices`, `::test_a_selector_dispatches_as_a_tool_argument` (JSON in, enum validated, indices out; an unknown kind is an `ArgumentError`); `tests/pure/test_tool_schemas.py::test_a_selector_round_trips_as_an_object_with_an_enum_of_kinds`, `::test_the_select_ops_are_readers_with_selector_parameters`.
+**Spec:** OPS-22 added; §5.5 selector constants; §6.3 OPS 21 → 22.
+**Shape of the change:** `blended.ops.selectors` defines `EdgeSelector` (dihedral angle, material slot, vertex-group name pattern, all), `FaceSelector` (axis-aligned normal, material slot, vertex-group pattern, all) and `VertexSelector` (vertex-group pattern, height range, all) as frozen dataclasses whose `kind` is a `Literal`; `__post_init__` refuses a nonsensical selector. The schema generator maps `Literal` to an enum and a dataclass default to its fields; the binder checks enum membership. `select_edges` / `select_faces` / `select_vertices` are reader ops on the facade; `assign_vertex_group_weights` takes a `VertexSelector` instead of indices (the only subset op that took indices). "By name pattern" is read as a full-match regex over vertex-group names, stated once in the module docstring.
+**Measured:** 45 op tools; tool-set fingerprint `t:2614a1448ba7`; assembled prompt `a10:107d5c63f0b0` (the manifest gained the selectors module and three config objects).
+**Layers:** pure 678 passed / 1 skipped / 1 xfailed; Blender 323 passed / 3 skipped.
+**Commit:** recorded in the follow-up commit.

@@ -267,6 +267,35 @@ def test_the_readers_are_the_only_plan_free_op_tools():
         "middle_extent_m",
         "orientation_reading",
         "rig_report",
+        "select_edges",
+        "select_faces",
+        "select_vertices",
         "weight_report",
     ]
     assert _op_tool("add_box")["function"]["parameters"]["properties"][PLAN_STEP_ARGUMENT] == PLAN_STEP_SCHEMA
+
+
+# --- selectors (OT-14): an enum of kinds, round-tripped -----------------------
+
+
+def test_a_selector_round_trips_as_an_object_with_an_enum_of_kinds():
+    from blended.agent.op_call import ArgumentError, convert_argument
+    from blended.ops.selectors import EDGE_SELECTOR_KINDS, EdgeSelector
+
+    schema = generator.json_schema_for_type(EdgeSelector)
+    assert schema["type"] == "object"
+    assert schema["properties"]["kind"] == {"type": "string", "enum": list(EDGE_SELECTOR_KINDS)}
+    assert schema["required"] == ["kind"]
+    assert schema["properties"]["minimum_dihedral_angle_deg"]["default"] == 30.0
+
+    bound = convert_argument(EdgeSelector, {"kind": "material_slot", "material_slot_index": 1}, "x.edges")
+    assert bound == EdgeSelector(kind="material_slot", material_slot_index=1)
+    with pytest.raises(ArgumentError, match="kind"):
+        convert_argument(EdgeSelector, {"kind": "by_colour"}, "x.edges")
+
+
+def test_the_select_ops_are_readers_with_selector_parameters():
+    for name in ("select_edges", "select_faces", "select_vertices"):
+        tool = _op_tool(name)["function"]
+        assert tool["parameters"]["properties"]["selector"]["properties"]["kind"]["enum"]
+        assert PLAN_STEP_ARGUMENT not in tool["parameters"]["properties"]  # a reader
