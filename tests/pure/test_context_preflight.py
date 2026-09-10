@@ -100,3 +100,14 @@ def test_an_unmeasured_lane_is_reported_once_and_still_runs(tmp_path):
     assert session.send("go", on_event=lambda k, t: events.append((k, t))) == "done"
     assert client.chats == 2
     assert [t for k, t in events if k == "preflight"] == ["context not checked: no measured context for this model on " + OPENROUTER_ENDPOINT]
+
+
+def test_an_attached_image_counts_as_an_image_not_as_its_base64():
+    from blended.agent.context_preflight import (
+        TOKENS_PER_IMAGE_ESTIMATE,
+        estimate_request_tokens,
+    )
+
+    text_only = [{"role": "tool", "content": "GATE PASS"}]
+    with_image = [{"role": "tool", "content": "GATE PASS", "images": ["A" * 900_000]}]
+    assert estimate_request_tokens(with_image, None) == estimate_request_tokens(text_only, None) + TOKENS_PER_IMAGE_ESTIMATE

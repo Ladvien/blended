@@ -22,6 +22,14 @@ import json
 from dataclasses import dataclass
 
 CHARS_PER_TOKEN_ESTIMATE = 3.8
+# An attached image is billed as an image, not as its base64 text: the
+# loop carries images as `message["images"]` (base64 strings) and the
+# transports re-encode them. Anthropic's documented cost is roughly
+# width x height / 750 tokens; a 1024 x 1024 contact sheet is ~1,400.
+# Measured 2026-09-10: counting the base64 as text put one contact
+# sheet at ~239k "tokens" and refused a turn that fit with room to spare.
+TOKENS_PER_IMAGE_ESTIMATE = 1_400
+IMAGES_KEY = "images"
 # The reply's own signals that it was cut, per wire protocol.
 OPENAI_LENGTH_FINISH = "length"
 OLLAMA_LENGTH_DONE = "length"
@@ -48,8 +56,19 @@ def estimate_tokens(text: str) -> int:
 
 
 def estimate_request_tokens(messages: list[dict], tools: list[dict] | None) -> int:
-    """What the wire will carry, estimated: the messages and the tool set as JSON."""
-    return estimate_tokens(json.dumps(messages)) + (estimate_tokens(json.dumps(tools)) if tools else 0)
+    """What the wire will carry, estimated: the messages' text and the tool
+    set as JSON, plus a per-image allowance for every attached image."""
+    image_count = 0
+    text_only: list[dict] = []
+    for message in messages:
+        images = message.get(IMAGES_KEY) or []
+        image_count += len(images)
+        text_only.append({key: value for key, value in message.items() if key != IMAGES_KEY})
+    return (
+        estimate_tokens(json.dumps(text_only))
+        + (estimate_tokens(json.dumps(tools)) if tools else 0)
+        + image_count * TOKENS_PER_IMAGE_ESTIMATE
+    )
 
 
 def preflight(
