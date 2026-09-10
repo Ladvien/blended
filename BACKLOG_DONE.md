@@ -357,4 +357,4 @@ regression reopens the item in `BACKLOG.md` with a pointer back to this entry.
 **Measured:** system prompt 7,569 → 4,482 tokens on bmb's tokenizer (−3,087); static per call 16,814 → 13,727 (OpenAI/Ollama) and 18,054 → 14,967 (Claude Code); assembled fingerprint moved to `a10:c68237772de1`.
 **Found by the first stool run (82), fixed here:** the driver died in `RefinementOutcome._measured` when a refinement turn left the part named `Seat` — a missing dimension now reads "missing (part not found)" in the summary and counts as a failure instead of losing the record.
 **Layers:** pure 713 passed / 1 skipped / 1 xfailed; Blender 329 passed / 3 skipped (both by exit code).
-**Commit:** recorded in the follow-up commit.
+**Commit:** `75ec2c9`.
