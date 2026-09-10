@@ -11,7 +11,8 @@ session through `run_python` chunks. The bridge is that the chunks ARE
 the script: concatenating the chunks whose Python actually executed
 yields exactly the artifact the benchmark re-bakes.
 
-Which chunks count is a correctness question, not a convenience one. A
+Which calls count is a correctness question, not a convenience one (see
+evaluate/bench_bridge.py, which now owns the rule and the assembly). A
 chunk whose Python raised must be excluded (including it guarantees a
 re-bake failure and understates the harness); a chunk whose Python ran
 and only blended's own analyzer gate objected must be INCLUDED, because
@@ -96,42 +97,6 @@ def parse_arguments(argv):
     return parser.parse_args(argv)
 
 
-def chunk_executed(result_text: str) -> bool:
-    """Did this chunk's Python actually run in the session?
-
-    Three accepted shapes, each read off the code that produces it:
-
-    * "Executed OK in ..."  — ungated success (agent/tools.py:234)
-    * "OK: ..."             — gated success (HarnessResult.summary())
-    * "FAILED at <stage>"   — the Python ran; a LATER stage objected.
-                              stage_reached == "execute" is the one case
-                              where the Python itself raised.
-
-    Everything else — notably "FAILED: " (the ungated raise path,
-    agent/tools.py:248) and "Tool raised ..." — means no geometry.
-    """
-    if result_text.startswith(("Executed OK in ", "OK: ")):
-        return True
-    return result_text.startswith("FAILED at ") and not result_text.startswith(
-        "FAILED at execute"
-    )
-
-
-def script_prelude() -> str:
-    """The two sys.path lines the emitted script needs to stand alone.
-
-    Chunk sources may `import blended.ops` — the `run_python` schema
-    advertises it — and the benchmark re-bakes in a bare Blender that has
-    never heard of this repository. Disclosed deviation from the
-    benchmark's pure-bpy convention; recorded in the comparison notes.
-    """
-    return (
-        "import sys\n"
-        f"sys.path.insert(0, {str(venv_site_packages())!r})\n"
-        f"sys.path.insert(0, {str(REPOSITORY_ROOT / 'src')!r})\n"
-    )
-
-
 def canonical_orientation_epilogue() -> str:
     """The deterministic orientation step appended to the emitted script.
 
@@ -171,6 +136,7 @@ def main(argv) -> int:
         OllamaClient,
         dispatch_here,
     )
+    from blended.evaluate.bench_bridge import RecordedCall, prelude, standalone_script
     from blended.ops.canonical_orientation import apply_canonical_depth_axis
     from blended.version import assert_supported_blender
 
@@ -230,12 +196,24 @@ def main(argv) -> int:
     # The system prompt is NOT overridden: AgentSession.__post_init__
     # seeds the pinned working agreement when `messages` is empty, and
     # that prompt is precisely what is under test here.
-    recorded: list[tuple[str, str]] = []
+    # Every dispatched call, as the bridge needs it (OT-20): the tool, its
+    # VALIDATED arguments when the tool validated them, and the stage its
+    # Python reached — the fact the inclusion rule reads.
+    recorded: list[RecordedCall] = []
 
     def recording_dispatch(tool_name, arguments_dict, output_directory):
         outcome = dispatch_here(tool_name, arguments_dict, output_directory)
-        if tool_name == "run_python":
-            recorded.append((arguments_dict.get("source", ""), outcome.text))
+        recorded.append(
+            RecordedCall(
+                tool_name=tool_name,
+                arguments=(
+                    outcome.validated_arguments
+                    if outcome.validated_arguments is not None
+                    else arguments_dict
+                ),
+                stage_reached=outcome.stage_reached,
+            )
+        )
         return outcome
 
     session = AgentSession(
@@ -287,8 +265,12 @@ def main(argv) -> int:
     duration_seconds = round(time.monotonic() - started, 2)
     transcript_path.write_text("\n\n".join(transcript))
 
-    included = [source for source, text in recorded if chunk_executed(text)]
-    excluded_count = len(recorded) - len(included)
+    script = standalone_script(
+        recorded,
+        prelude(str(venv_site_packages()), str(REPOSITORY_ROOT / "src")),
+        canonical_orientation_epilogue(),
+    )
+    included = script.included_count
 
     # The scored orientation, applied deterministically to the live scene
     # so the meta record matches what the emitted script will produce on
@@ -296,14 +278,7 @@ def main(argv) -> int:
     # broken run, and a silent skip here would score as a shape error.
     canonical_orientation = apply_canonical_depth_axis() if included else None
 
-    # Each chunk carries its own index so a re-bake traceback points at
-    # the chunk the agent actually ran.
-    parts = [script_prelude()]
-    for index, source in enumerate(included, start=1):
-        parts.append(f"\n# --- chunk {index} ---\n{source}\n")
-    if included:
-        parts.append(canonical_orientation_epilogue())
-    script_text = "".join(parts)
+    script_text = script.text
     script_path.write_text(script_text)
 
     metadata_path.write_text(
@@ -316,8 +291,10 @@ def main(argv) -> int:
                 "duration_s": duration_seconds,
                 "code_chars": len(script_text),
                 "num_turns": len(recorded),
-                "n_chunks_included": len(included),
-                "n_chunks_excluded": excluded_count,
+                # Calls that emit geometry (run_python chunks AND op calls).
+                "n_chunks_included": script.included_count,
+                "n_chunks_excluded": script.excluded_count,
+                "n_op_calls_included": script.op_call_count,
                 "canonical_orientation": canonical_orientation,
                 "max_tool_calls": arguments.max_tool_calls,
                 "writer": client.config.model,
@@ -329,7 +306,8 @@ def main(argv) -> int:
     )
     print(
         f"[{'OK_AGENT_DONE' if included else 'ERR_NO_SCRIPT'}] {arguments.instance} "
-        f"chunks={len(included)}/{len(recorded)} {duration_seconds}s",
+        f"calls={script.included_count}/{len(recorded)} "
+        f"(ops {script.op_call_count}) {duration_seconds}s",
         flush=True,
     )
     return 0

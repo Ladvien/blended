@@ -89,13 +89,6 @@ Both Phase 5 items (OT-16, OT-17) are closed — see `BACKLOG_DONE.md`.
 
 **Measured 2026-09-10 (bmb's own `qwen3.8-27b` tokenizer, via llama-server `/tokenize`):** a fresh call carries 7,569 tokens of system prompt (working agreement v12 1,770; manifest 5,843, of which the ops section is 3,074) plus 7,407 tokens of tool schemas (48 op tools 6,254; 8 service tools 1,155): **15.0k static tokens before any scene or history, and every op described twice.** On the Claude Code lane the same surface billed 58,241 tokens per harness call against 25,851 with eight tools (91 % cache reads). The five briefs that pass with the hatch withheld used 4–8 distinct ops each (planter 5, stool 8, column 4, crate_with_lid 5, uv_crate 7), 15 distinct in all, out of 48. bmb serves `qwen3.8-27b` at 65,536 context; the Ollama-native lane sends `num_ctx` 32,768; no lane preflights the prompt against either. Two dependencies come first, because the benchmark cannot measure the surface until they land.
 
-### OT-20 The bench bridge carries op calls
-
-**What:** `scripts/run_3dcode_instance.py` MUST emit the standalone script from the recorded call SEQUENCE — every executed `run_python` chunk AND every successful op-tool call, in order, the op calls as `from blended.ops import <op>` plus the call with its validated arguments (the encoding `evaluate.replay.calls_from` already reads) — so the bench re-bakes what the agent built. A chunk or op call whose result was not OK is excluded, as today.
-**Why:** the bridge predates the op tools; a roll that drops 37 op calls from a script measures a different program than the one the gates passed. Found by reading OT-9's roll 1 before scoring it.
-**Amends:** BEN-1 (the bridge), CNV-11 (replay and the bridge read one encoding).
-**Done means:** `tests/blender/test_bench_bridge.py` builds a brief with op calls only, runs the bridge's script assembly, executes the emitted script in a fresh scene, and the form gate passes on the re-baked object; a run with zero op calls emits byte-identical output to today's.
-
 ### OT-21 The bench chain bakes before it scores
 
 **What:** the sweep chain MUST run the bench's own bake (`/Users/ladvien/3dcodebench/.venv/bin/python core/render.py --model <dir> --results-root <root> --blender <Blender>`) between the sweep and the scorers, and MUST refuse to score a model dir whose instances lack `renders/render_log.json`.

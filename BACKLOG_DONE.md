@@ -274,3 +274,20 @@ regression reopens the item in `BACKLOG.md` with a pointer back to this entry.
 **Observations for the next roll, not acted on:** `select_edges` used as a probe loop (seven calls in 77) suggests the reader should return what the edges ARE (their dihedral angles, count) rather than indices; the structured-output failure on run 72 has one occurrence.
 **Layers:** pure 690 passed / 1 skipped / 1 xfailed; Blender 328 passed / 3 skipped.
 **Commit:** `709dc33`.
+
+---
+
+## OT-20 The bench bridge carries op calls
+
+**What:** `scripts/run_3dcode_instance.py` MUST emit the standalone script from the recorded call SEQUENCE — every executed `run_python` chunk AND every successful op-tool call, in order, the op calls as `from blended.ops import <op>` plus the call with its validated arguments (the encoding `evaluate.replay.calls_from` already reads) — so the bench re-bakes what the agent built. A chunk or op call whose result was not OK is excluded, as today.
+**Why:** the bridge predates the op tools; a roll that drops 37 op calls from a script measures a different program than the one the gates passed. Found by reading OT-9's roll 1 before scoring it.
+**Amends:** BEN-1 (the bridge), CNV-11 (replay and the bridge read one encoding).
+**Done means:** `tests/blender/test_bench_bridge.py` builds a brief with op calls only, runs the bridge's script assembly, executes the emitted script in a fresh scene, and the form gate passes on the re-baked object; a run with zero op calls emits byte-identical output to today's.
+
+**Closed:** 2026-09-10.
+**Gating tests:** `tests/blender/test_bench_bridge.py::test_an_op_built_brief_re_bakes_from_the_standalone_script` (the planter through the real dispatcher: 13 calls, 9 op calls and 1 chunk included, 1 raising boolean excluded, the emitted script re-executed in an empty scene passes the form gate; `plan_step` absent from the script); `tests/pure/test_bench_bridge.py` (inclusion by stage, not text; op calls emitted in order through the binder; a chunks-only record keeps the chunk format byte for byte; nothing ran means no epilogue).
+**Spec:** BEN-1 amended; CNV-11 notes the shared rule.
+**Shape of the change:** `blended.evaluate.bench_bridge` owns the rule and the assembly: `RecordedCall(tool_name, validated arguments, stage_reached)`; a call is included iff its stage is past `execute` — the same fact for a chunk and an op call, replacing the text-prefix heuristic `chunk_executed`; an op call is emitted as `_op(name, {validated arguments})` and bound at bake time through `bind_arguments`, so a `tuple[BoneSpec, ...]` or an `EdgeSelector` is rebuilt by the one converter the loop used. The runner records every dispatched call and reports `n_op_calls_included`. The chunk body and the epilogue are byte-identical to the previous assembly; the prelude grew the helper.
+**Not byte-identical, stated:** the Done means asked for identical output on a record with zero op calls; the prelude now carries the `_op` helper on every script, so identity holds for the chunk section and the epilogue, not the prelude.
+**Layers:** pure 694 passed / 1 skipped / 1 xfailed; Blender 332 passed / 3 skipped.
+**Commit:** recorded in the follow-up commit.
