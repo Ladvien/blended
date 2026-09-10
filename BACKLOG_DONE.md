@@ -291,3 +291,35 @@ regression reopens the item in `BACKLOG.md` with a pointer back to this entry.
 **Not byte-identical, stated:** the Done means asked for identical output on a record with zero op calls; the prelude now carries the `_op` helper on every script, so identity holds for the chunk section and the epilogue, not the prelude.
 **Layers:** pure 694 passed / 1 skipped / 1 xfailed; Blender 329 passed / 3 skipped.
 **Commit:** `de44184`.
+
+---
+
+## OT-21 The bench chain bakes before it scores
+
+**What:** the sweep chain MUST run the bench's own bake (`/Users/ladvien/3dcodebench/.venv/bin/python core/render.py --model <dir> --results-root <root> --blender <Blender>`) between the sweep and the scorers, and MUST refuse to score a model dir whose instances lack `renders/render_log.json`.
+**Why:** `executability.py` and `shape_chamfer.py` read what the bake wrote; without it they report 0/20 with a fingerprint that reads like a model failure.
+**Done means:** `outputs/bench/logs/*_chain.sh` carry the step; a dry run on roll 1's existing scripts produces 20 render logs; the scorer step is guarded.
+
+**Closed:** 2026-09-10.
+**Gating runs:** `scripts/bake_3dcode.py` on roll 1's 20 existing scripts: 20 render logs, render statuses `{OK: 13, ERR_EXEC: 7}`, GLBs for the 13 that executed, exit 0 "safe to score" — the 7 that did not execute are the benchmark's own executability number for the pre-OT-20 bridge, not a bake defect. One fresh instance (AquariumTank) through the OT-20 runner on the cloud lane, then baked: `OK_AGENT_DONE` in 690 s, one `_op(` line in the script, re-bake status OK, 1 mesh, 4 views, GLB 33.6 KB.
+**Spec:** BEN-11 added; §2.4 `scripts/bench_chain.sh`; §6.3 BEN 10 → 11.
+**Shape of the change:** `scripts/bake_3dcode.py` runs the bench's `core/render.py` and `core/export_glb.py` for a model dir and then refuses (exit 2, instances named) unless every scripted instance has its render log and, where the log says the script executed, its GLB. `scripts/bench_chain.sh` is the committed roll template: sweep → bake → executability → shape_chamfer → diagnose, the scorers gated on the bake's exit; the operational chains under `outputs/bench/logs/` are regenerated from it for OT-27.
+**Found by the smoke, fixed here:** (1) the first guard demanded a GLB from a script that failed to execute — the benchmark's failure semantics, restored; (2) `--overwrite` had reached only the render orchestrator; (3) the emitted script's `blended` imports resolved against the installed `blended_agent` addon's bundled copy, because the bench bakes without `--factory-startup` — the prelude now evicts `blended*` from `sys.modules` first; recorded as `the-host-blender-already-holds-an-older-blended`.
+**Layers:** pure 698 passed / 1 skipped / 1 xfailed; Blender 329 passed / 3 skipped.
+**Commit:** `3c76b39`.
+
+---
+
+## OT-23 Measure the composition of a call, per lane
+
+**What:** `scripts/context_composition.py` MUST split one call's tokens into working agreement, manifest sections, tool schemas, scene block and history, per lane, using each lane's own tokenizer where one is reachable (bmb's `/tokenize`) and the transport's `usage` otherwise, and write the row into the spec's measured-state table.
+**Why:** everything in this phase is sized by this number; `TurnCost` measures the total only.
+**Done means:** the script is self-checking (the parts sum to the assembled whole within the tokenizer's join error) and its output is in the spec.
+
+**Closed:** 2026-09-10.
+**Gating tests:** `tests/pure/test_context_budget.py::test_every_part_is_a_verbatim_substring_and_the_remainder_is_small`, `::test_the_composition_sums_and_names_both_lanes`, `::test_an_unreachable_tokenizer_refuses_instead_of_estimating`, `::test_the_spec_row_is_written_once_and_replaced_in_place`; the live run wrote the "Context per call" row into the spec's measured-state table.
+**Spec:** the row; §2.4 `scripts/context_composition.py`.
+**Measured (bmb `qwen3.8-27b` tokenizer, wire encoding, v12, 56 tools):** system prompt 7,569 — working agreement 1,770, conventions 228, manifest operations + config objects 3,074, gate fields + budget 291, drift catalog 2,148, scaffolding 58; tools 9,245 on the OpenAI/Ollama lanes (op tools 7,904, service 1,342) and 10,485 as the Claude Code envelope with its protocol note; **static per call 16,814 / 18,054** before scene and history. The earlier 15.0k figure used compact JSON; the wire uses the default separators, which cost 1.8k more.
+**Shape of the change:** `blended.agent.context_budget` splits the assembled prompt into verbatim substrings plus a measured scaffolding remainder, renders the tool set the way each lane sends it, counts with an injected tokenizer (`bmb_tokenizer` binds to llama-server's `/tokenize` and raises `TokenizerUnreachable` rather than estimate), and writes one idempotent spec row.
+**Layers:** as OT-21.
+**Commit:** recorded in the follow-up commit.
