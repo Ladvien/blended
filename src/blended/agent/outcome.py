@@ -25,3 +25,8 @@ class ToolOutcome:
     # Object names a successful op call linked, consumed or removed —
     # every object-name parameter of the call. Applied BEFORE `created`.
     intermediates_resolved: tuple[str, ...] = ()
+    # run_python only (OT-7): the reason the vocabulary did not suffice,
+    # and a content hash of the source — the candidate_op record's
+    # inputs (OT-8, OT-12). Every hatch call is a vote for a new op.
+    hatch_reason: str = ""
+    source_sha256: str = ""

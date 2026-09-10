@@ -16,6 +16,7 @@ choice here:
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 import threading
@@ -38,6 +39,16 @@ MAXIMUM_SEARCH_RESULTS = 8
 _SEARCH_WORD_PATTERN = re.compile(r"[^a-z0-9]+")
 MAXIMUM_TRACEBACK_CHARACTERS = 1500
 
+# The hatch's price of admission (OT-7): a run_python call with no
+# reason is refused at the door, before bpy, so the vocabulary's gaps
+# are always named and never silent.
+RUN_PYTHON_REASON_REFUSAL = (
+    "run_python refused: `reason` is required and must name what the op "
+    "tools could not express (e.g. 'no op insets a face'). Build with the "
+    "op tools first; use run_python only for what they cannot do."
+)
+SOURCE_DIGEST_CHARACTERS = 12
+
 # The SERVICE tools: hand-written, because each is a harness capability
 # (execute, measure, render, search, list, export, plan) rather than a
 # facade op. The op tools below are generated (OT-3).
@@ -47,13 +58,15 @@ SERVICE_TOOL_SCHEMAS = [
         "function": {
             "name": "run_python",
             "description": (
-                "Execute a Python chunk in the live Blender session, then "
-                "measure the named object against the analyzer gate. "
-                "Returns execution status, anything the chunk PRINTED, any "
-                "traceback with known API-drift fixes attached, and the full "
-                "gate report. print() is how you ask the scene a question — "
-                "print the value you want to check and read it back here. "
-                "This is your primary tool — build by running small chunks."
+                "ESCAPE HATCH: execute a Python chunk in the live Blender "
+                "session for what the op tools cannot express, then measure "
+                "the named object against the analyzer gate. Returns "
+                "execution status, anything the chunk PRINTED, any traceback "
+                "with known API-drift fixes attached, and the full gate "
+                "report. print() is how you ask the scene a question — print "
+                "the value you want to check and read it back here. Build "
+                "with the op tools first; every call here must name in "
+                "`reason` the operation that was missing."
             ),
             "parameters": {
                 "type": "object",
@@ -61,6 +74,15 @@ SERVICE_TOOL_SCHEMAS = [
                     "source": {
                         "type": "string",
                         "description": "Python source. `blended.ops` is importable.",
+                    },
+                    "reason": {
+                        "type": "string",
+                        "description": (
+                            "What the op vocabulary could not express — the "
+                            "operation that was missing, in one sentence. Read "
+                            "and counted: every run_python call is a vote for "
+                            "a new op."
+                        ),
                     },
                     "object_name": {
                         "type": "string",
@@ -79,7 +101,7 @@ SERVICE_TOOL_SCHEMAS = [
                         ),
                     },
                 },
-                "required": ["source"],
+                "required": ["source", "reason"],
             },
         },
     },
@@ -371,6 +393,19 @@ def dispatch_tool(
     # tool nor a facade op has no schema and was never offered.
     if tool_name not in SERVICE_TOOL_NAMES:
         return ToolOutcome(f"Unknown tool: {tool_name}")
+    if tool_name == "run_python":
+        reason = arguments.get("reason", "")
+        if not isinstance(reason, str) or not reason.strip():
+            return ToolOutcome(RUN_PYTHON_REASON_REFUSAL)
+        text, image_paths = _dispatch_service_tool(tool_name, arguments, output_directory)
+        return ToolOutcome(
+            text,
+            tuple(image_paths),
+            hatch_reason=reason.strip(),
+            source_sha256=hashlib.sha256(
+                str(arguments.get("source", "")).encode("utf-8")
+            ).hexdigest()[:SOURCE_DIGEST_CHARACTERS],
+        )
     text, image_paths = _dispatch_service_tool(tool_name, arguments, output_directory)
     return ToolOutcome(text, tuple(image_paths))
 

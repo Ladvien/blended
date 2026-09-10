@@ -62,7 +62,7 @@ def test_run_python_tool_returns_printed_output(empty_scene, tmp_path):
 
     _outcome = dispatch_tool(
         "run_python",
-        {"source": "print('component_count=1')"},
+        {"source": "print('component_count=1')", "reason": "test fixture: exercising the hatch"},
         output_directory=tmp_path,
     )
     text, images = _outcome.text, list(_outcome.images)
@@ -76,7 +76,7 @@ def test_run_python_tool_says_so_when_nothing_was_printed(empty_scene, tmp_path)
     from blended.agent.tools import dispatch_tool
 
     _outcome = dispatch_tool(
-        "run_python", {"source": "value = 1 + 1"}, output_directory=tmp_path
+        "run_python", {"source": "value = 1 + 1", "reason": "test fixture: exercising the hatch"}, output_directory=tmp_path
     )
     text, _ = _outcome.text, list(_outcome.images)
     assert "(nothing printed)" in text
@@ -93,7 +93,7 @@ def test_gated_run_python_also_carries_printed_output(empty_scene, tmp_path):
         "print('vertices=%d' % len(bpy.data.objects[box].data.vertices))\n"
     )
     _outcome = dispatch_tool(
-        "run_python", {"source": source, "object_name": "Probe"}, output_directory=tmp_path
+        "run_python", {"source": source, "object_name": "Probe", "reason": "test fixture: exercising the hatch"}, output_directory=tmp_path
     )
     text, _images = _outcome.text, list(_outcome.images)
     assert "vertices=8" in text

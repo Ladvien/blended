@@ -139,7 +139,7 @@ The visual gate asks "did the render move from the accepted state?" and compares
 
 | Tool | Parameters | Purpose |
 |---|---|---|
-| `run_python` | `source` (required), `object_name`, `plan_step` | execute a chunk and gate the named object; omitting `object_name` runs ungated |
+| `run_python` | `source`, `reason` (both required), `object_name`, `plan_step` | the escape hatch: execute a chunk for what the op tools cannot express and gate the named object; omitting `object_name` runs ungated; a blank `reason` is refused |
 | `inspect_object` | `object_name` (required), `plan_step` | the analyzer report for one object |
 | `inspect_domain` | `object_name`, `domain` in `rig`/`weights`/`animation`/`material` | non-mesh state |
 | `render_views` | `object_name`, `xray`, `look_for`, `plan_step` | contact sheet of the named views |
@@ -356,7 +356,7 @@ The form gate answers "does the object deliver the brief", deterministically, be
 |---|---|---|---|
 | AGT-1 | The tool surface MUST be `TOOL_SCHEMAS` = the hand-written service tools (`SERVICE_TOOL_SCHEMAS`: `run_python`, `inspect_object`, `inspect_domain`, `render_views`, `search_ops`, `list_scene`, `export_asset`, `declare_plan`) plus one generated tool per facade op (`OP_TOOL_SCHEMAS`, OT-3); no other tool may exist, service and op names MUST be disjoint, and the set MUST be fingerprinted `t:{hex12}` and pinned. | `src/blended/agent/tools.py:37`, `src/blended/agent/tool_schemas.py` | `tests/pure/test_tool_schemas.py::test_tool_schemas_is_the_service_tools_plus_every_facade_op`, `::test_the_tool_set_has_not_drifted`, `tests/pure/test_prompt_citations.py::test_every_other_registered_tool_is_a_facade_op` |
 | AGT-2 | `dispatch_tool` MUST run on the main thread and MUST raise when called elsewhere. | `src/blended/agent/tools.py:295` | `tests/pure/test_agent_dispatch.py` |
-| AGT-3 | `run_python` MUST gate the named object and return the gate verdict; omitting `object_name` MUST run ungated. Every op tool whose return names an object (`-> ObjectName`, OT-5) MUST run the same gate on that object — `gate_named_object`: scene state, then the analyzer for a mesh — and return the verdict in the result; a constructor marked `@op(gated=False)` (`add_box`, `add_cylinder`, `add_lathe`: unlinked intermediates) is exempt, the marker MUST appear in its schema description, and the loop MUST refuse to end the turn with an answer while such an intermediate is unresolved (`IntermediateLedger`). | `src/blended/agent/tools.py:37`, `src/blended/harness.py` (`GateVerdict`, `gate_object`), `src/blended/agent/op_call.py`, `src/blended/agent/intermediates.py` | `tests/blender/test_agent_loop.py`, `tests/blender/test_agent_loop.py::test_a_brief_reaches_gate_pass_with_op_tools_only`, `::test_an_unresolved_intermediate_blocks_the_answer_until_resolved`, `::test_a_gate_failure_on_an_op_result_is_reported_at_gate`, `tests/pure/test_intermediates.py` |
+| AGT-3 | `run_python` is the ESCAPE HATCH (OT-7): it MUST require a non-blank `reason` naming what the op vocabulary could not express, refused at the door before bpy (`RUN_PYTHON_REASON_REFUSAL`), and its outcome MUST carry the reason and a source hash for the candidate_op record (OT-8). It MUST gate the named object and return the gate verdict; omitting `object_name` MUST run ungated. Every op tool whose return names an object (`-> ObjectName`, OT-5) MUST run the same gate on that object — `gate_named_object`: scene state, then the analyzer for a mesh — and return the verdict in the result; a constructor marked `@op(gated=False)` (`add_box`, `add_cylinder`, `add_lathe`: unlinked intermediates) is exempt, the marker MUST appear in its schema description, and the loop MUST refuse to end the turn with an answer while such an intermediate is unresolved (`IntermediateLedger`). | `src/blended/agent/tools.py:37`, `src/blended/harness.py` (`GateVerdict`, `gate_object`), `src/blended/agent/op_call.py`, `src/blended/agent/intermediates.py` | `tests/blender/test_agent_loop.py`, `tests/blender/test_agent_loop.py::test_a_brief_reaches_gate_pass_with_op_tools_only`, `::test_an_unresolved_intermediate_blocks_the_answer_until_resolved`, `::test_a_gate_failure_on_an_op_result_is_reported_at_gate`, `tests/pure/test_intermediates.py`, `tests/pure/test_agent_dispatch.py::test_run_python_without_a_reason_is_refused_before_bpy`, `::test_the_run_python_schema_requires_the_reason` |
 | AGT-4 | `declare_plan` MUST be handled without touching `bpy` and MUST echo the numbered plan back. | `src/blended/agent/tools.py:37`, `src/blended/agent/plan.py:32` | `tests/pure/test_turn_plan.py` |
 | AGT-5 | A turn that changes the scene MUST declare a plan first: with `require_plan` on, `run_python` and every scene-changing op tool without a plan MUST be refused with the same refusal text. `PLAN_REQUIRED_TOOLS` is `run_python` plus every facade op not marked `@op(reads_only=True)` (the reports, readings and pure computations), derived from the facade, never listed by hand (OT-6). | `src/blended/agent/plan.py` (`PLAN_REQUIRED_TOOLS`), `src/blended/ops/_contract.py` (`op`, `changes_scene`) | `tests/pure/test_turn_plan.py::test_plan_required_tools_are_run_python_and_every_scene_changing_op`, `::test_an_op_tool_without_a_plan_is_refused_with_the_same_text`, `::test_a_reader_op_needs_no_plan` |
 | AGT-6 | A plan MUST hold at most `MAXIMUM_PLAN_STEPS` (8) non-empty steps; a malformed plan MUST raise rather than truncate. | `src/blended/agent/plan.py:39,104` | `tests/pure/test_turn_plan.py` |
@@ -394,6 +394,7 @@ The form gate answers "does the object deliver the brief", deterministically, be
 | PRM-12 | Every prompt claim that cites evidence MUST carry a resolvable DOI so a later reader can re-look it up. | `docs/harness_design.md` foot; `src/blended/agent/prompt_versions.py:66` | `tests/pure/test_prompt_citations.py` |
 | PRM-13 | The prompt templates and the Jinja dependency MUST ship inside the addon zip, since Blender has no pip. | `scripts/package_addon.py:22,32` | `tests/pure/test_addon_packaging.py` |
 | PRM-14 | Lane selection exists in the registry but **nothing selects lanes at runtime yet**; the loop passes no lane. (Gap, §7.) | `src/blended/agent/skill_modules.py:263` | `tests/pure/test_skill_modules.py` |
+| PRM-15 | A change to the tool surface that changes how the writer is told to work MUST be registered as a prompt revision with its hypothesis BEFORE any run (PRM-4), one hunk (PRM-5): v12 rewrites the 'How you work' opening — a step is an op-tool call, `run_python` is the escape hatch with a required `reason` — with the hypothesis that escape-hatch calls per gate-passing brief fall below 1.0 on the five briefs within three paired rolls. v12 is a candidate; `ACTIVE_PROMPT_REVISION` stays at the pin until measured. (OT-7) | `src/blended/agent/prompt_versions.py` (revision 12), `src/blended/agent/prompts/working_agreement_v12.md.j2` | `tests/pure/test_prompt_templates.py::test_the_revision_history_is_disciplined`, `::test_each_revision_changes_exactly_one_place[12]` |
 
 ## 3.12 Visual instruments and their licences (`VIS`)
 
@@ -610,6 +611,7 @@ Every value below was resolved from its definition line in the tree at this revi
 | `MAXIMUM_TRACEBACK_CHARACTERS` | `1500` | `src/blended/agent/tools.py:35` |
 | `MAXIMUM_PLAN_STEPS` | `8` | `src/blended/agent/plan.py:39` |
 | `PLAN_STEP_SCHEMA` / `PLAN_REQUIRED_TOOLS` | `{type: integer}` / `run_python` + 32 scene-changing op tools (derived) | `src/blended/agent/plan.py` |
+| `RUN_PYTHON_REASON_REFUSAL` / `SOURCE_DIGEST_CHARACTERS` | the door refusal for a reason-less hatch call / `12` | `src/blended/agent/tools.py` |
 | `MAXIMUM_SELECTED_OBJECTS_LISTED` | `8` | `src/blended/agent/scene_context.py:30` |
 | `DIMENSION_DECIMALS` | `2` | `src/blended/agent/scene_context.py:34` |
 | `PINNED_PROMPT_REVISION` / `ACTIVE_PROMPT_REVISION` | `10` / `10` | `src/blended/agent/prompt_versions.py:495,547` |
@@ -713,7 +715,7 @@ The document holds **215 requirements**, of which **8 have no automated check**:
 | ING | 4 | 4 | 0 |
 | OPS | 21 | 21 | 0 |
 | AGT | 21 | 19 | 2 |
-| PRM | 14 | 14 | 0 |
+| PRM | 15 | 15 | 0 |
 | VIS | 14 | 14 | 0 |
 | CNV | 13 | 13 | 0 |
 | BEN | 10 | 9 | 1 |

@@ -441,6 +441,29 @@ PROMPT_REVISIONS: tuple[PromptRevision, ...] = (
             "guard and the human pin remain (make pin)."
         ),
     ),
+    PromptRevision(
+        revision=12,
+        changed_element=(
+            "Rewrote the 'How you work' opening paragraph: a step is an "
+            "op-tool call (bound, run, gated per call), or a Python chunk "
+            "only when no op fits; run_python is the escape hatch and must "
+            "name in `reason` the operation that was missing."
+        ),
+        hypothesis=(
+            "Changed because OT-3..OT-6 made every facade op a tool (bound "
+            "to its signature, gated when it returns an object, plan-"
+            "required), and OT-7 makes run_python refuse a blank reason — "
+            "but v11 still opens by telling the writer to work in Python "
+            "chunks through run_python, so a v11 writer reaches for the "
+            "hatch first and is refused. Expect, on the five briefs within "
+            "three paired rolls on the convergence writer: escape-hatch "
+            "calls per gate-passing brief below 1.0 (measured from the v2 "
+            "transcripts' candidate_op records, OT-8/OT-12); executability "
+            "and cd_pca on the frozen-20 per the ops-lane pre-registration "
+            "(docs/2026-09-06-bench-panel-preregistration.md, OT-9)."
+        ),
+        outcome="",
+    ),
 )
 
 # --- CONVERGED --------------------------------------------------------

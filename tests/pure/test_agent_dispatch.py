@@ -342,3 +342,31 @@ def test_an_op_tool_off_the_main_thread_is_refused_like_any_tool():
     worker.join(timeout=10)
 
     assert len(failures) == 1 and "not the main thread" in str(failures[0])
+
+
+
+# --- the escape hatch (OT-7) ------------------------------------------------
+
+
+def test_run_python_without_a_reason_is_refused_before_bpy():
+    from blended.agent.tools import RUN_PYTHON_REASON_REFUSAL, dispatch_tool
+
+    for arguments in ({"source": "pass"}, {"source": "pass", "reason": ""}, {"source": "pass", "reason": "   "}, {"source": "pass", "reason": 3}):
+        assert dispatch_tool("run_python", arguments, None).text == RUN_PYTHON_REASON_REFUSAL, arguments
+
+
+def test_run_python_with_a_reason_reaches_bpy():
+    """The refusal is the only pure-layer stop; a reasoned call proceeds
+    to the body, whose first act is `import bpy` — absent here."""
+    from blended.agent.tools import dispatch_tool
+
+    with pytest.raises(ModuleNotFoundError, match="bpy"):
+        dispatch_tool("run_python", {"source": "pass", "reason": "no op does this"}, None)
+
+
+def test_the_run_python_schema_requires_the_reason():
+    from blended.agent.tools import SERVICE_TOOL_SCHEMAS
+
+    run_python = next(t["function"] for t in SERVICE_TOOL_SCHEMAS if t["function"]["name"] == "run_python")
+    assert run_python["parameters"]["required"] == ["source", "reason"]
+    assert run_python["description"].startswith("ESCAPE HATCH")

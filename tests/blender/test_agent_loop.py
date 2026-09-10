@@ -65,6 +65,7 @@ def test_loop_runs_a_tool_then_answers(empty_scene, tmp_path):
                             "name": "run_python",
                             "arguments": {
                                 "source": BUILD_SOURCE,
+                                "reason": "test fixture: exercising the hatch",
                                 "object_name": "ChatCrate",
                             },
                         }
@@ -103,6 +104,7 @@ def test_render_result_attaches_an_image_the_model_can_see(empty_scene, tmp_path
                             "name": "run_python",
                             "arguments": {
                                 "source": BUILD_SOURCE,
+                                "reason": "test fixture: exercising the hatch",
                                 "object_name": "ChatCrate",
                             },
                         }
@@ -158,6 +160,7 @@ w.to_mesh(bpy.data.objects[box].data); w.free()
                             "name": "run_python",
                             "arguments": {
                                 "source": open_box_source,
+                                "reason": "test fixture: exercising the hatch",
                                 "object_name": "BadCrate",
                             },
                         }
@@ -237,7 +240,7 @@ def test_the_recorded_call_is_replayable(empty_scene, tmp_path):
                     {
                         "function": {
                             "name": "run_python",
-                            "arguments": {"source": long_source},
+                            "arguments": {"source": long_source, "reason": "test fixture: exercising the hatch"},
                         }
                     }
                 ],
@@ -372,6 +375,7 @@ def test_writer_never_receives_raw_images(empty_scene, tmp_path, monkeypatch):
                             "name": "run_python",
                             "arguments": {
                                 "source": BUILD_SOURCE,
+                                "reason": "test fixture: exercising the hatch",
                                 "object_name": "ChatCrate",
                             },
                         }
@@ -440,6 +444,7 @@ def test_eye_failure_degrades_without_killing_the_turn(
                             "name": "run_python",
                             "arguments": {
                                 "source": BUILD_SOURCE,
+                                "reason": "test fixture: exercising the hatch",
                                 "object_name": "ChatCrate",
                             },
                         }
@@ -493,6 +498,7 @@ def test_single_model_mode_still_attaches_images(empty_scene, tmp_path):
                             "name": "run_python",
                             "arguments": {
                                 "source": BUILD_SOURCE,
+                                "reason": "test fixture: exercising the hatch",
                                 "object_name": "ChatCrate",
                             },
                         }

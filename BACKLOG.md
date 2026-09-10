@@ -37,13 +37,6 @@ All Phase 1 items (OT-1, OT-2, OT-3) are closed — see `BACKLOG_DONE.md`.
 
 ## Phase 2 — The surface
 
-### OT-7 Demote `run_python` to an escape hatch
-
-**What:** `run_python` MUST require a non-blank `reason` parameter naming what the ops vocabulary could not express. The working agreement MUST gain a revision (one hunk, PRM-5) stating that construction goes through op tools and `run_python` is for what they cannot do. Each `run_python` call MUST be transcribed as a `candidate_op` record (see OT-8).
-**Why:** The hatch has to stay (a vocabulary that cannot be exceeded cannot grow), but every use must be a measured signal, not a silent default.
-**Amends:** AGT-3; adds `PRM-15` (prompt revision registered with hypothesis before the run, PRM-4).
-**Done means:** `tests/pure/test_agent_dispatch.py` refuses `run_python` without `reason`. `validate_revisions()` passes with the new revision. The revision's hypothesis: *escape-hatch calls per gate-passing brief fall below 1.0 on the five briefs within three paired rolls.*
-
 ### OT-8 Structured transcript
 
 **What:** `TRANSCRIPT_SCHEMA_VERSION` MUST bump to 2. Every tool event MUST record: tool name, validated arguments, `plan_step`, gate verdict and analyzer fields when gated, `stage_reached`, wall time, and for `run_python` the `reason` and source hash. `IterationRecord` MUST carry the op-call sequence, not only the `run_python` sources (CNV-11 replay must still work from it).

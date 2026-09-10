@@ -117,3 +117,21 @@ regression reopens the item in `BACKLOG.md` with a pointer back to this entry.
 **Measured:** tool-set fingerprint `t:8e3f56aff46c` (plan_step on 32 op tools). The assembled prompt fingerprint did not move.
 **Layers:** pure 641 passed / 1 skipped / 1 xfailed; Blender 315 passed / 3 skipped.
 **Commit:** `65bb719`.
+
+---
+
+## OT-7 Demote `run_python` to an escape hatch
+
+**What:** `run_python` MUST require a non-blank `reason` parameter naming what the ops vocabulary could not express. The working agreement MUST gain a revision (one hunk, PRM-5) stating that construction goes through op tools and `run_python` is for what they cannot do. Each `run_python` call MUST be transcribed as a `candidate_op` record (see OT-8).
+**Why:** The hatch has to stay (a vocabulary that cannot be exceeded cannot grow), but every use must be a measured signal, not a silent default.
+**Amends:** AGT-3; adds `PRM-15` (prompt revision registered with hypothesis before the run, PRM-4).
+**Done means:** `tests/pure/test_agent_dispatch.py` refuses `run_python` without `reason`. `validate_revisions()` passes with the new revision. The revision's hypothesis: *escape-hatch calls per gate-passing brief fall below 1.0 on the five briefs within three paired rolls.*
+
+**Closed:** 2026-09-10 — with the hypothesis PENDING measurement (recorded on revision 12 with `outcome=""`; the closing rule's outcome requirement applies to OT-9–OT-11, and OT-7's Done means is the refusal test plus a healthy registry).
+**Gating tests:** `tests/pure/test_agent_dispatch.py::test_run_python_without_a_reason_is_refused_before_bpy` (missing, blank, whitespace and non-string reasons), `::test_run_python_with_a_reason_reaches_bpy`, `::test_the_run_python_schema_requires_the_reason`; `tests/pure/test_prompt_templates.py::test_the_revision_history_is_disciplined` (`validate_revisions() == []` with v12), `::test_each_revision_changes_exactly_one_place[12]`.
+**Spec:** AGT-3 amended (`run_python` is the escape hatch; `reason` required, refused at the door; outcome carries reason and source hash); PRM-15 added; §2.2 run_python row; §5.4; §6.3 PRM 14 → 15.
+**Shape of the change:** the `run_python` schema requires `reason` and its description opens with ESCAPE HATCH; `dispatch_tool` refuses a blank reason before `import bpy` with `RUN_PYTHON_REASON_REFUSAL`; a reasoned call's `ToolOutcome` carries `hatch_reason` and `source_sha256` (12 hex) — the candidate_op record's inputs, written into the transcript by OT-8. Working agreement v12 differs from v11 by exactly one hunk (the opening paragraph: a step is an op-tool call, or a chunk only when no op fits; the hatch must name what was missing) and is registered with the backlog's hypothesis; `ACTIVE_PROMPT_REVISION` stays at the pin (10) until measured.
+**Measured:** hunks v11 → v12: `['replace lines 2-5 -> 2-11']`. A first draft that also reworded the loop's step 1 measured two hunks (the blank line between them is an equal line to difflib) and was cut back per PRM-5. Tool-set fingerprint `t:cc2df4bef820`; assembled prompt fingerprint unchanged (v10 is still active).
+**Not done here, by design:** the candidate_op record itself is OT-8's transcript schema; the hypothesis outcome is OT-12's mining over v2 transcripts.
+**Layers:** pure 645 passed / 1 skipped / 1 xfailed; Blender 315 passed / 3 skipped.
+**Commit:** recorded in the follow-up commit.
