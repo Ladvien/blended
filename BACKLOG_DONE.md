@@ -322,4 +322,4 @@ regression reopens the item in `BACKLOG.md` with a pointer back to this entry.
 **Measured (bmb `qwen3.8-27b` tokenizer, wire encoding, v12, 56 tools):** system prompt 7,569 — working agreement 1,770, conventions 228, manifest operations + config objects 3,074, gate fields + budget 291, drift catalog 2,148, scaffolding 58; tools 9,245 on the OpenAI/Ollama lanes (op tools 7,904, service 1,342) and 10,485 as the Claude Code envelope with its protocol note; **static per call 16,814 / 18,054** before scene and history. The earlier 15.0k figure used compact JSON; the wire uses the default separators, which cost 1.8k more.
 **Shape of the change:** `blended.agent.context_budget` splits the assembled prompt into verbatim substrings plus a measured scaffolding remainder, renders the tool set the way each lane sends it, counts with an injected tokenizer (`bmb_tokenizer` binds to llama-server's `/tokenize` and raises `TokenizerUnreachable` rather than estimate), and writes one idempotent spec row.
 **Layers:** as OT-21.
-**Commit:** recorded in the follow-up commit.
+**Commit:** `cc28cf1` (OT-23 code landed with OT-21's commit `3c76b39`).
