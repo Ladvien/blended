@@ -135,7 +135,7 @@ The visual gate asks "did the render move from the accepted state?" and compares
 
 ## 2.2 Agent tool surface (the ACI)
 
-Exactly eight tools, defined once in `TOOL_SCHEMAS` (`src/blended/agent/tools.py:37`) and executed by `dispatch_tool` (`:295`).
+`TOOL_SCHEMAS` (`src/blended/agent/tools.py`) is the eight hand-written **service tools** below plus one **generated op tool per facade op** (`OP_TOOL_SCHEMAS`, built by `blended.agent.tool_schemas.build_tool_schemas()` from the OPS-21 signatures: parameters are the signature, quantities carry their unit in the name, object references are names, config dataclasses become object schemas). The whole set is fingerprinted `t:{hex12}` (`TOOL_SCHEMAS_FINGERPRINT`), pinned in `_evaluate/golden/pinned_tool_schemas_fingerprint.txt`, and written into every `IterationRecord`. Service tools are executed by `dispatch_tool`; op-tool dispatch is OT-4.
 
 | Tool | Parameters | Purpose |
 |---|---|---|
@@ -354,7 +354,7 @@ The form gate answers "does the object deliver the brief", deterministically, be
 
 | ID | Requirement | Evidence | Verified by |
 |---|---|---|---|
-| AGT-1 | The tool surface MUST be exactly the eight tools in `TOOL_SCHEMAS`, and no other tool may be added without a schema entry. | `src/blended/agent/tools.py:37` | `tests/pure/test_agent_dispatch.py` |
+| AGT-1 | The tool surface MUST be `TOOL_SCHEMAS` = the hand-written service tools (`SERVICE_TOOL_SCHEMAS`: `run_python`, `inspect_object`, `inspect_domain`, `render_views`, `search_ops`, `list_scene`, `export_asset`, `declare_plan`) plus one generated tool per facade op (`OP_TOOL_SCHEMAS`, OT-3); no other tool may exist, service and op names MUST be disjoint, and the set MUST be fingerprinted `t:{hex12}` and pinned. | `src/blended/agent/tools.py:37`, `src/blended/agent/tool_schemas.py` | `tests/pure/test_tool_schemas.py::test_tool_schemas_is_the_service_tools_plus_every_facade_op`, `::test_the_tool_set_has_not_drifted`, `tests/pure/test_prompt_citations.py::test_every_other_registered_tool_is_a_facade_op` |
 | AGT-2 | `dispatch_tool` MUST run on the main thread and MUST raise when called elsewhere. | `src/blended/agent/tools.py:295` | `tests/pure/test_agent_dispatch.py` |
 | AGT-3 | `run_python` MUST gate the named object and return the gate verdict; omitting `object_name` MUST run ungated. | `src/blended/agent/tools.py:37` | `tests/blender/test_agent_loop.py` |
 | AGT-4 | `declare_plan` MUST be handled without touching `bpy` and MUST echo the numbered plan back. | `src/blended/agent/tools.py:37`, `src/blended/agent/plan.py:32` | `tests/pure/test_turn_plan.py` |
@@ -380,7 +380,7 @@ The form gate answers "does the object deliver the brief", deterministically, be
 | ID | Requirement | Evidence | Verified by |
 |---|---|---|---|
 | PRM-1 | The system prompt MUST be assembled from the versioned working agreement, the generated manifest (conventions + operations + gate fields + drift catalog), and optionally one lane's skill modules. | `src/blended/agent/system_prompt.py:38`, `src/blended/manifest.py:107` | `tests/pure/test_prompt_templates.py`, `tests/pure/test_manifest.py` |
-| PRM-2 | The manifest MUST be **generated from live code** (introspecting the ops modules, `MeshBudget`/`MeshReport` fields, the drift catalog), never hand-written prose. | `src/blended/manifest.py:22,44,107` | `tests/pure/test_manifest.py` |
+| PRM-2 | The manifest MUST be **generated from live code** (introspecting the ops modules, `MeshBudget`/`MeshReport` fields, the drift catalog), never hand-written prose; the op tool schemas MUST be generated the same way from the facade signatures (`build_tool_schemas()`, OT-3), so prose and schema cannot drift apart. | `src/blended/manifest.py:22,44,107`, `src/blended/agent/tool_schemas.py` | `tests/pure/test_manifest.py`, `tests/pure/test_tool_schemas.py::test_adding_an_op_to_the_facade_adds_a_tool`, `::test_the_parameter_set_equals_the_signature` |
 | PRM-3 | The manifest MUST state the pinned Blender series and that gate-passing, not error-free execution, is success. | `src/blended/manifest.py:107` | `tests/pure/test_manifest.py` |
 | PRM-4 | The working agreement MUST be versioned as `PromptRevision` entries, each naming the one element it changed, a hypothesis **stated before the run**, and an outcome filled from measurement. | `src/blended/agent/prompt_versions.py:38,66` | `tests/pure/test_prompt_search.py` |
 | PRM-5 | `validate_revisions` MUST flag: revisions not consecutive from 1; a template that fails to render; a revision identical to its predecessor; a revision changing more than one hunk (`MAXIMUM_CHANGED_HUNKS_PER_REVISION` = 1); a missing hypothesis; a superseded revision with no recorded outcome. | `src/blended/agent/prompt_versions.py:557,575` | `tests/pure/test_prompt_search.py` |
@@ -617,6 +617,7 @@ Every value below was resolved from its definition line in the tree at this revi
 | `CONVERGENCE_TOOL_CALL_BUDGET` | `24` | `src/blended/agent/prompt_versions.py:542` |
 | `MAXIMUM_MODULES_LOADED` / `MAXIMUM_MODULE_LINES` | `3` / `60` | `src/blended/agent/skill_modules.py:253,259` |
 | `ASSEMBLED_FINGERPRINT_DIGEST_CHARACTERS` | `12` | `src/blended/agent/system_prompt.py:99` |
+| `TOOL_SCHEMAS_FINGERPRINT_PREFIX` / `JSON_TYPE_FOR_SCALAR` | `"t"` / `{str, float, int, bool}` → `string, number, integer, boolean` | `src/blended/agent/tool_schemas.py` |
 | `MARKDOWN_TRUNCATE_CHARACTERS` | `1200` | `src/blended/agent/transcript.py:27` |
 | `CLAUDE_CODE_REQUEST_TIMEOUT_SECONDS` | `900` | `src/blended/agent/claude_code.py:81` |
 

@@ -26,7 +26,8 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from blended.agent.tools import TOOL_SCHEMAS
+from blended.agent.tools import SERVICE_TOOL_SCHEMAS, TOOL_SCHEMAS
+from blended.ops._contract import facade_ops
 
 # The probe must have found work to do, so reformatting the prompts away
 # turns the gate red instead of green. Measured 2026-09-06: 45
@@ -47,6 +48,12 @@ _TOOL_CALL_PATTERN = re.compile(r"^(run|inspect|render|search|list|export|declar
 # {"name": …}}``, so the name lives one level inside each entry.
 _REGISTERED_TOOL_NAMES: set[str] = {
     entry["function"]["name"] for entry in TOOL_SCHEMAS
+}
+# The hand-written service tools: the only ones the verb-prefix pattern
+# below is about. Op tools are named by the facade (OT-3) and checked
+# against it instead.
+_SERVICE_TOOL_NAMES: set[str] = {
+    entry["function"]["name"] for entry in SERVICE_TOOL_SCHEMAS
 }
 
 _PROMPTS_DIR = (
@@ -108,7 +115,7 @@ def test_every_cited_tool_name_is_registered():
 
 
 def test_every_registered_tool_matches_the_call_pattern():
-    """Every tool in ``TOOL_SCHEMAS`` must match ``_TOOL_CALL_PATTERN``.
+    """Every SERVICE tool must match ``_TOOL_CALL_PATTERN``.
 
     The prefix whitelist ``(run|inspect|render|search|list|export|declare)``
     is what ties prompt citations to the registry.  If a tool is added
@@ -120,11 +127,18 @@ def test_every_registered_tool_matches_the_call_pattern():
     """
     unmatched = [
         name
-        for name in sorted(_REGISTERED_TOOL_NAMES)
+        for name in sorted(_SERVICE_TOOL_NAMES)
         if not _TOOL_CALL_PATTERN.match(name)
     ]
     assert not unmatched, (
-        "TOOL_SCHEMAS contains tool names that do not match the "
+        "SERVICE_TOOL_SCHEMAS contains tool names that do not match the "
         "citation pattern _TOOL_CALL_PATTERN; add the missing verb "
         f"prefix to the pattern: {'; '.join(unmatched)}"
     )
+
+
+def test_every_other_registered_tool_is_a_facade_op():
+    """The registry is exactly service tools + facade ops (OT-3): a name
+    that is neither was hand-added somewhere the generator cannot see."""
+    op_names = {name for name, _ in facade_ops()}
+    assert _REGISTERED_TOOL_NAMES - _SERVICE_TOOL_NAMES == op_names

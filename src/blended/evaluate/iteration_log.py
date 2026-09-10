@@ -84,6 +84,10 @@ class IterationRecord:
     # historical record still loads through
     # `IterationRecord(**json.loads(line))`.
     assembled_prompt_fingerprint: str = ""
+    # The TOOLS the model could call: service tools plus every generated
+    # op tool (OT-3), fingerprinted like the assembled prompt. Defaulted
+    # so records from before OT-3 load unchanged.
+    tool_schemas_fingerprint: str = ""
     # WHICH MODELS RAN. A prompt is tuned against a model, not in the
     # abstract: v1-v5 were all scored against deepseek-v4-flash, and a
     # log that does not say so would silently compare runs from

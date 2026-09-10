@@ -17,12 +17,12 @@
 
 | Fact | Value | Source |
 |---|---|---|
-| Agent tools | 8, hand-written in `TOOL_SCHEMAS` | `src/blended/agent/tools.py:37` |
+| Agent tools | 8 hand-written service tools + 42 generated op tools = 50 in `TOOL_SCHEMAS`, fingerprint `t:1fe7f62007ef` pinned (OT-3, closed) | `src/blended/agent/tools.py`, `tests/pure/test_tool_schemas.py` |
 | Construction path in the ACI | `run_python(source)` — raw `bpy` | AGT-1, AGT-3 |
 | Ops facade completeness | whole — every public op re-exported, builders import the facade only (OT-1, closed) | `tests/pure/test_one_path_ops.py` |
 | Op signature contract | enforced — names in, names out, units on quantities, no bpy types (OT-2, closed) | `tests/pure/test_ops_signature_contract.py` |
 | Shipped builders | 3 (crate, barrel, pallet) | OPS-15 |
-| Manifest generation | introspects ops modules for prose, not schemas | PRM-2, `src/blended/manifest.py:22,44,107` |
+| Manifest generation | introspects ops modules for prose AND for tool schemas (OT-3, closed) | PRM-2, `src/blended/manifest.py`, `src/blended/agent/tool_schemas.py` |
 | Bench incumbent | `deepseek-v4-pro:cloud`, 6 rolls, 120/120 exec, `cd_pca` 0.0252 | `docs/2026-09-06-bench-panel-preregistration.md` |
 | Transcript schema | `TRANSCRIPT_SCHEMA_VERSION` 1, free-text tool calls | AGT-17 |
 | Retry / turn caps in the loop | none | AGT-20, spec §7.2 |
@@ -31,14 +31,7 @@
 
 ## Phase 1 — Prerequisites (the vocabulary has to be one thing before it can be a surface)
 
-### OT-3 Generate tool schemas from the facade
-
-**What:** `build_tool_schemas()` MUST produce one JSON-schema tool entry per facade op from introspection, using the same machinery `build_manifest` uses for prose. `TOOL_SCHEMAS` MUST become the union of the hand-written service tools and the generated op tools.
-**Why:** PRM-2 already forbids hand-written manifest prose; the same rule should apply to schemas, or the two will drift.
-**Amends:** AGT-1 ("exactly eight tools" becomes "the service tools plus every facade op, generated"), PRM-2.
-**Done means:** `tests/pure/test_tool_schemas.py` checks that adding an op to the facade adds a tool, that the parameter set of each generated tool equals the op's signature, and that unit suffixes appear in every quantity parameter name. Fingerprint the generated schema set the way the prompt is fingerprinted (PRM-7) so a schema change is visible in the iteration log.
-
-**Decision recorded here, to be measured in OT-13:** one tool per op, not a single `call_op(name, arguments)` tool. Rationale: per-op tools carry typed arguments into the transport's constrained decoding (the Claude Code lane already builds a `oneOf`-per-tool envelope, AGT-14). Fallback if tool count breaks a local lane: a single `call_op` with `name` as an enum and per-op argument schemas surfaced through `search_ops`.
+All Phase 1 items (OT-1, OT-2, OT-3) are closed — see `BACKLOG_DONE.md`.
 
 ---
 

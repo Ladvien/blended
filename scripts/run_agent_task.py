@@ -77,6 +77,7 @@ def main(argv) -> int:
         assembled_prompt_fingerprint,
         build_system_prompt,
     )
+    from blended.agent.tools import TOOL_SCHEMAS_FINGERPRINT
     from blended.analyze import analyze_object
     from blended.capture import CaptureSettings, capture_contact_sheet
     from blended.evaluate.acceptance import (
@@ -87,12 +88,12 @@ def main(argv) -> int:
     from blended.evaluate.briefs import get_brief
     from blended.evaluate.examiner import examiner_identity
     from blended.evaluate.iteration_log import IterationLog, IterationRecord
-    from blended.evaluate.visual_diff import VisualGateNotCalibrated
     from blended.evaluate.object_identity import (
         measure_locality,
         new_identity,
         stamp_identity,
     )
+    from blended.evaluate.visual_diff import VisualGateNotCalibrated
     from blended.export.gltf import export_glb
     from blended.version import assert_supported_blender
 
@@ -199,7 +200,7 @@ def main(argv) -> int:
         preview = text if len(text) <= 400 else text[:400] + " ..."
         print(f"[{kind}] {preview}", flush=True)
 
-    started_at = _datetime.datetime.now(_datetime.timezone.utc).isoformat()
+    started_at = _datetime.datetime.now(_datetime.UTC).isoformat()
     print(f"[brief] {brief.prompt_text}", flush=True)
     final_text = session.send(brief.prompt_text, on_event=on_event)
 
@@ -443,6 +444,7 @@ def main(argv) -> int:
         prompt_identity=revision.identity,
         prompt_revision=revision.revision,
         assembled_prompt_fingerprint=assembled_prompt_fingerprint(revision.revision),
+        tool_schemas_fingerprint=TOOL_SCHEMAS_FINGERPRINT,
         started_at=started_at,
         writer_model=client.config.model,
         vision_model=client.config.vision_model,

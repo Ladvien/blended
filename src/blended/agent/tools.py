@@ -20,6 +20,7 @@ import json
 import re
 import threading
 from pathlib import Path
+
 from blended.agent.plan import (
     MAXIMUM_PLAN_STEPS,
     parse_plan_arguments,
@@ -34,7 +35,10 @@ MAXIMUM_SEARCH_RESULTS = 8
 _SEARCH_WORD_PATTERN = re.compile(r"[^a-z0-9]+")
 MAXIMUM_TRACEBACK_CHARACTERS = 1500
 
-TOOL_SCHEMAS = [
+# The SERVICE tools: hand-written, because each is a harness capability
+# (execute, measure, render, search, list, export, plan) rather than a
+# facade op. The op tools below are generated (OT-3).
+SERVICE_TOOL_SCHEMAS = [
     {
         "type": "function",
         "function": {
@@ -284,6 +288,32 @@ TOOL_SCHEMAS = [
         },
     },
 ]
+
+
+from blended.agent.tool_schemas import build_tool_schemas, tool_schemas_fingerprint
+
+# One generated tool per facade op (OT-3): introspected, never written.
+OP_TOOL_SCHEMAS = build_tool_schemas()
+
+
+def _assert_tool_names_disjoint(service: list[dict], generated: list[dict]) -> None:
+    """A facade op named like a service tool would shadow it silently."""
+    collisions = {tool["function"]["name"] for tool in service} & {
+        tool["function"]["name"] for tool in generated
+    }
+    if collisions:
+        raise ImportError(
+            f"facade op(s) collide with service tool name(s): {sorted(collisions)}"
+        )
+
+
+_assert_tool_names_disjoint(SERVICE_TOOL_SCHEMAS, OP_TOOL_SCHEMAS)
+
+# What the model can call: the service tools plus every facade op.
+TOOL_SCHEMAS = SERVICE_TOOL_SCHEMAS + OP_TOOL_SCHEMAS
+# Fingerprint of that set, pinned beside the assembled-prompt fingerprint
+# and written into every iteration record (PRM-7 discipline for tools).
+TOOL_SCHEMAS_FINGERPRINT = tool_schemas_fingerprint(TOOL_SCHEMAS)
 
 
 def _report_to_dict(report) -> dict:
