@@ -22,10 +22,9 @@ the 48/50 views (planter shading RMSE 0.075, column silhouette IoU
 0.9948), which is what a fresh run looks like next to a replay. The
 48/50 sign-off survives in the append-only iteration log.
 
-PENDING (2026-09-10): the 66/67 views are minted from gate-passing
-runs but have NOT yet had the viewport sign-off the 2026-08-22 runs
-had. The banner comes off in the change that records the sign-off;
-a rejection reverts the pin to 48/50 and re-converges.
+Signed off by the user on the 66/67 contact sheets, 2026-09-10: same
+geometry and form numbers as 48/50, planter a shade darker, column a
+greyer material. The pin stands.
 
 The v9 snapshots this file used to hold were replaced, not kept beside
 these. v9 converged on the two-brief suite; the five-brief suite
