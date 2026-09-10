@@ -63,3 +63,25 @@ def test_default_log_directory_prefers_the_repository(tmp_path):
     assert default_log_directory(tmp_path) == tmp_path / "logs"
     fallback = default_log_directory(None)
     assert fallback.parts[-2:] == (".blended", "logs")
+
+
+def test_schema_two_stores_the_tool_event_under_data(tmp_path):
+    """OT-8: a tool_event row is decoded into `data`; every other row has
+    data null; the Markdown does not repeat the machine copy."""
+    import json
+
+    from blended.agent.tool_event import TOOL_EVENT_KIND, ToolEvent, encode_tool_event
+    from blended.agent.transcript import TRANSCRIPT_SCHEMA_VERSION
+
+    assert TRANSCRIPT_SCHEMA_VERSION == 2
+    transcript = ChatTranscript(tmp_path, session_name="s")
+    transcript.record("tool", 'add_box({"name": "Crate"})')
+    event = ToolEvent(tool_name="add_box", arguments={"name": "Crate"}, ok=True, stage_reached="done", wall_time_s=0.5)
+    transcript.record(TOOL_EVENT_KIND, encode_tool_event(event))
+
+    rows = transcript.read_events()
+    assert [row["schema_version"] for row in rows] == [2, 2, 2]
+    assert rows[1]["data"] is None
+    assert rows[2]["data"] == json.loads(encode_tool_event(event))
+    markdown = transcript.markdown_path.read_text()
+    assert "tool_event" not in markdown and 'add_box({"name": "Crate"})' in markdown

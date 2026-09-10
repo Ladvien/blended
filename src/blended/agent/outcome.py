@@ -20,6 +20,15 @@ from pathlib import Path
 class ToolOutcome:
     text: str
     images: tuple[Path, ...] = ()
+    ok: bool = True
+    # One of blended.stages.STAGES for run_python and op tools; "" for a
+    # tool that executes nothing in the scene.
+    stage_reached: str = ""
+    # The arguments as VALIDATED: bound to the op signature (JSON form,
+    # plan_step stripped) for an op tool; as given for a service tool.
+    validated_arguments: dict | None = None
+    # One JSON gate verdict per gated object (harness.gate_verdict_json).
+    gates: tuple[dict, ...] = ()
     # Object names an UNGATED op created this call (unlinked intermediates).
     intermediates_created: tuple[str, ...] = ()
     # Object names a successful op call linked, consumed or removed —

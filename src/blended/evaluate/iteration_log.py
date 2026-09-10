@@ -97,6 +97,13 @@ class IterationRecord:
     # RUN
     agent_turns: int = 0
     tool_calls: tuple[str, ...] = field(default_factory=tuple)
+    # The STRUCTURED record of every tool call (OT-8): one
+    # agent.tool_event.ToolEvent as a dict — validated arguments, plan
+    # step, stage, gate verdicts, wall time, hatch reason and source
+    # hash. `tool_calls` above is the raw call text the replay reads;
+    # this is what the miner (OT-12) and the exporter (OT-18) read.
+    # Empty on records from before OT-8.
+    tool_events: tuple[dict, ...] = field(default_factory=tuple)
     agent_final_text: str = ""
     # EXAMINE (a) — deterministic, in order
     structural_gate_passed: bool = False

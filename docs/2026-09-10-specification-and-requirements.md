@@ -186,7 +186,7 @@ Routing is by model id (`src/blended/agent/loop.py:337-360`); credentials come f
 
 | Path | Role | Committed? |
 |---|---|---|
-| `_evaluate/iterations.jsonl` | append-only record of every iteration (`src/blended/evaluate/iteration_log.py:20`) | yes — the golden tests replay from it |
+| `_evaluate/iterations.jsonl` | append-only record of every iteration (`src/blended/evaluate/iteration_log.py:20`); since OT-8 each record carries `tool_events`, the structured tool sequence | yes — the golden tests replay from it |
 | `_evaluate/verdicts.jsonl` | judgements, separate from measurements (`src/blended/evaluate/iteration_log.py:21`) | yes |
 | `_evaluate/golden/` | pinned per-view references and their `manifest.json` | yes |
 | `_evaluate/eye_calibration.json`, `_evaluate/visual_gate_calibration.json` | the two licences (`src/blended/evaluate/examiner.py:119`; `src/blended/evaluate/visual_diff.py:154`) | yes |
@@ -370,7 +370,7 @@ The form gate answers "does the object deliver the brief", deterministically, be
 | AGT-14 | The Claude Code lane MUST constrain tool calls with a JSON-schema envelope (`oneOf` per tool, `name` pinned by `const`) and MUST give the model no tools of its own. | `src/blended/agent/claude_code.py:301,492` | `tests/pure/test_claude_code_lane.py` |
 | AGT-15 | The eye MUST describe, not adjudicate; a render-eye failure is recoverable with a named note, while a reference-photo eye failure MUST be fatal. | `src/blended/agent/loop.py:400,455` | `tests/pure/test_vision_transport.py`, `tests/blender/test_reference_photo.py` |
 | AGT-16 | Scene context MUST be captured after a view-layer update as a frozen snapshot, capped at `MAXIMUM_SELECTED_OBJECTS_LISTED` (8) with an explicit overflow marker, and rendered as a `[scene]` block with dimensions at `DIMENSION_DECIMALS` (2). | `src/blended/agent/scene_context.py:30,34,86,174` | `tests/pure/test_scene_context.py`, `tests/blender/test_scene_context_live.py` |
-| AGT-17 | A session MUST be transcribed append-as-you-go to both JSONL (full fidelity, `TRANSCRIPT_SCHEMA_VERSION` 1) and Markdown (truncated at `MARKDOWN_TRUNCATE_CHARACTERS` = 1200). | `src/blended/agent/transcript.py:24,27` | `tests/pure/test_transcript.py` |
+| AGT-17 | A session MUST be transcribed append-as-you-go to both JSONL (full fidelity, `TRANSCRIPT_SCHEMA_VERSION` 2) and Markdown (truncated at `MARKDOWN_TRUNCATE_CHARACTERS` = 1200). Every tool call the loop dispatches or refuses MUST also be emitted as a structured `tool_event` (`agent.tool_event.ToolEvent`, schema 2): tool name, validated arguments (bound to the op signature, plan_step stripped), plan step, ok, `stage_reached`, gate verdicts with the analyzer fields when gated, wall time, images, and for `run_python` the reason and source hash; the JSONL row stores it decoded under `data`, the Markdown does not repeat it, and `IterationRecord.tool_events` carries the sequence (OT-8). | `src/blended/agent/transcript.py`, `src/blended/agent/tool_event.py`, `src/blended/agent/loop.py`, `src/blended/evaluate/iteration_log.py` | `tests/pure/test_transcript.py::test_schema_two_stores_the_tool_event_under_data`, `tests/pure/test_tool_event.py` |
 | AGT-18 | `list_scene` MUST cap its listing at `MAXIMUM_SCENE_OBJECTS_LISTED` (40), `search_ops` at `MAXIMUM_SEARCH_RESULTS` (8), and a returned traceback at `MAXIMUM_TRACEBACK_CHARACTERS` (1500). | `src/blended/agent/tools.py:29,30,35` | `tests/pure/test_agent_dispatch.py` |
 | AGT-19 | The session MUST NOT volunteer work: no proactive suggestions and no auto-continuation; a turn runs only from an explicit user act. | `docs/harness_design.md` row 22 | `(unverified)` |
 | AGT-20 | There is **no enforced retry cap or turn cap in the agent loop**; the working agreement's "stop after three honest attempts" is prose to the model, not code. (Gap, §7.) | `src/blended/agent/loop.py:1365-1544` | `(unverified)` |
@@ -429,7 +429,7 @@ The form gate answers "does the object deliver the brief", deterministically, be
 | CNV-8 | Oscillation MUST be detected at `OSCILLATION_REPEAT_LIMIT` (3) repeats across `OSCILLATION_IDENTITY_LIMIT` (2) identities, and a run MUST stop after `DEFAULT_MAXIMUM_RUNS` (30). | `scripts/converge_auto.py:52,53,54` | `scripts/converge_auto.py` (self-checking) |
 | CNV-9 | A pin MUST be applied only by a human (`make pin`), and the proposal MUST match the registry on revision, prompt identity and a recorded outcome or be refused. | `scripts/pin_revision.py:47,79-116` | `scripts/pin_revision.py` (self-checking) |
 | CNV-10 | A golden reference MUST NOT be minted from a run that did not execute the revision being stamped, or from the wrong text. | `scripts/pin_golden_views.py` | `scripts/pin_golden_views.py` (self-checking) |
-| CNV-11 | A scored iteration MUST be replayable from its own recorded `run_python` sources, and a replay that leaves no named object MUST raise. | `src/blended/evaluate/replay.py:71` | `scripts/replay_iteration.py` |
+| CNV-11 | A scored iteration MUST be replayable from its own recorded call sequence — `run_python` sources re-executed, op-tool calls re-bound and re-run through `call_op` with plan_step stripped, the non-changing service tools skipped — and a replay that leaves no named object MUST raise (OT-8). | `src/blended/evaluate/replay.py` (`calls_from`, `replay_record`) | `tests/blender/test_replay_op_calls.py`, `tests/blender/test_golden_convergence.py`, `scripts/replay_iteration.py` |
 | CNV-12 | The mistake memory MUST be consulted before an adjustment, and every record MUST carry failure, cause, fix, a guarding assertion, and a scope from `SCOPES`. | `src/blended/evaluate/mistake_memory.py:26,30,2981` | `tests/pure/test_object_identity.py`, `validate_memory()` |
 | CNV-13 | A gap discovered by an instrument MUST be closed by a **numeric probe** in `briefs.py` + `acceptance.py`, never by tuning the prompt to satisfy the instrument. | `_evaluate/halt_report.md` | `_evaluate/halt_report.md` |
 
@@ -624,6 +624,7 @@ Every value below was resolved from its definition line in the tree at this revi
 | `TOOL_SCHEMAS_FINGERPRINT_PREFIX` / `JSON_TYPE_FOR_SCALAR` | `"t"` / `{str, float, int, bool}` → `string, number, integer, boolean` | `src/blended/agent/tool_schemas.py` |
 | `GATED_DESCRIPTION` / `UNGATED_DESCRIPTION` | the gating sentence appended to every object-returning op tool's description (OT-5) | `src/blended/agent/tool_schemas.py` |
 | `UNRESOLVED_INTERMEDIATES_REFUSAL` | the message that blocks an answer while an unlinked intermediate is pending | `src/blended/agent/intermediates.py` |
+| `TRANSCRIPT_SCHEMA_VERSION` / `TOOL_EVENT_SCHEMA_VERSION` | `2` / `2` | `src/blended/agent/transcript.py`, `src/blended/agent/tool_event.py` |
 | `MARKDOWN_TRUNCATE_CHARACTERS` | `1200` | `src/blended/agent/transcript.py:27` |
 | `CLAUDE_CODE_REQUEST_TIMEOUT_SECONDS` | `900` | `src/blended/agent/claude_code.py:81` |
 

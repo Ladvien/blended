@@ -223,7 +223,8 @@ def test_an_unregistered_tool_is_refused_at_the_door_without_bpy():
     which is what makes this assertion possible in the pure layer."""
     from blended.agent.tools import dispatch_tool
 
-    assert dispatch_tool("add_boxx", {"name": "Crate"}, None) == ToolOutcome("Unknown tool: add_boxx")
+    outcome = dispatch_tool("add_boxx", {"name": "Crate"}, None)
+    assert outcome.text == "Unknown tool: add_boxx" and outcome.ok is False
 
 
 def test_a_mistyped_argument_fails_at_execute_with_the_cause_and_no_traceback():

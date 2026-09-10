@@ -68,6 +68,38 @@ class GateVerdict:
         return self.stage_reached == STAGE_DONE
 
 
+def gate_verdict_json(verdict: GateVerdict) -> dict:
+    """The verdict as the transcript records it (OT-8): every field, the
+    analyzer report expanded, tuples as lists."""
+    from dataclasses import asdict
+
+    return {
+        "object_name": verdict.object_name,
+        "stage_reached": verdict.stage_reached,
+        "object_type": verdict.object_type,
+        "scene_state": verdict.scene_state,
+        "gate_failures": list(verdict.gate_failures),
+        "world_extents_m": (
+            list(verdict.world_extents_m) if verdict.world_extents_m is not None else None
+        ),
+        "report": asdict(verdict.report) if verdict.report is not None else None,
+    }
+
+
+def harness_result_gate_json(result: HarnessResult) -> dict:
+    """`run_chunk`'s gate, in the same form as an op call's."""
+    return gate_verdict_json(
+        GateVerdict(
+            object_name=result.object_name,
+            stage_reached=result.stage_reached,
+            object_type=result.object_type,
+            report=result.report,
+            gate_failures=result.gate_failures,
+            world_extents_m=result.world_extents_m,
+        )
+    )
+
+
 def gate_summary_lines(
     object_type: str,
     report: MeshReport | None,

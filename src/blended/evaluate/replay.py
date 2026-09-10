@@ -1,6 +1,7 @@
 """Rebuild a scored iteration from its own recorded calls.
 
-The iteration log stores every run_python source in full, so a scored
+The iteration log stores every tool call in full — each run_python
+source and, since OT-8, each op call with its arguments — so a scored
 run is reproducible without a model, a network, or a lucky generation.
 Verified 2026-08-22: replaying iterations 10 and 11 reproduced their
 acceptance reports number for number.
@@ -17,9 +18,11 @@ MAIN THREAD ONLY: executes chunks against the live scene.
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
-RUN_PYTHON_PREFIX = "run_python("
+# A recorded call is the text the loop emitted: `name({json arguments})`.
+_CALL_PATTERN = re.compile(r"^(?P<name>[A-Za-z_][A-Za-z0-9_]*)\((?P<arguments>.*)\)$", re.DOTALL)
 
 
 class IterationNotFound(KeyError):
@@ -41,15 +44,20 @@ def load_record(log_path: Path, iteration: int) -> dict:
     return matching[-1]
 
 
+def calls_from(record: dict) -> list[tuple[str, dict]]:
+    """Every recorded tool call of one record, in order: (name, arguments)."""
+    calls: list[tuple[str, dict]] = []
+    for call in record["tool_calls"]:
+        match = _CALL_PATTERN.match(call)
+        if match is None:
+            raise ValueError(f"unreadable recorded call: {call[:80]!r}")
+        calls.append((match.group("name"), json.loads(match.group("arguments"))))
+    return calls
+
+
 def sources_from(record: dict) -> list[str]:
     """The run_python sources of one record, in the order they ran."""
-    sources = []
-    for call in record["tool_calls"]:
-        if not call.startswith(RUN_PYTHON_PREFIX):
-            continue
-        arguments = json.loads(call[len(RUN_PYTHON_PREFIX) : -1])
-        sources.append(arguments["source"])
-    return sources
+    return [arguments["source"] for name, arguments in calls_from(record) if name == "run_python"]
 
 
 def steps_applied(record: dict, brief) -> list:
@@ -69,29 +77,47 @@ def steps_applied(record: dict, brief) -> list:
 
 
 def replay_record(record: dict, object_names: tuple[str, ...], on_chunk=None):
-    """Re-run a record's chunks into the current scene, return its objects.
+    """Re-run a record's scene-changing calls into the current scene,
+    return its objects.
 
+    run_python calls re-execute their recorded source; op-tool calls
+    (OT-8) re-bind and re-run through `call_op`, the same path the loop
+    took, with the harness's plan_step stripped; the service tools that
+    change nothing (inspect, render, search, list, plan) are skipped.
     Returns the objects in `object_names` order, so a multi-part brief
-    comes back the way the brief names its parts. Chunks that failed in
+    comes back the way the brief names its parts. Calls that failed in
     the original run fail here too; that is the point of a faithful
     replay, and the objects are what is judged.
     """
     import bpy
 
+    from blended.agent.op_call import call_op
+    from blended.agent.plan import PLAN_STEP_ARGUMENT
+    from blended.agent.tools import OP_FUNCTIONS
     from blended.run.executor import run_source_in_process
 
-    sources = sources_from(record)
-    for index, source in enumerate(sources, 1):
-        result = run_source_in_process(source)
+    calls = [
+        (name, arguments)
+        for name, arguments in calls_from(record)
+        if name == "run_python" or name in OP_FUNCTIONS
+    ]
+    for index, (name, arguments) in enumerate(calls, 1):
+        if name == "run_python":
+            result = run_source_in_process(arguments["source"])
+        else:
+            op_arguments = {
+                key: value for key, value in arguments.items() if key != PLAN_STEP_ARGUMENT
+            }
+            result = call_op(name, OP_FUNCTIONS[name], op_arguments)
         if on_chunk is not None:
-            on_chunk(index, len(sources), result)
+            on_chunk(index, len(calls), result)
     bpy.context.view_layer.update()
     rebuilt = []
     for object_name in object_names:
         rebuilt_object = bpy.data.objects.get(object_name)
         if rebuilt_object is None:
             raise ReplayProducedNothing(
-                f"replaying {len(sources)} chunk(s) left no object named "
+                f"replaying {len(calls)} call(s) left no object named "
                 f"{object_name!r} — the log is not reproducible"
             )
         rebuilt.append(rebuilt_object)

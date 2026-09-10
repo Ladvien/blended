@@ -1276,7 +1276,9 @@ _COMPACT_KINDS = (
 # path as pixels must treat both the same way.
 _IMAGE_KINDS = ("render", "reference")
 # Progress and plan steps drive the plan card, not the conversation.
-_STATE_ONLY_KINDS = ("step",)
+# `tool_event` is the structured copy of a tool/result pair (OT-8): it
+# feeds the transcript file, never the conversation.
+_STATE_ONLY_KINDS = ("step", "tool_event")
 # Conversation, not traffic: what the GPU overlay paints unless the
 # user asks for details. The traffic kinds stay in the record panel,
 # where a header line says what happened and the body is one click

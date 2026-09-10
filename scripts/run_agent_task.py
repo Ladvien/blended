@@ -16,6 +16,7 @@ already failed a measurement is wasted tokens.
 
 import argparse
 import datetime as _datetime
+import json
 import os
 import sys
 from pathlib import Path
@@ -77,6 +78,7 @@ def main(argv) -> int:
         assembled_prompt_fingerprint,
         build_system_prompt,
     )
+    from blended.agent.tool_event import TOOL_EVENT_KIND
     from blended.agent.tools import TOOL_SCHEMAS_FINGERPRINT
     from blended.analyze import analyze_object
     from blended.capture import CaptureSettings, capture_contact_sheet
@@ -191,12 +193,16 @@ def main(argv) -> int:
     )
 
     tool_calls: list[str] = []
+    tool_events: list[dict] = []
     transcript: list[str] = []
 
     def on_event(kind: str, text: str) -> None:
         transcript.append(f"--- {kind} ---\n{text}")
         if kind == "tool":
             tool_calls.append(text)
+        if kind == TOOL_EVENT_KIND:
+            tool_events.append(json.loads(text))
+            return  # the machine's copy of the tool/result pair just printed
         preview = text if len(text) <= 400 else text[:400] + " ..."
         print(f"[{kind}] {preview}", flush=True)
 
@@ -450,6 +456,7 @@ def main(argv) -> int:
         vision_model=client.config.vision_model,
         agent_turns=len([m for m in session.messages if m.get("role") == "assistant"]),
         tool_calls=tuple(tool_calls),
+        tool_events=tuple(tool_events),
         agent_final_text=final_text,
         structural_gate_passed=structural_passed,
         structural_failures=structural_failures,

@@ -16,6 +16,7 @@ choice here:
 
 from __future__ import annotations
 
+import dataclasses
 import hashlib
 import json
 import re
@@ -29,6 +30,7 @@ from blended.agent.plan import (
     PLAN_STEP_SCHEMA,
     parse_plan_arguments,
 )
+from blended.stages import STAGE_DONE, STAGE_EXECUTE, STAGE_EXPORT, STAGE_LOCATE
 
 # Bounded observation windows.
 MAXIMUM_SCENE_OBJECTS_LISTED = 40
@@ -365,7 +367,7 @@ def dispatch_tool(
         try:
             plan = parse_plan_arguments(arguments)
         except ValueError as error:
-            return ToolOutcome(f"FAILED: {error}")
+            return ToolOutcome(f"FAILED: {error}", ok=False)
         numbered = "\n".join(
             f"  {index}. {step}"
             for index, step in enumerate(plan.steps, start=1)
@@ -377,7 +379,8 @@ def dispatch_tool(
     # above the import.
     op_function = OP_FUNCTIONS.get(tool_name)
     if op_function is not None:
-        from blended.agent.op_call import call_op
+        from blended.agent.op_call import call_op, json_returned
+        from blended.harness import gate_verdict_json
 
         # plan_step is the harness's argument (AGT-7), not the op's.
         op_arguments = {
@@ -386,42 +389,54 @@ def dispatch_tool(
         result = call_op(tool_name, op_function, op_arguments)
         return ToolOutcome(
             text=result.summary(MAXIMUM_TRACEBACK_CHARACTERS),
+            ok=result.ok,
+            stage_reached=result.stage_reached,
+            validated_arguments={
+                name: json_returned(value) for name, value in result.bound_arguments.items()
+            },
+            gates=tuple(gate_verdict_json(gate) for gate in result.gates),
             intermediates_created=result.intermediates_created,
             intermediates_resolved=result.intermediates_resolved,
         )
     # Refused at the door, before bpy: a name that is neither a service
     # tool nor a facade op has no schema and was never offered.
     if tool_name not in SERVICE_TOOL_NAMES:
-        return ToolOutcome(f"Unknown tool: {tool_name}")
+        return ToolOutcome(f"Unknown tool: {tool_name}", ok=False)
     if tool_name == "run_python":
         reason = arguments.get("reason", "")
         if not isinstance(reason, str) or not reason.strip():
-            return ToolOutcome(RUN_PYTHON_REASON_REFUSAL)
-        text, image_paths = _dispatch_service_tool(tool_name, arguments, output_directory)
-        return ToolOutcome(
-            text,
-            tuple(image_paths),
+            return ToolOutcome(RUN_PYTHON_REASON_REFUSAL, ok=False, stage_reached=STAGE_EXECUTE)
+        outcome = _dispatch_service_tool(tool_name, arguments, output_directory)
+        return dataclasses.replace(
+            outcome,
             hatch_reason=reason.strip(),
             source_sha256=hashlib.sha256(
                 str(arguments.get("source", "")).encode("utf-8")
             ).hexdigest()[:SOURCE_DIGEST_CHARACTERS],
         )
-    text, image_paths = _dispatch_service_tool(tool_name, arguments, output_directory)
-    return ToolOutcome(text, tuple(image_paths))
+    return _dispatch_service_tool(tool_name, arguments, output_directory)
 
 
 def _dispatch_service_tool(
     tool_name: str, arguments: dict, output_directory: Path
-) -> tuple[str, list[Path]]:
-    """The service tools' branches. Returns (text, image_paths)."""
+) -> ToolOutcome:
+    """The service tools' branches."""
     import bpy
 
     from blended.analyze import MeshBudget, analyze_object
 
     output_directory = Path(output_directory)
 
+    def failed(text: str, stage: str = STAGE_EXECUTE) -> ToolOutcome:
+        return ToolOutcome(text, ok=False, stage_reached=stage, validated_arguments=arguments)
+
+    def done(text: str, images: tuple[Path, ...] = (), stage: str = "", **fields) -> ToolOutcome:
+        return ToolOutcome(
+            text, images, ok=True, stage_reached=stage, validated_arguments=arguments, **fields
+        )
+
     if tool_name == "run_python":
-        from blended.harness import HarnessSettings, run_chunk
+        from blended.harness import HarnessSettings, harness_result_gate_json, run_chunk
         from blended.run.executor import run_source_in_process
 
         source_code = arguments["source"]
@@ -434,9 +449,8 @@ def _dispatch_service_tool(
                     if run_result.stdout_text
                     else "\n(nothing printed)"
                 )
-                return (
-                    f"Executed OK in {run_result.duration_s:.2f}s.{printed}",
-                    [],
+                return done(
+                    f"Executed OK in {run_result.duration_s:.2f}s.{printed}", stage=STAGE_DONE
                 )
             drift_notes = "".join(
                 f"\n  KNOWN TRAP [{entry.symbol}]: {entry.fix}"
@@ -447,13 +461,10 @@ def _dispatch_service_tool(
                 if run_result.stdout_text
                 else ""
             )
-            return (
-                (
-                    f"FAILED: {run_result.error_type}: {run_result.error_message}\n"
-                    f"{run_result.traceback_text[:MAXIMUM_TRACEBACK_CHARACTERS]}"
-                    f"{printed}{drift_notes}"
-                ),
-                [],
+            return failed(
+                f"FAILED: {run_result.error_type}: {run_result.error_message}\n"
+                f"{run_result.traceback_text[:MAXIMUM_TRACEBACK_CHARACTERS]}"
+                f"{printed}{drift_notes}"
             )
         harness_result = run_chunk(
             source_code,
@@ -462,17 +473,29 @@ def _dispatch_service_tool(
             chunk_label="chat",
         )
         images = (
-            [harness_result.contact_sheet_path]
+            (harness_result.contact_sheet_path,)
             if harness_result.contact_sheet_path is not None
-            else []
+            else ()
         )
-        return harness_result.summary(), images
+        gates = (
+            (harness_result_gate_json(harness_result),)
+            if harness_result.stage_reached != STAGE_EXECUTE
+            else ()
+        )
+        return ToolOutcome(
+            harness_result.summary(),
+            images,
+            ok=harness_result.ok,
+            stage_reached=harness_result.stage_reached,
+            validated_arguments=arguments,
+            gates=gates,
+        )
 
     if tool_name == "inspect_object":
         object_name = arguments["object_name"]
         blender_object = bpy.data.objects.get(object_name)
         if blender_object is None:
-            return f"No object named {object_name!r} in the scene.", []
+            return failed(f"No object named {object_name!r} in the scene.")
         report = analyze_object(blender_object)
         failures = list(report.failures(MeshBudget()))
         # The same blind spots `run_chunk` had: flawless geometry the
@@ -496,12 +519,8 @@ def _dispatch_service_tool(
         reading = orientation_reading(
             tuple(float(extent) for extent in blender_object.dimensions)
         )
-        return (
-            (
-                f"GATE {verdict}\n{reading}\n"
-                f"{json.dumps(_report_to_dict(report), indent=1)}"
-            ),
-            [],
+        return done(
+            f"GATE {verdict}\n{reading}\n{json.dumps(_report_to_dict(report), indent=1)}"
         )
 
     if tool_name == "inspect_domain":
@@ -509,18 +528,18 @@ def _dispatch_service_tool(
         domain = arguments["domain"]
         blender_object = bpy.data.objects.get(object_name)
         if blender_object is None:
-            return f"No object named {object_name!r} in the scene.", []
+            return failed(f"No object named {object_name!r} in the scene.")
         if domain == "rig":
             from blended.ops import rig_report
 
             if blender_object.type != "ARMATURE":
-                return f"{object_name!r} is a {blender_object.type}, not an ARMATURE.", []
+                return failed(f"{object_name!r} is a {blender_object.type}, not an ARMATURE.")
             report = rig_report(object_name)
         elif domain == "weights":
             from blended.ops import weight_report
 
             if blender_object.type != "MESH":
-                return f"{object_name!r} is a {blender_object.type}, not a MESH.", []
+                return failed(f"{object_name!r} is a {blender_object.type}, not a MESH.")
             report = weight_report(object_name)
         elif domain == "animation":
             from blended.ops import animation_report
@@ -530,11 +549,13 @@ def _dispatch_service_tool(
             from blended.ops import material_report
 
             if blender_object.type != "MESH":
-                return f"{object_name!r} is a {blender_object.type}, not a MESH.", []
+                return failed(f"{object_name!r} is a {blender_object.type}, not a MESH.")
             report = material_report(object_name)
         else:
-            return f"Unknown domain {domain!r}.", []
-        return f"{domain} report for {object_name}:\n{json.dumps(_report_to_dict(report), indent=1)}", []
+            return failed(f"Unknown domain {domain!r}.")
+        return done(
+            f"{domain} report for {object_name}:\n{json.dumps(_report_to_dict(report), indent=1)}"
+        )
 
     if tool_name == "render_views":
         from blended.capture import CaptureSettings, capture_contact_sheet
@@ -542,7 +563,7 @@ def _dispatch_service_tool(
         object_name = arguments["object_name"]
         blender_object = bpy.data.objects.get(object_name)
         if blender_object is None:
-            return f"No object named {object_name!r} in the scene.", []
+            return failed(f"No object named {object_name!r} in the scene.")
         report = analyze_object(blender_object)
         sheet_path = capture_contact_sheet(
             blender_object,
@@ -550,12 +571,10 @@ def _dispatch_service_tool(
             settings=CaptureSettings(xray=bool(arguments.get("xray", False))),
             report=report,
         )
-        return (
-            (
-                f"Rendered {object_name} ({'x-ray' if arguments.get('xray') else 'solid'}). "
-                f"Look at the attached contact sheet."
-            ),
-            [sheet_path],
+        return done(
+            f"Rendered {object_name} ({'x-ray' if arguments.get('xray') else 'solid'}). "
+            f"Look at the attached contact sheet.",
+            (sheet_path,),
         )
 
     if tool_name == "search_ops":
@@ -576,13 +595,10 @@ def _dispatch_service_tool(
             if token
         ]
         if not query_tokens:
-            return (
-                (
-                    f"Query {arguments['query']!r} contains no searchable "
-                    f"words. Search for an operation by name or purpose, "
-                    f"e.g. 'boolean union' or 'assign material'."
-                ),
-                [],
+            return failed(
+                f"Query {arguments['query']!r} contains no searchable "
+                f"words. Search for an operation by name or purpose, "
+                f"e.g. 'boolean union' or 'assign material'."
             )
         matches: list[str] = []
         for module_name in OP_MODULE_NAMES:
@@ -596,14 +612,11 @@ def _dispatch_service_tool(
                         f"blended.ops.{module_name}: {signature}\n    {summary}"
                     )
         if not matches:
-            return (
-                (
-                    f"No operation matches all of {query_tokens}. "
-                    f"Available modules: {', '.join(OP_MODULE_NAMES)}."
-                ),
-                [],
+            return failed(
+                f"No operation matches all of {query_tokens}. "
+                f"Available modules: {', '.join(OP_MODULE_NAMES)}."
             )
-        return "\n".join(matches[:MAXIMUM_SEARCH_RESULTS]), []
+        return done("\n".join(matches[:MAXIMUM_SEARCH_RESULTS]))
 
     if tool_name == "list_scene":
         mesh_objects = [
@@ -612,7 +625,7 @@ def _dispatch_service_tool(
             if scene_object.type == "MESH"
         ]
         if not mesh_objects:
-            return "Scene is empty (no mesh objects).", []
+            return done("Scene is empty (no mesh objects).")
         bpy.context.view_layer.update()
         lines = []
         for scene_object in mesh_objects[:MAXIMUM_SCENE_OBJECTS_LISTED]:
@@ -628,7 +641,7 @@ def _dispatch_service_tool(
             lines.append(
                 f"... and {len(mesh_objects) - MAXIMUM_SCENE_OBJECTS_LISTED} more"
             )
-        return "\n".join(lines), []
+        return done("\n".join(lines))
 
     if tool_name == "export_asset":
         from blended.export import export_glb
@@ -636,18 +649,16 @@ def _dispatch_service_tool(
         object_name = arguments["object_name"]
         blender_object = bpy.data.objects.get(object_name)
         if blender_object is None:
-            return f"No object named {object_name!r} in the scene.", []
+            return failed(f"No object named {object_name!r} in the scene.", STAGE_LOCATE)
         export_report = export_glb(blender_object, Path(arguments["path"]))
         failures = export_report.round_trip_failures()
         if failures:
-            return "EXPORT VERIFICATION FAILED:\n" + "\n".join(failures), []
-        return (
-            (
-                f"Exported and verified: {export_report.export_path} "
-                f"({export_report.file_size_bytes} bytes, "
-                f"{export_report.reimported_welded.triangle_count} tris round-tripped)."
-            ),
-            [],
+            return failed("EXPORT VERIFICATION FAILED:\n" + "\n".join(failures), STAGE_EXPORT)
+        return done(
+            f"Exported and verified: {export_report.export_path} "
+            f"({export_report.file_size_bytes} bytes, "
+            f"{export_report.reimported_welded.triangle_count} tris round-tripped).",
+            stage=STAGE_DONE,
         )
 
     raise AssertionError(

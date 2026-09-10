@@ -18,13 +18,13 @@
 | Fact | Value | Source |
 |---|---|---|
 | Agent tools | 8 hand-written service tools + 42 generated op tools = 50 in `TOOL_SCHEMAS`, fingerprint `t:1fe7f62007ef` pinned (OT-3, closed) | `src/blended/agent/tools.py`, `tests/pure/test_tool_schemas.py` |
-| Construction path in the ACI | `run_python(source)` — raw `bpy` | AGT-1, AGT-3 |
+| Construction path in the ACI | 42 generated op tools, bound, gated, plan-required; `run_python(source, reason)` is the escape hatch (OT-3–OT-7, closed) | AGT-1, AGT-3, AGT-21 |
 | Ops facade completeness | whole — every public op re-exported, builders import the facade only (OT-1, closed) | `tests/pure/test_one_path_ops.py` |
 | Op signature contract | enforced — names in, names out, units on quantities, no bpy types (OT-2, closed) | `tests/pure/test_ops_signature_contract.py` |
 | Shipped builders | 3 (crate, barrel, pallet) | OPS-15 |
 | Manifest generation | introspects ops modules for prose AND for tool schemas (OT-3, closed) | PRM-2, `src/blended/manifest.py`, `src/blended/agent/tool_schemas.py` |
 | Bench incumbent | `deepseek-v4-pro:cloud`, 6 rolls, 120/120 exec, `cd_pca` 0.0252 | `docs/2026-09-06-bench-panel-preregistration.md` |
-| Transcript schema | `TRANSCRIPT_SCHEMA_VERSION` 1, free-text tool calls | AGT-17 |
+| Transcript schema | `TRANSCRIPT_SCHEMA_VERSION` 2: structured `tool_event` per call, `IterationRecord.tool_events` (OT-8, closed) | AGT-17, `src/blended/agent/tool_event.py` |
 | Retry / turn caps in the loop | none | AGT-20, spec §7.2 |
 
 ---
@@ -37,12 +37,7 @@ All Phase 1 items (OT-1, OT-2, OT-3) are closed — see `BACKLOG_DONE.md`.
 
 ## Phase 2 — The surface
 
-### OT-8 Structured transcript
-
-**What:** `TRANSCRIPT_SCHEMA_VERSION` MUST bump to 2. Every tool event MUST record: tool name, validated arguments, `plan_step`, gate verdict and analyzer fields when gated, `stage_reached`, wall time, and for `run_python` the `reason` and source hash. `IterationRecord` MUST carry the op-call sequence, not only the `run_python` sources (CNV-11 replay must still work from it).
-**Why:** This is what turns normal use into a dataset. Free-text transcripts are not trainable and not minable.
-**Amends:** AGT-17, CNV-11.
-**Done means:** `tests/pure/test_transcript.py` round-trips a v2 record; `scripts/replay_iteration.py` rebuilds a scored iteration from an op-call sequence with no `run_python` present.
+All Phase 2 items (OT-4 through OT-8) are closed — see `BACKLOG_DONE.md`.
 
 ---
 

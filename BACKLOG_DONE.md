@@ -135,3 +135,20 @@ regression reopens the item in `BACKLOG.md` with a pointer back to this entry.
 **Not done here, by design:** the candidate_op record itself is OT-8's transcript schema; the hypothesis outcome is OT-12's mining over v2 transcripts.
 **Layers:** pure 645 passed / 1 skipped / 1 xfailed; Blender 315 passed / 3 skipped.
 **Commit:** `70d80d8`.
+
+---
+
+## OT-8 Structured transcript
+
+**What:** `TRANSCRIPT_SCHEMA_VERSION` MUST bump to 2. Every tool event MUST record: tool name, validated arguments, `plan_step`, gate verdict and analyzer fields when gated, `stage_reached`, wall time, and for `run_python` the `reason` and source hash. `IterationRecord` MUST carry the op-call sequence, not only the `run_python` sources (CNV-11 replay must still work from it).
+**Why:** This is what turns normal use into a dataset. Free-text transcripts are not trainable and not minable.
+**Amends:** AGT-17, CNV-11.
+**Done means:** `tests/pure/test_transcript.py` round-trips a v2 record; `scripts/replay_iteration.py` rebuilds a scored iteration from an op-call sequence with no `run_python` present.
+
+**Closed:** 2026-09-10.
+**Gating tests:** `tests/pure/test_tool_event.py::test_a_tool_event_round_trips_through_json`, `::test_a_v1_payload_is_refused_not_misread`, `::test_the_loop_emits_one_structured_event_per_dispatched_call` (validated arguments, plan step, stage, gates, wall time; ordered after the text the model reads), `::test_a_refused_call_is_recorded_as_refused`, `::test_the_hatch_record_carries_reason_and_hash`; `tests/pure/test_transcript.py::test_schema_two_stores_the_tool_event_under_data`; `tests/blender/test_replay_op_calls.py::test_an_op_call_sequence_replays_to_a_scored_pass` (twelve recorded calls, no `run_python`, three non-changing service calls skipped, form gate PASS), `::test_a_replay_that_builds_nothing_is_loud`; the five golden replays still pass through the same `replay_record`.
+**Spec:** AGT-17 amended (schema 2, `tool_event`, `data`, `IterationRecord.tool_events`); CNV-11 amended (replay from the recorded call sequence, op calls through `call_op`); §2.5 iteration-log row; §5.4.
+**Shape of the change:** `agent.tool_event.ToolEvent` (schema 2) is emitted by the loop on the `tool_event` channel after every dispatched or refused call, with the wall time measured around the dispatch. `ToolOutcome` now carries `ok`, `stage_reached`, `validated_arguments` and `gates`, and every service-tool branch returns one (the `(text, images)` tuple is gone from the service layer too); `harness.gate_verdict_json` / `harness_result_gate_json` give `run_chunk`'s gate and an op call's gate the same JSON shape. `ChatTranscript` schema 2 stores the event decoded under `data` and keeps it out of the Markdown; the addon lists `tool_event` as state-only. `run_agent_task.py` collects the sequence into `IterationRecord.tool_events`. `replay.calls_from` reads every recorded call; `replay_record` re-executes `run_python` sources and re-binds op calls through `call_op` — one read path over `tool_calls` for pre-OT-8 records and new ones alike, so the goldens needed no migration.
+**Decision:** `tool_calls` (the raw call text the loop emitted) stays the replay source; `tool_events` is the measured record. A migration of the 67 historical records into `tool_events` was considered and rejected: it would have manufactured stage, gate and timing fields that were never measured.
+**Layers:** pure 651 passed / 1 skipped / 1 xfailed; Blender 317 passed / 3 skipped.
+**Commit:** recorded in the follow-up commit.

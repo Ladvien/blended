@@ -2,8 +2,8 @@
 
     make replay ITERATION=10
 
-The iteration log records every run_python source in full, so a scored
-run is reproducible: replaying it recreates the exact mesh, re-scores it
+The iteration log records every tool call in full — run_python sources
+and op calls alike — so a scored run is reproducible: replaying it recreates the exact mesh, re-scores it
 against the brief, and writes a .glb. A render answers questions a
 single viewpoint can answer; a .glb answers the rest — measured
 2026-08-22, the contact sheet's front view puts a stool's 120 and 240

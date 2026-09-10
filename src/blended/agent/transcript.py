@@ -21,7 +21,11 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
-TRANSCRIPT_SCHEMA_VERSION = 1
+from blended.agent.tool_event import TOOL_EVENT_KIND
+
+# 2 (OT-8): a `tool_event` row carries its structured payload under
+# `data` (see agent/tool_event.py); every other row has `data: null`.
+TRANSCRIPT_SCHEMA_VERSION = 2
 # Tool results can be thousands of characters of JSON. Full text lives
 # in the JSONL; the Markdown keeps it readable.
 MARKDOWN_TRUNCATE_CHARACTERS = 1200
@@ -98,11 +102,16 @@ class ChatTranscript:
             "kind": kind,
             "text": text,
             "images": list(image_paths),
+            # The structured tool record (OT-8). Decoded here so a
+            # reader never has to parse JSON out of a text field.
+            "data": json.loads(text) if kind == TOOL_EVENT_KIND else None,
         }
         with self.jsonl_path.open("a", encoding="utf-8") as jsonl_file:
             jsonl_file.write(json.dumps(record) + "\n")
 
-        if kind == "session":
+        if kind in ("session", TOOL_EVENT_KIND):
+            # The tool event is the machine's copy of the tool/result
+            # pair already in the Markdown; printing it twice is noise.
             return
         heading = EVENT_HEADINGS.get(kind, kind)
         body = text if len(text) <= MARKDOWN_TRUNCATE_CHARACTERS else (

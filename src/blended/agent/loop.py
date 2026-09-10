@@ -17,6 +17,7 @@ from __future__ import annotations
 import base64
 import json
 import threading
+import time
 import urllib.error
 import urllib.request
 from collections.abc import Callable
@@ -43,6 +44,7 @@ from blended.agent.plan import (
     plan_required_for,
     plan_step_of,
 )
+from blended.agent.tool_event import TOOL_EVENT_KIND, ToolEvent, encode_tool_event
 
 LOCAL_ENDPOINT = "http://localhost:11434"
 CLOUD_ENDPOINT = "https://ollama.com"
@@ -1310,6 +1312,15 @@ def deliver_images(
 ToolDispatch = Callable[[str, dict, Path], tuple[str, list[Path]]]
 
 
+def _plan_step_or_none(arguments: dict) -> int | None:
+    """The call's plan_step for the record; a malformed one is None here
+    and reported by `plan_step_of` where the loop reads it."""
+    try:
+        return plan_step_of(arguments)
+    except ValueError:
+        return None
+
+
 def dispatch_here(
     tool_name: str, arguments: dict, output_directory: Path
 ) -> ToolOutcome:
@@ -1478,6 +1489,20 @@ class AgentSession:
                     emit("tool", f"{tool_name}({json.dumps(arguments)})")
                     executed_tool_call_count += 1
                     emit("result", MISSING_PLAN_REFUSAL)
+                    emit(
+                        TOOL_EVENT_KIND,
+                        encode_tool_event(
+                            ToolEvent(
+                                tool_name=tool_name,
+                                arguments=arguments,
+                                ok=False,
+                                stage_reached="",
+                                wall_time_s=0.0,
+                                plan_step=_plan_step_or_none(arguments),
+                                refusal=MISSING_PLAN_REFUSAL,
+                            )
+                        ),
+                    )
                     self.messages.append({
                         "role": "tool",
                         "content": MISSING_PLAN_REFUSAL,
@@ -1487,6 +1512,7 @@ class AgentSession:
                     continue
                 emit("tool", f"{tool_name}({json.dumps(arguments)})")
                 executed_tool_call_count += 1
+                dispatched_at = time.perf_counter()
                 try:
                     outcome = self.dispatch(tool_name, arguments, self.output_directory)
                 except Exception as tool_error:  # noqa: BLE001 — reported to the model
@@ -1494,12 +1520,38 @@ class AgentSession:
 
                     outcome = ToolOutcome(
                         f"Tool raised {type(tool_error).__name__}: {tool_error}\n"
-                        f"{traceback.format_exc()[:1500]}"
+                        f"{traceback.format_exc()[:1500]}",
+                        ok=False,
                     )
+                wall_time_s = time.perf_counter() - dispatched_at
                 result_text = outcome.text
                 image_paths = list(outcome.images)
                 ledger.record(tool_name, outcome)
                 emit("result", result_text)
+                # The structured record of this call (OT-8): what the
+                # miner and the exporter read, beside the text the model
+                # reads.
+                emit(
+                    TOOL_EVENT_KIND,
+                    encode_tool_event(
+                        ToolEvent(
+                            tool_name=tool_name,
+                            arguments=(
+                                outcome.validated_arguments
+                                if outcome.validated_arguments is not None
+                                else arguments
+                            ),
+                            ok=outcome.ok,
+                            stage_reached=outcome.stage_reached,
+                            wall_time_s=wall_time_s,
+                            plan_step=_plan_step_or_none(arguments),
+                            gates=outcome.gates,
+                            images=tuple(str(path) for path in image_paths),
+                            hatch_reason=outcome.hatch_reason,
+                            source_sha256=outcome.source_sha256,
+                        )
+                    ),
+                )
 
                 # When the model declared its plan, parse and store it
                 # for this turn, then emit a plan event so the panel can
