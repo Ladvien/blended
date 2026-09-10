@@ -258,3 +258,15 @@ regression = a one-sided move beyond `REGRESSION_SIGMA` (2.0) on the paired SE.
 
 **Outcome.** *(pending — launched 2026-09-10; the cloud chain is ≈ 3 h per roll, the
 local chain was ≈ 8 h per sweep on the whole set)*
+
+**Launch record (appended, not edited).** 15:23 CDT: both chains launched from
+`/Users/ladvien/blended-bench-v2` (`89583ce`). 15:26: the cloud chain's first two
+instances died `ERR_NO_SCRIPT` at their third call — the OT-22 preflight compared the
+prompt against `context_length` = 32,768, the harness's own Ollama-lane constant sent as
+`num_ctx`, on a model whose window the daemon reports as 1,048,576; the chain was stopped
+and its results directory removed unscored. Fix `8d05411`: the Ollama lane reads the
+window from `/api/show` at `check_connection` (writer 1,048,576; eye 262,144) and sends
+`num_predict` = the reserved completion. 15:32 CDT: the cloud chain relaunched from
+`/Users/ladvien/blended-bench-v3` (`8d05411`), same model directories. The local chain
+kept running from v2: its lane is llama-swap, whose window is table-driven and unaffected;
+the two candidate trees differ only in the Ollama lane's window discovery.
