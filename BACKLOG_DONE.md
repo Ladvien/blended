@@ -290,4 +290,4 @@ regression reopens the item in `BACKLOG.md` with a pointer back to this entry.
 **Shape of the change:** `blended.evaluate.bench_bridge` owns the rule and the assembly: `RecordedCall(tool_name, validated arguments, stage_reached)`; a call is included iff its stage is past `execute` — the same fact for a chunk and an op call, replacing the text-prefix heuristic `chunk_executed`; an op call is emitted as `_op(name, {validated arguments})` and bound at bake time through `bind_arguments`, so a `tuple[BoneSpec, ...]` or an `EdgeSelector` is rebuilt by the one converter the loop used. The runner records every dispatched call and reports `n_op_calls_included`. The chunk body and the epilogue are byte-identical to the previous assembly; the prelude grew the helper.
 **Not byte-identical, stated:** the Done means asked for identical output on a record with zero op calls; the prelude now carries the `_op` helper on every script, so identity holds for the chunk section and the epilogue, not the prelude.
 **Layers:** pure 694 passed / 1 skipped / 1 xfailed; Blender 332 passed / 3 skipped.
-**Commit:** recorded in the follow-up commit.
+**Commit:** `de44184`.
