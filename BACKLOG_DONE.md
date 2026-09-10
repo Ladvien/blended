@@ -23,4 +23,4 @@ regression reopens the item in `BACKLOG.md` with a pointer back to this entry.
 **Spec:** OPS-1 row amended; §7.3 facade gap row removed.
 **Side effect, measured:** adding `canonical_orientation` to `OP_MODULE_NAMES` put its ops into the manifest the model reads; assembled prompt fingerprint moved `a10:f13911deb826` → `a10:315c684fd7f6` (pin updated in the same commit). `PromptRevision.identity` did not move.
 **Layers:** pure 432 passed / 1 skipped / 1 xfailed; Blender 308 passed / 3 skipped.
-**Commit:** see below.
+**Commit:** `7226f01`.
