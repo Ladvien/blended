@@ -81,4 +81,4 @@ regression reopens the item in `BACKLOG.md` with a pointer back to this entry.
 **Mistake recorded:** `a-pure-helper-under-a-package-whose-init-imports-the-harness-is-a-cycle` — the first placement of the stage module under `blended.run` made `harness → run.stages → run/__init__ → run.batch → harness` a cycle that the pure suite could not see (executor already imported) and six Blender agent-loop tests did; guarded by a fresh-interpreter import test.
 **Pre-registration (OT-9):** appended before this shipped, as the backlog required.
 **Layers:** pure 626 passed / 1 skipped / 1 xfailed; Blender 310 passed / 3 skipped.
-**Commit:** recorded in the follow-up commit.
+**Commit:** `ace7618`.
