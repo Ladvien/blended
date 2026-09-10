@@ -462,7 +462,21 @@ PROMPT_REVISIONS: tuple[PromptRevision, ...] = (
             "and cd_pca on the frozen-20 per the ops-lane pre-registration "
             "(docs/2026-09-06-bench-panel-preregistration.md, OT-9)."
         ),
-        outcome="",
+        outcome=(
+            "MEASURED ONCE, 2026-09-10, Claude Code lane; no claim yet. "
+            "Chat E2E with run_python WITHHELD (--no-hatch): 6/6 scenarios "
+            "(object/rig/weights/animation/material/iterative), tool calls "
+            "8/10/9/8/8/12, zero hatch attempts. Five-brief roll (iterations "
+            "68-73): stool, uv_crate and column passed both deterministic "
+            "gates with 6, 1 and 2 hatch calls — 3.00 per gate-passing "
+            "brief against the < 1.0 target; planter FAILED the form gate "
+            "twice (location_m read as a centre, base at z 0.125; 0 hatch "
+            "calls on the re-run); crate_with_lid died on the lane's "
+            "structured-output retry limit before a record was written. "
+            "Cost: 58k tokens per call with 50 tools vs 26k with 8. Still "
+            "a candidate: the frozen-20 paired rolls (OT-9) and the human "
+            "pin remain."
+        ),
     ),
 )
 

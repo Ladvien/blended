@@ -231,3 +231,19 @@ regression reopens the item in `BACKLOG.md` with a pointer back to this entry.
 **Measured (the report):** iterations 68–73, five gate-passing briefs' worth of runs on v12: 10 hatch calls on 68–71 plus 0 on 73; 3.00 hatch calls per gate-passing brief (hypothesis < 1.0: NOT met on this roll — one roll, no claim). Ranked candidates: rename an object (4 calls, 4/4 gate-passing), world-bounds reader (5 chunks, 4/4), mark UV seams by selector, lathe profile from rib parameters; two "placeholder" reasons show the reason field is gameable. The strongest finding is not a missing op: `location_m` was read as a center in both planter runs because the base convention never reaches the model (summary line only). All recorded on OT-13.
 **Layers:** pure 678 passed / 1 skipped / 1 xfailed; Blender 323 passed / 3 skipped.
 **Commit:** `2e7e2ac`.
+
+---
+
+## OT-11 Chat E2E on op tools
+
+**What:** `make chat-e2e` scenarios MUST pass with `run_python` disabled entirely, for every scenario the vocabulary claims to cover (object, material, iterative edit at minimum; rig, weights, animation as the facade covers them).
+**Why:** The E2E suite is the only headless proof that the surface is usable from the UI (NFR-18).
+**Done means:** a `--no-hatch` flag on `scripts/chat_e2e.py`; scenarios that require the hatch are listed by name in the output as missing-op evidence for OT-12.
+
+**Closed:** 2026-09-10.
+**Gating tests:** `make chat-e2e ARGS="--no-hatch"` on 2026-09-10 (v12, Claude Code lane): 6/6 scenarios passed — object 8 tool calls, rig 10, weights 9, animation 8, material 8, iterative 12 — zero hatch attempts, no disabled-tool refusal, `MISSING-OP EVIDENCE (for OT-12): none`; transcripts under `outputs/chat_e2e/20260910-165504/`. `tests/pure/test_turn_caps.py::test_a_disabled_tool_is_neither_offered_nor_dispatched` covers the mechanism.
+**Spec:** AGT-22 added (session `disabled_tools`, the loop refusal, the E2E flag and its listing); §2.4 `make chat-e2e ARGS="--no-hatch"`.
+**Shape of the change:** `AgentSession.disabled_tools` withholds a tool from the schemas offered to the model and refuses a call to it with `DISABLED_TOOL_REFUSAL` (counted, recorded as a refused tool event). `scripts/chat_e2e.py --no-hatch` sets it for `run_python`, counts hatch attempts per scenario, and prints the scenarios that failed or reached for the hatch as missing-op evidence; its default revision is now v12.
+**Measured beside it:** v12's outcome is recorded on the revision as measured once — the E2E passes without the hatch, while the five-brief roll sits at 3.00 hatch calls per gate-passing brief and the planter fails the form gate on the `location_m` convention (OT-13's first evidence).
+**Layers:** pure passing with the revision outcome filled (below); Blender 323 passed / 3 skipped (unchanged since OT-14).
+**Commit:** recorded in the follow-up commit.
