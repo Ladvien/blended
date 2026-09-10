@@ -1331,17 +1331,30 @@ GATE_CAP_ANSWER = (
 
 # OT-17: a token budget per turn, checked at the seam after every model
 # reply. Derived from measurement, not chosen: the tool-call budget is
-# 24 calls, and one call on the Claude Code lane billed 25,851 input
-# tokens for a 12.5k prompt (TurnCost, 2026-09-06), so a turn that
-# spends its whole call budget on that lane bills about 620k; 750k
-# leaves a fifth for a long answer. Op tools shrink per-call tokens,
-# which is what makes this reachable at all — a chunk-only turn used to
-# exhaust the call budget first.
-MAXIMUM_TURN_TOKENS = 750_000
+# 24 calls, so the budget is 24 x the heaviest per-call bill measured
+# on the heaviest lane, plus a fifth for a long answer.
+#   2026-09-06, Claude Code lane, 8 tools: 25,851 tokens per call
+#     -> 24 x 25,851 = 620k, budget 750k.
+#   2026-09-10, same lane, 50 tools (OT-3): iteration 68 billed 931,851
+#     tokens in 16 calls = 58,241 per call (91% cache reads; the 50-tool
+#     schema travels with every API call), and the 750k budget stopped a
+#     legitimate turn at call 16 -> 24 x 58,241 = 1.40M, budget 1.7M.
+# The wrong number is kept above on purpose: it is the measured price of
+# one tool per op on this lane, and OT-13's decision reads it.
+MAXIMUM_TURN_TOKENS = 1_700_000
 TOKEN_CAP_TOOL_RESULT = "Not run: the turn stopped at the token budget."
 TOKEN_CAP_ANSWER = (
     "Stopped after {tokens:,} tokens in one turn (budget {budget:,}) without "
     "reaching an answer. Tell me how to narrow this."
+)
+
+
+# OT-11: a session may withhold tools. The schema is not offered to the
+# model, and a call to it anyway is refused here — a lane without
+# constrained decoding can still name a tool it was never shown.
+DISABLED_TOOL_REFUSAL = (
+    "{tool_name} is disabled in this session. Build with the op tools; if "
+    "the vocabulary cannot express what you need, say so in your answer."
 )
 
 
@@ -1385,6 +1398,8 @@ class AgentSession:
     maximum_tool_calls_per_turn: int = 24
     maximum_gate_failures_per_object: int = MAXIMUM_GATE_FAILURES_PER_OBJECT
     maximum_turn_tokens: int = MAXIMUM_TURN_TOKENS
+    # Tool names withheld from the model this session (OT-11).
+    disabled_tools: frozenset[str] = frozenset()
     messages: list[dict] = field(default_factory=list)
     # A plain function as a dataclass default: __init__ assigns it to the
     # INSTANCE, so `self.dispatch(...)` calls it unbound — no phantom
@@ -1440,6 +1455,10 @@ class AgentSession:
         """
         from blended.agent.tools import TOOL_SCHEMAS
 
+        offered_tools = [
+            tool for tool in TOOL_SCHEMAS if tool["function"]["name"] not in self.disabled_tools
+        ]
+
         def emit(kind: str, text: str) -> None:
             if on_event is not None:
                 on_event(kind, text)
@@ -1482,12 +1501,12 @@ class AgentSession:
             if self.stream_replies:
                 assistant_message = self.client.chat(
                     self.messages,
-                    TOOL_SCHEMAS,
+                    offered_tools,
                     on_delta=lambda kind, text: emit(f"{kind}_delta", text),
                     stop_requested=self.cancel_requested.is_set,
                 )
             else:
-                assistant_message = self.client.chat(self.messages, TOOL_SCHEMAS)
+                assistant_message = self.client.chat(self.messages, offered_tools)
             self.messages.append(assistant_message)
             if self.cancel_requested.is_set():
                 return self._cancel_turn(assistant_message, emit)
@@ -1534,6 +1553,32 @@ class AgentSession:
                 )
                 if self.cancel_requested.is_set():
                     return self._cancel_turn(assistant_message, emit)
+                if tool_name in self.disabled_tools:
+                    refusal = DISABLED_TOOL_REFUSAL.format(tool_name=tool_name)
+                    emit("tool", f"{tool_name}({json.dumps(arguments)})")
+                    executed_tool_call_count += 1
+                    emit("result", refusal)
+                    emit(
+                        TOOL_EVENT_KIND,
+                        encode_tool_event(
+                            ToolEvent(
+                                tool_name=tool_name,
+                                arguments=arguments,
+                                ok=False,
+                                stage_reached="",
+                                wall_time_s=0.0,
+                                plan_step=_plan_step_or_none(arguments),
+                                refusal=refusal,
+                            )
+                        ),
+                    )
+                    self.messages.append({
+                        "role": "tool",
+                        "content": refusal,
+                        "tool_name": tool_name,
+                        "tool_call_id": tool_call.get("id", ""),
+                    })
+                    continue
                 # Plan enforcement: a scene-changing tool with no plan
                 # declared this turn is refused, not dispatched. The
                 # refusal counts against the tool-call budget so a loop

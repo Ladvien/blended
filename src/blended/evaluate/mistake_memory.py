@@ -3069,6 +3069,40 @@ MISTAKES: tuple[MistakeRecord, ...] = (
         ),
         recorded_on="2026-09-10",
     ),
+    MistakeRecord(
+        identifier="a-budget-derived-before-the-surface-changed-stops-honest-turns",
+        scope="harness_code",
+        failure=(
+            "OT-17 set MAXIMUM_TURN_TOKENS = 750,000 from the 8-tool "
+            "measurement (25,851 tokens per call). The first v12 run with "
+            "50 tools (iteration 68, planter_box, Claude Code lane) was "
+            "stopped by that budget at call 16 of 24: 931,851 tokens, "
+            "913,854 input of which 835,080 cached, $0.71."
+        ),
+        cause=(
+            "The per-call bill on the CLI lane scales with the tool schema "
+            "the envelope carries on every API call: 50 oneOf variants "
+            "(OT-3) took the measured per-call bill from 25,851 to 58,241 "
+            "tokens (2.25x, 91% of it cache reads). A budget derived from "
+            "a measurement taken on a different surface is not a "
+            "measurement of this one."
+        ),
+        fix=(
+            "Re-derived from the heaviest measured call on the heaviest "
+            "lane: 24 x 58,241 = 1.40M, plus a fifth -> 1,700,000. Both "
+            "numbers stay in the constant's comment; the 2.25x is the "
+            "price of one tool per op on this lane and is OT-13's "
+            "evidence. Re-run the planter (iteration 73) under the new "
+            "budget rather than reading 68 as a failure of the surface."
+        ),
+        guarded_by=(
+            "tests/pure/test_agent_cancel.py::"
+            "test_the_turn_stops_at_the_seam_when_the_token_budget_is_exceeded "
+            "(the seam); the derivation rule in the constant's comment "
+            "(the number)"
+        ),
+        recorded_on="2026-09-10",
+    ),
 )
 
 

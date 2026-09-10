@@ -25,7 +25,7 @@
 | Manifest generation | introspects ops modules for prose AND for tool schemas (OT-3, closed) | PRM-2, `src/blended/manifest.py`, `src/blended/agent/tool_schemas.py` |
 | Bench incumbent | `deepseek-v4-pro:cloud`, 6 rolls, 120/120 exec, `cd_pca` 0.0252 | `docs/2026-09-06-bench-panel-preregistration.md` |
 | Transcript schema | `TRANSCRIPT_SCHEMA_VERSION` 2: structured `tool_event` per call, `IterationRecord.tool_events` (OT-8, closed) | AGT-17, `src/blended/agent/tool_event.py` |
-| Retry / turn caps in the loop | gate-failure cap per object, 3 consecutive (OT-16); 750k-token budget per turn at the seam (OT-17); both closed | AGT-20, AGT-9 |
+| Retry / turn caps in the loop | gate-failure cap per object, 3 consecutive (OT-16); 1.7M-token budget per turn at the seam (OT-17, re-derived on the 50-tool lane); both closed | AGT-20, AGT-9 |
 
 ---
 
@@ -109,6 +109,14 @@ Both Phase 5 items (OT-16, OT-17) are closed — see `BACKLOG_DONE.md`.
 **Done means:** `(unverified)` — no acceptance test until the item is scheduled.
 
 ---
+
+## Corrections to closed items
+
+Entries in `BACKLOG_DONE.md` are never edited; a measured correction to a closed item is recorded here with the mechanism and the commit.
+
+| Item | Correction | Measured | Commit |
+|---|---|---|---|
+| OT-17 (`2922411`) | `MAXIMUM_TURN_TOKENS` re-derived 750,000 → 1,700,000. The 750k figure came from the 8-tool lane (25,851 tokens per call); with 50 op tools the Claude Code lane bills 58,241 per call (91 % cache reads), and the budget stopped iteration 68 (planter_box, v12) at call 16 of 24. Mistake memory: `a-budget-derived-before-the-surface-changed-stops-honest-turns`. | iteration 68: 931,851 tokens / 16 calls | (this correction's commit) |
 
 ## Not in this backlog, and why
 
