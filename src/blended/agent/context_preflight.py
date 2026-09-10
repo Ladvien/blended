@@ -43,6 +43,10 @@ class ReplyTruncated(RuntimeError):
     """The model's reply stopped at the completion ceiling: it is not an answer."""
 
 
+class EmptyReply(RuntimeError):
+    """The model returned neither content nor a tool call: the turn produced nothing."""
+
+
 @dataclass(frozen=True)
 class PreflightReport:
     checked: bool
@@ -123,3 +127,36 @@ def check_reply_fits(body: dict, context_tokens: int | None, lane: str) -> None:
             f"{lane} reports {prompt_tokens:,} prompt tokens against a context of "
             f"{context_tokens:,}: the server cut the prompt."
         )
+
+
+def check_reply_is_a_turn(
+    message: dict,
+    endpoint: str,
+    reasoning_tokens: int = 0,
+    finish_reason: str = "",
+) -> None:
+    """A reply with no content and no tool call is a DROPPED TURN, not an
+    answer (OT-28).
+
+    The loop hands whatever comes back to the caller as the assistant's
+    final word, so an empty one ends the run quietly with whatever
+    geometry happened to exist — the run then passes or fails its gate on
+    an accident. Measured 2026-09-10: `deepseek-v4.1-flash` ended
+    three_leg_stool this way after linking one part and ribbed_column
+    after two searches, both with `finish_reason=stop`, because a
+    reasoning model can put its whole completion in the thinking channel
+    and emit no content at all (35 of 38 completion tokens on a trivial
+    reply were reasoning). `ReplyTruncated` does not catch it: nothing
+    was cut, there was simply nothing to say.
+    """
+    if (message.get("content") or "").strip() or message.get("tool_calls"):
+        return
+    thinking = (message.get("thinking") or "").strip()
+    raise EmptyReply(
+        f"{endpoint} returned neither content nor a tool call"
+        + (f" (finish_reason={finish_reason})" if finish_reason else "")
+        + f": the turn produced nothing. {reasoning_tokens:,} completion token(s) "
+        f"went to reasoning"
+        + (f", and the thinking ends: ...{thinking[-160:]}" if thinking else "")
+        + "."
+    )

@@ -172,3 +172,54 @@ def test_an_ollama_chat_before_discovery_is_refused_not_guessed():
 def test_the_eye_does_not_inherit_the_writers_window():
     config = ModelConfig(model="deepseek-v4-pro:cloud", vision_model="kimi-k2.7-code:cloud", endpoint=LOCAL_ENDPOINT, context_length=1_048_576)
     assert config.eye_config().context_length is None
+
+
+# --- a reply that says nothing is a dropped turn (OT-28) ---
+
+
+def test_an_empty_reply_is_a_dropped_turn_not_an_answer():
+    """Measured 2026-09-10: deepseek-v4.1-flash ended three_leg_stool
+    after linking one part and ribbed_column after two searches, both
+    with finish_reason=stop and an empty message. The loop reported each
+    as the final answer and the run was scored on the geometry that
+    happened to exist. Nothing was truncated — there was simply nothing
+    to say, so ReplyTruncated cannot catch it."""
+    from blended.agent.context_preflight import EmptyReply, check_reply_is_a_turn
+
+    with pytest.raises(EmptyReply) as refusal:
+        check_reply_is_a_turn(
+            {"role": "assistant", "content": "", "tool_calls": [], "thinking": "I should probably build the seat first"},
+            "https://openrouter.ai/api",
+            reasoning_tokens=2048,
+            finish_reason="stop",
+        )
+    message = str(refusal.value)
+    assert "neither content nor a tool call" in message
+    assert "finish_reason=stop" in message and "2,048 completion token(s)" in message
+    assert "build the seat first" in message  # what it was thinking when it gave up
+
+    # Either half alone is a turn.
+    check_reply_is_a_turn({"content": "done"}, "e")
+    check_reply_is_a_turn({"content": "", "tool_calls": [{"function": {"name": "list_scene"}}]}, "e")
+    # Whitespace is not content.
+    with pytest.raises(EmptyReply):
+        check_reply_is_a_turn({"content": "   \n"}, "e")
+
+
+def test_both_spellings_of_the_thinking_channel_are_read():
+    """llama-swap passes DeepSeek's `reasoning_content` through;
+    OpenRouter normalizes the same field to `reasoning`. Reading only the
+    first threw the whole channel away on the metered lane."""
+    from blended.agent.loop import _assistant_message_from_openai
+
+    swap = _assistant_message_from_openai(
+        {"choices": [{"message": {"role": "assistant", "content": "hi", "reasoning_content": "thought A"}}]}
+    )
+    router = _assistant_message_from_openai(
+        {"choices": [{"message": {"role": "assistant", "content": "hi", "reasoning": "thought B"}}]}
+    )
+    assert swap["thinking"] == "thought A"
+    assert router["thinking"] == "thought B"
+    assert "thinking" not in _assistant_message_from_openai(
+        {"choices": [{"message": {"role": "assistant", "content": "hi"}}]}
+    )

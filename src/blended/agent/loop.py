@@ -33,7 +33,12 @@ from blended.agent.claude_code import (
     TurnCost,
     is_claude_code_model,
 )
-from blended.agent.context_preflight import ContextExceeded, check_reply_fits, preflight
+from blended.agent.context_preflight import (
+    ContextExceeded,
+    check_reply_fits,
+    check_reply_is_a_turn,
+    preflight,
+)
 from blended.agent.intermediates import IntermediateLedger
 from blended.agent.outcome import ToolOutcome
 from blended.agent.plan import (
@@ -164,10 +169,33 @@ OPENROUTER_APP_HEADERS = {
     "HTTP-Referer": "https://github.com/ladvien/blended",
     "X-Title": "blended",
 }
-# The served catalogue: every id with its `context_length` and pricing.
-# OpenRouter is the authority on its own models the way llama-swap.yaml
-# is on bmb's, so the window is READ here, never tabled (OT-28).
-OPENROUTER_MODELS_PATH = "/v1/models"
+# One model's PER-PROVIDER endpoints. OpenRouter fronts many upstreams
+# for the same id and they are not interchangeable: for
+# deepseek-v4.1-flash on 2026-09-10 the windows ran 262,144 to 1,048,576
+# and the prices 1x to 2x, so the catalogue's top-level `context_length`
+# is a maximum across providers, not the window of whoever answers. The
+# lane therefore names its provider and reads THAT endpoint's numbers.
+OPENROUTER_ENDPOINTS_PATH = "/v1/models/{model}/endpoints"
+# The ROUTING SLUG (`tag` in the endpoints payload), which is what
+# `provider.order` matches. The display name ("GMICloud") filters every
+# endpoint out and the call 404s with "No endpoints found".
+#
+# Chosen by measurement on 2026-09-10, and the first two choices were
+# wrong, which is the useful part:
+#   * Leaving the routing to OpenRouter sent two of five briefs to
+#     Novita, which returned 504 then HTTP 400 and killed both runs.
+#   * `deepseek` — the model's own vendor, cheapest at $0.15/M prompt
+#     and $0.60/M completion, 99.99% uptime — is EXCLUDED by this
+#     account's guardrail: the routing funnel drops 8 endpoints to 7 and
+#     pinning it answers "0 endpoints out of 1 requested are available
+#     matching your guardrail restriction".
+#   * Of the seven that remain, only two answered a live ping at all
+#     (this model was published today): fireworks, novita and parasail
+#     all returned "Provider returned error"; gmicloud and deepinfra
+#     answered. gmicloud carries the full 1,048,575 window at 99.97%
+#     uptime against deepinfra's 99.07% and its 131,072 completion
+#     ceiling, so gmicloud it is, at $0.30/M and $1.20/M.
+OPENROUTER_PINNED_PROVIDER = "gmicloud"
 # OpenRouter returns the call's price in `usage.cost` only when asked.
 # Without it a metered run's record says 0 dollars, which is a lie the
 # spend cap cannot be built on.
@@ -177,14 +205,20 @@ OPENROUTER_USAGE_EXTENSION = {"include": True}
 # Derived from measurement the way MAXIMUM_TURN_TOKENS is, not chosen:
 #   the heaviest run measured on the disclosed surface is iteration 88's
 #   three_leg_stool, 1,353,594 billed input + 24,615 output tokens over
-#   51 API calls. At deepseek-v4.1-flash's published $0.15/M input and
-#   $0.60/M output (OpenRouter catalogue, read 2026-09-10) that run
-#   costs 1,353,594 x 0.15/1e6 + 24,615 x 0.60/1e6 = $0.218. The cap is
-#   2.3x that, so a heavier brief passes and a runaway is stopped inside
-#   one run rather than after a 20-instance sweep.
-# The single-turn briefs measured $0.04 each on the same arithmetic, so
-# the five-brief chain is ~$0.35 against ~$4 of Claude subscription.
-MAXIMUM_RUN_COST_USD = 0.50
+#   51 API calls. Through OPENROUTER_PINNED_PROVIDER's published $0.30/M
+#   prompt and $1.20/M completion that run costs
+#   1,353,594 x 0.30/1e6 + 24,615 x 1.20/1e6 = $0.436, and the cap is
+#   2.3x that: a heavier brief passes, a runaway stops inside one run
+#   rather than after a 20-instance sweep.
+# The wrong number, kept because it is the lesson: $0.50, from the same
+# arithmetic at DeepSeek's own $0.15/$0.60. That endpoint is excluded by
+# this account's guardrail, so the price the harness actually pays is
+# twice what the catalogue's headline says — a cap derived from a price
+# the lane cannot reach would have tripped on the heaviest legitimate
+# brief at 1.15x.
+# Measured single-turn briefs cost $0.03–0.04 each, so the five-brief
+# chain is well under $1 against ~$4 of Claude subscription.
+MAXIMUM_RUN_COST_USD = 1.00
 
 
 def _read_openrouter_api_key() -> str:
@@ -553,6 +587,11 @@ class ModelConfig:
     # NFR-27: what one run may spend on a metered lane before it stops.
     # Ignored on every other lane, which charge no money per call.
     maximum_run_cost_usd: float = MAXIMUM_RUN_COST_USD
+    # Which upstream serves this model on OpenRouter. Never empty: the
+    # window, the price and the reliability are the provider's, not the
+    # id's, so a lane that cannot name its provider does not know what it
+    # is talking to (OT-28).
+    openrouter_provider: str = OPENROUTER_PINNED_PROVIDER
     claude_code_effort: str = CLAUDE_CODE_DEFAULT_EFFORT
     claude_code_binary_path: str = ""
 
@@ -810,7 +849,11 @@ def _assistant_message_from_openai(body: dict) -> dict:
         "content": message.get("content") or "",
         "tool_calls": tool_calls,
     }
-    reasoning = message.get("reasoning_content")
+    # Two spellings of one field: llama-swap passes DeepSeek's own
+    # `reasoning_content` through, OpenRouter normalizes it to
+    # `reasoning`. Reading only the first threw away the whole thinking
+    # channel on the metered lane — where a reply can be nothing else.
+    reasoning = message.get("reasoning_content") or message.get("reasoning")
     if reasoning:
         normalized["thinking"] = reasoning
     return normalized
@@ -1046,24 +1089,42 @@ class OllamaClient:
             )
 
     def _discover_openrouter_context(self, timeout_seconds: int) -> int:
-        """The window OpenRouter publishes for this id. An id the catalogue
-        does not list is refused by name: it would otherwise 404 on every
-        call with no clue which half of `vendor/model` is wrong."""
-        body = self._request(OPENROUTER_MODELS_PATH, None, timeout_seconds)
-        served = {entry.get("id"): entry for entry in (body.get("data") or [])}
-        entry = served.get(self.config.model)
+        """The window of the PROVIDER this lane pinned, not the id's best.
+
+        An unknown id 404s here, and a provider that does not serve the id
+        is refused with the list of those that do — both otherwise fail
+        per call, mid-run, with nothing to read.
+        """
+        path = OPENROUTER_ENDPOINTS_PATH.format(model=self.config.model)
+        try:
+            body = self._request(path, None, timeout_seconds)
+        except urllib.error.HTTPError as http_error:
+            if http_error.code == 404:
+                raise ContextUndiscovered(
+                    f"{self.config.model} is not an OpenRouter model id "
+                    f"(404 at {self.config.endpoint}{path}). Check it at "
+                    f"https://openrouter.ai/models."
+                ) from http_error
+            raise
+        endpoints = (body.get("data") or {}).get("endpoints") or []
+        # Tags carry a quantization suffix (`gmicloud/fp8`) while
+        # `provider.order` matches the base slug, so the lane pins the
+        # base and the endpoint it reads is the one routing will pick.
+        by_provider = {
+            (entry.get("tag") or "").split("/")[0]: entry for entry in endpoints
+        }
+        entry = by_provider.get(self.config.openrouter_provider)
         if entry is None:
             raise ContextUndiscovered(
-                f"{self.config.model} is not in OpenRouter's catalogue "
-                f"({len(served)} ids at "
-                f"{self.config.endpoint}{OPENROUTER_MODELS_PATH}). "
-                f"Check the id at https://openrouter.ai/models."
+                f"{self.config.openrouter_provider!r} does not serve "
+                f"{self.config.model}. These do: "
+                f"{', '.join(sorted(name for name in by_provider if name))}."
             )
         window = int(entry.get("context_length") or 0)
         if window <= 0:
             raise ContextUndiscovered(
-                f"{self.config.model}: OpenRouter reports context_length "
-                f"{entry.get('context_length')!r}"
+                f"{self.config.model} via {self.config.openrouter_provider}: "
+                f"context_length {entry.get('context_length')!r}"
             )
         self.config = replace(self.config, context_length=window)
         return window
@@ -1085,6 +1146,13 @@ class OllamaClient:
                 # Ask for the price of the call: only this lane charges
                 # one, and only it answers this field.
                 payload["usage"] = dict(OPENROUTER_USAGE_EXTENSION)
+                # One upstream, the one whose window the preflight
+                # checked and whose price the cap assumes. Without this
+                # OpenRouter picks, and its pick answered HTTP 400.
+                payload["provider"] = {
+                    "order": [self.config.openrouter_provider],
+                    "allow_fallbacks": False,
+                }
             if tools:
                 payload["tools"] = _to_openai_tools(tools)
             return payload
@@ -1208,7 +1276,10 @@ class OllamaClient:
             elif BIG_ENDPOINT in endpoint:
                 route = f"llama-swap on big ({BIG_ENDPOINT})"
             elif OPENROUTER_ENDPOINT in endpoint:
-                route = "OpenRouter (metered per token)"
+                route = (
+                    f"OpenRouter -> {self.config.openrouter_provider} "
+                    f"(metered per token)"
+                )
             elif CLOUD_ENDPOINT in endpoint:
                 route = "direct cloud (Bearer key)"
             else:
@@ -1330,8 +1401,20 @@ class OllamaClient:
         # OT-22: a cut reply is an error, never a result.
         check_reply_fits(body, self.config.context_tokens, self.config.endpoint)
         if self.config.uses_openai_protocol:
-            return _assistant_message_from_openai(body)
-        return body.get("message", {})
+            message = _assistant_message_from_openai(body)
+            finish_reason = ((body.get("choices") or [{}])[0]).get("finish_reason") or ""
+        else:
+            message = body.get("message", {})
+            finish_reason = body.get("done_reason") or ""
+        # A reply that is neither content nor a tool call ends the turn
+        # with nothing; the caller would report it as the final answer.
+        check_reply_is_a_turn(
+            message,
+            self.config.endpoint,
+            reasoning_tokens=_turn_cost_from_body(body).reasoning_tokens,
+            finish_reason=finish_reason,
+        )
+        return message
 
     def _chat_streamed(self, payload: dict, on_delta, stop_requested) -> dict:
         lines = self._stream_lines(
@@ -1343,6 +1426,11 @@ class OllamaClient:
             message = _assemble_ollama_stream(lines, on_delta, stop_requested)
         # The assemblers carry the stream's own end signal (OT-22).
         check_reply_fits(message, self.config.context_tokens, self.config.endpoint)
+        check_reply_is_a_turn(
+            message,
+            self.config.endpoint,
+            finish_reason=message.get("finish_reason") or message.get("done_reason") or "",
+        )
         return message
 
 
