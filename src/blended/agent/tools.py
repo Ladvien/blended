@@ -298,6 +298,7 @@ SERVICE_TOOL_SCHEMAS = [
 
 
 from blended.agent.tool_schemas import build_tool_schemas, tool_schemas_fingerprint
+from blended.manifest import OP_MODULE_NAMES
 from blended.ops._contract import facade_ops
 
 # One generated tool per facade op (OT-3): introspected, never written.
@@ -327,6 +328,64 @@ OP_FUNCTIONS: dict[str, object] = dict(facade_ops())
 # Fingerprint of that set, pinned beside the assembled-prompt fingerprint
 # and written into every iteration record (PRM-7 discipline for tools).
 TOOL_SCHEMAS_FINGERPRINT = tool_schemas_fingerprint(TOOL_SCHEMAS)
+
+
+def search_ops(query: str) -> ToolOutcome:
+    """Find op tools by keyword; each hit carries its generated schema (OT-15).
+
+    Match WORDS, not the raw string. Measured 2026-08-22 (iteration 4):
+    3 of 16 turns were spent on 'boolean union', 'material assign' and
+    'assign material', all answered "No operation matches" — while
+    `boolean_union` and `assign_material` both exist. A whole-string test
+    cannot span the underscore, and cannot survive word order.
+    Punctuation is flattened on both sides so `_` and ` ` are the same
+    character to a searcher.
+
+    Each hit is the tool's name, its one-line summary and its parameters
+    schema as compact JSON: a small model needs the argument SHAPE at the
+    moment of use, not a signature string to re-parse (AGT-18). One ranked
+    page, capped at MAXIMUM_SEARCH_RESULTS, never paginated.
+    """
+    query_tokens = [token for token in _SEARCH_WORD_PATTERN.split(query.lower()) if token]
+    if not query_tokens:
+        return ToolOutcome(
+            f"Query {query!r} contains no searchable words. Search for an "
+            f"operation by name or purpose, e.g. 'boolean union' or 'assign material'.",
+            ok=False,
+        )
+    # Ranked: a tool whose NAME carries every query word outranks one
+    # that only mentions them in its description, shorter names first
+    # among those (assign_material before assign_image_texture_material
+    # for 'assign material'); facade order breaks the remaining ties.
+    ranked: list[tuple[int, int, int, str]] = []
+    for position, tool in enumerate(OP_TOOL_SCHEMAS):
+        function_block = tool["function"]
+        name = function_block["name"]
+        module_name = OP_FUNCTIONS[name].__module__.rsplit(".", 1)[-1]
+        haystack = _SEARCH_WORD_PATTERN.sub(
+            " ", f"{module_name} {name} {function_block['description']}".lower()
+        )
+        if not all(token in haystack for token in query_tokens):
+            continue
+        name_words = _SEARCH_WORD_PATTERN.sub(" ", name.lower())
+        in_name = 0 if all(token in name_words for token in query_tokens) else 1
+        ranked.append(
+            (
+                in_name,
+                len(name),
+                position,
+                f"{name}: {function_block['description']}\n"
+                f"    schema: {json.dumps(function_block['parameters'], separators=(',', ':'))}",
+            )
+        )
+    hits = [line for _, _, _, line in sorted(ranked)]
+    if not hits:
+        return ToolOutcome(
+            f"No operation matches all of {query_tokens}. Available modules: "
+            f"{', '.join(OP_MODULE_NAMES)}.",
+            ok=False,
+        )
+    return ToolOutcome("\n".join(hits[:MAXIMUM_SEARCH_RESULTS]))
 
 
 def _report_to_dict(report) -> dict:
@@ -402,6 +461,9 @@ def dispatch_tool(
     # tool nor a facade op has no schema and was never offered.
     if tool_name not in SERVICE_TOOL_NAMES:
         return ToolOutcome(f"Unknown tool: {tool_name}", ok=False)
+    # search_ops reads the schemas, not the scene: pure, above bpy.
+    if tool_name == "search_ops":
+        return search_ops(arguments["query"])
     if tool_name == "run_python":
         reason = arguments.get("reason", "")
         if not isinstance(reason, str) or not reason.strip():
@@ -576,47 +638,6 @@ def _dispatch_service_tool(
             f"Look at the attached contact sheet.",
             (sheet_path,),
         )
-
-    if tool_name == "search_ops":
-        import importlib
-
-        from blended.manifest import OP_MODULE_NAMES, _public_functions
-
-        # Match WORDS, not the raw string. Measured 2026-08-22
-        # (iteration 4): 3 of 16 turns were spent on 'boolean union',
-        # 'material assign' and 'assign material', all answered "No
-        # operation matches" — while `boolean_union` and
-        # `assign_material` both exist. A whole-string test cannot span
-        # the underscore, and cannot survive word order. Punctuation is
-        # flattened on both sides so `_` and ` ` are the same character
-        # to a searcher.
-        query_tokens = [
-            token for token in _SEARCH_WORD_PATTERN.split(arguments["query"].lower())
-            if token
-        ]
-        if not query_tokens:
-            return failed(
-                f"Query {arguments['query']!r} contains no searchable "
-                f"words. Search for an operation by name or purpose, "
-                f"e.g. 'boolean union' or 'assign material'."
-            )
-        matches: list[str] = []
-        for module_name in OP_MODULE_NAMES:
-            module = importlib.import_module(f"blended.ops.{module_name}")
-            for signature, summary in _public_functions(module):
-                haystack = _SEARCH_WORD_PATTERN.sub(
-                    " ", f"{module_name} {signature} {summary}".lower()
-                )
-                if all(token in haystack for token in query_tokens):
-                    matches.append(
-                        f"blended.ops.{module_name}: {signature}\n    {summary}"
-                    )
-        if not matches:
-            return failed(
-                f"No operation matches all of {query_tokens}. "
-                f"Available modules: {', '.join(OP_MODULE_NAMES)}."
-            )
-        return done("\n".join(matches[:MAXIMUM_SEARCH_RESULTS]))
 
     if tool_name == "list_scene":
         mesh_objects = [

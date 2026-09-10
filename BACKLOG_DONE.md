@@ -152,3 +152,19 @@ regression reopens the item in `BACKLOG.md` with a pointer back to this entry.
 **Decision:** `tool_calls` (the raw call text the loop emitted) stays the replay source; `tool_events` is the measured record. A migration of the 67 historical records into `tool_events` was considered and rejected: it would have manufactured stage, gate and timing fields that were never measured.
 **Layers:** pure 651 passed / 1 skipped / 1 xfailed; Blender 317 passed / 3 skipped.
 **Commit:** `9a60a55`.
+
+---
+
+## OT-15 Schema-driven `search_ops`
+
+**What:** `search_ops` MUST return the generated schema for each hit, not only the signature string, capped at `MAXIMUM_SEARCH_RESULTS`.
+**Why:** Small models need the argument shape at the moment of use, not in the system prompt.
+**Amends:** AGT-18.
+**Done means:** `tests/pure/test_agent_dispatch.py` asserts schema presence in results.
+
+**Closed:** 2026-09-10.
+**Gating tests:** `tests/pure/test_agent_dispatch.py::test_search_ops_returns_each_hit_with_its_generated_schema` (schema JSON present per hit; cap honoured), `::test_search_ops_spans_the_underscore_and_word_order` (three spellings of one op; a miss and an empty query are not ok); `tests/blender/test_transform_ops.py` search tests (the iteration-4 queries, narrowing by `schema:` line count).
+**Spec:** AGT-18 amended.
+**Shape of the change:** `search_ops` is a pure function over `OP_TOOL_SCHEMAS` (name, module, generated description) dispatched above `import bpy`; each hit prints the tool's description and its parameters schema as compact JSON; hits are ranked name-match first, shorter name first, facade order after — measured need: with facade order alone, "assign material" returned `assign_image_texture_material` first. The manifest-text search path is gone.
+**Layers:** pure 653 passed / 1 skipped / 1 xfailed; Blender 317 passed / 3 skipped.
+**Commit:** recorded in the follow-up commit.

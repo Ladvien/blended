@@ -147,7 +147,8 @@ def test_search_still_narrows(empty_scene, tmp_path):
     )
     narrow, _ = _outcome.text, list(_outcome.images)
     assert "rotate_object_euler" in narrow
-    assert narrow.count("blended.ops.") < broad.count("blended.ops.")
+    # One `schema:` line per hit (OT-15).
+    assert narrow.count("    schema: ") < broad.count("    schema: ")
 
 
 def test_a_query_with_no_words_is_refused(empty_scene, tmp_path):

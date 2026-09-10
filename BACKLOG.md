@@ -86,13 +86,6 @@ All Phase 2 items (OT-4 through OT-8) are closed — see `BACKLOG_DONE.md`.
 **Why:** Vertex indices are not something a model can reason about from a manifest; selectors are. This is the difference between an op vocabulary a 7B model can drive and one it cannot.
 **Done means:** selector round-trips through the schema generator (OT-3) with an enum of selector kinds; `tests/blender/test_selectors.py` covers each kind against a fixture mesh.
 
-### OT-15 Schema-driven `search_ops`
-
-**What:** `search_ops` MUST return the generated schema for each hit, not only the signature string, capped at `MAXIMUM_SEARCH_RESULTS`.
-**Why:** Small models need the argument shape at the moment of use, not in the system prompt.
-**Amends:** AGT-18.
-**Done means:** `tests/pure/test_agent_dispatch.py` asserts schema presence in results.
-
 ---
 
 ## Phase 5 — Bounding cost (cheap, and the ops lane makes it safe to do)

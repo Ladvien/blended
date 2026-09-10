@@ -17,6 +17,7 @@ missing when Blender was simply dying.
 """
 
 import dataclasses
+import json
 import threading
 
 import pytest
@@ -371,3 +372,35 @@ def test_the_run_python_schema_requires_the_reason():
     run_python = next(t["function"] for t in SERVICE_TOOL_SCHEMAS if t["function"]["name"] == "run_python")
     assert run_python["parameters"]["required"] == ["source", "reason"]
     assert run_python["description"].startswith("ESCAPE HATCH")
+
+
+
+# --- search_ops (OT-15): schema-driven, pure -----------------------------------
+
+
+def test_search_ops_returns_each_hit_with_its_generated_schema():
+    from blended.agent.tools import (
+        MAXIMUM_SEARCH_RESULTS,
+        OP_TOOL_SCHEMAS,
+        dispatch_tool,
+    )
+
+    outcome = dispatch_tool("search_ops", {"query": "boolean union"}, None)
+
+    assert outcome.ok
+    union = next(t["function"] for t in OP_TOOL_SCHEMAS if t["function"]["name"] == "boolean_union")
+    assert outcome.text.startswith("boolean_union: ")
+    assert "schema: " + json.dumps(union["parameters"], separators=(",", ":")) in outcome.text
+    # One ranked page, never more than the cap.
+    broad = dispatch_tool("search_ops", {"query": "object"}, None)
+    assert broad.text.count("\n    schema: ") <= MAXIMUM_SEARCH_RESULTS
+
+
+def test_search_ops_spans_the_underscore_and_word_order():
+    from blended.agent.tools import dispatch_tool
+
+    for query in ("assign material", "material assign", "assign_material"):
+        assert dispatch_tool("search_ops", {"query": query}, None).text.startswith("assign_material: "), query
+    miss = dispatch_tool("search_ops", {"query": "teleport"}, None)
+    assert not miss.ok and miss.text.startswith("No operation matches")
+    assert not dispatch_tool("search_ops", {"query": "???"}, None).ok
