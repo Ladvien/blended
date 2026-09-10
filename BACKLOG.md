@@ -25,7 +25,7 @@
 | Manifest generation | introspects ops modules for prose AND for tool schemas (OT-3, closed) | PRM-2, `src/blended/manifest.py`, `src/blended/agent/tool_schemas.py` |
 | Bench incumbent | `deepseek-v4-pro:cloud`, 6 rolls, 120/120 exec, `cd_pca` 0.0252 | `docs/2026-09-06-bench-panel-preregistration.md` |
 | Transcript schema | `TRANSCRIPT_SCHEMA_VERSION` 2: structured `tool_event` per call, `IterationRecord.tool_events` (OT-8, closed) | AGT-17, `src/blended/agent/tool_event.py` |
-| Retry / turn caps in the loop | none | AGT-20, spec §7.2 |
+| Retry / turn caps in the loop | gate-failure cap per object, 3 consecutive (OT-16, closed); token budget open (OT-17) | AGT-20, spec §7.2 |
 
 ---
 
@@ -89,13 +89,6 @@ All Phase 2 items (OT-4 through OT-8) are closed — see `BACKLOG_DONE.md`.
 ---
 
 ## Phase 5 — Bounding cost (cheap, and the ops lane makes it safe to do)
-
-### OT-16 Enforce retry and turn caps in the loop
-
-**What:** The loop MUST enforce a named per-turn cap on consecutive gate failures on the same object (`MAXIMUM_GATE_FAILURES_PER_OBJECT`) and stop the turn with a contact sheet and a message, making the working agreement's "three honest attempts" code rather than prose.
-**Why:** Closes AGT-20 / spec §7.2. With op tools, a retry is cheap and precise, so a cap no longer costs capability.
-**Amends:** AGT-20 becomes verified.
-**Done means:** `tests/blender/test_agent_loop.py` trips the cap with a builder that always fails the gate.
 
 ### OT-17 Token budget per turn
 

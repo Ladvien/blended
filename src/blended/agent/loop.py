@@ -45,6 +45,7 @@ from blended.agent.plan import (
     plan_step_of,
 )
 from blended.agent.tool_event import TOOL_EVENT_KIND, ToolEvent, encode_tool_event
+from blended.stages import STAGE_DONE
 
 LOCAL_ENDPOINT = "http://localhost:11434"
 CLOUD_ENDPOINT = "https://ollama.com"
@@ -1312,6 +1313,22 @@ def deliver_images(
 ToolDispatch = Callable[[str, dict, Path], tuple[str, list[Path]]]
 
 
+# OT-16: the working agreement's "stop after three honest attempts", as
+# code. Counted per object, per turn, over consecutive gate verdicts
+# that did not reach `done`; a verdict that passes resets that object's
+# count. With op tools a retry is one cheap, precise call, so the cap
+# no longer costs capability — it stops a turn that is rediscovering
+# one failure (measured 2026-08-22: iteration 5 spent its whole budget
+# on the same boolean failure).
+MAXIMUM_GATE_FAILURES_PER_OBJECT = 3
+GATE_CAP_TOOL_RESULT = "Not run: the turn stopped at the gate-failure cap."
+GATE_CAP_ANSWER = (
+    "Stopped: {object_name!r} failed the gate {count} times in a row "
+    "(cap {cap}). Last verdict: {verdict}. The contact sheet is attached. "
+    "Tell me how to proceed."
+)
+
+
 def _plan_step_or_none(arguments: dict) -> int | None:
     """The call's plan_step for the record; a malformed one is None here
     and reported by `plan_step_of` where the loop reads it."""
@@ -1342,6 +1359,7 @@ class AgentSession:
     # holding a finished asset. 24 leaves room to report and to absorb
     # one failed chunk, while still capping a runaway loop.
     maximum_tool_calls_per_turn: int = 24
+    maximum_gate_failures_per_object: int = MAXIMUM_GATE_FAILURES_PER_OBJECT
     messages: list[dict] = field(default_factory=list)
     # A plain function as a dataclass default: __init__ assigns it to the
     # INSTANCE, so `self.dispatch(...)` calls it unbound — no phantom
@@ -1430,6 +1448,8 @@ class AgentSession:
         turn_plan: TurnPlan | None = None
         # Per-turn account of unlinked intermediates (OT-5).
         ledger = IntermediateLedger()
+        # Per-turn count of consecutive gate failures per object (OT-16).
+        gate_failures: dict[str, int] = {}
         while executed_tool_call_count < self.maximum_tool_calls_per_turn:
             if self.stream_replies:
                 assistant_message = self.client.chat(
@@ -1603,6 +1623,26 @@ class AgentSession:
                         emit("vision", description)
                 self.messages.append(tool_message)
 
+                # OT-16: count consecutive gate failures per object; a
+                # pass resets. At the cap the turn stops here, with a
+                # contact sheet, instead of burning the rest of the
+                # tool-call budget on the same failure.
+                for gate in outcome.gates:
+                    gated_name = str(gate.get("object_name", ""))
+                    if gate.get("stage_reached") == STAGE_DONE:
+                        gate_failures.pop(gated_name, None)
+                    else:
+                        gate_failures[gated_name] = gate_failures.get(gated_name, 0) + 1
+                capped = [
+                    name
+                    for name, count in gate_failures.items()
+                    if count >= self.maximum_gate_failures_per_object
+                ]
+                if capped:
+                    return self._stop_at_gate_cap(
+                        assistant_message, capped[0], gate_failures[capped[0]], outcome, emit
+                    )
+
         exhausted = (
             f"Stopped after {executed_tool_call_count} tool calls in one turn "
             f"(budget {self.maximum_tool_calls_per_turn}) without reaching an "
@@ -1611,29 +1651,59 @@ class AgentSession:
         emit("answer", exhausted)
         return exhausted
 
-    def _cancel_turn(self, assistant_message: dict, emit) -> str:
-        """Close the turn consistently after a cancel.
-
-        Every tool_call the model issued gets a tool result — an
-        OpenAI-protocol backend rejects the next turn otherwise — and
-        the model is told, in the history it will read next turn, that
-        the user stopped it.
-        """
-        answered_ids = {
-            message.get("tool_call_id")
-            for message in self.messages
-            if message.get("role") == "tool"
-        }
-        for tool_call in assistant_message.get("tool_calls") or []:
-            if tool_call.get("id", "") in answered_ids and tool_call.get("id"):
-                continue
+    def _answer_pending_tool_calls(self, assistant_message: dict, text: str) -> None:
+        """Give every tool_call the model issued a tool result — an
+        OpenAI-protocol backend rejects the next turn otherwise."""
+        # Positional, not by id: the tool results appended since this
+        # assistant message answer its calls in order, and a lane that
+        # mints no ids (a scripted client, Ollama) must not get a second
+        # result for a call that already has one.
+        position = next(
+            (index for index, message in enumerate(self.messages) if message is assistant_message),
+            len(self.messages),
+        )
+        already_answered = sum(
+            1 for message in self.messages[position + 1 :] if message.get("role") == "tool"
+        )
+        for tool_call in (assistant_message.get("tool_calls") or [])[already_answered:]:
             self.messages.append(
                 {
                     "role": "tool",
-                    "content": CANCELLED_TOOL_RESULT,
+                    "content": text,
                     "tool_name": tool_call.get("function", {}).get("name", ""),
                     "tool_call_id": tool_call.get("id", ""),
                 }
             )
+
+    def _cancel_turn(self, assistant_message: dict, emit) -> str:
+        """Close the turn consistently after a cancel: every pending call
+        gets a result, and the model is told, in the history it will
+        read next turn, that the user stopped it."""
+        self._answer_pending_tool_calls(assistant_message, CANCELLED_TOOL_RESULT)
         emit("answer", CANCELLED_ANSWER)
         return CANCELLED_ANSWER
+
+    def _stop_at_gate_cap(
+        self, assistant_message: dict, object_name: str, count: int, outcome, emit
+    ) -> str:
+        """Stop the turn at the gate-failure cap (OT-16): render the
+        object so the user sees what kept failing, answer the calls the
+        model had queued, and say plainly what stopped."""
+        sheet = self.dispatch(
+            "render_views", {"object_name": object_name}, self.output_directory
+        )
+        for image_path in sheet.images:
+            emit("render", str(image_path))
+        self._answer_pending_tool_calls(assistant_message, GATE_CAP_TOOL_RESULT)
+        last_gate = next(
+            (gate for gate in outcome.gates if gate.get("object_name") == object_name), {}
+        )
+        verdict = last_gate.get("scene_state") or "; ".join(last_gate.get("gate_failures", ())) or outcome.stage_reached
+        answer = GATE_CAP_ANSWER.format(
+            object_name=object_name,
+            count=count,
+            cap=self.maximum_gate_failures_per_object,
+            verdict=verdict,
+        )
+        emit("answer", answer)
+        return answer

@@ -373,7 +373,7 @@ The form gate answers "does the object deliver the brief", deterministically, be
 | AGT-17 | A session MUST be transcribed append-as-you-go to both JSONL (full fidelity, `TRANSCRIPT_SCHEMA_VERSION` 2) and Markdown (truncated at `MARKDOWN_TRUNCATE_CHARACTERS` = 1200). Every tool call the loop dispatches or refuses MUST also be emitted as a structured `tool_event` (`agent.tool_event.ToolEvent`, schema 2): tool name, validated arguments (bound to the op signature, plan_step stripped), plan step, ok, `stage_reached`, gate verdicts with the analyzer fields when gated, wall time, images, and for `run_python` the reason and source hash; the JSONL row stores it decoded under `data`, the Markdown does not repeat it, and `IterationRecord.tool_events` carries the sequence (OT-8). | `src/blended/agent/transcript.py`, `src/blended/agent/tool_event.py`, `src/blended/agent/loop.py`, `src/blended/evaluate/iteration_log.py` | `tests/pure/test_transcript.py::test_schema_two_stores_the_tool_event_under_data`, `tests/pure/test_tool_event.py` |
 | AGT-18 | `list_scene` MUST cap its listing at `MAXIMUM_SCENE_OBJECTS_LISTED` (40), `search_ops` at `MAXIMUM_SEARCH_RESULTS` (8), and a returned traceback at `MAXIMUM_TRACEBACK_CHARACTERS` (1500). `search_ops` MUST search the generated op tools (name, module, description), return each hit with its generated parameters schema as compact JSON, rank a tool whose name carries every query word first (shorter names first among those, facade order after), and run without bpy (OT-15). | `src/blended/agent/tools.py:29,30,35` (`search_ops`) | `tests/pure/test_agent_dispatch.py::test_search_ops_returns_each_hit_with_its_generated_schema`, `::test_search_ops_spans_the_underscore_and_word_order`, `tests/blender/test_transform_ops.py` |
 | AGT-19 | The session MUST NOT volunteer work: no proactive suggestions and no auto-continuation; a turn runs only from an explicit user act. | `docs/harness_design.md` row 22 | `(unverified)` |
-| AGT-20 | There is **no enforced retry cap or turn cap in the agent loop**; the working agreement's "stop after three honest attempts" is prose to the model, not code. (Gap, §7.) | `src/blended/agent/loop.py:1365-1544` | `(unverified)` |
+| AGT-20 | The loop MUST stop a turn after `MAXIMUM_GATE_FAILURES_PER_OBJECT` (3) consecutive gate verdicts on the same object that did not reach `done` (a passing verdict resets the count), rendering that object's contact sheet, answering every queued tool call with `GATE_CAP_TOOL_RESULT`, and reporting `GATE_CAP_ANSWER` as the turn's text — the working agreement's "three honest attempts" as code (OT-16). | `src/blended/agent/loop.py` (`MAXIMUM_GATE_FAILURES_PER_OBJECT`, `_stop_at_gate_cap`) | `tests/pure/test_turn_caps.py`, `tests/blender/test_agent_loop.py::test_a_builder_that_always_fails_the_gate_trips_the_cap` |
 | AGT-21 | `dispatch_tool` MUST route a generated op tool to its facade function on the main thread (AGT-2); MUST bind the JSON arguments against the signature's type hints — the hints the schema was generated from — failing loud on an unknown, missing or mistyped parameter (NFR-13); MUST refuse a name that is neither a service tool nor a facade op before touching bpy; MUST run the op through the executor's one capture path; and MUST report `stage_reached` from `blended.stages` (`execute` on failure, `done` on return; gating is OT-5). (OT-4) | `src/blended/agent/op_call.py`, `src/blended/agent/tools.py` (`OP_FUNCTIONS`, `SERVICE_TOOL_NAMES`), `src/blended/run/executor.py` (`execute_captured`) | `tests/pure/test_agent_dispatch.py::test_an_op_tool_call_binds_runs_and_reports_done`, `::test_an_unregistered_tool_is_refused_at_the_door_without_bpy`, `::test_a_mistyped_argument_fails_at_execute_with_the_cause_and_no_traceback`, `::test_an_op_tool_off_the_main_thread_is_refused_like_any_tool`; `tests/blender/test_agent_loop.py::test_a_brief_reaches_gate_pass_with_op_tools_only` |
 
 ## 3.11 The prompt system (`PRM`)
@@ -603,6 +603,7 @@ Every value below was resolved from its definition line in the tree at this revi
 | Constant | Value | Defined at |
 |---|---|---|
 | `maximum_tool_calls_per_turn` | `24` | `src/blended/agent/loop.py:1333` |
+| `MAXIMUM_GATE_FAILURES_PER_OBJECT` | `3` | `src/blended/agent/loop.py` |
 | `REQUEST_TIMEOUT_SECONDS` | `300` | `src/blended/agent/loop.py:65` |
 | `LLAMA_SWAP_REQUEST_TIMEOUT_SECONDS` | `900` | `src/blended/agent/loop.py:77` |
 | `PREFLIGHT_TIMEOUT_SECONDS` | `90` | `src/blended/agent/loop.py:85` |
@@ -715,7 +716,7 @@ The document holds **215 requirements**, of which **8 have no automated check**:
 | EXP | 4 | 4 | 0 |
 | ING | 4 | 4 | 0 |
 | OPS | 21 | 21 | 0 |
-| AGT | 21 | 19 | 2 |
+| AGT | 21 | 20 | 1 |
 | PRM | 15 | 15 | 0 |
 | VIS | 14 | 14 | 0 |
 | CNV | 13 | 13 | 0 |
@@ -739,7 +740,6 @@ Note the doc drift: `src/blended/evaluate/visual_diff.py:1-9` states the reason 
 
 | Gap | Evidence | Consequence |
 |---|---|---|
-| The agent loop has **no retry cap and no turn cap**; "stop after three honest attempts" is prose in the working agreement, not code. The only hard cap is `maximum_tool_calls_per_turn` = 24. | `src/blended/agent/loop.py:1333,1365` | a persistent model can burn a turn's full budget rediscovering one failure |
 | No token budget is enforced. `TurnCost` records usage; the ceiling is per-call (`max_completion_tokens` 16384 on OpenAI lanes, `num_ctx` 32768 on Ollama). | `src/blended/agent/claude_code.py` (`TurnCost`), `src/blended/agent/loop.py:463` | cost is measured, not bounded |
 | Lane skill modules are registered but never selected at runtime. | `src/blended/agent/skill_modules.py:263` | module evidence is not yet earning its place in the live prompt |
 

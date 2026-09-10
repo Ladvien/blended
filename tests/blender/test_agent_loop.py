@@ -686,3 +686,49 @@ def test_an_action_op_accepts_plan_step_and_the_op_never_sees_it(empty_scene, tm
     ).text
     assert text.startswith("OK: add_box"), text
     assert "Crate" in bpy.data.objects
+
+
+# --- the gate-failure cap (OT-16) ------------------------------------------
+
+TWO_ISLANDS_SOURCE = """
+from blended.ops import add_box, link_into_scene, linear_array
+add_box("Bad", 0.1, 0.1, 0.1)
+link_into_scene("Bad")
+linear_array("Bad", 2, (1.0, 0.0, 0.0))
+"""
+
+
+def test_a_builder_that_always_fails_the_gate_trips_the_cap(empty_scene, tmp_path):
+    """OT-16: an applied array is two islands until something bridges
+    them, so this chunk fails the gate every time. After the cap the
+    turn stops with a contact sheet instead of spending the budget."""
+    from blended.agent import AgentSession
+    from blended.agent.loop import MAXIMUM_GATE_FAILURES_PER_OBJECT
+
+    failing_call = {
+        "role": "assistant",
+        "content": "",
+        "tool_calls": [
+            {
+                "function": {
+                    "name": "run_python",
+                    "arguments": {
+                        "source": TWO_ISLANDS_SOURCE,
+                        "object_name": "Bad",
+                        "reason": "test fixture: a builder that cannot pass",
+                    },
+                }
+            }
+        ],
+    }
+    client = ScriptedClient([failing_call] * 6 + [{"role": "assistant", "content": "Built."}])
+    session = AgentSession(client=client, output_directory=tmp_path)
+    events = []
+    answer = session.send("Build it.", on_event=lambda kind, text: events.append((kind, text)))
+
+    assert answer.startswith(f"Stopped: 'Bad' failed the gate {MAXIMUM_GATE_FAILURES_PER_OBJECT} times in a row")
+    tool_messages = [m for m in session.messages if m.get("role") == "tool"]
+    assert len(tool_messages) == MAXIMUM_GATE_FAILURES_PER_OBJECT
+    assert all("FAILED at gate" in m["content"] for m in tool_messages)
+    renders = [text for kind, text in events if kind == "render"]
+    assert renders and renders[-1].endswith("Bad_sheet.png")

@@ -168,3 +168,19 @@ regression reopens the item in `BACKLOG.md` with a pointer back to this entry.
 **Shape of the change:** `search_ops` is a pure function over `OP_TOOL_SCHEMAS` (name, module, generated description) dispatched above `import bpy`; each hit prints the tool's description and its parameters schema as compact JSON; hits are ranked name-match first, shorter name first, facade order after — measured need: with facade order alone, "assign material" returned `assign_image_texture_material` first. The manifest-text search path is gone.
 **Layers:** pure 653 passed / 1 skipped / 1 xfailed; Blender 317 passed / 3 skipped.
 **Commit:** `0967110`.
+
+---
+
+## OT-16 Enforce retry and turn caps in the loop
+
+**What:** The loop MUST enforce a named per-turn cap on consecutive gate failures on the same object (`MAXIMUM_GATE_FAILURES_PER_OBJECT`) and stop the turn with a contact sheet and a message, making the working agreement's "three honest attempts" code rather than prose.
+**Why:** Closes AGT-20 / spec §7.2. With op tools, a retry is cheap and precise, so a cap no longer costs capability.
+**Amends:** AGT-20 becomes verified.
+**Done means:** `tests/blender/test_agent_loop.py` trips the cap with a builder that always fails the gate.
+
+**Closed:** 2026-09-10.
+**Gating tests:** `tests/blender/test_agent_loop.py::test_a_builder_that_always_fails_the_gate_trips_the_cap` (a chunk whose applied array leaves two islands fails the gate every time; the turn stops after three with `Bad_sheet.png` rendered and three tool results, not six); `tests/pure/test_turn_caps.py::test_three_consecutive_gate_failures_stop_the_turn_with_a_sheet`, `::test_a_passing_verdict_resets_the_count`, `::test_queued_calls_after_the_cap_get_a_not_run_result`.
+**Spec:** AGT-20 rewritten from gap to requirement (verified); §7.2 gap row removed; §5.4 `MAXIMUM_GATE_FAILURES_PER_OBJECT`; §6.3 AGT unverified 2 → 1.
+**Shape of the change:** the loop keeps a per-turn count of consecutive non-`done` gate verdicts per object, read from `ToolOutcome.gates` (so `run_python` with `object_name` and every gated op tool count alike); at `MAXIMUM_GATE_FAILURES_PER_OBJECT` it renders the object through the same dispatch seam (`render_views`), answers the model's queued calls with `GATE_CAP_TOOL_RESULT`, and returns `GATE_CAP_ANSWER` naming the object, the count and the last verdict. `_answer_pending_tool_calls` is now shared by cancel and the cap, and positional rather than id-based — measured: a scripted call with no id was answered twice under the id-based rule.
+**Layers:** pure 656 passed / 1 skipped / 1 xfailed; Blender 318 passed / 3 skipped.
+**Commit:** recorded in the follow-up commit.
