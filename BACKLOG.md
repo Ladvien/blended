@@ -98,6 +98,58 @@ Both Phase 5 items (OT-16, OT-17) are closed — see `BACKLOG_DONE.md`.
 
 ---
 
+## Phase 8 — The iteration lane (a loop cheap enough to run on every change)
+
+**Why now (measured 2026-09-10):** the five-brief no-hatch chain that gates every Phase 7
+item costs $0.15–$2.87 per brief of Claude subscription and the account stood at 68 % of
+its 7-day window; the local alternative on bmb produced zero turns in 1,732 s twice and was
+dropped. `deepseek/deepseek-v4.1-flash` on OpenRouter, read from the provider's own
+catalogue: tools, structured outputs, text **and** image input (its own eye), a 1,048,576
+context, $0.15/M prompt and $0.60/M completion — the same chain for ~$0.35. The lane exists
+in the harness already; what it could not do was say how wide it is or what it cost.
+
+### OT-28 The metered lane tells the truth about itself
+
+**What:** on a lane that charges money per call the harness MUST read the served window
+from the provider (`GET /v1/models`) at `check_connection` and pin it, MUST ask for and
+record the price of every call (`usage.cost`), and MUST stop a run that passes a cap
+derived from a measured run. An id the catalogue does not list is refused by name.
+**Why:** `context_tokens` returned `None` on this lane, so AGT-23's preflight reported
+"not checked" and skipped; `cost_usd` stayed 0, so a metered run's record claimed it was
+free. NFR-27's ban on a paid lane can only become a cap if the cap is enforced in code.
+**Amends:** AGT-23 (the OpenRouter half), NFR-27 (rewritten with the cap), §5.4.
+**Done means:** `tests/pure/test_metered_lane.py` covers the discovered window, the refused
+id, the price off the usage object, the cap and the lanes that are never capped;
+`scripts/provider_smoke.py --only openrouter` passes text and image on the model.
+
+### OT-29 The iteration loop runs on the metered lane
+
+**What:** run the five briefs no-hatch at v14 on `deepseek/deepseek-v4.1-flash` as writer
+and its own eye, from a frozen worktree, and record per brief: form gate, refinement gate,
+API calls, `search_ops` calls, hatch calls, tokens and dollars. Compare against iterations
+87–92 (the same briefs, same surface, Claude Code lane). `RECOMMENDED_MODELS` gains the
+lane only if the briefs pass, with the measured numbers behind the recommendation.
+**Why:** this is the loop the user asked to iterate on; until it is measured on this lane
+the lane is a hypothesis.
+**Open question this run answers:** whether `max_completion_tokens` (16,384, derived for
+bmb's 27B) starves a reasoning model on a 1M-context lane — the exact failure that killed
+the local arm. A turn cut at the ceiling is already a loud error (AGT-23), so the run
+either shows the number is fine or names the turn that hit it. **Do not raise it on faith.**
+**Done means:** the per-brief table is in the spec's measured-state section with cost and
+gate outcome per lane; a brief that fails on this lane is named with its failure.
+
+### OT-30 Paired bench rolls on the metered writer (gated)
+
+**What:** three paired holdout rolls, disclosed tree against the incumbent tree, writer and
+eye `deepseek/deepseek-v4.1-flash`, under a new pre-registration naming the spend cap.
+**Why:** a new writer is a new experiment and ranks nothing against the `deepseek-v10`
+group; H3'/H4 (executability on a small model) is unmeasured since the local arm was
+dropped, and this is where it could be measured instead.
+**Gated on:** OT-28 and OT-29, and the user's word. `scripts/bench_chain.sh` already takes
+`WRITER` and `EYE`, so no chain work is needed. ~$10 for six rolls at the measured price.
+
+---
+
 ## Phase 6 — The flywheel (only after Phase 3 shows the surface is better on a local lane)
 
 ### OT-18 Dataset export

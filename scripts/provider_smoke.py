@@ -6,7 +6,7 @@ image is a synthetic red disc written as a PNG by hand, so the check is
 and which cannot be faked by a text-only reply.
 
 Lanes (the served ids are what each server's /v1/models lists):
-  * openrouter — google/gemma-3-4b-it, a vision model at $0.05/M prompt
+  * openrouter — deepseek/deepseek-v4.1-flash, tools + images at $0.15/M
     tokens; both calls together cost well under a cent. The balance is
     a small prepaid one, so the completion cap is tiny.
   * bmb — text on qwen3.8-27b (a thinking build: the cap must leave
@@ -43,10 +43,13 @@ sys.path.insert(0, str(REPOSITORY_ROOT / "src"))
 
 from blended.agent.loop import ModelConfig, OllamaClient
 
-# The same family as big's local eye, instruct (no thinking to starve),
-# tools + images, $0.12/M prompt. gemma-3-4b-it was cheaper but 429s
+# The harness's metered writer and its own eye (OT-28): tools,
+# structured outputs, text AND image input, a 1,048,576 context read
+# from OpenRouter's catalogue, $0.15/M prompt and $0.60/M completion.
+# It replaced qwen3-vl-8b-instruct here so the smoke exercises the lane
+# the harness actually runs on. gemma-3-4b-it was cheaper but 429s
 # upstream (measured 2026-09-04).
-OPENROUTER_SMOKE_MODEL = "qwen/qwen3-vl-8b-instruct"
+OPENROUTER_SMOKE_MODEL = "deepseek/deepseek-v4.1-flash"
 BMB_TEXT_MODEL = "qwen3.8-27b"
 BMB_IMAGE_MODEL = "glm-ocr"
 BIG_MODEL = "qwen3-vl"
@@ -67,9 +70,13 @@ DISC_RADIUS_FRACTION = 0.35
 DISC_RGB = (220, 30, 30)
 BACKGROUND_RGB = (255, 255, 255)
 
-# Completion caps per lane: metered lane tiny; the thinking writer needs
+# Completion caps per lane: metered lane small; the thinking writer needs
 # room to reason before it emits content (measured: 4096 starved it).
-OPENROUTER_MAX_COMPLETION_TOKENS = 32
+# 32 was enough for qwen3-vl-8b-instruct but starved
+# deepseek-v4.1-flash, which spends reasoning tokens before its first
+# content token and answered "pong" in 18 (measured 2026-09-10). 256
+# leaves room for the reasoning and still costs $0.00015 a check.
+OPENROUTER_MAX_COMPLETION_TOKENS = 256
 THINKING_MAX_COMPLETION_TOKENS = 4096
 PLAIN_MAX_COMPLETION_TOKENS = 64
 

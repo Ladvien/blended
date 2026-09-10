@@ -150,8 +150,9 @@ def _read_bmb_api_key() -> str:
 # Ids are `vendor/model` (e.g. `qwen/qwen3-vl-8b-instruct`), which is
 # the discriminator below — no Ollama id (`name:tag`) and no llama-swap
 # id served here carries a slash. Metered per token on a small prepaid
-# balance ($20, 2026-09-04), so this lane is for the provider smoke and
-# deliberate opt-in, never for bench or E2E sweeps.
+# balance ($20, 2026-09-04). NFR-27 lets it carry real work only under a
+# recorded cap, because it is the one lane that spends money per call
+# rather than subscription window (OT-28).
 # The base WITHOUT /v1: the client appends OPENAI_CHAT_PATH, and
 # .../api/v1/v1/chat/completions 404s with an HTML page.
 OPENROUTER_ENDPOINT = "https://openrouter.ai/api"
@@ -163,6 +164,27 @@ OPENROUTER_APP_HEADERS = {
     "HTTP-Referer": "https://github.com/ladvien/blended",
     "X-Title": "blended",
 }
+# The served catalogue: every id with its `context_length` and pricing.
+# OpenRouter is the authority on its own models the way llama-swap.yaml
+# is on bmb's, so the window is READ here, never tabled (OT-28).
+OPENROUTER_MODELS_PATH = "/v1/models"
+# OpenRouter returns the call's price in `usage.cost` only when asked.
+# Without it a metered run's record says 0 dollars, which is a lie the
+# spend cap cannot be built on.
+OPENROUTER_USAGE_EXTENSION = {"include": True}
+# NFR-27's cap, per RUN (one client: one brief with its refinements, or
+# one bench instance — each is its own process with its own client).
+# Derived from measurement the way MAXIMUM_TURN_TOKENS is, not chosen:
+#   the heaviest run measured on the disclosed surface is iteration 88's
+#   three_leg_stool, 1,353,594 billed input + 24,615 output tokens over
+#   51 API calls. At deepseek-v4.1-flash's published $0.15/M input and
+#   $0.60/M output (OpenRouter catalogue, read 2026-09-10) that run
+#   costs 1,353,594 x 0.15/1e6 + 24,615 x 0.60/1e6 = $0.218. The cap is
+#   2.3x that, so a heavier brief passes and a runaway is stopped inside
+#   one run rather than after a 20-instance sweep.
+# The single-turn briefs measured $0.04 each on the same arithmetic, so
+# the five-brief chain is ~$0.35 against ~$4 of Claude subscription.
+MAXIMUM_RUN_COST_USD = 0.50
 
 
 def _read_openrouter_api_key() -> str:
@@ -528,6 +550,9 @@ class ModelConfig:
     # harness run does not change behaviour when the user edits their
     # own settings.json; the binary path exists because Blender launched
     # from Finder inherits no shell PATH.
+    # NFR-27: what one run may spend on a metered lane before it stops.
+    # Ignored on every other lane, which charge no money per call.
+    maximum_run_cost_usd: float = MAXIMUM_RUN_COST_USD
     claude_code_effort: str = CLAUDE_CODE_DEFAULT_EFFORT
     claude_code_binary_path: str = ""
 
@@ -609,6 +634,13 @@ class ModelConfig:
         return OPENROUTER_ENDPOINT in self.endpoint
 
     @property
+    def is_metered(self) -> bool:
+        """Charges money per call, as opposed to a subscription window
+        (Claude Code, Ollama cloud) or our own hardware (llama-swap).
+        Only a metered lane is capped, and only it reports a price."""
+        return self.is_openrouter
+
+    @property
     def uses_claude_code(self) -> bool:
         """True when this config's turns run through the headless CLI."""
         return self.endpoint == CLAUDE_CODE_ENDPOINT
@@ -634,6 +666,9 @@ class ModelConfig:
         no measured number exists for this model on this lane."""
         if self.uses_claude_code:
             return CLAUDE_CODE_CONTEXT_TOKENS
+        if self.is_openrouter:
+            # The provider's own number, discovered by check_connection.
+            return self.context_length
         if self.uses_openai_protocol:
             return CONTEXT_TOKENS_BY_MODEL.get(self.model)
         return self.context_length  # what the Ollama request sends as num_ctx; None until discovered
@@ -964,9 +999,20 @@ class OllamaClient:
                     yield line
 
     def discover_context(self, timeout_seconds: int = PREFLIGHT_TIMEOUT_SECONDS) -> int:
-        """Read the served model's window from the daemon and pin it on the
-        config (OT-27). One key, `<family>.context_length` in `model_info`;
-        anything else is a refusal that names what the daemon said."""
+        """Read the served model's window from the server that serves it and
+        pin it on the config (OT-27, OT-28).
+
+        Each lane has ONE authority on this number and it is asked, never
+        guessed: the Ollama daemon's `/api/show`, OpenRouter's
+        `/v1/models`. bmb's llama-swap is the exception only because its
+        authority is a config file we keep (`CONTEXT_TOKENS_BY_MODEL`,
+        quoted from `~/llm/llama-swap.yaml`), not an endpoint.
+
+        On the Ollama wire: one `<family>.context_length` key in
+        `model_info`; anything else is a refusal naming what it said.
+        """
+        if self.config.is_openrouter:
+            return self._discover_openrouter_context(timeout_seconds)
         body = self._request(SHOW_PATH, {"model": self.config.model}, timeout_seconds)
         info = body.get("model_info") or {}
         keys = [key for key in info if key.endswith(".context_length")]
@@ -979,6 +1025,46 @@ class OllamaClient:
         window = int(info[keys[0]])
         if window <= 0:
             raise ContextUndiscovered(f"{self.config.model}: {keys[0]} = {window}")
+        self.config = replace(self.config, context_length=window)
+        return window
+
+    def _check_run_cost(self) -> None:
+        """Stop a metered run that has spent its cap (NFR-27).
+
+        Loud, not graceful: unlike the per-turn token budget, which ends
+        the turn with an answer, money already spent cannot be undone and
+        the only useful act is to stop and say what it cost.
+        """
+        if not self.config.is_metered:
+            return
+        if self.spent.cost_usd > self.config.maximum_run_cost_usd:
+            raise RunCostExceeded(
+                f"{self.config.model} on {self.config.endpoint} has spent "
+                f"${self.spent.cost_usd:.4f} in {self.spent.api_calls} API call(s), "
+                f"over the ${self.config.maximum_run_cost_usd:.4f} cap for one run "
+                f"(NFR-27). Raise maximum_run_cost_usd deliberately or narrow the task."
+            )
+
+    def _discover_openrouter_context(self, timeout_seconds: int) -> int:
+        """The window OpenRouter publishes for this id. An id the catalogue
+        does not list is refused by name: it would otherwise 404 on every
+        call with no clue which half of `vendor/model` is wrong."""
+        body = self._request(OPENROUTER_MODELS_PATH, None, timeout_seconds)
+        served = {entry.get("id"): entry for entry in (body.get("data") or [])}
+        entry = served.get(self.config.model)
+        if entry is None:
+            raise ContextUndiscovered(
+                f"{self.config.model} is not in OpenRouter's catalogue "
+                f"({len(served)} ids at "
+                f"{self.config.endpoint}{OPENROUTER_MODELS_PATH}). "
+                f"Check the id at https://openrouter.ai/models."
+            )
+        window = int(entry.get("context_length") or 0)
+        if window <= 0:
+            raise ContextUndiscovered(
+                f"{self.config.model}: OpenRouter reports context_length "
+                f"{entry.get('context_length')!r}"
+            )
         self.config = replace(self.config, context_length=window)
         return window
 
@@ -995,6 +1081,10 @@ class OllamaClient:
                 "max_tokens": self.config.max_completion_tokens,
                 "stream": False,
             }
+            if self.config.is_openrouter:
+                # Ask for the price of the call: only this lane charges
+                # one, and only it answers this field.
+                payload["usage"] = dict(OPENROUTER_USAGE_EXTENSION)
             if tools:
                 payload["tools"] = _to_openai_tools(tools)
             return payload
@@ -1076,8 +1166,10 @@ class OllamaClient:
         for endpoint in attempts:
             probe_client = OllamaClient(self.config.with_endpoint(endpoint))
             try:
-                if not self.config.uses_openai_protocol:
-                    # The window first: the ping itself needs num_ctx.
+                if not self.config.uses_openai_protocol or self.config.is_openrouter:
+                    # The window first: the Ollama ping itself needs
+                    # num_ctx, and on OpenRouter the preflight is where a
+                    # mistyped id is caught rather than per call (OT-28).
                     probe_client.discover_context(PREFLIGHT_TIMEOUT_SECONDS)
                 probe_client._request(
                     probe_client._chat_path(),
@@ -1115,13 +1207,15 @@ class OllamaClient:
                 route = f"llama-swap on bmb ({BMB_ENDPOINT})"
             elif BIG_ENDPOINT in endpoint:
                 route = f"llama-swap on big ({BIG_ENDPOINT})"
+            elif OPENROUTER_ENDPOINT in endpoint:
+                route = "OpenRouter (metered per token)"
             elif CLOUD_ENDPOINT in endpoint:
                 route = "direct cloud (Bearer key)"
             else:
                 route = "local daemon (proxying cloud models if signed in)"
             window = (
                 f", context {self.config.context_length:,}"
-                if not self.config.uses_openai_protocol
+                if self.config.context_length
                 else ""
             )
             return ConnectionStatus(True, endpoint, f"{self.config.model} via {route}{window}{eye_window}")
@@ -1231,6 +1325,8 @@ class OllamaClient:
                 f"{self.config.model!r} available?"
             ) from url_error
         self.spent = self.spent.plus(_turn_cost_from_body(body))
+        # NFR-27: stop the bleeding before anything else is judged.
+        self._check_run_cost()
         # OT-22: a cut reply is an error, never a result.
         check_reply_fits(body, self.config.context_tokens, self.config.endpoint)
         if self.config.uses_openai_protocol:
@@ -1255,9 +1351,10 @@ def _turn_cost_from_body(body: dict) -> TurnCost:
 
     Ollama reports `prompt_eval_count` / `eval_count`; the OpenAI
     protocol reports a `usage` object, and llama-swap fills it in.
-    Neither exposes a cache split or a price, so those stay zero — the
-    point is that a run's record says how many tokens it moved on EVERY
-    lane, not only the one that prices itself.
+    Neither exposes a cache split, so that stays zero. `usage.cost` is
+    OpenRouter's answer to the usage extension and is the ONLY price on
+    any of these wires: a llama-swap or Ollama reply carries none, and
+    zero there means "this lane charged nothing", not "unknown" (OT-28).
     """
     usage = body.get("usage") or {}
     if usage:
@@ -1265,6 +1362,7 @@ def _turn_cost_from_body(body: dict) -> TurnCost:
             api_calls=1,
             input_tokens=int(usage.get("prompt_tokens") or 0),
             output_tokens=int(usage.get("completion_tokens") or 0),
+            cost_usd=float(usage.get("cost") or 0.0),
         )
     return TurnCost(
         api_calls=1,
@@ -1275,7 +1373,11 @@ def _turn_cost_from_body(body: dict) -> TurnCost:
 
 
 class ContextUndiscovered(RuntimeError):
-    """An Ollama-lane request before the daemon said how wide the model is."""
+    """A request before the serving endpoint said how wide the model is."""
+
+
+class RunCostExceeded(RuntimeError):
+    """A metered run passed its spend cap (NFR-27)."""
 
 
 class EyeUnreachable(RuntimeError):
