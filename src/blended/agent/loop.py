@@ -515,7 +515,9 @@ class ModelConfig:
     # to the eye client as ITS `context_length`.
     eye_context_length: int | None = None
     api_key: str = ""
-    # Completion ceiling on the OpenAI-protocol lanes. The bmb writer is
+    # Completion ceiling on the OpenAI-protocol lanes (sent as max_tokens);
+    # on the Ollama lanes the headroom the preflight keeps under the
+    # window, never sent (see _chat_payload). The bmb writer is
     # a REASONING build: its 65536-token context and thinking budget
     # make 4096 a starvation cap — measured live 2026-08-23: the tool
     # round trip returned EMPTY content with finish_reason=length, then
@@ -1009,9 +1011,14 @@ class OllamaClient:
             "options": {
                 "temperature": self.config.temperature,
                 "num_ctx": self.config.context_length,
-                # The completion ceiling the preflight reserves, made real on
-                # this wire too; without it the reservation was arithmetic only.
-                "num_predict": self.config.max_completion_tokens,
+                # No num_predict: on this wire max_completion_tokens is the
+                # HEADROOM the preflight keeps under the window, not a cap.
+                # Sent as a cap it cut deepseek-v4-pro's first turn on
+                # AquariumTank at 16,384 tokens after 87 s (done_reason
+                # =length, 2026-09-10): a thinking model spends its
+                # planning turn there. The daemon's own default is
+                # unbounded within num_ctx, and a reply cut at num_ctx is
+                # still an error (check_reply_fits).
             },
         }
         if tools:

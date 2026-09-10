@@ -145,7 +145,8 @@ def test_the_ollama_lane_learns_its_window_from_the_daemon(monkeypatch):
     assert calls[0] == (SHOW_PATH, {"model": "deepseek-v4-pro:cloud"})  # the window before the ping
     assert client.config.context_length == 1_048_576 == client.config.context_tokens
     options = client._chat_payload([{"role": "user", "content": "x"}])["options"]
-    assert options["num_ctx"] == 1_048_576 and options["num_predict"] == client.config.max_completion_tokens
+    assert options["num_ctx"] == 1_048_576
+    assert "num_predict" not in options  # headroom, not a cap: a cap cut a thinking model's planning turn
 
 
 def test_a_daemon_that_cannot_say_its_window_is_refused(monkeypatch):
