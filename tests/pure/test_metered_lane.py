@@ -1,5 +1,10 @@
 """OT-28: the metered lane tells the truth about itself.
 
+Every name is imported ONCE, at module level: `tests/pure/test_devreload.py`
+purges `blended.*` from `sys.modules`, so a re-import inside a test body
+returns a fresh class while `monkeypatch` has patched the old one, and
+the patched method is never the one that runs.
+
 A lane that charges money per call must be able to say two things the
 harness could not say before: how wide the served model's context is,
 and what a run has spent. Both are read from the provider — never
@@ -16,10 +21,12 @@ import pytest
 from blended.agent.loop import (
     BMB_ENDPOINT,
     LOCAL_ENDPOINT,
+    MAXIMUM_RESERVED_COMPLETION_TOKENS,
     MAXIMUM_RUN_COST_USD,
     OPENROUTER_ENDPOINT,
     OPENROUTER_ENDPOINTS_PATH,
     OPENROUTER_PINNED_PROVIDER,
+    RETRY_BACKOFF_SECONDS,
     ContextUndiscovered,
     ModelConfig,
     OllamaClient,
@@ -261,8 +268,6 @@ def test_a_rate_limited_call_is_retried_then_succeeds(monkeypatch):
     intermittent, so the same request sent again rides them out."""
     import urllib.error
 
-    from blended.agent.loop import RETRY_BACKOFF_SECONDS, OllamaClient
-
     waits = []
     monkeypatch.setattr("blended.agent.loop.time.sleep", lambda s: waits.append(s))
     attempts = {"n": 0}
@@ -291,8 +296,6 @@ def test_a_permanent_error_is_not_retried(monkeypatch):
     chain re-runs today was our own malformed history, not a rate limit."""
     import urllib.error
 
-    from blended.agent.loop import OllamaClient
-
     waits = []
     monkeypatch.setattr("blended.agent.loop.time.sleep", lambda s: waits.append(s))
     calls = {"n": 0}
@@ -315,8 +318,6 @@ def test_a_permanent_error_is_not_retried(monkeypatch):
 def test_a_window_that_never_lifts_fails_loudly(monkeypatch):
     import urllib.error
 
-    from blended.agent.loop import RETRY_BACKOFF_SECONDS, OllamaClient
-
     waits = []
     monkeypatch.setattr("blended.agent.loop.time.sleep", lambda s: waits.append(s))
     calls = {"n": 0}
@@ -337,3 +338,37 @@ def test_a_window_that_never_lifts_fails_loudly(monkeypatch):
     assert calls["n"] == len(RETRY_BACKOFF_SECONDS) + 1
     assert waits == list(RETRY_BACKOFF_SECONDS)
     assert sum(RETRY_BACKOFF_SECONDS) == 155  # the measured budget
+
+
+def test_the_completion_reservation_comes_from_the_provider_bounded(monkeypatch):
+    """Measured 2026-09-10: the 16,384 default — set for bmb's 27B, where
+    4,096 starved it — cut a uv_crate turn on this model, which spends
+    79-88 % of its completion tokens reasoning. The provider states what
+    it will generate, so take that, bounded: reserving its full 943,717
+    would leave ~105k of a 1,048,576 window for the prompt and refuse
+    every real conversation."""
+    _catalogue(
+        monkeypatch,
+        [{"tag": OPENROUTER_PINNED_PROVIDER, "context_length": METERED_WINDOW, "max_completion_tokens": 943_717}],
+    )
+    client = OllamaClient(_metered_config(max_completion_tokens=16_384))
+    client.check_connection()
+
+    assert client.config.max_completion_tokens == MAXIMUM_RESERVED_COMPLETION_TOKENS == 65_536
+    assert MAXIMUM_RESERVED_COMPLETION_TOKENS == 4 * 16_384  # 4x the ceiling measured to cut
+    assert MAXIMUM_RESERVED_COMPLETION_TOKENS < METERED_WINDOW * 0.07  # the prompt keeps the window
+
+    # A provider that publishes a SMALLER ceiling than the bound is believed.
+    _catalogue(
+        monkeypatch,
+        [{"tag": OPENROUTER_PINNED_PROVIDER, "context_length": METERED_WINDOW, "max_completion_tokens": 8_192}],
+    )
+    modest = OllamaClient(_metered_config(max_completion_tokens=16_384))
+    modest.check_connection()
+    assert modest.config.max_completion_tokens == 8_192
+
+    # A provider that publishes none leaves the configured value alone.
+    _catalogue(monkeypatch, [{"tag": OPENROUTER_PINNED_PROVIDER, "context_length": METERED_WINDOW}])
+    silent = OllamaClient(_metered_config(max_completion_tokens=16_384))
+    silent.check_connection()
+    assert silent.config.max_completion_tokens == 16_384

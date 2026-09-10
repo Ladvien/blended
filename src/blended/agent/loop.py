@@ -216,6 +216,17 @@ RETRYABLE_HTTP_STATUSES = frozenset({408, 429, 500, 502, 503, 504})
 # to the second — so the budget sums to 155 s, enough to ride out a
 # short one without turning a stalled lane into an unbounded wait.
 RETRY_BACKOFF_SECONDS = (5, 15, 45, 90)
+# What the harness will RESERVE for a completion on a lane that publishes
+# its own ceiling, however much higher that ceiling is.
+# Derived 2026-09-10: the 16,384 default (set for bmb's 27B, where 4,096
+# starved it) cut a uv_crate turn on deepseek-v4.1-flash — 79-88 % of
+# that model's completion tokens go to reasoning, and a whole run spent
+# 11k-23k across 12-15 calls, so a single planning turn passes 16,384.
+# The provider publishes 943,717, but reserving that would leave ~105k
+# of a 1,048,576 window for the prompt and refuse every real
+# conversation, so the reservation is capped here: 4x the ceiling that
+# was measured to cut, and still under 7 % of the window.
+MAXIMUM_RESERVED_COMPLETION_TOKENS = 65_536
 # NFR-27's cap, per RUN (one client: one brief with its refinements, or
 # one bench instance — each is its own process with its own client).
 # Derived from measurement the way MAXIMUM_TURN_TOKENS is, not chosen:
@@ -1200,7 +1211,19 @@ class OllamaClient:
                 f"{self.config.model} via {self.config.openrouter_provider}: "
                 f"context_length {entry.get('context_length')!r}"
             )
-        self.config = replace(self.config, context_length=window)
+        # The provider states what it will generate; take it, bounded, so
+        # a reasoning model is not cut at a ceiling derived for a 27B on
+        # other hardware. Reserving the provider's full figure would eat
+        # the window the same prompt has to fit in.
+        published = int(entry.get("max_completion_tokens") or 0)
+        reserved = (
+            min(published, MAXIMUM_RESERVED_COMPLETION_TOKENS)
+            if published > 0
+            else self.config.max_completion_tokens
+        )
+        self.config = replace(
+            self.config, context_length=window, max_completion_tokens=reserved
+        )
         return window
 
     def _chat_path(self) -> str:
@@ -1360,6 +1383,7 @@ class OllamaClient:
                 route = "local daemon (proxying cloud models if signed in)"
             window = (
                 f", context {self.config.context_length:,}"
+                f" reserving {self.config.max_completion_tokens:,} for the reply"
                 if self.config.context_length
                 else ""
             )
