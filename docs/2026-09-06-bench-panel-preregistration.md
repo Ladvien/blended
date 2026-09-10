@@ -284,3 +284,14 @@ an answer). At the measured 10.5 tok/s that is ≈ 26 min of generation on one t
 is the local writer's thinking budget on a bench brief, not the surface; the same ceiling
 applies to the incumbent, and the roll continues as pre-registered. Recorded as the
 per-request finding this section said it would record.
+16:23: **the local arm is dropped by decision** — the user's words, "I don't really want a
+local arm right now; I want to iterate on our harness." Instance 2 (Beetle) had just
+repeated instance 1 exactly: `ERR_MODEL_CALL`, zero turns, 1,714 s against 1,736 s. Two of
+two instances measured the writer's own thinking budget against the harness's 16,384-token
+completion ceiling, not the tool surface, and six pre-registered sweeps at ~25 min per
+instance are ~2 days of wall clock against the cloud arm's ~5 min. The local chain was
+stopped mid-sweep; `blended-local-qwen38-disclosed-roll1` holds two ERR rows and nothing
+scorable, and it stays on disk as the record. **H3'/H4 (executability on a local lane) is
+therefore unmeasured, and no local claim may be made from anything in this document.** The
+cloud arm continues as pre-registered and is unaffected: it ranks against the six-roll
+`deepseek-v10` incumbent group, which is what OT-9 needs.
