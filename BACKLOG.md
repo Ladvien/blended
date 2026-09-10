@@ -139,7 +139,7 @@ Entries in `BACKLOG_DONE.md` are never edited; a measured correction to a closed
 | Item | Correction | Measured | Commit |
 |---|---|---|---|
 | OT-17 (`2922411`) | `MAXIMUM_TURN_TOKENS` re-derived 750,000 → 1,700,000. The 750k figure came from the 8-tool lane (25,851 tokens per call); with 50 op tools the Claude Code lane bills 58,241 per call (91 % cache reads), and the budget stopped iteration 68 (planter_box, v12) at call 16 of 24. Mistake memory: `a-budget-derived-before-the-surface-changed-stops-honest-turns`. | iteration 68: 931,851 tokens / 16 calls | `6fdd91a` |
-| OT-22 (`6ef543c`) | Closed with two Blender tests red: the closing chain gated the commit on a `grep` that succeeded on the failure lines. The cause was real — the request estimate counted a contact sheet's base64 as text (~239k "tokens") and refused a turn that fit. Fixed the same hour: an attached image counts as `TOKENS_PER_IMAGE_ESTIMATE` (1,400, Anthropic's documented w×h/750 for a 1024² sheet), not as its bytes. | Blender 327/2 at the close; 329/0 after | (this correction's commit) |
+| OT-22 (`6ef543c`) | Closed with two Blender tests red: the closing chain gated the commit on a `grep` that succeeded on the failure lines. The cause was real — the request estimate counted a contact sheet's base64 as text (~239k "tokens") and refused a turn that fit. Fixed the same hour: an attached image counts as `TOKENS_PER_IMAGE_ESTIMATE` (1,400, Anthropic's documented w×h/750 for a 1024² sheet), not as its bytes. | Blender 327/2 at the close; 329/0 after | `d7ed393` |
 
 ## Not in this backlog, and why
 
