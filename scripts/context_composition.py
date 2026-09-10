@@ -46,7 +46,8 @@ def main(argv) -> int:
         return 2
     print(render_table(rows, TOKENIZER_NAME))
     if arguments.spec:
-        row = spec_row(rows, TOKENIZER_NAME, _datetime.datetime.now(_datetime.UTC).date().isoformat())
+        revision_text = f", working agreement v{arguments.revision}" if arguments.revision else ""
+        row = spec_row(rows, TOKENIZER_NAME, _datetime.datetime.now(_datetime.UTC).date().isoformat(), revision_text)
         write_spec_row(SPEC_PATH, row)
         print(f"[composition] spec row written to {SPEC_PATH.name}")
     return 0

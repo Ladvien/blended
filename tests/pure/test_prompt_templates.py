@@ -276,3 +276,21 @@ def test_the_shipped_configuration_is_the_converged_configuration():
         "the default session prompt is not the pinned revision — a user "
         "would talk to text nobody scored"
     )
+
+
+def test_the_prompt_describes_no_op_twice():
+    """OT-24: the generated tool schemas are the one description of each
+    op; the manifest's operations section no longer rides in the prompt,
+    while conventions, the gate's fields and the drift catalog still do."""
+    from blended.agent.system_prompt import (
+        GATE_HEADING,
+        OUTPUT_CONTRACT_HEADING,
+        build_system_prompt,
+    )
+    from blended.ops._contract import facade_ops
+
+    prompt = build_system_prompt(revision=14)
+    for name, _ in facade_ops():
+        assert f"{name}(" not in prompt, name
+    assert "## Conventions" in prompt and GATE_HEADING in prompt and "## Known API traps" in prompt
+    assert OUTPUT_CONTRACT_HEADING not in prompt  # the chat never wanted 'return only Python'

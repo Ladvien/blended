@@ -25,7 +25,7 @@ def _words(text: str) -> int:
 def test_every_part_is_a_verbatim_substring_and_the_remainder_is_small():
     whole, parts = prompt_parts(revision=12)
     assert [p.name for p in parts] == [
-        "working agreement v12", "conventions", "manifest: operations + config objects",
+        "working agreement v12", "conventions",
         "manifest: gate fields + budget", "manifest: drift catalog",
     ]
     assert all(p.text in whole for p in parts)
@@ -40,7 +40,7 @@ def test_the_composition_sums_and_names_both_lanes():
     assert "STATIC PER CALL, OpenAI/Ollama lanes" in names and "STATIC PER CALL, Claude Code lane" in names
     by = {r.name.strip(): r for r in rows}
     # The five parts plus the scaffolding remainder sum to the whole exactly.
-    prompt_rows = rows[1:7]
+    prompt_rows = rows[1:6]
     assert prompt_rows[-1].name.strip() == "template scaffolding (remainder)"
     assert sum(r.tokens for r in prompt_rows) == by["system prompt (assembled)"].tokens
     assert by["STATIC PER CALL, OpenAI/Ollama lanes"].tokens == by["system prompt (assembled)"].tokens + by["tools: OpenAI/Ollama `tools` field (all)"].tokens

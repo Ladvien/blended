@@ -478,6 +478,53 @@ PROMPT_REVISIONS: tuple[PromptRevision, ...] = (
             "pin remain."
         ),
     ),
+    PromptRevision(
+        revision=13,
+        changed_element=(
+            "'How you work' opening: 'and the rest listed below' -> 'and the "
+            "rest of your tool list'. The prompt no longer prints the ops "
+            "(OT-24); the sentence must not promise a list that is not there."
+        ),
+        hypothesis=(
+            "Wording only. Expect the five briefs to pass with the hatch "
+            "withheld exactly as on v12, and per-call tokens unchanged (the "
+            "removal itself is v14's hunk)."
+        ),
+        outcome=(
+            "Not run alone: superseded by v14 the same hour, which carries "
+            "this hunk. Measured through v14 (below)."
+        ),
+    ),
+    PromptRevision(
+        revision=14,
+        changed_element=(
+            "Tool discipline: the 'listed below ... do not search for it' "
+            "bullet becomes 'a tool in your tool list, with its exact schema "
+            "... search_ops finds an operation by keyword and returns its "
+            "schema — one call, then use it'. Ships with the manifest's "
+            "operations section removed from the prompt (OT-24)."
+        ),
+        hypothesis=(
+            "Changed because the ops were described twice per call — 3,074 "
+            "tokens of manifest prose beside 7,904 of schemas on bmb's "
+            "tokenizer (OT-23) — and v12 told the writer not to use "
+            "search_ops. Expect the five briefs to pass with the hatch "
+            "withheld with at most one search_ops call each, the system "
+            "prompt to drop by ~3,000 tokens, and hatch calls per gate-"
+            "passing brief unchanged when the hatch is offered."
+        ),
+        outcome=(
+            "MEASURED ONCE, 2026-09-10, Claude Code lane, hatch withheld: all "
+            "five briefs passed both gates (iterations 81 planter 13 calls, "
+            "86 stool 56 calls with three refinements, 83 uv_crate 10, 84 "
+            "column 8, 85 crate_with_lid 21), zero search_ops calls; chat "
+            "E2E 6/6 in 46 tool calls (55 on v12). The system prompt fell "
+            "from 7,569 to 4,482 tokens on bmb's tokenizer (-3,087); static "
+            "per call 16,814 -> 13,727 on the OpenAI/Ollama lanes. The "
+            "hatch-offered reading (hatch calls per gate-passing brief) is "
+            "not yet measured on v14. Still a candidate."
+        ),
+    ),
 )
 
 # --- CONVERGED --------------------------------------------------------

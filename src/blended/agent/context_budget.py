@@ -25,14 +25,13 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from blended.agent.system_prompt import (
-    OPERATIONS_HEADING,
+    GATE_HEADING,
     OUTPUT_CONTRACT_HEADING,
     build_system_prompt,
 )
 
-# The manifest headings the system prompt's operations slice spans, in
-# order. Asserted present, never searched for with a silent -1.
-GATE_HEADING = "## What the gate measures"
+# The drift catalog's heading inside the manifest's gate-and-traps slice.
+# Asserted present, never searched for with a silent -1.
 DRIFT_HEADING = "## Known API traps"
 BMB_TOKENIZE_PATH = "/upstream/qwen3.8-27b/tokenize"
 TOKENIZE_TIMEOUT_SECONDS = 120
@@ -68,7 +67,8 @@ def prompt_parts(revision: int | None = None, lane: str | None = None) -> tuple[
     parts = [
         Part(f"working agreement v{get_revision(revision).revision}", agreement),
         Part("conventions", conventions),
-        Part("manifest: operations + config objects", _slice(manifest, OPERATIONS_HEADING, GATE_HEADING)),
+        # The operations section is measured from the manifest but is no
+        # longer in the prompt (OT-24); the schemas carry the ops.
         Part("manifest: gate fields + budget", _slice(manifest, GATE_HEADING, DRIFT_HEADING)),
         Part("manifest: drift catalog", _slice(manifest, DRIFT_HEADING, OUTPUT_CONTRACT_HEADING)),
     ]
@@ -159,18 +159,17 @@ def render_table(rows: list[CountedPart], tokenizer_name: str) -> str:
 SPEC_ROW_LABEL = "| Context per call |"
 
 
-def spec_row(rows: list[CountedPart], tokenizer_name: str, date_text: str) -> str:
+def spec_row(rows: list[CountedPart], tokenizer_name: str, date_text: str, revision_text: str = "") -> str:
     by_name = {row.name.strip(): row for row in rows}
     whole = by_name["system prompt (assembled)"]
-    ops = by_name["manifest: operations + config objects"]
     tools_all = by_name["tools: OpenAI/Ollama `tools` field (all)"]
     op_tools = by_name["of which op tools"]
     cli = by_name["tools: Claude Code envelope + protocol note"]
     static_openai = by_name["STATIC PER CALL, OpenAI/Ollama lanes"]
     static_cli = by_name["STATIC PER CALL, Claude Code lane"]
     return (
-        f"{SPEC_ROW_LABEL} {tokenizer_name}, {date_text}: system prompt {whole.tokens:,} "
-        f"(operations section {ops.tokens:,}); tools {tools_all.tokens:,} on the OpenAI/Ollama lanes "
+        f"{SPEC_ROW_LABEL} {tokenizer_name}, {date_text}{revision_text}: system prompt {whole.tokens:,} "
+        f"(no operations section since OT-24); tools {tools_all.tokens:,} on the OpenAI/Ollama lanes "
         f"(op tools {op_tools.tokens:,}), {cli.tokens:,} as the Claude Code envelope; "
         f"static per call {static_openai.tokens:,} / {static_cli.tokens:,} before scene and history "
         f"| `scripts/context_composition.py` |"

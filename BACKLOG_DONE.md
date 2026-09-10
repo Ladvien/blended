@@ -340,3 +340,21 @@ regression reopens the item in `BACKLOG.md` with a pointer back to this entry.
 **Measured (bmb `qwen3.8-27b`, one real full-prefix request, 16,997 prompt tokens):** cold 226.1 s — prefill 142.9 s (119 tok/s), 711 completion tokens in 67.7 s (10.5 tok/s); warm 17.6 s with the prefix read from llama-server's cache in 0.3 s. The request ceiling is re-derived from that: cold load ~240 s + prefill 143 s + 16,384 completion tokens at 10.5 tok/s ≈ 1,943 s → `LLAMA_SWAP_REQUEST_TIMEOUT_SECONDS` = 2000 (was 900, which killed OT-10's first instance mid-generation). The model's first move on that request was `declare_plan`.
 **Layers:** pure 704 passed / 1 skipped / 1 xfailed; Blender 329 passed / 3 skipped.
 **Commit:** `6ef543c`.
+
+---
+
+## OT-24 One description per op: drop the manifest's ops section
+
+**What:** the manifest MUST stop rendering the operations section into the prompt (3,074 tokens); the generated schema is the one description of each op. Conventions, gate fields, budget knobs and the drift catalog stay. Register the prompt change with a hypothesis before the run.
+**Why:** "nothing is written twice" applies to the context window as much as to source.
+**Amends:** PRM-1, PRM-2; a new prompt revision is NOT needed (the `.j2` does not change) but the assembled fingerprint moves and is re-pinned.
+**Done means:** the five briefs still pass with the hatch withheld; `tests/pure/test_manifest.py` asserts no op signature appears in the assembled prompt.
+
+**Closed:** 2026-09-10.
+**Gating runs and tests:** `make converge ... REVISION=14 ARGS="--no-hatch"`: planter 81 (13 calls), stool 86 (56 calls, three refinements pass), uv_crate 83 (10), column 84 (8), crate_with_lid 85 (21) — all FORM PASS, zero `search_ops` calls; `make chat-e2e ARGS="--no-hatch --revision 14"` 6/6 in 46 tool calls. `tests/pure/test_prompt_templates.py::test_the_prompt_describes_no_op_twice`; `::test_each_revision_changes_exactly_one_place[13]`, `[14]`; `tests/pure/test_refinement_missing_part.py`.
+**Spec:** PRM-1 amended (the operations section leaves the prompt), PRM-2 verification; §5.4 pins row; the "Context per call" row re-measured on v14.
+**Shape of the change:** `build_system_prompt` renders conventions plus the manifest's gate-fields and drift-catalog slice, never the operations section; `include_operations` is gone and the manifest headings are asserted, not searched for with a silent -1. Working agreement v13 (one hunk: "the rest of your tool list") and v14 (one hunk: the tool-discipline bullet now points at the tool list and `search_ops`) are registered with hypotheses and measured outcomes; `ACTIVE_PROMPT_REVISION` stays at the pin. The composition script measures the prompt without the section.
+**Measured:** system prompt 7,569 → 4,482 tokens on bmb's tokenizer (−3,087); static per call 16,814 → 13,727 (OpenAI/Ollama) and 18,054 → 14,967 (Claude Code); assembled fingerprint moved to `a10:c68237772de1`.
+**Found by the first stool run (82), fixed here:** the driver died in `RefinementOutcome._measured` when a refinement turn left the part named `Seat` — a missing dimension now reads "missing (part not found)" in the summary and counts as a failure instead of losing the record.
+**Layers:** pure 713 passed / 1 skipped / 1 xfailed; Blender 329 passed / 3 skipped (both by exit code).
+**Commit:** recorded in the follow-up commit.

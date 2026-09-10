@@ -105,7 +105,7 @@ def test_the_default_session_carries_no_skill():
 def test_a_lane_loads_exactly_its_modules(lane):
     from blended.agent.system_prompt import build_system_prompt
 
-    prompt = build_system_prompt(include_operations=False, lane=lane)
+    prompt = build_system_prompt(lane=lane)
     selected = {entry.name for entry in skill_modules.select_modules(lane)}
     for entry in skill_modules.SKILL_MODULES:
         present = entry.body.rstrip("\n") in prompt

@@ -31,12 +31,15 @@ SYSTEM_PROMPT_TEMPLATE = "system_prompt"
 # Everything from the operations heading up to the one-shot output
 # contract, which tells a script writer to "return only Python" and is
 # wrong in a chat where the agent also talks to the user.
+# The manifest headings the prompt slices between. `OPERATIONS_HEADING`
+# is no longer rendered into the prompt (OT-24) and stays here for the
+# composition script, which measures what the manifest still holds.
 OPERATIONS_HEADING = "## Available operations"
+GATE_HEADING = "## What the gate measures"
 OUTPUT_CONTRACT_HEADING = "## Your output"
 
 
 def build_system_prompt(
-    include_operations: bool = True,
     revision: int | None = None,
     lane: str | None = None,
 ) -> str:
@@ -52,9 +55,16 @@ def build_system_prompt(
     keeps meaning what it meant. Skills are opt-in per turn until a run
     has scored them — see `skill_modules`, and the -1.3 pp that
     self-authored skills measured there. Unknown lanes raise.
+
+    The manifest's operations section is NOT rendered (OT-24): the
+    generated tool schemas are the one description of each op, and the
+    prose copy cost 3,074 tokens per call on bmb's tokenizer for the
+    same information. Conventions, the gate's fields and budget, and
+    the drift catalog stay.
     """
     from blended.agent.prompt_templates import render
     from blended.agent.prompt_versions import get_revision
+    from blended.manifest import CONVENTIONS, build_manifest
     from blended.version import TARGET_BLENDER_SERIES
 
     skills_text = ""
@@ -63,20 +73,11 @@ def build_system_prompt(
 
         skills_text = render_modules(lane)
 
-    conventions_text = ""
-    operations_text = ""
-    if include_operations:
-        from blended.manifest import CONVENTIONS, build_manifest
-
-        conventions_text = "\n".join(
-            f"{index}. {rule}" for index, rule in enumerate(CONVENTIONS, 1)
-        )
-        manifest_text = build_manifest()
-        operations_text = manifest_text[
-            manifest_text.find(OPERATIONS_HEADING) : manifest_text.find(
-                OUTPUT_CONTRACT_HEADING
-            )
-        ]
+    conventions_text = "\n".join(
+        f"{index}. {rule}" for index, rule in enumerate(CONVENTIONS, 1)
+    )
+    manifest_text = build_manifest()
+    gate_and_traps_text = manifest_slice(manifest_text, GATE_HEADING, OUTPUT_CONTRACT_HEADING)
 
     return render(
         SYSTEM_PROMPT_TEMPLATE,
@@ -86,8 +87,20 @@ def build_system_prompt(
         working_agreement=get_revision(revision).body,
         skills=skills_text,
         conventions=conventions_text,
-        operations=operations_text,
+        gate_and_traps=gate_and_traps_text,
     )
+
+
+def manifest_slice(manifest_text: str, start_heading: str, end_heading: str) -> str:
+    """The manifest between two headings, loudly: a renamed heading is an
+    error, not a silent -1 slice."""
+    start = manifest_text.find(start_heading)
+    end = manifest_text.find(end_heading)
+    if start < 0 or end < 0 or end < start:
+        raise ValueError(
+            f"manifest headings {start_heading!r} .. {end_heading!r} not found in order"
+        )
+    return manifest_text[start:end]
 
 
 # The identity in prompt_versions covers the working-agreement body. It
@@ -109,9 +122,7 @@ def assembled_prompt_fingerprint(
     """
     from blended.agent.prompt_versions import get_revision
 
-    assembled = build_system_prompt(
-        include_operations=True, revision=revision, lane=lane
-    )
+    assembled = build_system_prompt(revision=revision, lane=lane)
     digest = hashlib.sha256(assembled.encode("utf-8")).hexdigest()
     return (
         f"a{get_revision(revision).revision}:"

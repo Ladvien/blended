@@ -891,11 +891,16 @@ class RefinementOutcome:
     def refined_brief(self, brief: AssetBrief) -> AssetBrief:
         return refine_brief(brief, self.step)
 
-    def _measured(self, report: AcceptanceReport, name: str) -> float:
+    def _measured(self, report: AcceptanceReport, name: str) -> float | None:
+        """The measured value, or None when the report has no such
+        dimension — the part was not found. A missing part is a finding
+        the summary must print, never an exception that loses the
+        record (measured 2026-09-10, iteration 82: the driver died in
+        this lookup after a refinement turn left the stool named Seat)."""
         for measurement in report.dimensions:
             if measurement.spec.name == name:
                 return measurement.measured_m
-        raise KeyError(f"no dimension named {name!r}")
+        return None
 
     def preservation_failures(self, brief: AssetBrief) -> list[str]:
         """Everything the instruction did NOT name must not have moved.
@@ -910,6 +915,12 @@ class RefinementOutcome:
             if measurement.spec.name in changed_names:
                 continue
             was = self._measured(self.before, measurement.spec.name)
+            if was is None:
+                found.append(
+                    f"{measurement.spec.name} has no measurement before the "
+                    f"instruction, so its preservation cannot be judged"
+                )
+                continue
             drift_m = measurement.measured_m - was
             if abs(drift_m) > PRESERVED_DIMENSION_TOLERANCE_M:
                 found.append(
@@ -961,8 +972,10 @@ class RefinementOutcome:
         for spec in self.step.changed:
             was = self._measured(self.before, spec.name)
             now = self._measured(self.after, spec.name)
+            was_text = f"{was:.4f}" if was is not None else "missing"
+            now_text = f"{now:.4f}" if now is not None else "missing (part not found)"
             lines.append(
-                f"  {spec.name}: {was:.4f} -> {now:.4f} m, asked for "
+                f"  {spec.name}: {was_text} -> {now_text} m, asked for "
                 f"{spec.expected_m:.4f} +/- {spec.tolerance_m:.4f}"
             )
         preserved = self.preservation_failures(brief)

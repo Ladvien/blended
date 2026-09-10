@@ -147,3 +147,28 @@ detectable effect on `cd_pca` is 0.0021 (table above).
   briefs within three paired rolls — is measured on the convergence suite, not here.
 
 **Outcome.** *(pending — no ops-lane roll has run as of 2026-09-10)*
+
+---
+
+## Disclosed-surface pre-registration — 2026-09-10 (OT-25)
+
+Written BEFORE progressive disclosure ships. Measured basis: a call carried all 48 op
+schemas (7,904 tokens on bmb's tokenizer) while the five briefs that pass with the hatch
+withheld used 4–8 distinct ops each; the derivation from the nine gate-passing v12 runs
+with tool events puts 7 scene-changing ops in the core at the two-brief threshold, so a
+call offers 8 service tools + 14 readers + 7 core ops = 29 tools, and reaches the other
+27 through `search_ops`.
+
+**Hypotheses, stated before the roll.**
+
+- H4 (executability, local lane): rises against the `hatch` rolls' own band (OT-10's
+  pairing, re-run as OT-27).
+- H5 (tokens per call, Claude Code lane): falls below the 8-tool baseline of 25,851
+  per harness call, from the 58,241 measured with the full 50-tool envelope.
+- H6 (hatch calls per gate-passing brief, hatch offered, five briefs): unchanged
+  within one call per brief of the v12 reading (3.00 on one roll).
+- H7 (search cost): at most one `search_ops` call per undisclosed op a brief needs;
+  the stool (splayed_leg_ring, trim_soles_flat, boolean_union) is the brief that
+  pays it.
+
+**Outcome.** *(pending)*

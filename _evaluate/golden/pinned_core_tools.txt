@@ -1,0 +1,11 @@
+# The core op set (OT-25): scene-changing ops used successfully in
+# >= 2 distinct gate-passing briefs. Written by
+# scripts/derive_core_tools.py from _evaluate/iterations.jsonl; never by hand.
+# name  briefs
+add_box  # 3
+add_cylinder  # 2
+assign_material  # 5
+boolean_difference  # 2
+link_into_scene  # 5
+rename_object  # 2
+snap_base_to_ground  # 2
