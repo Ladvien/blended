@@ -273,4 +273,4 @@ regression reopens the item in `BACKLOG.md` with a pointer back to this entry.
 **Costs, measured:** the five passing no-hatch runs billed $0.3–2.3 each on this lane. 75 briefs' worth of runs today; the account's 7-day window was at 62% before them.
 **Observations for the next roll, not acted on:** `select_edges` used as a probe loop (seven calls in 77) suggests the reader should return what the edges ARE (their dihedral angles, count) rather than indices; the structured-output failure on run 72 has one occurrence.
 **Layers:** pure 690 passed / 1 skipped / 1 xfailed; Blender 328 passed / 3 skipped.
-**Commit:** recorded in the follow-up commit.
+**Commit:** `709dc33`.
