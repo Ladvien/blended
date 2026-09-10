@@ -100,4 +100,4 @@ regression reopens the item in `BACKLOG.md` with a pointer back to this entry.
 **Observation for OT-13, not acted on:** in the recorded goldens the model forgot `link_into_scene` on the first attempt in three of five briefs; a constructor that links would remove that failure class and the ungated set with it.
 **Mistake recorded:** `a-typing-object-compared-by-identity-breaks-under-dev-reload`.
 **Layers:** pure 634 passed / 1 skipped / 1 xfailed; Blender 314 passed / 3 skipped.
-**Commit:** recorded in the follow-up commit.
+**Commit:** `ab97d36`.
