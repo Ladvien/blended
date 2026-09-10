@@ -10,23 +10,29 @@ verifies it happened.
 from __future__ import annotations
 
 
+MINIMUM_ARRAY_COUNT = 2
+ARRAY_MODIFIER_NAME = "LinearArray"
+
+
 def linear_array(
-    blender_object,
+    object_name: str,
     count: int,
     offset_m: tuple[float, float, float],
-):
-    """Repeat the object `count` times at a constant metric offset and
-    bake the result into the mesh."""
+) -> str:
+    """Repeat the named object `count` times at a constant metric offset, baked into its mesh."""
+    from blended.ops._objects import object_by_name
     from blended.ops.modifiers import apply_all_modifiers
 
-    MINIMUM_ARRAY_COUNT = 2
     if count < MINIMUM_ARRAY_COUNT:
         raise ValueError(f"Array count must be >= {MINIMUM_ARRAY_COUNT}.")
 
-    array_modifier = blender_object.modifiers.new(name="LinearArray", type="ARRAY")
+    blender_object = object_by_name(object_name, "MESH")
+    array_modifier = blender_object.modifiers.new(
+        name=ARRAY_MODIFIER_NAME, type="ARRAY"
+    )
     array_modifier.count = count
     array_modifier.use_relative_offset = False
     array_modifier.use_constant_offset = True
     array_modifier.constant_offset_displace = offset_m
-    apply_all_modifiers(blender_object)
-    return blender_object
+    apply_all_modifiers(object_name)
+    return object_name

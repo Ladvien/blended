@@ -20,6 +20,7 @@
 | Agent tools | 8, hand-written in `TOOL_SCHEMAS` | `src/blended/agent/tools.py:37` |
 | Construction path in the ACI | `run_python(source)` — raw `bpy` | AGT-1, AGT-3 |
 | Ops facade completeness | whole — every public op re-exported, builders import the facade only (OT-1, closed) | `tests/pure/test_one_path_ops.py` |
+| Op signature contract | enforced — names in, names out, units on quantities, no bpy types (OT-2, closed) | `tests/pure/test_ops_signature_contract.py` |
 | Shipped builders | 3 (crate, barrel, pallet) | OPS-15 |
 | Manifest generation | introspects ops modules for prose, not schemas | PRM-2, `src/blended/manifest.py:22,44,107` |
 | Bench incumbent | `deepseek-v4-pro:cloud`, 6 rolls, 120/120 exec, `cd_pca` 0.0252 | `docs/2026-09-06-bench-panel-preregistration.md` |
@@ -29,13 +30,6 @@
 ---
 
 ## Phase 1 — Prerequisites (the vocabulary has to be one thing before it can be a surface)
-
-### OT-2 Op signature contract
-
-**What:** Every op on the facade MUST satisfy a machine-checkable contract: type-annotated parameters; unit-suffixed names for quantities (`_m`, `_deg`, `_px`) per NFR-8; a docstring whose first line is the one-sentence description; an explicit return annotation naming the object(s) created or modified; no `bpy` types in the signature (object references are names, `str`).
-**Why:** The schema generator can only emit what the signature carries. This is the same discipline OPS-16 already applies to `Parameters`; it extends it to ops.
-**Amends:** adds `OPS-21`.
-**Done means:** `tests/pure/test_ops_signature_contract.py` fails on any facade op that violates the contract. A seeded-defect fixture op (NFR-15) trips it.
 
 ### OT-3 Generate tool schemas from the facade
 

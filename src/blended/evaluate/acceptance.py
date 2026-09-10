@@ -332,7 +332,7 @@ class AcceptanceReport:
                     f"{prefix(part)}object {part.name!r} exists but is not "
                     f"linked into the scene collection, so it has no "
                     f"evaluated mesh and does not appear in the viewport "
-                    f"(call ops.primitives.link_into_scene after "
+                    f"(call link_into_scene({part.name!r}) after "
                     f"constructing it)"
                 )
                 continue

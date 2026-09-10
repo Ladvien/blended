@@ -39,9 +39,9 @@ def empty_scene():
 def _make_box(name, width_m, depth_m, height_m):
     from blended.ops.primitives import add_box, link_into_scene
 
-    box = add_box(name, width_m, depth_m, height_m)
-    link_into_scene(box)
-    return box
+    box_name = add_box(name, width_m, depth_m, height_m)
+    link_into_scene(box_name)
+    return bpy.data.objects[box_name]
 
 
 def _select_only(obj) -> None:

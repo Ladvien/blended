@@ -25,16 +25,16 @@ def empty_scene():
 def _box():
     from blended.ops.primitives import add_box, link_into_scene
 
-    box = add_box("Subject", 0.2, 0.2, 0.2)
-    link_into_scene(box)
-    return box
+    box_name = add_box("Subject", 0.2, 0.2, 0.2)
+    link_into_scene(box_name)
+    return bpy.data.objects[box_name]
 
 
 def test_assign_material_fills_one_slot(empty_scene):
     from blended.ops.materials import assign_material
 
     box = _box()
-    assign_material(box, "Terracotta", TERRACOTTA_RGB)
+    assign_material(box.name, "Terracotta", TERRACOTTA_RGB)
 
     assert len(box.data.materials) == 1
     assert box.data.materials[0] is not None
@@ -46,8 +46,9 @@ def test_assign_material_sets_both_colour_fields(empty_scene):
     from blended.ops.materials import assign_material
 
     box = _box()
-    material = assign_material(box, "Terracotta", TERRACOTTA_RGB)
+    material_name = assign_material(box.name, "Terracotta", TERRACOTTA_RGB)
 
+    material = bpy.data.materials[material_name]
     principled = material.node_tree.nodes["Principled BSDF"]
     shader_rgb = tuple(principled.inputs["Base Color"].default_value)[:3]
     viewport_rgb = tuple(material.diffuse_color)[:3]
@@ -67,14 +68,13 @@ def test_a_shared_material_name_survives_reassignment(empty_scene):
     keeps its assignment."""
     from blended.ops.materials import assign_material
     from blended.ops.primitives import add_box, link_into_scene
+    body = bpy.data.objects[add_box("Body", 0.5, 0.5, 0.4)]
+    link_into_scene(body.name)
+    lid = bpy.data.objects[add_box("Lid", 0.5, 0.5, 0.06)]
+    link_into_scene(lid.name)
 
-    body = add_box("Body", 0.5, 0.5, 0.4)
-    link_into_scene(body)
-    lid = add_box("Lid", 0.5, 0.5, 0.06)
-    link_into_scene(lid)
-
-    assign_material(body, "CrateWood", TERRACOTTA_RGB)
-    assign_material(lid, "CrateWood", TERRACOTTA_RGB)
+    assign_material(body.name, "CrateWood", TERRACOTTA_RGB)
+    assign_material(lid.name, "CrateWood", TERRACOTTA_RGB)
 
     assert body.data.materials[0] is not None, "the body's slot dangled to None"
     assert lid.data.materials[0] is not None
@@ -91,7 +91,7 @@ def test_the_render_actually_shows_the_colour(empty_scene, tmp_path):
     from blended.ops.materials import assign_material
 
     box = _box()
-    assign_material(box, "Terracotta", TERRACOTTA_RGB)
+    assign_material(box.name, "Terracotta", TERRACOTTA_RGB)
     paths = capture_views(box, tmp_path)
 
     image = bpy.data.images.load(str(paths["front"]))

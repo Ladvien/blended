@@ -21,7 +21,7 @@ def test_unwrapped_mesh_reports_uvs(empty_scene):
     crate_object = CrateBuilder(CrateParameters()).build()
     assert analyze_object(crate_object).uv_layer_count == 0
 
-    island_count = unwrap_uvs(crate_object).island_count
+    island_count = unwrap_uvs(crate_object.name).island_count
     report = analyze_object(crate_object)
     assert report.uv_layer_count == 1
     assert report.uv_island_count == island_count >= 1
@@ -40,7 +40,7 @@ def test_require_uv_budget_fails_without_unwrap(empty_scene):
     failures_before = analyze_object(crate_object).failures(textured_budget)
     assert any("no UV layer" in failure for failure in failures_before)
 
-    unwrap_uvs(crate_object)
+    unwrap_uvs(crate_object.name)
     assert analyze_object(crate_object).failures(textured_budget) == []
 
 
@@ -60,9 +60,9 @@ def test_stacked_uvs_are_detected_as_overlaps(empty_scene):
     from blended.analyze import MeshBudget, analyze_object
     from blended.ops import add_box, link_into_scene, unwrap_uvs
 
-    box_object = add_box("StackedUVs", 1.0, 1.0, 1.0)
-    link_into_scene(box_object)
-    unwrap_uvs(box_object)
+    box_object = bpy.data.objects[add_box("StackedUVs", 1.0, 1.0, 1.0)]
+    link_into_scene(box_object.name)
+    unwrap_uvs(box_object.name)
 
     # Collapse every island onto the same square: guaranteed overlaps.
     uv_layer = box_object.data.uv_layers.active
@@ -85,9 +85,9 @@ def test_out_of_bounds_uvs_are_detected(empty_scene):
     from blended.analyze import MeshBudget, analyze_object
     from blended.ops import add_box, link_into_scene, unwrap_uvs
 
-    box_object = add_box("OutOfBoundsUVs", 1.0, 1.0, 1.0)
-    link_into_scene(box_object)
-    unwrap_uvs(box_object)
+    box_object = bpy.data.objects[add_box("OutOfBoundsUVs", 1.0, 1.0, 1.0)]
+    link_into_scene(box_object.name)
+    unwrap_uvs(box_object.name)
     uv_layer = box_object.data.uv_layers.active
     for uv_datum in uv_layer.data:
         uv_datum.uv[0] += 2.0  # shove the whole atlas out of the 0-1 square
@@ -106,7 +106,7 @@ def test_island_budget_catches_seam_heavy_layouts(empty_scene):
     from blended.ops import unwrap_uvs
 
     barrel_object = BarrelBuilder(BarrelParameters()).build()
-    unwrap_uvs(barrel_object)
+    unwrap_uvs(barrel_object.name)
     report = analyze_object(barrel_object)
 
     tight_budget = MeshBudget(require_uv_layer=True, maximum_uv_island_count=1)
@@ -135,7 +135,7 @@ def test_uv_layout_render_produces_an_image(empty_scene, tmp_path):
     from blended.ops import unwrap_uvs
 
     barrel_object = BarrelBuilder(BarrelParameters()).build()
-    unwrap_uvs(barrel_object)
+    unwrap_uvs(barrel_object.name)
     layout_path = render_uv_layout(barrel_object, tmp_path / "uv.png")
 
     assert layout_path.exists()
@@ -163,7 +163,7 @@ def test_uv_layout_render_reports_the_missing_dependency(
 
     monkeypatch.setattr(compose_module, "pillow_available", lambda: False)
     barrel_object = BarrelBuilder(BarrelParameters()).build()
-    unwrap_uvs(barrel_object)
+    unwrap_uvs(barrel_object.name)
 
     with pytest.raises(RuntimeError, match="Pillow"):
         render_uv_layout(barrel_object, tmp_path / "uv.png")
@@ -177,10 +177,10 @@ def test_default_unwrap_is_clean_on_curved_geometry(empty_scene):
 
     barrel_object = BarrelBuilder(BarrelParameters()).build()
 
-    default_report = unwrap_uvs(barrel_object)
+    default_report = unwrap_uvs(barrel_object.name)
     assert default_report.clean, default_report.summary()
 
-    smart_report = unwrap_uvs(barrel_object, method=SMART_PROJECT)
+    smart_report = unwrap_uvs(barrel_object.name, method=SMART_PROJECT)
     assert smart_report.overlapping_face_pair_count > 0, (
         "smart_project unexpectedly clean on curved geometry — "
         "re-verify the default choice"
@@ -192,7 +192,7 @@ def test_unwrap_report_surfaces_overlaps_at_the_call_site(empty_scene):
     from blended.ops.uv import CUBE_PROJECT, unwrap_uvs
 
     crate_object = CrateBuilder(CrateParameters()).build()
-    cube_report = unwrap_uvs(crate_object, method=CUBE_PROJECT)
+    cube_report = unwrap_uvs(crate_object.name, method=CUBE_PROJECT)
     assert not cube_report.clean  # cube projection stacks by design
     assert "overlapping pairs" in cube_report.summary()
 
@@ -205,7 +205,7 @@ def test_unknown_method_is_rejected(empty_scene):
 
     crate_object = CrateBuilder(CrateParameters()).build()
     with pytest_module.raises(ValueError):
-        unwrap_uvs(crate_object, method="MAGIC")
+        unwrap_uvs(crate_object.name, method="MAGIC")
 
 
 def test_unwrap_is_deterministic_regardless_of_prior_uvs(empty_scene):
@@ -216,9 +216,9 @@ def test_unwrap_is_deterministic_regardless_of_prior_uvs(empty_scene):
 
     barrel_object = BarrelBuilder(BarrelParameters()).build()
 
-    from_fresh = unwrap_uvs(barrel_object)
-    unwrap_uvs(barrel_object, method=SMART_PROJECT)
-    after_other_method = unwrap_uvs(barrel_object)
+    from_fresh = unwrap_uvs(barrel_object.name)
+    unwrap_uvs(barrel_object.name, method=SMART_PROJECT)
+    after_other_method = unwrap_uvs(barrel_object.name)
 
     assert after_other_method.island_count == from_fresh.island_count
     assert (

@@ -61,12 +61,12 @@ class UnwrapReport:
 
 
 def unwrap_uvs(
-    blender_object,
+    object_name: str,
     method: str = ANGLE_BASED,
     angle_limit_rad: float = ANGLE_LIMIT_RAD,
     island_margin: float = ISLAND_MARGIN_FRACTION,
 ) -> UnwrapReport:
-    """Unwrap the object's UVs and measure the resulting atlas.
+    """Unwrap the named mesh's UVs and measure the resulting atlas.
 
     Restores the previous mode and selection so callers see no context
     side effects.
@@ -74,16 +74,16 @@ def unwrap_uvs(
     import bpy
 
     from blended.analyze.mesh_checks import analyze_object
+    from blended.ops._objects import object_by_name
 
     if method not in UNWRAP_METHODS:
         raise ValueError(
             f"Unknown unwrap method {method!r}; use one of {UNWRAP_METHODS}."
         )
-    if blender_object.type != "MESH":
-        raise ValueError(f"{blender_object.name} is not a mesh.")
-    if blender_object.name not in bpy.context.scene.objects:
+    blender_object = object_by_name(object_name, "MESH")
+    if object_name not in bpy.context.scene.objects:
         raise ValueError(
-            f"{blender_object.name} is not linked into the scene; "
+            f"{object_name} is not linked into the scene; "
             f"bpy.ops cannot act on it."
         )
 

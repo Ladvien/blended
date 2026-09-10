@@ -114,7 +114,7 @@ VISIBILITY_FAILURES = {
         "{name!r} exists as a datablock but is NOT linked into the scene, "
         "so nothing the user can see has changed and it would be missing "
         "from any export. Link it at the end of the chunk with "
-        "`blended.ops.primitives.link_into_scene(obj)`."
+        "`blended.ops.link_into_scene({name!r})`."
     ),
     "excluded": (
         "{name!r} is linked into the scene but sits in a collection that "

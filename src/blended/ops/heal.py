@@ -19,8 +19,8 @@ DEGENERATE_EDGE_DISTANCE_M = 1.0e-6
 MAXIMUM_HEAL_PASSES = 3
 
 
-def weld_and_dissolve(blender_object) -> dict:
-    """Weld coincident vertices and collapse zero-area faces in place.
+def weld_and_dissolve(object_name: str) -> dict[str, int]:
+    """Weld coincident vertices and collapse zero-area faces of the named mesh in place.
 
     Returns {"welded_vertices": n, "removed_zero_area_faces": n} for
     logging. Iterates up to MAXIMUM_HEAL_PASSES because collapsing a
@@ -28,6 +28,9 @@ def weld_and_dissolve(blender_object) -> dict:
     """
     import bmesh
 
+    from blended.ops._objects import object_by_name
+
+    blender_object = object_by_name(object_name, "MESH")
     welded_vertex_total = 0
     removed_face_total = 0
     for _ in range(MAXIMUM_HEAL_PASSES):

@@ -53,10 +53,10 @@ def test_joined_overlap_trips_self_intersection_and_components(empty_scene):
     from blended.analyze import analyze_object
     from blended.ops import add_box, link_into_scene
 
-    first_box = add_box("JoinA", 1.0, 1.0, 1.0)
-    link_into_scene(first_box)
-    second_box = add_box("JoinB", 1.0, 1.0, 1.0, location_m=(0.5, 0.3, 0.2))
-    link_into_scene(second_box)
+    first_box = bpy.data.objects[add_box("JoinA", 1.0, 1.0, 1.0)]
+    link_into_scene(first_box.name)
+    second_box = bpy.data.objects[add_box("JoinB", 1.0, 1.0, 1.0, location_m=(0.5, 0.3, 0.2))]
+    link_into_scene(second_box.name)
     joined_object = _join_into_one_mesh("JoinedOverlap", first_box, second_box)
 
     report = analyze_object(joined_object)
@@ -68,10 +68,10 @@ def test_coincident_join_trips_duplicate_vertices(empty_scene):
     from blended.analyze import analyze_object
     from blended.ops import add_box, link_into_scene
 
-    first_box = add_box("CoinA", 1.0, 1.0, 1.0)
-    link_into_scene(first_box)
-    second_box = add_box("CoinB", 1.0, 1.0, 1.0)  # identical position
-    link_into_scene(second_box)
+    first_box = bpy.data.objects[add_box("CoinA", 1.0, 1.0, 1.0)]
+    link_into_scene(first_box.name)
+    second_box = bpy.data.objects[add_box("CoinB", 1.0, 1.0, 1.0)]  # identical position
+    link_into_scene(second_box.name)
     joined_object = _join_into_one_mesh("CoincidentJoin", first_box, second_box)
 
     report = analyze_object(joined_object)
@@ -127,12 +127,12 @@ def test_union_beats_join_on_the_same_barrel(empty_scene):
         )
         for ring_index in range(parameters.ring_count + 1)
     ]
-    naive_body = add_lathe("NaiveBody", profile, parameters.segment_count)
-    link_into_scene(naive_body)
-    naive_parts = [naive_body]
+    naive_body_name = add_lathe("NaiveBody", profile, parameters.segment_count)
+    link_into_scene(naive_body_name)
+    naive_parts = [bpy.data.objects[naive_body_name]]
     for hoop_index, height_fraction in enumerate(HOOP_POSITION_FRACTIONS):
         hoop_center_z_m = parameters.height_m * height_fraction
-        hoop_object = add_cylinder(
+        hoop_name = add_cylinder(
             f"NaiveHoop{hoop_index}",
             radius_m=parameters.radius_at_height(hoop_center_z_m)
             + parameters.hoop_protrusion_m,
@@ -144,8 +144,8 @@ def test_union_beats_join_on_the_same_barrel(empty_scene):
                 hoop_center_z_m - parameters.hoop_height_m / 2.0,
             ),
         )
-        link_into_scene(hoop_object)
-        naive_parts.append(hoop_object)
+        link_into_scene(hoop_name)
+        naive_parts.append(bpy.data.objects[hoop_name])
     naive_barrel = _join_into_one_mesh("NaiveBarrel", *naive_parts)
 
     naive_report = analyze_object(naive_barrel)

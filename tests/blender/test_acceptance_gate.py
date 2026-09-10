@@ -31,9 +31,9 @@ def empty_scene():
 BLIND_RECESS_FLOOR_FRACTION = 0.25
 
 
-def _assign_material(blender_object, material_name="TestMaterial"):
+def _assign_material(object_name, material_name="TestMaterial"):
     material = bpy.data.materials.new(material_name)
-    blender_object.data.materials.append(material)
+    bpy.data.objects[object_name].data.materials.append(material)
 
 
 def _build_planter(
@@ -224,7 +224,7 @@ def test_ungrounded_object_trips_the_grounding_check(empty_scene):
 
     brief = get_brief("planter_box")
     body = _build_planter()
-    body.location.z += 0.5
+    bpy.data.objects[body].location.z += 0.5
     bpy.context.view_layer.update()
     report = evaluate_brief(brief)
 
@@ -373,11 +373,12 @@ def _add_naive_tilted_leg(
         segment_count=12,
     )
     link_into_scene(leg)
-    leg.rotation_euler = Euler(
+    leg_obj = bpy.data.objects[leg]
+    leg_obj.rotation_euler = Euler(
         (splay_rad * math.sin(angle_rad), -splay_rad * math.cos(angle_rad), 0.0),
         "XYZ",
     )
-    leg.location = (
+    leg_obj.location = (
         foot_radius_m * math.cos(angle_rad),
         foot_radius_m * math.sin(angle_rad),
         0.0,
@@ -402,7 +403,7 @@ def test_stool_reference_passes_the_structural_gate(empty_scene):
 
     brief = get_brief("three_leg_stool")
     stool = _build_reference_stool()
-    report = analyze_object(stool)
+    report = analyze_object(bpy.data.objects[stool])
     assert report.passes(brief.budget), report.failures(brief.budget)
 
 
@@ -655,7 +656,7 @@ def _refined_outcome(before_report, brief, *, rebuild: bool):
             (stool.matrix_world @ v.co).z for v in stool.data.vertices
         )
         stool.scale = (1.0, 1.0, target_height_m / current_height_m)
-        apply_object_transform(stool)
+        apply_object_transform(stool.name)
     bpy.context.view_layer.update()
     return RefinementOutcome(
         step=step,
@@ -925,7 +926,7 @@ def _plate(name, minimum_corner_m, maximum_corner_m):
     )
     mesh_data.update()
     plate = bpy.data.objects.new(name, mesh_data)
-    link_into_scene(plate)
+    link_into_scene(plate.name)
     return plate
 
 

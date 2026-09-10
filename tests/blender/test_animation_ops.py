@@ -65,7 +65,7 @@ def test_set_frame_range_updates_scene(empty_scene):
     from blended.ops.animation import set_frame_range
 
     scene = bpy.context.scene
-    set_frame_range(scene, 5, 25)
+    set_frame_range(5, 25)
 
     assert scene.frame_start == 5
     assert scene.frame_end == 25
@@ -74,11 +74,10 @@ def test_set_frame_range_updates_scene(empty_scene):
 def test_set_frame_range_rejects_start_geq_end(empty_scene):
     from blended.ops.animation import set_frame_range
 
-    scene = bpy.context.scene
     with pytest.raises(ValueError):
-        set_frame_range(scene, 10, 10)
+        set_frame_range(10, 10)
     with pytest.raises(ValueError):
-        set_frame_range(scene, 20, 10)
+        set_frame_range(20, 10)
 
 
 def test_two_keyframes_on_box_match_channel_count(empty_scene):
@@ -100,7 +99,7 @@ def test_two_keyframes_on_box_match_channel_count(empty_scene):
     assert count_after_second == 6
 
     # 2 keyframes per fcurve channel
-    ad = box.animation_data
+    ad = bpy.data.objects[box].animation_data
     slot = ad.action_slot
     fcurves = ad.action.layers[0].strips[0].channelbag(slot).fcurves
     total_kps = sum(len(fc.keyframe_points) for fc in fcurves)
@@ -122,7 +121,7 @@ def test_rotation_degrees_converted_to_radians(empty_scene):
     box = _box()
     keyframe_object_transform(box, frame=1, rotation_euler_deg=(0.0, 0.0, DEG_180_Z))
 
-    assert box.rotation_euler[2] == pytest.approx(math.pi)
+    assert bpy.data.objects[box].rotation_euler[2] == pytest.approx(math.pi)
 
 
 def test_pose_bone_rotation_keyframes_on_armature_action(empty_scene):
@@ -130,10 +129,10 @@ def test_pose_bone_rotation_keyframes_on_armature_action(empty_scene):
 
     arm_obj = _two_bone_armature()
     count = keyframe_pose_bone_rotation(
-        arm_obj, "Bone1", frame=1, rotation_euler_deg=(0.0, 0.0, DEG_90_Z)
+        arm_obj.name, "Bone1", frame=1, rotation_euler_deg=(0.0, 0.0, DEG_90_Z)
     )
     keyframe_pose_bone_rotation(
-        arm_obj, "Bone1", frame=10, rotation_euler_deg=(0.0, 0.0, DEG_180_Z)
+        arm_obj.name, "Bone1", frame=10, rotation_euler_deg=(0.0, 0.0, DEG_180_Z)
     )
 
     # XYZ Euler → 3 fcurves
@@ -157,7 +156,7 @@ def test_report_on_never_animated_object_is_all_zero(empty_scene):
     from blended.ops.animation import animation_report
 
     box = _box()
-    report = animation_report(box, bpy.context.scene)
+    report = animation_report(box)
 
     assert report.action_name == ""
     assert report.fcurve_count == 0
@@ -173,12 +172,11 @@ def test_report_on_animated_box_counts_correctly(empty_scene):
     )
 
     box = _box()
-    scene = bpy.context.scene
-    set_frame_range(scene, 1, 20)
+    set_frame_range(1, 20)
     keyframe_object_transform(box, frame=1, location_m=(0.0, 0.0, 0.0))
     keyframe_object_transform(box, frame=15, location_m=(2.0, 0.0, 0.0))
 
-    report = animation_report(box, scene)
+    report = animation_report(box)
 
     assert report.action_name != ""
     assert report.fcurve_count == 3

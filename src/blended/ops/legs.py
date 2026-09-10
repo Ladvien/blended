@@ -148,8 +148,8 @@ class SplayedLegSpec:
         return math.radians(self.foot_bearing_deg)
 
 
-def add_splayed_leg(name: str, spec: SplayedLegSpec):
-    """Build one splayed leg, LINKED and with its transform applied.
+def add_splayed_leg(name: str, spec: SplayedLegSpec) -> str:
+    """Build one splayed leg mesh object, LINKED and with its transform applied.
 
     Positioned so that trimming flush with the floor leaves a sole
     whose centre is on `spec.foot_radius_m` at `spec.foot_bearing_deg`.
@@ -158,16 +158,18 @@ def add_splayed_leg(name: str, spec: SplayedLegSpec):
     """
     from mathutils import Euler
 
+    from blended.ops._objects import object_by_name
     from blended.ops.primitives import add_cylinder, link_into_scene
     from blended.ops.transforms import apply_object_transform
 
-    leg = add_cylinder(
+    leg_name = add_cylinder(
         name,
         radius_m=spec.leg_radius_m,
         height_m=spec.length_m,
         segment_count=spec.segment_count,
     )
-    link_into_scene(leg)
+    link_into_scene(leg_name)
+    leg = object_by_name(leg_name)
     # Tilt outward along the leg's own radial direction. Rotation is
     # about the cylinder's base, which is why the base is what gets
     # positioned below.
@@ -185,8 +187,8 @@ def add_splayed_leg(name: str, spec: SplayedLegSpec):
         spec.base_radius_m * math.sin(bearing_rad),
         -spec.sole_drop_m,
     )
-    apply_object_transform(leg)
-    return leg
+    apply_object_transform(leg_name)
+    return leg_name
 
 
 def splayed_leg_ring(
@@ -194,8 +196,8 @@ def splayed_leg_ring(
     count: int,
     spec: SplayedLegSpec,
     first_bearing_deg: float = 0.0,
-) -> list:
-    """`count` legs evenly spaced, the first at `first_bearing_deg`.
+) -> list[str]:
+    """Build `count` leg mesh objects evenly spaced, the first at `first_bearing_deg`.
 
     Spacing is computed, not listed, so three legs cannot come out at
     0/120/239 degrees because someone typed a rounded third.
@@ -217,11 +219,11 @@ def splayed_leg_ring(
 
 
 def trim_soles_flat(
-    blender_object,
+    object_name: str,
     span_m: float,
     cutter_depth_m: float = DEFAULT_GROUND_CUTTER_DEPTH_M,
-) -> None:
-    """Cut everything below z=0 away, so feet present faces not edges.
+) -> str:
+    """Cut everything below z=0 off the named mesh, so feet present faces not edges.
 
     `span_m` is the widest dimension of the object being trimmed; the
     cutter is sized from it. Call this BEFORE snapping to the ground,
@@ -234,12 +236,13 @@ def trim_soles_flat(
     if span_m <= 0.0:
         raise ImpossibleLeg(f"span_m must be positive, got {span_m}")
     cutter_span_m = span_m * GROUND_CUTTER_SPAN_FACTOR
-    cutter = add_box(
-        f"{blender_object.name}_SoleCutter",
+    cutter_name = add_box(
+        f"{object_name}_SoleCutter",
         width_m=cutter_span_m,
         depth_m=cutter_span_m,
         height_m=cutter_depth_m,
         location_m=(0.0, 0.0, -cutter_depth_m),
     )
-    link_into_scene(cutter)
-    boolean_difference(blender_object, cutter)
+    link_into_scene(cutter_name)
+    boolean_difference(object_name, cutter_name)
+    return object_name

@@ -348,6 +348,7 @@ The form gate answers "does the object deliver the brief", deterministically, be
 | OPS-18 | The orientation reading MUST be a fact reported during the turn and MUST NOT gate anything. | `src/blended/ops/canonical_orientation.py:134` | `tests/pure/test_canonical_orientation.py` |
 | OPS-19 | `bpy.ops` MUST appear in exactly two documented places — the UV unwrap solvers and heat-map skinning — each wrapped once with a documented `temp_override`. | `src/blended/ops/uv.py:1-10`, `src/blended/ops/rigging.py:1-20` | `tests/pure/test_one_path_ops.py` |
 | OPS-20 | Every CSG result MUST be re-analyzed before it is treated as an asset. | `src/blended/ops/booleans.py:1-20` | `tests/blender/test_csg_ops.py` |
+| OPS-21 | Every facade op MUST satisfy a machine-checkable signature contract: every parameter annotated, an explicit return annotation, a unit suffix on every numeric quantity (NFR-8) unless the name is in the declared unitless allowlist, a one-line docstring summary, and no `bpy` type anywhere in the signature — object references travel as names (`str`) and are resolved through `blended.ops._objects.object_by_name`, which raises `UnknownObject` / `WrongObjectType` rather than letting a bad reference surface as whichever attribute error bpy hits first (OT-2). | `src/blended/ops/_objects.py`, `src/blended/ops/primitives.py:28,53` | `tests/pure/test_ops_signature_contract.py::test_facade_op_satisfies_the_signature_contract`, `::test_the_contract_trips_on_a_seeded_defect` (NFR-15) |
 
 ## 3.10 The agent loop and its tools (`AGT`)
 
@@ -632,6 +633,7 @@ Every value below was resolved from its definition line in the tree at this revi
 | `ISLAND_MARGIN_FRACTION` | `1/512` | `src/blended/ops/uv.py:36` |
 | `DEPTH_AXIS_EXTENT_RANK` | `1` (middle extent), `DEPTH_AXIS_INDEX` = Blender Y | `src/blended/ops/canonical_orientation.py:53` |
 | `POST_CONDITION_TOLERANCE_RATIO` | `1e-6` | `src/blended/ops/canonical_orientation.py:56` |
+| `UNIT_SUFFIXES` / `UNITLESS_NUMERIC_NAMES` / `FORBIDDEN_TYPE_TOKENS` / `MAXIMUM_SUMMARY_CHARACTERS` (OPS-21 contract) | `("_m", "_deg", "_rad", "_px", "_s", "_m2", "_m3")` / 14 names / `("bpy", "Object", "Mesh", "Scene", "Material", "Any")` / `120` | `tests/pure/test_ops_signature_contract.py:28,33,56,75` |
 | `MAXIMUM_BEVEL_FRACTION_OF_SMALLEST_DIMENSION` | `0.25` | `src/blended/builders/crate.py:16` |
 | `BOOLEAN_EMBED_M` / `STRINGER_COUNT` | `0.0005` / `3` | `src/blended/builders/pallet.py:16,17` |
 | `HOOP_POSITION_FRACTIONS` | `(0.2, 0.8)` | `src/blended/builders/barrel.py:14` |
@@ -704,7 +706,7 @@ The document holds **215 requirements**, of which **8 have no automated check**:
 | CAP | 7 | 6 | 1 |
 | EXP | 4 | 4 | 0 |
 | ING | 4 | 4 | 0 |
-| OPS | 20 | 20 | 0 |
+| OPS | 21 | 21 | 0 |
 | AGT | 20 | 18 | 2 |
 | PRM | 14 | 14 | 0 |
 | VIS | 14 | 14 | 0 |

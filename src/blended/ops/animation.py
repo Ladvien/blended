@@ -46,30 +46,34 @@ class AnimationReport:
     keyframes_outside_frame_range_count: int = 0
 
 
-def set_frame_range(scene, start_frame: int, end_frame: int) -> None:
-    """Set ``scene.frame_start`` and ``scene.frame_end``.
+def set_frame_range(start_frame: int, end_frame: int) -> tuple[int, int]:
+    """Set the active scene's ``frame_start`` and ``frame_end``.
 
     Validates ``start_frame < end_frame`` — an inverted or degenerate
     range silently breaks every playback and export downstream, so it
     is rejected loudly rather than clamped.
     """
+    import bpy
+
     if start_frame >= end_frame:
         raise ValueError(
             f"start_frame ({start_frame}) must be strictly less than "
             f"end_frame ({end_frame})"
         )
+    scene = bpy.context.scene
     scene.frame_start = start_frame
     scene.frame_end = end_frame
+    return (start_frame, end_frame)
 
 
 def keyframe_object_transform(
-    obj,
+    object_name: str,
     frame: int,
     location_m: tuple[float, float, float] | None = None,
     rotation_euler_deg: tuple[float, float, float] | None = None,
     scale: tuple[float, float, float] | None = None,
 ) -> int:
-    """Set transform channels and insert keyframes at ``frame``.
+    """Set the named object's transform channels and insert keyframes at ``frame``.
 
     Only the channels whose argument is non-None are written and
     keyframed — an agent that wants to animate location only does not
@@ -78,6 +82,9 @@ def keyframe_object_transform(
     Returns the number of fcurves on the object's action after
     insertion (read via the slotted API — see module docstring).
     """
+    from blended.ops._objects import object_by_name
+
+    obj = object_by_name(object_name)
     if location_m is not None:
         obj.location = location_m
         obj.keyframe_insert("location", frame=frame)
@@ -94,12 +101,12 @@ def keyframe_object_transform(
 
 
 def keyframe_pose_bone_rotation(
-    armature_object,
+    armature_name: str,
     bone_name: str,
     frame: int,
     rotation_euler_deg: tuple[float, float, float],
 ) -> int:
-    """Set a pose bone's Euler rotation and keyframe it at ``frame``.
+    """Set a pose bone's Euler rotation on the named armature and keyframe it at ``frame``.
 
     Forces ``rotation_mode='XYZ'`` because a bone defaults to
     ``QUATERNION`` and keyframing ``rotation_euler`` on a quaternion
@@ -107,6 +114,9 @@ def keyframe_pose_bone_rotation(
 
     Returns the fcurve count on the armature's action after insertion.
     """
+    from blended.ops._objects import object_by_name
+
+    armature_object = object_by_name(armature_name, "ARMATURE")
     pose_bone = armature_object.pose.bones[bone_name]
     pose_bone.rotation_mode = "XYZ"
     pose_bone.rotation_euler = tuple(d * _RAD_PER_DEG for d in rotation_euler_deg)
@@ -115,12 +125,18 @@ def keyframe_pose_bone_rotation(
     return _fcurve_count(armature_object)
 
 
-def animation_report(obj, scene) -> AnimationReport:
-    """Summarise ``obj``'s animation for the E2E assertion.
+def animation_report(object_name: str) -> AnimationReport:
+    """Summarise the named object's animation against the active scene's frame range.
 
     A never-animated object (no ``animation_data`` or no action)
     reports an empty action name and all-zero counts.
     """
+    import bpy
+
+    from blended.ops._objects import object_by_name
+
+    obj = object_by_name(object_name)
+    scene = bpy.context.scene
     ad = obj.animation_data
     if ad is None or ad.action is None:
         return AnimationReport(

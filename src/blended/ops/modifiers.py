@@ -2,22 +2,29 @@
 
 from __future__ import annotations
 
+BEVEL_MODIFIER_NAME = "Bevel"
+
 
 def add_bevel(
-    blender_object,
+    object_name: str,
     width_m: float,
     segment_count: int,
-):
-    """Add a bevel modifier to every edge of the object."""
-    bevel_modifier = blender_object.modifiers.new(name="Bevel", type="BEVEL")
+) -> str:
+    """Add a bevel modifier to every edge of the named object."""
+    from blended.ops._objects import object_by_name
+
+    blender_object = object_by_name(object_name, "MESH")
+    bevel_modifier = blender_object.modifiers.new(
+        name=BEVEL_MODIFIER_NAME, type="BEVEL"
+    )
     bevel_modifier.width = width_m
     bevel_modifier.segments = segment_count
     bevel_modifier.limit_method = "NONE"
-    return bevel_modifier
+    return object_name
 
 
-def apply_all_modifiers(blender_object) -> None:
-    """Bake the evaluated (post-modifier) mesh back into the object.
+def apply_all_modifiers(object_name: str) -> str:
+    """Bake the named object's evaluated (post-modifier) mesh back into it.
 
     Uses the depsgraph rather than bpy.ops.object.modifier_apply, so it
     needs no context override and works identically headless and live.
@@ -26,6 +33,9 @@ def apply_all_modifiers(blender_object) -> None:
     """
     import bpy
 
+    from blended.ops._objects import object_by_name
+
+    blender_object = object_by_name(object_name)
     dependency_graph = bpy.context.evaluated_depsgraph_get()
     evaluated_object = blender_object.evaluated_get(dependency_graph)
     baked_mesh = bpy.data.meshes.new_from_object(
@@ -36,3 +46,4 @@ def apply_all_modifiers(blender_object) -> None:
     blender_object.modifiers.clear()
     if previous_mesh.users == 0:
         bpy.data.meshes.remove(previous_mesh)
+    return object_name

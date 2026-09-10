@@ -160,9 +160,9 @@ def export_glb(blender_object, output_path: Path) -> ExportReport:
     reimport_name = blender_object.name + REIMPORT_OBJECT_SUFFIX
     reimported_object = import_glb(output_path, reimport_name)
     reimported_raw_report = analyze_object(reimported_object)
-    from blended.ops.heal import weld_and_dissolve
+    from blended.ops import weld_and_dissolve
 
-    weld_and_dissolve(reimported_object)
+    weld_and_dissolve(reimport_name)
     reimported_welded_report = analyze_object(reimported_object)
     bpy.context.view_layer.update()
     reimported_dimensions_m = tuple(reimported_object.dimensions)

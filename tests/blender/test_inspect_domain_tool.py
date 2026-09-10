@@ -50,7 +50,7 @@ def _rigged_animated_textured_box():
     )
     rig = add_armature("Rig", bones)
     bind_mesh_to_armature(box, rig)
-    set_frame_range(bpy.context.scene, *KEYFRAME_FRAMES)
+    set_frame_range(*KEYFRAME_FRAMES)
     for frame in KEYFRAME_FRAMES:
         keyframe_pose_bone_rotation(rig, "spine_1", frame, (0.0, 0.0, 20.0 * frame))
     assign_procedural_material(box, "Skin", "checker")

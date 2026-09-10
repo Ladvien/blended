@@ -34,9 +34,10 @@ DEFECTIVE_CHUNK = """
 import sys
 sys.path.insert(0, "src")
 import bmesh
+import bpy
 from blended.ops import add_box, link_into_scene
-box = add_box("DemoDefect", 0.5, 0.5, 0.5)
-link_into_scene(box)
+link_into_scene(add_box("DemoDefect", 0.5, 0.5, 0.5))
+box = bpy.data.objects["DemoDefect"]
 working = bmesh.new(); working.from_mesh(box.data)
 working.faces.ensure_lookup_table(); working.faces.remove(working.faces[0])
 working.to_mesh(box.data); working.free()

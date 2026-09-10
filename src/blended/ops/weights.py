@@ -35,18 +35,21 @@ class WeightReport:
 
 
 def assign_vertex_group_weights(
-    mesh_object,
+    object_name: str,
     group_name: str,
     weight: float,
     vertex_indices: tuple[int, ...] | None = None,
-):
-    """Create or reuse a vertex group and assign ``weight`` to vertices.
+) -> str:
+    """Create or reuse a vertex group on the named mesh and assign ``weight`` to vertices.
 
     ``vertex_indices`` of None means *all* vertices.  Weight must be in
     [0, 1].  Uses ``group.add(indices, weight, 'REPLACE')`` — the data
     API equivalent of painting, no mode switch required.  Returns the
-    vertex group.
+    vertex group's name.
     """
+    from blended.ops._objects import object_by_name
+
+    mesh_object = object_by_name(object_name, "MESH")
     if weight < MINIMUM_WEIGHT or weight > MAXIMUM_WEIGHT:
         raise ValueError(
             f"weight {weight} out of range "
@@ -65,22 +68,25 @@ def assign_vertex_group_weights(
     if indices:
         group.add(indices, weight, "REPLACE")
 
-    return group
+    return group.name
 
 
 def assign_weights_by_height(
-    mesh_object,
+    object_name: str,
     group_name: str,
     z_min_m: float,
     z_max_m: float,
     weight: float,
 ) -> int:
-    """Assign ``weight`` to vertices whose world-space z is in [z_min, z_max].
+    """Assign ``weight`` to the named mesh's vertices whose world-space z is in [z_min_m, z_max_m].
 
-    World-space z is computed via ``mesh_object.matrix_world`` so the
-    op works on translated meshes, not just ones sitting at the origin.
+    World-space z is computed via ``matrix_world`` so the op works on
+    translated meshes, not just ones sitting at the origin.
     Returns the number of vertices that received the weight.
     """
+    from blended.ops._objects import object_by_name
+
+    mesh_object = object_by_name(object_name, "MESH")
     if weight < MINIMUM_WEIGHT or weight > MAXIMUM_WEIGHT:
         raise ValueError(
             f"weight {weight} out of range "
@@ -105,15 +111,17 @@ def assign_weights_by_height(
     return len(in_range_indices)
 
 
-def deforming_bone_names(mesh_object) -> tuple[str, ...]:
-    """Bones of the armature that actually deforms this mesh.
+def deforming_bone_names(object_name: str) -> tuple[str, ...]:
+    """Bones of the armature that actually deforms the named mesh.
 
     Empty when no ENABLED Armature modifier points anywhere: with no
     armature there is nothing to compare group names against, and
     guessing would invent failures on an unrigged mesh.
     """
+    from blended.ops._objects import object_by_name
     from blended.ops.rigging import ARMATURE_MODIFIER_TYPE
 
+    mesh_object = object_by_name(object_name, "MESH")
     for modifier in mesh_object.modifiers:
         if (
             modifier.type == ARMATURE_MODIFIER_TYPE
@@ -125,8 +133,8 @@ def deforming_bone_names(mesh_object) -> tuple[str, ...]:
     return ()
 
 
-def weight_report(mesh_object) -> WeightReport:
-    """Return a frozen snapshot of the mesh's vertex-group weights.
+def weight_report(object_name: str) -> WeightReport:
+    """Return a frozen snapshot of the named mesh's vertex-group weights.
 
     ``nonzero_weight_counts`` maps each group name to the number of
     vertices that have a non-zero weight in that group.
@@ -136,6 +144,9 @@ def weight_report(mesh_object) -> WeightReport:
     that deforms the mesh — weights that name no bone move nothing, and
     counting them as work done is how a typo passes for a rig.
     """
+    from blended.ops._objects import object_by_name
+
+    mesh_object = object_by_name(object_name, "MESH")
     mesh = mesh_object.data
     group_names = tuple(group.name for group in mesh_object.vertex_groups)
 
@@ -153,7 +164,7 @@ def weight_report(mesh_object) -> WeightReport:
         nonzero_counts[group.name] = count
 
     unweighted = len(mesh.vertices) - len(weighted_vertex_indices)
-    bone_names = deforming_bone_names(mesh_object)
+    bone_names = deforming_bone_names(object_name)
     dead_groups = (
         tuple(name for name in group_names if name not in bone_names)
         if bone_names

@@ -72,10 +72,10 @@ def test_xray_reveals_hidden_geometry(empty_scene, tmp_path):
     from blended.capture import CaptureSettings, capture_views
     from blended.ops import add_box, link_into_scene
 
-    outer_box = add_box("OuterShell", 1.0, 1.0, 1.0)
-    link_into_scene(outer_box)
-    inner_box = add_box("HiddenInner", 0.4, 0.4, 0.4, location_m=(0.0, 0.0, 0.3))
-    link_into_scene(inner_box)
+    outer_box = bpy.data.objects[add_box("OuterShell", 1.0, 1.0, 1.0)]
+    link_into_scene(outer_box.name)
+    inner_box = bpy.data.objects[add_box("HiddenInner", 0.4, 0.4, 0.4, location_m=(0.0, 0.0, 0.3))]
+    link_into_scene(inner_box.name)
 
     plain_paths = capture_views(outer_box, tmp_path / "plain")
     xray_paths = capture_views(outer_box, tmp_path / "xray", CaptureSettings(xray=True))
@@ -144,8 +144,8 @@ def test_every_named_view_is_actually_rendered(empty_scene, tmp_path):
     from blended.capture.views import VIEW_DIRECTIONS, capture_views
     from blended.ops.primitives import add_box, link_into_scene
 
-    box = add_box("ViewBox", 0.4, 0.3, 0.2)
-    link_into_scene(box)
+    box = bpy.data.objects[add_box("ViewBox", 0.4, 0.3, 0.2)]
+    link_into_scene(box.name)
     view_paths = capture_views(box, tmp_path)
 
     assert set(view_paths) == set(VIEW_DIRECTIONS)

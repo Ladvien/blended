@@ -2956,6 +2956,48 @@ MISTAKES: tuple[MistakeRecord, ...] = (
         guarded_by="tests/pure/test_reference_images.py::test_a_blind_eye_on_the_photo_path_raises_instead_of_guessing (the writer receives NO payload) and ::test_a_blind_eye_on_the_render_path_still_reports_a_note (the control that keeps the change from spreading). Live runs 2026-09-06, exit codes 2 / 1 / 0: --vision-model '' exits 2 naming the flag; --vision-model no-such-model-exists:v0 exits 1 with eye_reachable false, tool_calls 0 and objects []; a real run exits 0 with no surviving deviation. Gate sensitivity proven separately — a stool photograph against a crate render yields the surviving tag missing_part, so the exit 0 is not a gate that cannot fail.",
         recorded_on="2026-09-06",
     ),
+    MistakeRecord(
+        identifier="a-signature-change-invalidates-recorded-model-code-not-just-callers",
+        scope="harness_code",
+        failure=(
+            "OT-2 made every op take and return object NAMES. make "
+            "test-blender-app: 3 failed, 305 passed — the golden replays "
+            "of iteration 48 (planter: materials 0 assigned in 1 slot) and "
+            "50 (column: exists but not linked; no dimension named "
+            "'diameter_x'). Every hand-written caller and all 305 other "
+            "tests had already been converted and were green."
+        ),
+        cause=(
+            "The goldens replay what the MODEL wrote on 2026-08-22 against "
+            "the object-returning API: planter chunk 7 fetched "
+            "bpy.data.objects['PlanterBox'] and passed it to "
+            "assign_material; column chunks 1-2 read `.name` off "
+            "add_lathe's return and chunk 3 passed the bpy object to "
+            "link_into_scene. Under the name contract those chunks raise "
+            "and the rest of the chunk never runs. The other three goldens "
+            "survived only because their sources never dereferenced an "
+            "op's return — a behaviour-preserving API change still breaks "
+            "recorded evidence, and grep over src/ and tests/ cannot see it."
+        ),
+        fix=(
+            "Re-converged the two briefs on the new vocabulary at the SAME "
+            "pinned v10 text (iterations 66 and 67, claude-code:sonnet, 8 and "
+            "6 turns, 0 name-vs-object errors, identical form numbers) and "
+            "re-minted their golden views, per the v9->v10 precedent in "
+            "test_golden_convergence.py. The three untouched briefs were "
+            "re-minted pixel-identical (0.00% differing) and reverted. "
+            "Iterations 48 and 50 stay in the append-only log. Budget "
+            "this: an ops API change costs one converge run per golden "
+            "whose recorded source touches the changed surface."
+        ),
+        guarded_by=(
+            "tests/blender/test_golden_convergence.py (replays the recorded "
+            "sources: a signature change that breaks recorded model code "
+            "fails here, not in the ops tests); "
+            "tests/pure/test_ops_signature_contract.py (the contract itself)"
+        ),
+        recorded_on="2026-09-10",
+    ),
 )
 
 

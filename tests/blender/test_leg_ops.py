@@ -63,13 +63,13 @@ def _stool_leg_spec(bearing_deg: float = 0.0) -> SplayedLegSpec:
     )
 
 
-def _sole_centroids(blender_object):
+def _sole_centroids(object_name):
     """Area-weighted centres of the downward faces sitting on z=0.
 
     Clustered by bearing so a multi-leg object reports one centroid per
     foot, which is how the acceptance gate reads them.
     """
-    mesh = blender_object.data
+    mesh = bpy.data.objects[object_name].data
     clusters: dict[int, list] = {}
     for polygon in mesh.polygons:
         centre = polygon.center
@@ -127,8 +127,9 @@ def test_the_naive_placement_still_lands_inboard(empty_scene):
         segment_count=spec.segment_count,
     )
     link_into_scene(leg)
-    leg.rotation_euler = Euler((0.0, -spec.splay_rad, 0.0), "XYZ")
-    leg.location = (briefs.STOOL_FOOT_CIRCLE_RADIUS_M, 0.0, 0.0)
+    leg_obj = bpy.data.objects[leg]
+    leg_obj.rotation_euler = Euler((0.0, -spec.splay_rad, 0.0), "XYZ")
+    leg_obj.location = (briefs.STOOL_FOOT_CIRCLE_RADIUS_M, 0.0, 0.0)
     apply_object_transform(leg)
     trim_soles_flat(leg, span_m=briefs.STOOL_SEAT_DIAMETER_M)
     bpy.context.view_layer.update()

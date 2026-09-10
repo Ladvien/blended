@@ -72,7 +72,7 @@ def test_a_disabled_armature_modifier_is_not_a_binding(empty_scene):
     assert rig_report(armature).bound_mesh_names == ("Subject",)
     assert rig_report(armature).disabled_modifier_mesh_names == ()
 
-    _armature_modifier(box).show_viewport = False
+    _armature_modifier(bpy.data.objects[box]).show_viewport = False
     bpy.context.view_layer.update()
     report = rig_report(armature)
     assert report.bound_mesh_names == (), (
@@ -87,7 +87,7 @@ def test_a_render_disabled_modifier_is_not_a_binding_either(empty_scene):
     from blended.ops.rigging import rig_report
 
     box, armature = _rigged_pair()
-    _armature_modifier(box).show_render = False
+    _armature_modifier(bpy.data.objects[box]).show_render = False
     bpy.context.view_layer.update()
     report = rig_report(armature)
     assert report.bound_mesh_names == ()
@@ -157,7 +157,7 @@ def _animated_box():
 
     box = add_box("Mover", 0.5, 0.5, 0.5)
     link_into_scene(box)
-    set_frame_range(bpy.context.scene, *FRAME_RANGE)
+    set_frame_range(*FRAME_RANGE)
     keyframe_object_transform(box, FRAME_RANGE[0], location_m=(0.0, 0.0, 0.0))
     keyframe_object_transform(box, FRAME_RANGE[1], location_m=(2.0, 0.0, 0.0))
     return box
@@ -170,13 +170,13 @@ def test_a_muted_fcurve_is_reported(empty_scene):
     from blended.ops.animation import _action_fcurves, animation_report
 
     box = _animated_box()
-    clean = animation_report(box, bpy.context.scene)
+    clean = animation_report(box)
     assert clean.keyframe_count >= 2
     assert clean.muted_fcurve_count == 0
 
-    for curve in _action_fcurves(box):
+    for curve in _action_fcurves(bpy.data.objects[box]):
         curve.mute = True
-    report = animation_report(box, bpy.context.scene)
+    report = animation_report(box)
     assert report.keyframe_count == clean.keyframe_count, (
         "the keyframes are still there — that is the trap"
     )
@@ -190,12 +190,12 @@ def test_keyframes_outside_the_frame_range_are_reported(empty_scene):
 
     box = _animated_box()
     assert (
-        animation_report(box, bpy.context.scene).keyframes_outside_frame_range_count
+        animation_report(box).keyframes_outside_frame_range_count
         == 0
     )
 
     keyframe_object_transform(box, OUTSIDE_FRAME, location_m=(5.0, 0.0, 0.0))
-    report = animation_report(box, bpy.context.scene)
+    report = animation_report(box)
     assert report.keyframes_outside_frame_range_count == 3, (
         "one key past frame_end on each of the three location channels"
     )

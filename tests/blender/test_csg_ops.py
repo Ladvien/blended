@@ -38,7 +38,7 @@ def test_difference_bores_a_clean_hole(empty_scene):
     from blended.analyze import MeshBudget, analyze_object
 
     bored_box = _bored_box()
-    report = analyze_object(bored_box)
+    report = analyze_object(bpy.data.objects[bored_box])
     failures = report.failures(MeshBudget())
     assert failures == [], f"analyzer failures: {failures}; report={report}"
     # The hole is real geometry: more triangles than the plain box.
@@ -76,7 +76,7 @@ def test_non_intersecting_cutter_raises_instead_of_silently_no_oping(empty_scene
 
     # The refusal must not have eaten the operand or damaged the target.
     assert "OutsideCutter" in bpy.data.objects
-    assert len(box_object.data.vertices) == 8
+    assert len(bpy.data.objects[box_object].data.vertices) == 8
 
 
 def test_snap_base_to_ground(empty_scene):
@@ -89,9 +89,10 @@ def test_snap_base_to_ground(empty_scene):
     bpy.context.view_layer.update()
     from mathutils import Vector
 
+    floating_obj = bpy.data.objects[floating_box]
     lowest_z_m = min(
-        (floating_box.matrix_world @ Vector(corner)).z
-        for corner in floating_box.bound_box
+        (floating_obj.matrix_world @ Vector(corner)).z
+        for corner in floating_obj.bound_box
     )
     assert abs(lowest_z_m) < GROUND_TOLERANCE_M
 
@@ -104,12 +105,13 @@ def test_transform_ops_see_pending_location_and_rotation(empty_scene):
 
     leg = add_cylinder("PendingLeg", radius_m=0.02, height_m=0.4)
     link_into_scene(leg)
-    leg.rotation_euler = (0.0, -0.3, 1.0)
-    leg.location = (0.2, 0.1, 0.0)
+    leg_obj = bpy.data.objects[leg]
+    leg_obj.rotation_euler = (0.0, -0.3, 1.0)
+    leg_obj.location = (0.2, 0.1, 0.0)
 
-    vertex_before = tuple(leg.data.vertices[0].co)
+    vertex_before = tuple(leg_obj.data.vertices[0].co)
     apply_object_transform(leg)
-    vertex_after = tuple(leg.data.vertices[0].co)
+    vertex_after = tuple(leg_obj.data.vertices[0].co)
     assert vertex_before != vertex_after, (
         "apply_object_transform baked nothing — matrix_world was stale"
     )

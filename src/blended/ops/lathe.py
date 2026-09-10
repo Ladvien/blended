@@ -17,20 +17,20 @@ MINIMUM_SEGMENTS = 3
 
 def add_lathe(
     name: str,
-    profile: list[tuple[float, float]],
+    profile_m: list[tuple[float, float]],
     segment_count: int = 24,
-):
-    """Revolve `profile` [(radius_m, z_m), ...] around Z into a closed mesh."""
+) -> str:
+    """Revolve `profile_m` [(radius_m, z_m), ...] around Z into a closed mesh object."""
     import bmesh
     import bpy
 
     from blended.ops.primitives import remove_object_and_mesh
 
-    if len(profile) < MINIMUM_PROFILE_POINTS:
+    if len(profile_m) < MINIMUM_PROFILE_POINTS:
         raise ValueError("Lathe profile needs at least two points.")
     if segment_count < MINIMUM_SEGMENTS:
         raise ValueError("Lathe needs at least three segments.")
-    if any(radius_m <= 0.0 for radius_m, _ in profile):
+    if any(radius_m <= 0.0 for radius_m, _ in profile_m):
         raise ValueError(
             "Profile radii must be positive; poles are added automatically."
         )
@@ -42,7 +42,7 @@ def add_lathe(
     working_mesh = bmesh.new()
     try:
         rings = []
-        for radius_m, height_z_m in profile:
+        for radius_m, height_z_m in profile_m:
             ring_vertices = []
             for segment_index in range(segment_count):
                 angle_rad = (segment_index / segment_count) * math.tau
@@ -94,4 +94,4 @@ def add_lathe(
     finally:
         working_mesh.free()
 
-    return lathe_object
+    return lathe_object.name

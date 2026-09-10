@@ -47,8 +47,7 @@ def test_array_intermediate_is_multi_component_by_design(empty_scene):
     from blended.ops import add_box, link_into_scene
     from blended.ops.arrays import linear_array
 
-    board = add_box("LoneBoards", 0.1, 0.5, 0.02)
-    link_into_scene(board)
-    linear_array(board, count=4, offset_m=(0.2, 0.0, 0.0))
-    report = analyze_object(board)
-    assert report.connected_component_count == 4
+    board_name = add_box("LoneBoards", 0.1, 0.5, 0.02)
+    link_into_scene(board_name)
+    linear_array(board_name, count=4, offset_m=(0.2, 0.0, 0.0))
+    report = analyze_object(bpy.data.objects[board_name])

@@ -51,28 +51,30 @@ class CrateBuilder:
     def __init__(self, parameters: CrateParameters) -> None:
         parameters.validate()
         self.parameters = parameters
-        self.created_objects: list = []
+        self.created_object_names: list[str] = []
 
     def build(self):
-        """Build the crate and return its object, base at z=0."""
+        """Build the crate and return its Blender object, base at z=0."""
+        import bpy
+
         from blended.ops import add_bevel, add_box, apply_all_modifiers, link_into_scene
 
         parameters = self.parameters
-        crate_object = add_box(
+        crate_name = add_box(
             name=parameters.name,
             width_m=parameters.width_m,
             depth_m=parameters.depth_m,
             height_m=parameters.height_m,
         )
-        link_into_scene(crate_object)
-        self.created_objects.append(crate_object)
+        link_into_scene(crate_name)
+        self.created_object_names.append(crate_name)
 
         if parameters.bevel_width_m > 0.0:
             add_bevel(
-                crate_object,
+                crate_name,
                 width_m=parameters.bevel_width_m,
                 segment_count=parameters.bevel_segment_count,
             )
-            apply_all_modifiers(crate_object)
+            apply_all_modifiers(crate_name)
 
-        return crate_object
+        return bpy.data.objects[crate_name]

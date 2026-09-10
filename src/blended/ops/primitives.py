@@ -25,7 +25,7 @@ def add_box(
     depth_m: float,
     height_m: float,
     location_m: tuple[float, float, float] = (0.0, 0.0, 0.0),
-):
+) -> str:
     """Create a closed box mesh object of the given outer dimensions.
 
     The box is centered on X/Y and sits with its base at location_m[2],
@@ -50,18 +50,21 @@ def add_box(
     finally:
         working_mesh.free()
 
-    return box_object
+    return box_object.name
 
 
-def link_into_scene(blender_object) -> None:
-    """Link an object into the active scene collection.
+def link_into_scene(object_name: str) -> str:
+    """Link the named object into the active scene collection.
 
     Never skip this: an unlinked object has no depsgraph instance, so
     evaluated_get() silently returns stored values (see drift catalog).
     """
     import bpy
 
-    bpy.context.scene.collection.objects.link(blender_object)
+    from blended.ops._objects import object_by_name
+
+    bpy.context.scene.collection.objects.link(object_by_name(object_name))
+    return object_name
 
 
 def remove_object_and_mesh(object_name: str) -> None:
@@ -88,9 +91,8 @@ def add_cylinder(
     height_m: float,
     segment_count: int = 24,
     location_m: tuple[float, float, float] = (0.0, 0.0, 0.0),
-):
-    """Create a closed cylinder, base at location_m[2] (same convention
-    as add_box). Idempotent by name."""
+) -> str:
+    """Create a closed cylinder mesh object, base at location_m[2], idempotent by name."""
     import bmesh
     import bpy
 
@@ -118,4 +120,4 @@ def add_cylinder(
     finally:
         working_mesh.free()
 
-    return cylinder_object
+    return cylinder_object.name

@@ -140,12 +140,13 @@ def test_gate_failure_is_reported_to_the_model(empty_scene, tmp_path):
 
     open_box_source = """
 import bmesh
+import bpy
 from blended.ops import add_box, link_into_scene
 box = add_box("BadCrate", 0.5, 0.5, 0.5)
 link_into_scene(box)
-w = bmesh.new(); w.from_mesh(box.data)
+w = bmesh.new(); w.from_mesh(bpy.data.objects[box].data)
 w.faces.ensure_lookup_table(); w.faces.remove(w.faces[0])
-w.to_mesh(box.data); w.free()
+w.to_mesh(bpy.data.objects[box].data); w.free()
 """
     client = ScriptedClient(
         [

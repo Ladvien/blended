@@ -23,16 +23,16 @@ DEFAULT_ROUGHNESS = 0.7
 
 
 def assign_material(
-    blender_object,
+    object_name: str,
     name: str,
     base_color_rgb: tuple[float, float, float] = DEFAULT_BASE_COLOR_RGB,
     roughness: float = DEFAULT_ROUGHNESS,
-):
-    """Create a material of `name` and assign it as the object's only slot.
+) -> str:
+    """Create material `name` and assign it as the named object's only slot.
 
     Idempotent by name, like the primitive constructors: re-running a
     chunk updates the material instead of stacking a second slot.
-    Returns the material.
+    Returns the material's name.
 
     The datablock is REUSED, never removed and recreated. Measured
     2026-08-22 (iteration 46): the agent assigned "CrateWood" to the
@@ -44,6 +44,9 @@ def assign_material(
     """
     import bpy
 
+    from blended.ops._objects import object_by_name
+
+    blender_object = object_by_name(object_name, "MESH")
     material = bpy.data.materials.get(name)
     if material is None:
         material = bpy.data.materials.new(name)
@@ -65,4 +68,4 @@ def assign_material(
 
     blender_object.data.materials.clear()
     blender_object.data.materials.append(material)
-    return material
+    return material.name

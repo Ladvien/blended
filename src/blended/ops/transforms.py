@@ -22,8 +22,8 @@ def _refresh_dependency_graph() -> None:
     bpy.context.view_layer.update()
 
 
-def apply_object_transform(blender_object) -> None:
-    """Bake the object's matrix into its mesh and reset it to identity.
+def apply_object_transform(object_name: str) -> str:
+    """Bake the named object's matrix into its mesh and reset it to identity.
 
     Do this before export or measurement whenever the object transform
     is not identity — analyzers and exporters that read mesh-local
@@ -31,19 +31,23 @@ def apply_object_transform(blender_object) -> None:
     """
     from mathutils import Matrix
 
+    from blended.ops._objects import object_by_name
+
+    blender_object = object_by_name(object_name, "MESH")
     _refresh_dependency_graph()
     blender_object.data.transform(blender_object.matrix_world)
     blender_object.matrix_world = Matrix.Identity(4)
+    return object_name
 
 
 def rotate_object_euler(
-    blender_object,
+    object_name: str,
     x_rad: float = 0.0,
     y_rad: float = 0.0,
     z_rad: float = 0.0,
     order: str = "XYZ",
-):
-    """Set the object's Euler rotation, in radians, about its own origin.
+) -> str:
+    """Set the named object's Euler rotation, in radians, about its own origin.
 
     Exists because the whitelisted vocabulary had no way to rotate
     anything — measured 2026-08-22: an agent asked for a stool with
@@ -59,30 +63,39 @@ def rotate_object_euler(
     """
     from mathutils import Euler
 
+    from blended.ops._objects import object_by_name
+
+    blender_object = object_by_name(object_name)
     blender_object.rotation_mode = order
     blender_object.rotation_euler = Euler((x_rad, y_rad, z_rad), order)
     _refresh_dependency_graph()
-    return blender_object
+    return object_name
 
 
-def move_object_to(blender_object, location_m: tuple[float, float, float]):
-    """Set the object's world location in metres, then refresh.
+def move_object_to(object_name: str, location_m: tuple[float, float, float]) -> str:
+    """Set the named object's world location in metres, then refresh.
 
     Same reason as rotate_object_euler: placement is half of assembly,
     and it shares the stale-matrix_world trap.
     """
+    from blended.ops._objects import object_by_name
+
+    blender_object = object_by_name(object_name)
     blender_object.location = location_m
     _refresh_dependency_graph()
-    return blender_object
+    return object_name
 
 
-def snap_base_to_ground(blender_object) -> float:
-    """Move the object so its lowest point sits exactly at z=0.
+def snap_base_to_ground(object_name: str) -> float:
+    """Move the named object so its lowest point sits exactly at z=0.
 
     Returns the applied z offset in meters.
     """
     from mathutils import Vector
 
+    from blended.ops._objects import object_by_name
+
+    blender_object = object_by_name(object_name)
     _refresh_dependency_graph()
     world_corners = [
         blender_object.matrix_world @ Vector(corner)
@@ -91,13 +104,17 @@ def snap_base_to_ground(blender_object) -> float:
     lowest_z_m = min(corner.z for corner in world_corners)
     offset_z_m = -lowest_z_m
     blender_object.location.z += offset_z_m
+    _refresh_dependency_graph()
     return offset_z_m
 
 
-def center_on_origin_xy(blender_object) -> None:
-    """Center the object's world-space bounds on the X/Y origin."""
+def center_on_origin_xy(object_name: str) -> str:
+    """Center the named object's world-space bounds on the X/Y origin."""
     from mathutils import Vector
 
+    from blended.ops._objects import object_by_name
+
+    blender_object = object_by_name(object_name)
     _refresh_dependency_graph()
     world_corners = [
         blender_object.matrix_world @ Vector(corner)
@@ -106,3 +123,5 @@ def center_on_origin_xy(blender_object) -> None:
     bounds_center = sum(world_corners, Vector()) / len(world_corners)
     blender_object.location.x -= bounds_center.x
     blender_object.location.y -= bounds_center.y
+    _refresh_dependency_graph()
+    return object_name

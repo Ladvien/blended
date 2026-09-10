@@ -70,9 +70,12 @@ class PalletBuilder:
     def __init__(self, parameters: PalletParameters) -> None:
         parameters.validate()
         self.parameters = parameters
-        self.created_objects: list = []
+        self.created_object_names: list[str] = []
 
     def build(self):
+        """Build the pallet and return its Blender object, base at z=0."""
+        import bpy
+
         from blended.ops import add_box, boolean_union, linear_array, link_into_scene
 
         parameters = self.parameters
@@ -81,7 +84,7 @@ class PalletBuilder:
         first_board_center_x_m = (
             -parameters.length_m / 2.0 + parameters.deck_board_width_m / 2.0
         )
-        deck_object = add_box(
+        deck_name = add_box(
             parameters.name,
             width_m=parameters.deck_board_width_m,
             depth_m=parameters.width_m,
@@ -92,10 +95,10 @@ class PalletBuilder:
                 parameters.stringer_height_m - BOOLEAN_EMBED_M,
             ),
         )
-        link_into_scene(deck_object)
-        self.created_objects.append(deck_object)
+        link_into_scene(deck_name)
+        self.created_object_names.append(deck_name)
         linear_array(
-            deck_object,
+            deck_name,
             count=parameters.deck_board_count,
             offset_m=(parameters.deck_board_pitch_m, 0.0, 0.0),
         )
@@ -110,14 +113,14 @@ class PalletBuilder:
         # identical whatever order it is unioned in.
         for stringer_index in parameters.stringer_build_order:
             stringer_center_y_m = stringer_center_ys_m[stringer_index]
-            stringer_object = add_box(
+            stringer_name = add_box(
                 f"{parameters.name}_stringer_{stringer_index}",
                 width_m=parameters.length_m,
                 depth_m=parameters.stringer_width_m,
                 height_m=parameters.stringer_height_m,
                 location_m=(0.0, stringer_center_y_m, 0.0),
             )
-            link_into_scene(stringer_object)
-            boolean_union(deck_object, stringer_object)
+            link_into_scene(stringer_name)
+            boolean_union(deck_name, stringer_name)
 
-        return deck_object
+        return bpy.data.objects[deck_name]

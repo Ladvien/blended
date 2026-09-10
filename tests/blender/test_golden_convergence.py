@@ -5,8 +5,27 @@ test together, and the harness detects drift against them. These are
 the five runs that met the convergence rule on 2026-08-22 — human
 verified, both deterministic gates clean, no prompt change between them,
 one run per brief:
-iteration 47 (three_leg_stool), 48 (planter_box), 49 (uv_crate),
-50 (ribbed_column), 51 (crate_with_lid).
+iteration 47 (three_leg_stool), 49 (uv_crate), 51 (crate_with_lid), and
+— since 2026-09-10 — 66 (planter_box) and 67 (ribbed_column).
+
+66 and 67 replaced 48 and 50 when OPS-21 (OT-2) made every op take and
+return object NAMES. The recorded sources of 48 and 50 fetched a bpy
+object and handed it to an op (`assign_material(o, ...)`,
+`link_into_scene(col)`), or read `.name` off a constructor's return;
+under the new contract those chunks raise, so the runs no longer
+replay: planter measured 0 of 1 material slots assigned, the column was
+never linked. The three survivors never dereferenced an op's return.
+The replacements ran the SAME pinned v10 text (identity checked below)
+on the claude-code:sonnet lane and passed both deterministic gates with
+the same numbers; the pixel gate reported "the render moved" against
+the 48/50 views (planter shading RMSE 0.075, column silhouette IoU
+0.9948), which is what a fresh run looks like next to a replay. The
+48/50 sign-off survives in the append-only iteration log.
+
+PENDING (2026-09-10): the 66/67 views are minted from gate-passing
+runs but have NOT yet had the viewport sign-off the 2026-08-22 runs
+had. The banner comes off in the change that records the sign-off;
+a rejection reverts the pin to 48/50 and re-converges.
 
 The v9 snapshots this file used to hold were replaced, not kept beside
 these. v9 converged on the two-brief suite; the five-brief suite
@@ -46,9 +65,9 @@ ITERATION_LOG = REPOSITORY_ROOT / "_evaluate" / "iterations.jsonl"
 # The five runs that met the convergence rule, one per brief.
 CONVERGING_ITERATIONS = {
     "three_leg_stool": 47,
-    "planter_box": 48,
+    "planter_box": 66,
     "uv_crate": 49,
-    "ribbed_column": 50,
+    "ribbed_column": 67,
     "crate_with_lid": 51,
 }
 PINNED_REVISION = 10

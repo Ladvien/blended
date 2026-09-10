@@ -57,7 +57,7 @@ def test_adjacent_slivers_do_not_kill_the_healer(empty_scene):
     from blended.ops.heal import weld_and_dissolve
 
     slivers = _mesh_of_adjacent_slivers()
-    report = weld_and_dissolve(slivers)
+    report = weld_and_dissolve(slivers.name)
 
     assert report["removed_zero_area_faces"] >= len(BOWTIE_PAIR_FACES)
 
@@ -69,7 +69,7 @@ def test_healing_actually_removes_the_zero_area_faces(empty_scene):
     from blended.ops.heal import weld_and_dissolve
 
     slivers = _mesh_of_adjacent_slivers()
-    weld_and_dissolve(slivers)
+    weld_and_dissolve(slivers.name)
 
     bpy.context.view_layer.update()
     areas = [polygon.area for polygon in slivers.data.polygons]
@@ -83,12 +83,12 @@ def test_a_clean_mesh_is_left_alone(empty_scene):
 
     box = add_box("CleanBox", 1.0, 1.0, 1.0)
     link_into_scene(box)
-    polygon_count_before = len(box.data.polygons)
+    polygon_count_before = len(bpy.data.objects[box].data.polygons)
 
     report = weld_and_dissolve(box)
 
     assert report == {"welded_vertices": 0, "removed_zero_area_faces": 0}
-    assert len(box.data.polygons) == polygon_count_before
+    assert len(bpy.data.objects[box].data.polygons) == polygon_count_before
 
 
 def test_boolean_on_unlinked_objects_refuses_instead_of_lying(empty_scene):
@@ -111,11 +111,11 @@ def test_boolean_on_unlinked_objects_refuses_instead_of_lying(empty_scene):
     # Nothing was consumed: the refusal happens before any mutation, so
     # the agent's scene is exactly as it left it.
     assert "B" in bpy.data.objects
-    assert len(target.data.vertices) == 8
+    assert len(bpy.data.objects[target].data.vertices) == 8
 
     # And the same call works once the objects are where they belong.
     link_into_scene(target)
     link_into_scene(addend)
     boolean_union(target, addend)
-    assert len(target.data.vertices) > 8
+    assert len(bpy.data.objects[target].data.vertices) > 8
     assert "B" not in bpy.data.objects

@@ -67,9 +67,9 @@ from blended.ops import add_box, link_into_scene
 
 open_box = add_box("OpenChunk", 1.0, 1.0, 1.0)
 link_into_scene(open_box)
-working = bmesh.new(); working.from_mesh(open_box.data)
+working = bmesh.new(); working.from_mesh(bpy.data.objects[open_box].data)
 working.faces.ensure_lookup_table(); working.faces.remove(working.faces[0])
-working.to_mesh(open_box.data); working.free()
+working.to_mesh(bpy.data.objects[open_box].data); working.free()
 """
     result = run_chunk(
         OPEN_BOX_SOURCE,
@@ -188,7 +188,7 @@ def _visible_box(name: str):
 
     built = add_box(name, 1.0, 1.0, 1.0)
     link_into_scene(built)
-    return built
+    return bpy.data.objects[built]
 
 
 def test_every_invisibility_cause_is_named_not_just_detected(empty_scene):
@@ -242,11 +242,12 @@ def test_an_unrenderable_object_fails_even_though_it_is_visible(empty_scene, tmp
     UNRENDERABLE_SOURCE = """
 import sys
 sys.path.insert(0, "src")
+import bpy
 from blended.ops import add_box, link_into_scene
 
 built = add_box("Ghost", 1.0, 1.0, 1.0)
 link_into_scene(built)
-built.hide_render = True
+bpy.data.objects[built].hide_render = True
 """
     result = run_chunk(
         UNRENDERABLE_SOURCE,
@@ -346,11 +347,12 @@ def test_the_gate_reports_a_broken_transform_through_run_chunk(empty_scene, tmp_
     COLLAPSED_SOURCE = """
 import sys
 sys.path.insert(0, "src")
+import bpy
 from blended.ops import add_box, link_into_scene
 
 built = add_box("Flat", 1.0, 1.0, 1.0)
 link_into_scene(built)
-built.scale = (1.0, 1.0, 0.0)
+bpy.data.objects[built].scale = (1.0, 1.0, 0.0)
 """
     result = run_chunk(
         COLLAPSED_SOURCE,

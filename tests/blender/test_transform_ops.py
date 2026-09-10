@@ -40,16 +40,16 @@ def test_rotation_reaches_matrix_world_immediately(empty_scene):
 
     box = _tall_box()
     rotate_object_euler(box, y_rad=QUARTER_TURN_RAD)
-
-    assert box.matrix_world.to_euler().y == pytest.approx(QUARTER_TURN_RAD)
+    box_obj = bpy.data.objects[box]
+    assert box_obj.matrix_world.to_euler().y == pytest.approx(QUARTER_TURN_RAD)
 
     # A box 1.0 m tall on Z, tipped a quarter turn about Y, occupies 1.0 m
     # on X in the WORLD. Note object.dimensions still reports (0.1, 0.1,
     # 1.0): it is the local bounding box times scale and ignores rotation
     # entirely. Measure world extents, or measure the wrong thing.
-    world_x = [(box.matrix_world @ Vector(corner)).x for corner in box.bound_box]
+    world_x = [(box_obj.matrix_world @ Vector(corner)).x for corner in box_obj.bound_box]
     assert max(world_x) - min(world_x) == pytest.approx(1.0, abs=1e-5)
-    assert box.dimensions.x == pytest.approx(0.1, abs=1e-5), (
+    assert box_obj.dimensions.x == pytest.approx(0.1, abs=1e-5), (
         "object.dimensions is expected to IGNORE rotation; if this ever "
         "changes, the drift catalog entry is stale"
     )
@@ -63,7 +63,7 @@ def test_rotation_is_set_not_accumulated(empty_scene):
     rotate_object_euler(box, y_rad=QUARTER_TURN_RAD)
     rotate_object_euler(box, y_rad=QUARTER_TURN_RAD)
 
-    assert box.matrix_world.to_euler().y == pytest.approx(QUARTER_TURN_RAD)
+    assert bpy.data.objects[box].matrix_world.to_euler().y == pytest.approx(QUARTER_TURN_RAD)
 
 
 def test_rotation_survives_apply_object_transform(empty_scene):
@@ -75,8 +75,9 @@ def test_rotation_survives_apply_object_transform(empty_scene):
     rotate_object_euler(box, y_rad=QUARTER_TURN_RAD)
     apply_object_transform(box)
 
-    extent_x = max(v.co.x for v in box.data.vertices) - min(
-        v.co.x for v in box.data.vertices
+    box_obj = bpy.data.objects[box]
+    extent_x = max(v.co.x for v in box_obj.data.vertices) - min(
+        v.co.x for v in box_obj.data.vertices
     )
     assert extent_x == pytest.approx(1.0, abs=1e-5), (
         "rotation was not baked into the mesh — matrix_world was stale"
@@ -89,7 +90,7 @@ def test_move_object_to_reaches_matrix_world_immediately(empty_scene):
     box = _tall_box()
     move_object_to(box, (0.25, -0.5, 0.75))
 
-    assert tuple(box.matrix_world.translation) == pytest.approx((0.25, -0.5, 0.75))
+    assert tuple(bpy.data.objects[box].matrix_world.translation) == pytest.approx((0.25, -0.5, 0.75))
 
 
 def test_both_ops_are_discoverable_through_search(empty_scene, tmp_path):

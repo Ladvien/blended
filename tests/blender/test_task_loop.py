@@ -23,8 +23,8 @@ first = add_box("Widget", 0.5, 0.5, 0.5)
 link_into_scene(first)
 second = add_box("Far", 0.5, 0.5, 0.5, location_m=(3.0, 0.0, 0.0))
 link_into_scene(second)
-working = bmesh.new(); working.from_mesh(first.data); working.from_mesh(second.data)
-working.to_mesh(first.data); working.free()
+working = bmesh.new(); working.from_mesh(bpy.data.objects[first].data); working.from_mesh(bpy.data.objects[second].data)
+working.to_mesh(bpy.data.objects[first].data); working.free()
 """
 
 

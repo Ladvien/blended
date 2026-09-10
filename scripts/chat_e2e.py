@@ -157,7 +157,7 @@ def _bone_backed_groups(mesh_object, report) -> list[str]:
 
     return [
         name
-        for name in deforming_bone_names(mesh_object)
+        for name in deforming_bone_names(mesh_object.name)
         if report.nonzero_weight_counts.get(name, 0) > 0
     ]
 
@@ -168,8 +168,8 @@ def check_rig() -> list[str]:
     def run():
         body = _object("Body", "MESH")
         spine = _object("Spine", "ARMATURE")
-        rig = rig_report(spine)
-        weights = weight_report(body)
+        rig = rig_report(spine.name)
+        weights = weight_report(body.name)
         failures = _check_dimensions(body, BODY_SIZE_M)
         if rig.bone_count < SPINE_BONE_COUNT:
             failures.append(f"Spine has {rig.bone_count} bones, expected ≥ {SPINE_BONE_COUNT}")
@@ -205,7 +205,7 @@ def check_weights() -> list[str]:
 
     def run():
         body = _object("Body", "MESH")
-        report = weight_report(body)
+        report = weight_report(body.name)
         failures = []
         top_count = report.nonzero_weight_counts.get("Top", 0)
         expected_top = sum(
@@ -234,7 +234,7 @@ def check_animation() -> list[str]:
 
     def run():
         cube = _object("Cube", "MESH")
-        report = animation_report(cube, bpy.context.scene)
+        report = animation_report(cube.name)
         failures = []
         if (report.frame_start, report.frame_end) != ANIMATION_FRAME_RANGE:
             failures.append(f"frame range {report.frame_start}-{report.frame_end}, expected {ANIMATION_FRAME_RANGE}")
@@ -266,7 +266,7 @@ def check_material() -> list[str]:
 
     def run():
         tile = _object("Tile", "MESH")
-        report = material_report(tile)
+        report = material_report(tile.name)
         failures = _check_dimensions(tile, TILE_SIZE_M)
         if not report.base_color_linked:
             failures.append("Tile's Base Color is not driven by a node")

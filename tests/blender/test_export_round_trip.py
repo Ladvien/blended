@@ -48,8 +48,8 @@ def test_defective_mesh_is_flagged_before_export(empty_scene, tmp_path):
     from blended.export import export_glb
     from blended.ops import add_box, link_into_scene
 
-    open_box = add_box("OpenExport", 1.0, 1.0, 1.0)
-    link_into_scene(open_box)
+    open_box = bpy.data.objects[add_box("OpenExport", 1.0, 1.0, 1.0)]
+    link_into_scene(open_box.name)
     working_mesh = bmesh.new()
     working_mesh.from_mesh(open_box.data)
     working_mesh.faces.ensure_lookup_table()

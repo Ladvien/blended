@@ -196,17 +196,16 @@ def _translate_seat(blender_object, offset_z_m: float) -> None:
 
 def _seal_drain_hole(blender_object) -> None:
     """Union a plug into the drain hole so it reads as sealed."""
-    from blended.ops.booleans import boolean_union
-    from blended.ops.primitives import add_cylinder, link_into_scene
+    from blended.ops import add_cylinder, boolean_union, link_into_scene
 
-    plug = add_cylinder(
+    plug_name = add_cylinder(
         "DrainPlug",
         radius_m=0.014,
         height_m=0.025,
         location_m=(0.0, 0.0, 0.01),
     )
-    link_into_scene(plug)
-    boolean_union(blender_object, plug)
+    link_into_scene(plug_name)
+    boolean_union(blender_object.name, plug_name)
 
 
 def _offset_lid(lid_object, offset_x_m: float) -> None:

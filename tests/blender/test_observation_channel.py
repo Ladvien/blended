@@ -85,10 +85,11 @@ def test_gated_run_python_also_carries_printed_output(empty_scene, tmp_path):
     from blended.ops.primitives import add_box, link_into_scene
 
     source = (
+        "import bpy\n"
         "from blended.ops.primitives import add_box, link_into_scene\n"
         "box = add_box('Probe', 0.1, 0.1, 0.1)\n"
         "link_into_scene(box)\n"
-        "print('vertices=%d' % len(box.data.vertices))\n"
+        "print('vertices=%d' % len(bpy.data.objects[box].data.vertices))\n"
     )
     text, _images = dispatch_tool(
         "run_python", {"source": source, "object_name": "Probe"}, output_directory=tmp_path

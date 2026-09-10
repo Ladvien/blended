@@ -83,14 +83,14 @@ def add_armature(
     name: str,
     bones: tuple[BoneSpec, ...],
     location_m: tuple[float, float, float] = (0.0, 0.0, 0.0),
-):
-    """Create an armature object with the given edit bones.
+) -> str:
+    """Create an armature object with the given edit bones, linked into the scene.
 
     Idempotent by name (removes any existing object + armature data of
     that name first).  Bones are created in EDIT mode via
     `temp_override` — the only context-safe way to manipulate
     `armature.edit_bones` in a headless Blender.  Returns the armature
-    object (in OBJECT mode).
+    object's name (in OBJECT mode).
 
     Raises:
         ValueError: on empty bones, duplicate bone names, unknown parent
@@ -156,15 +156,15 @@ def add_armature(
         bpy.ops.object.mode_set(mode="OBJECT")
 
     armature_object.select_set(False)
-    return armature_object
+    return armature_object.name
 
 
 def bind_mesh_to_armature(
-    mesh_object,
-    armature_object,
+    mesh_name: str,
+    armature_name: str,
     automatic_weights: bool = True,
-):
-    """Parent a mesh to an armature with an Armature modifier.
+) -> str:
+    """Parent the named mesh to the named armature with an Armature modifier.
 
     Uses the data API for the parent relationship and modifier
     (``mesh_object.parent``, ``modifier.object``).  When
@@ -178,9 +178,14 @@ def bind_mesh_to_armature(
 
     Idempotent: removes any pre-existing Armature modifier on the mesh
     before (re-)adding exactly one, so re-binding never stacks modifiers.
-    Returns the mesh object.
+    Returns the mesh name.
     """
     import bpy
+
+    from blended.ops._objects import object_by_name
+
+    mesh_object = object_by_name(mesh_name, "MESH")
+    armature_object = object_by_name(armature_name, "ARMATURE")
 
     # Remove stale Armature modifiers so re-binding leaves exactly one.
     for mod in list(mesh_object.modifiers):
@@ -219,11 +224,11 @@ def bind_mesh_to_armature(
         mod = mesh_object.modifiers.new(name="Armature", type=ARMATURE_MODIFIER_TYPE)
         mod.object = armature_object
 
-    return mesh_object
+    return mesh_name
 
 
-def rig_report(armature_object) -> RigReport:
-    """Return a frozen snapshot of the armature and its bound meshes.
+def rig_report(armature_name: str) -> RigReport:
+    """Return a frozen snapshot of the named armature and its bound meshes.
 
     A mesh counts as BOUND only when its Armature modifier points at
     ``armature_object`` AND is enabled in viewport and render. A
@@ -234,6 +239,9 @@ def rig_report(armature_object) -> RigReport:
     """
     import bpy
 
+    from blended.ops._objects import object_by_name
+
+    armature_object = object_by_name(armature_name, "ARMATURE")
     armature_data = armature_object.data
     bone_names = tuple(bone.name for bone in armature_data.bones)
 

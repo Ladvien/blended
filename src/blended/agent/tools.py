@@ -428,27 +428,27 @@ def dispatch_tool(
         if blender_object is None:
             return f"No object named {object_name!r} in the scene.", []
         if domain == "rig":
-            from blended.ops.rigging import rig_report
+            from blended.ops import rig_report
 
             if blender_object.type != "ARMATURE":
                 return f"{object_name!r} is a {blender_object.type}, not an ARMATURE.", []
-            report = rig_report(blender_object)
+            report = rig_report(object_name)
         elif domain == "weights":
-            from blended.ops.weights import weight_report
+            from blended.ops import weight_report
 
             if blender_object.type != "MESH":
                 return f"{object_name!r} is a {blender_object.type}, not a MESH.", []
-            report = weight_report(blender_object)
+            report = weight_report(object_name)
         elif domain == "animation":
-            from blended.ops.animation import animation_report
+            from blended.ops import animation_report
 
-            report = animation_report(blender_object, bpy.context.scene)
+            report = animation_report(object_name)
         elif domain == "material":
-            from blended.ops.material_nodes import material_report
+            from blended.ops import material_report
 
             if blender_object.type != "MESH":
                 return f"{object_name!r} is a {blender_object.type}, not a MESH.", []
-            report = material_report(blender_object)
+            report = material_report(object_name)
         else:
             return f"Unknown domain {domain!r}.", []
         return f"{domain} report for {object_name}:\n{json.dumps(_report_to_dict(report), indent=1)}", []

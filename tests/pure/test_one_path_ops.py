@@ -67,10 +67,18 @@ def test_no_operation_advertises_a_second_path(marker):
     )
 
 
+def _op_module_names_on_disk():
+    """Public ops submodules. Underscore modules (`_objects`) are shared
+    plumbing: not facade, not manifest, not tool."""
+    return {
+        m.name for m in pkgutil.iter_modules(ops_facade.__path__) if not m.name.startswith("_")
+    }
+
+
 def _public_symbols_defined_in_ops():
     """Every public function or class whose home is an ops submodule."""
-    for module_info in pkgutil.iter_modules(ops_facade.__path__):
-        module = importlib.import_module(f"blended.ops.{module_info.name}")
+    for module_name in sorted(_op_module_names_on_disk()):
+        module = importlib.import_module(f"blended.ops.{module_name}")
         for symbol_name, symbol in vars(module).items():
             if symbol_name.startswith("_"):
                 continue
@@ -78,11 +86,11 @@ def _public_symbols_defined_in_ops():
                 continue
             if symbol.__module__ != module.__name__:
                 continue
-            yield module_info.name, symbol_name
+            yield module_name, symbol_name
 
 
 def test_every_ops_submodule_is_in_the_manifest():
-    on_disk = {m.name for m in pkgutil.iter_modules(ops_facade.__path__)}
+    on_disk = _op_module_names_on_disk()
     assert on_disk == set(OP_MODULE_NAMES), (
         "OP_MODULE_NAMES and src/blended/ops/*.py disagree: a module the "
         "manifest never introspects is a vocabulary the agent never sees."

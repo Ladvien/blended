@@ -24,9 +24,9 @@ def empty_scene():
 def _box():
     from blended.ops.primitives import add_box, link_into_scene
 
-    box = add_box("Subject", 0.2, 0.2, 0.2)
-    link_into_scene(box)
-    return box
+    box_name = add_box("Subject", 0.2, 0.2, 0.2)
+    link_into_scene(box_name)
+    return bpy.data.objects[box_name]
 
 
 def _save_test_png(path, width_px=64, height_px=64, fill_rgb=(0.9, 0.2, 0.3)):
@@ -51,9 +51,9 @@ def test_noise_procedural_links_base_color_and_reports(empty_scene):
     )
 
     box = _box()
-    assign_procedural_material(box, "ProcNoise", "noise", color_a_rgb=COLOR_A_RGB)
+    assign_procedural_material(box.name, "ProcNoise", "noise", color_a_rgb=COLOR_A_RGB)
 
-    report = material_report(box)
+    report = material_report(box.name)
     assert report.base_color_linked is True
     assert "ShaderNodeTexNoise" in report.node_type_counts
     assert "noise" in report.texture_kinds
@@ -63,7 +63,7 @@ def test_procedural_fills_exactly_one_slot(empty_scene):
     from blended.ops.material_nodes import assign_procedural_material
 
     box = _box()
-    assign_procedural_material(box, "ProcNoise", "noise")
+    assign_procedural_material(box.name, "ProcNoise", "noise")
 
     assert len(box.data.materials) == 1
     assert box.data.materials[0] is not None
@@ -74,8 +74,8 @@ def test_rerun_does_not_duplicate_nodes_or_materials(empty_scene):
     from blended.ops.material_nodes import assign_procedural_material
 
     box = _box()
-    assign_procedural_material(box, "ProcNoise", "noise")
-    assign_procedural_material(box, "ProcNoise", "noise")
+    assign_procedural_material(box.name, "ProcNoise", "noise")
+    assign_procedural_material(box.name, "ProcNoise", "noise")
 
     assert len([m for m in bpy.data.materials if m.name == "ProcNoise"]) == 1
     mat = box.data.materials[0]
@@ -90,7 +90,7 @@ def test_unknown_kind_raises_value_error(empty_scene):
 
     box = _box()
     with pytest.raises(ValueError):
-        assign_procedural_material(box, "BadKind", "voronoi")
+        assign_procedural_material(box.name, "BadKind", "voronoi")
 
 
 # ── image texture ────────────────────────────────────────────────────
@@ -106,9 +106,9 @@ def test_image_texture_material_reports_path(empty_scene, tmp_path):
     _save_test_png(png_path)
 
     box = _box()
-    assign_image_texture_material(box, "ImgMat", png_path)
+    assign_image_texture_material(box.name, "ImgMat", png_path)
 
-    report = material_report(box)
+    report = material_report(box.name)
     assert "ShaderNodeTexImage" in report.node_type_counts
     assert len(report.image_paths) == 1
     assert str(png_path) in report.image_paths[0] or "test_tile.png" in report.image_paths[0]
@@ -119,7 +119,7 @@ def test_image_texture_missing_file_raises(empty_scene, tmp_path):
 
     box = _box()
     with pytest.raises(FileNotFoundError):
-        assign_image_texture_material(box, "Missing", tmp_path / "no_such_file.png")
+        assign_image_texture_material(box.name, "Missing", tmp_path / "no_such_file.png")
 
 
 # ── Workbench render ─────────────────────────────────────────────────
@@ -134,7 +134,7 @@ def test_checker_render_is_not_grey(empty_scene, tmp_path):
 
     box = _box()
     assign_procedural_material(
-        box, "Checker", "checker", color_a_rgb=COLOR_A_RGB, color_b_rgb=COLOR_B_RGB
+        box.name, "Checker", "checker", color_a_rgb=COLOR_A_RGB, color_b_rgb=COLOR_B_RGB
     )
 
     paths = capture_views(box, tmp_path)

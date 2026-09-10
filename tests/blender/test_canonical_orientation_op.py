@@ -38,7 +38,8 @@ def _subject(extents_m=SUBJECT_EXTENTS_M):
     return box
 
 
-def _world_extents_m(blender_object):
+def _world_extents_m(object_name):
+    blender_object = bpy.data.objects[object_name]
     corners = [blender_object.matrix_world @ Vector(corner)
                for corner in blender_object.bound_box]
     return tuple(
@@ -110,8 +111,8 @@ def test_every_mesh_turns_together(empty_scene):
 
     assert sorted(record["objects"]) == ["Second", "Subject"]
     # Rigid: the joint box turns, so the pair's relative offset turns too.
-    assert first.matrix_world.to_euler().x == pytest.approx(
-        second.matrix_world.to_euler().x
+    assert bpy.data.objects[first].matrix_world.to_euler().x == pytest.approx(
+        bpy.data.objects[second].matrix_world.to_euler().x
     )
     joint_before_m = record["extents_before_m"]
     joint_after_m = record["extents_after_m"]

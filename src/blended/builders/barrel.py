@@ -64,9 +64,12 @@ class BarrelBuilder:
     def __init__(self, parameters: BarrelParameters) -> None:
         parameters.validate()
         self.parameters = parameters
-        self.created_objects: list = []
+        self.created_object_names: list[str] = []
 
     def build(self):
+        """Build the barrel and return its Blender object, base at z=0."""
+        import bpy
+
         from blended.ops import (
             add_cylinder,
             add_lathe,
@@ -84,9 +87,9 @@ class BarrelBuilder:
             )
             for ring_index in range(parameters.ring_count + 1)
         ]
-        barrel_object = add_lathe(parameters.name, profile, parameters.segment_count)
-        link_into_scene(barrel_object)
-        self.created_objects.append(barrel_object)
+        barrel_name = add_lathe(parameters.name, profile, parameters.segment_count)
+        link_into_scene(barrel_name)
+        self.created_object_names.append(barrel_name)
 
         # Indexed by hoop_index throughout — geometry, name and position
         # are all functions of the INDEX, never of the position in the
@@ -98,7 +101,7 @@ class BarrelBuilder:
                 parameters.radius_at_height(hoop_center_z_m)
                 + parameters.hoop_protrusion_m
             )
-            hoop_object = add_cylinder(
+            hoop_name = add_cylinder(
                 f"{parameters.name}_hoop_{hoop_index}",
                 radius_m=hoop_radius_m,
                 height_m=parameters.hoop_height_m,
@@ -109,7 +112,7 @@ class BarrelBuilder:
                     hoop_center_z_m - parameters.hoop_height_m / 2.0,
                 ),
             )
-            link_into_scene(hoop_object)
-            boolean_union(barrel_object, hoop_object)
+            link_into_scene(hoop_name)
+            boolean_union(barrel_name, hoop_name)
 
-        return barrel_object
+        return bpy.data.objects[barrel_name]

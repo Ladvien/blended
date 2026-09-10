@@ -103,20 +103,25 @@ def _ensure_tex_coord_and_mapping(material, scale):
 
 
 def assign_procedural_material(
-    mesh_object,
+    object_name: str,
     name: str,
     kind: str,
     scale: float = DEFAULT_TEXTURE_SCALE,
     color_a_rgb: tuple[float, float, float] = DEFAULT_COLOR_A_RGB,
     color_b_rgb: tuple[float, float, float] = DEFAULT_COLOR_B_RGB,
-):
-    """Create/reuse a procedural-texture material and assign it as the only slot.
+) -> str:
+    """Create/reuse a procedural-texture material and assign it as the named mesh's only slot.
 
-    Idempotent by material name and by node name: re-running the same
-    call updates the existing texture/mapping nodes instead of stacking
-    duplicates. Returns the material.
+    `kind` is one of PROCEDURAL_KINDS. Idempotent by material name and by
+    node name: re-running the same call updates the existing
+    texture/mapping nodes instead of stacking duplicates. Returns the
+    material's name.
     """
     import bpy
+
+    from blended.ops._objects import object_by_name
+
+    mesh_object = object_by_name(object_name, "MESH")
 
     if kind not in NODE_TYPE_BY_KIND:
         raise ValueError(
@@ -177,7 +182,7 @@ def assign_procedural_material(
     # Assign as the object's only slot.
     mesh_object.data.materials.clear()
     mesh_object.data.materials.append(material)
-    return material
+    return material.name
 
 
 def _set_texture_colors(texture_node, kind, color_a_rgb, color_b_rgb):
@@ -195,13 +200,19 @@ def _set_texture_colors(texture_node, kind, color_a_rgb, color_b_rgb):
     # and the Principled BSDF default for Workbench/Eevee solid shading.
 
 
-def assign_image_texture_material(mesh_object, name: str, image_path: Path):
-    """Create/reuse an image-texture material and assign it as the only slot.
+def assign_image_texture_material(
+    object_name: str, name: str, image_path: Path
+) -> str:
+    """Create/reuse an image-texture material and assign it as the named mesh's only slot.
 
     Raises FileNotFoundError if ``image_path`` does not exist.
-    Returns the material.
+    Returns the material's name.
     """
     import bpy
+
+    from blended.ops._objects import object_by_name
+
+    mesh_object = object_by_name(object_name, "MESH")
 
     image_path = Path(image_path)
     if not image_path.is_file():
@@ -236,7 +247,7 @@ def assign_image_texture_material(mesh_object, name: str, image_path: Path):
 
     mesh_object.data.materials.clear()
     mesh_object.data.materials.append(material)
-    return material
+    return material.name
 
 
 def _sync_diffuse_from_image(material, image):
@@ -260,8 +271,11 @@ def _sync_diffuse_from_image(material, image):
     material.diffuse_color = (r_avg, g_avg, b_avg, 1.0)
 
 
-def material_report(mesh_object) -> MaterialReport:
-    """Snapshot the first material slot's shader graph for assertion."""
+def material_report(object_name: str) -> MaterialReport:
+    """Snapshot the named mesh's first material slot shader graph for assertion."""
+    from blended.ops._objects import object_by_name
+
+    mesh_object = object_by_name(object_name, "MESH")
     material_names = tuple(
         mat.name for mat in mesh_object.data.materials if mat is not None
     )

@@ -186,9 +186,9 @@ def cleanup_mesh(
             )
             decimate_modifier.decimate_type = "COLLAPSE"
             decimate_modifier.ratio = decimate_ratio
-            from blended.ops.modifiers import apply_all_modifiers
+            from blended.ops import apply_all_modifiers
 
-            apply_all_modifiers(blender_object)
+            apply_all_modifiers(blender_object.name)
             actions.append(
                 f"decimated {interim_report.triangle_count} -> target "
                 f"{settings.triangle_budget} (ratio {decimate_ratio:.4f})"

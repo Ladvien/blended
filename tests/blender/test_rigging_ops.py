@@ -56,8 +56,9 @@ def test_add_armature_creates_n_bones_with_parenting(empty_scene):
     )
     armature = add_armature("Arm", bones)
 
-    assert armature.type == "ARMATURE"
-    bone_map = {b.name: b for b in armature.data.bones}
+    armature_obj = bpy.data.objects[armature]
+    assert armature_obj.type == "ARMATURE"
+    bone_map = {b.name: b for b in armature_obj.data.bones}
     assert set(bone_map) == {"Root", "Child"}
     child = bone_map["Child"]
     assert child.parent is not None
@@ -144,7 +145,7 @@ def test_weight_report_on_unbound_mesh_has_no_groups(empty_scene):
     report = weight_report(box)
     assert report.group_names == ()
     assert report.nonzero_weight_counts == {}
-    assert report.unweighted_vertex_count == len(box.data.vertices)
+    assert report.unweighted_vertex_count == len(bpy.data.objects[box].data.vertices)
 
 
 # ---------------------------------------------------------------------------

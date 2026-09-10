@@ -53,19 +53,23 @@ def _require_linked(blender_object, role: str) -> None:
             f"boolean {role} {blender_object.name!r} is not linked into the "
             f"scene, so the modifier cannot evaluate it and the result "
             f"would silently be the unchanged target. Call "
-            f"ops.primitives.link_into_scene({blender_object.name!r}'s "
-            f"object) after creating it, before any boolean."
+            f"link_into_scene({blender_object.name!r}) after creating it, "
+            f"before any boolean."
         )
 
 
 def _apply_boolean(
-    target_object,
-    operand_object,
+    target_name: str,
+    operand_name: str,
     operation: str,
     solver: str = BOOLEAN_SOLVER_DEFAULT,
 ) -> None:
+    from blended.ops._objects import object_by_name
     from blended.ops.modifiers import apply_all_modifiers
     from blended.ops.primitives import remove_object_and_mesh
+
+    target_object = object_by_name(target_name, "MESH")
+    operand_object = object_by_name(operand_name, "MESH")
 
     # Checked BEFORE anything mutates: a boolean that fails halfway has
     # already eaten its operand.
@@ -90,7 +94,7 @@ def _apply_boolean(
     boolean_modifier.operation = operation
     boolean_modifier.object = operand_object
     boolean_modifier.solver = solver
-    apply_all_modifiers(target_object)
+    apply_all_modifiers(target_name)
     if (
         len(target_object.data.vertices) == vertex_count_before
         and len(target_object.data.polygons) == polygon_count_before
@@ -107,26 +111,32 @@ def _apply_boolean(
             f"faces — make the cutter overlap the target instead of "
             f"sharing a face plane, then retry."
         )
-    remove_object_and_mesh(operand_object.name)
+    remove_object_and_mesh(operand_name)
 
     from blended.ops.heal import weld_and_dissolve
 
-    weld_and_dissolve(target_object)
+    weld_and_dissolve(target_name)
 
 
-def boolean_difference(target_object, cutter_object, solver=BOOLEAN_SOLVER_DEFAULT):
-    """Subtract cutter from target; the cutter is consumed."""
-    _apply_boolean(target_object, cutter_object, "DIFFERENCE", solver)
-    return target_object
+def boolean_difference(
+    target_name: str, cutter_name: str, solver: str = BOOLEAN_SOLVER_DEFAULT
+) -> str:
+    """Subtract the named cutter from the named target; the cutter is consumed."""
+    _apply_boolean(target_name, cutter_name, "DIFFERENCE", solver)
+    return target_name
 
 
-def boolean_union(target_object, addend_object, solver=BOOLEAN_SOLVER_DEFAULT):
-    """Merge addend into target as one watertight solid; addend consumed."""
-    _apply_boolean(target_object, addend_object, "UNION", solver)
-    return target_object
+def boolean_union(
+    target_name: str, addend_name: str, solver: str = BOOLEAN_SOLVER_DEFAULT
+) -> str:
+    """Merge the named addend into the named target as one solid; the addend is consumed."""
+    _apply_boolean(target_name, addend_name, "UNION", solver)
+    return target_name
 
 
-def boolean_intersect(target_object, operand_object, solver=BOOLEAN_SOLVER_DEFAULT):
-    """Keep only the overlap of the two solids; operand consumed."""
-    _apply_boolean(target_object, operand_object, "INTERSECT", solver)
-    return target_object
+def boolean_intersect(
+    target_name: str, operand_name: str, solver: str = BOOLEAN_SOLVER_DEFAULT
+) -> str:
+    """Keep only the overlap of the two named solids; the operand is consumed."""
+    _apply_boolean(target_name, operand_name, "INTERSECT", solver)
+    return target_name
