@@ -43,8 +43,8 @@ def test_the_composition_sums_and_names_both_lanes():
     prompt_rows = rows[1:6]
     assert prompt_rows[-1].name.strip() == "template scaffolding (remainder)"
     assert sum(r.tokens for r in prompt_rows) == by["system prompt (assembled)"].tokens
-    assert by["STATIC PER CALL, OpenAI/Ollama lanes"].tokens == by["system prompt (assembled)"].tokens + by["tools: OpenAI/Ollama `tools` field (all)"].tokens
-    assert by["of which op tools"].tokens + by["of which service tools"].tokens <= by["tools: OpenAI/Ollama `tools` field (all)"].tokens + 2
+    assert by["STATIC PER CALL, OpenAI/Ollama lanes"].tokens == by["system prompt (assembled)"].tokens + by["tools: OpenAI/Ollama `tools` field (offered)"].tokens
+    assert by["of which op tools"].tokens + by["of which service tools"].tokens <= by["tools: OpenAI/Ollama `tools` field (offered)"].tokens + 2
     table = render_table(rows, "words")
     assert table.startswith("| part | chars | tokens (words) |")
     assert "| STATIC PER CALL, Claude Code lane |  |" in table

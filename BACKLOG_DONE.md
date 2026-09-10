@@ -358,3 +358,43 @@ regression reopens the item in `BACKLOG.md` with a pointer back to this entry.
 **Found by the first stool run (82), fixed here:** the driver died in `RefinementOutcome._measured` when a refinement turn left the part named `Seat` — a missing dimension now reads "missing (part not found)" in the summary and counts as a failure instead of losing the record.
 **Layers:** pure 713 passed / 1 skipped / 1 xfailed; Blender 329 passed / 3 skipped (both by exit code).
 **Commit:** `75ec2c9`.
+
+## OT-25 Progressive disclosure of op tools
+
+**What:** the loop MUST offer the service tools, the readers and a CORE set of op tools on every call, and expose the rest through `search_ops` (which already returns the schema). The core set MUST be derived from `tool_events` frequency across gate-passing runs, never listed by hand, and the offered set MUST be fingerprinted per turn so the pin tests see a change.
+**Why:** 15 of 48 ops carried all five briefs; the other 33 cost 4k+ tokens per call on every lane and a `oneOf` variant each on the CLI lane.
+**Hypothesis to register before the roll:** executability on the local lane rises, per-call tokens fall below the 8-tool baseline (25,851 on the CLI lane), and hatch calls per gate-passing brief do not change.
+**Done means:** `tests/pure/test_tool_disclosure.py` covers the derivation, the per-turn fingerprint and a search-then-call round trip; the five briefs pass no-hatch on the disclosed set.
+
+**Closed:** 2026-09-10.
+**Gating runs and tests:** `make converge ... REVISION=14 ARGS="--no-hatch"` on the disclosed surface: planter 87 (14 API calls), uv_crate 89 (15), column 90 (8), crate_with_lid 91 (9), stool 92 (38; three refinements pass) — all FORM PASS, zero hatch calls, 12 `search_ops` calls for 11 undisclosed ops; the stool's first run 88 FAILED its third refinement at the 24-call turn cap (recorded in the pre-registration outcome). `make chat-e2e ARGS="--no-hatch --revision 14"` 6/6 in 56 tool calls (46 on the whole set). `tests/pure/test_tool_disclosure.py` (8 tests: derivation; generated module equals the derivation from the real log; offered set seen by the client; a withheld tool leaves it; undisclosed op dispatches after `search_ops` with the fingerprint on every event; envelope catch-all; module round trip), `tests/blender/test_agent_loop.py::test_an_undisclosed_op_found_by_search_ops_runs_through_the_real_dispatcher`.
+**Spec:** AGT-1 (the offered set, the generated module, the fingerprint on events and records), AGT-14 (envelope from the offered set + catch-all variant; preflight sends the same), §2.5 `src/blended/agent/core_tools.py`, §5.4 `MINIMUM_BRIEFS_USING_OP`, the scripts table (`scripts/derive_core_tools.py`), the "Context per call" row re-measured on the offered set.
+**Shape of the change:** `tool_disclosure.py` derives the core (scene-changing ops used successfully in ≥ 2 gate-passing briefs) and writes it as the generated module `core_tools.py` (`CORE_OPS`: add_box, add_cylinder, assign_material, boolean_difference, link_into_scene, rename_object, snap_base_to_ground); `AgentSession.offered_tools()` = service + readers + core − withheld, fingerprinted per turn and stamped on every `ToolEvent` and the `IterationRecord`; the door and the binder are untouched, so any facade op runs by name once `search_ops` has shown it; the Claude Code envelope gains one catch-all variant (enum of the undisclosed names, free-form arguments). Hypotheses H4–H7 pre-registered before the runs; H5 holds (mean 18,891 tokens per call, four of five briefs under 25,851), H7 read 1.09 per op, H4/H6 wait for OT-27.
+**Measured:** offered 29 of 56 (8 service + 14 readers + 7 core); static per call 13,727 → 8,646 (OpenAI/Ollama) and 14,967 → 9,626 (Claude Code) tokens on bmb's tokenizer; the Claude Code lane billed 16,880–17,833 tokens per API call on the four single-turn briefs (24,248–30,498 on the whole set at v14).
+**Layers:** recorded in the closing commit message (both by exit code).
+**Commit:** implementation `e7b6d5e`; closing commit recorded in the follow-up commit.
+
+## OT-26 Cache-friendly prefix order
+
+**What:** on lanes with prefix caching (Claude Code, OpenRouter) the static content — working agreement, conventions, tool set — MUST precede everything that changes per turn (scene block, history), and the cache-read fraction MUST be reported per run.
+**Why:** measured today on the CLI lane: 89 % of input tokens were already cache reads (iteration 74: 331,796 of 372,080), so the remaining lever is the last 11 %; this item is ranked last for that reason and is closed by measurement, not by reordering on faith.
+**Done means:** `TurnCost` cache-read fraction per run is in the record; a paired comparison shows the fraction did not fall.
+
+**Closed:** 2026-09-10 — by measurement; no reordering was needed.
+**Gating tests:** `tests/pure/test_cache_report.py` (the fraction is one function, `TurnCost.cache_read_fraction`, shown in the `spent` line; rows skip pre-accounting records; the paired comparison takes each brief's latest run on each side); the order itself was already pinned by `tests/pure/test_claude_code_lane.py::test_the_system_prompt_is_byte_stable_across_builds` and `::test_a_growing_transcript_keeps_the_previous_turn_as_its_prefix` — the system prompt (working agreement, conventions, protocol note) is static and travels as `--system-prompt`, the tool envelope as `--json-schema`, and the fold is append-only, so nothing per-turn precedes the static content on the Claude Code lane.
+**Spec:** AGT-24 added; the "Prefix cache" row in the measured-state table; the scripts table (`scripts/cache_read_report.py`).
+**Measured (`scripts/cache_read_report.py --before 81-86 --after 87-92`, whole set → disclosed set, both v14, hatch withheld):**
+
+| brief | cache read before (iteration) | after (iteration) | delta | writes/call before | after | delta |
+|---|---|---|---|---|---|---|
+| crate_with_lid | 0.851 (85) | 0.812 (91) | -0.039 | 3,989 | 3,274 | -715 |
+| planter_box | 0.829 (81) | 0.791 (87) | -0.039 | 4,259 | 3,733 | -527 |
+| ribbed_column | 0.923 (84) | 0.885 (90) | -0.037 | 1,908 | 1,956 | +48 |
+| three_leg_stool | 0.729 (86) | 0.647 (92) | -0.082 | 8,686 | 8,910 | +224 |
+| uv_crate | 0.937 (83) | 0.883 (89) | -0.054 | 1,531 | 1,978 | +447 |
+
+mean cache-read delta -0.050 over 5 paired brief(s); fell on 5; mean writes/call delta -104; rose on 3
+
+The **Done means** as written ("the fraction did not fall") is NOT met: it fell on all five briefs. The mechanism is the ratio, not the order: the numerator is the static prefix, and OT-25 cut that prefix by ~5,300 tokens per call while each turn's new content (tool results, `search_ops` pages) stayed, so a smaller share of a smaller call is cached even though every call is cheaper (planter: 24,933 → 17,833 tokens per call). The number a volatile prefix would inflate — cache WRITES per call — moved −104 on average (rose on three briefs by 48–447 tokens, the extra `search_ops` result text; fell on two by 527–715). Recorded as the wrong number and the right one; the criterion for any future reorder is writes per call, and the fraction is reported per run as the item asked.
+**Layers:** recorded in the closing commit message (both by exit code).
+**Commit:** recorded in the follow-up commit.

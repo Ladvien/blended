@@ -171,4 +171,29 @@ call offers 8 service tools + 14 readers + 7 core ops = 29 tools, and reaches th
   the stool (splayed_leg_ring, trim_soles_flat, boolean_union) is the brief that
   pays it.
 
-**Outcome.** *(pending)*
+**Outcome (2026-09-10, closing commit of OT-25; the roll itself is OT-27).** The
+surface shipped as pre-registered: 29 of 56 tools offered (fingerprint `t:6b6093efb569`
+with the hatch, `t:38dae1b48ceb` with it withheld), static per call 8,646 / 9,626 tokens
+on bmb's tokenizer (from 13,727 / 14,967).
+
+- H4: *pending OT-27* — no local-lane roll has run on this surface.
+- H5: **holds on the mean and on four of five briefs.** Claude Code lane, v14, hatch
+  withheld, billed input per API call: planter 87 17,833; uv_crate 89 16,880; column 90
+  17,073; crate_with_lid 91 17,410; stool 92 25,258 (mean 18,891; the whole-set v14 runs
+  81–86 read 24,248–32,052). The multi-turn stool sits at the 25,851 baseline (26,541 on
+  its first run 88, 25,258 on 92): its four turns of history, not the tool set, are what
+  a call carries by then.
+- H6: *pending* — every run here withheld the hatch; the hatch-offered reading comes
+  with OT-27's five-brief chain.
+- H7: **12 `search_ops` calls for 11 undisclosed ops needed (1.09 per op), not ≤ 1.**
+  Stool 88: 4 for 4; stool 92: 3 for 3; uv_crate 89: 4 for 3 — the query "unwrap seams"
+  matched nothing because `search_ops` requires every word (`add_bevel`, `mark_uv_seams`,
+  `unwrap_uvs` were then found one word at a time); column 90: 1 for 1; planter 87 and
+  crate_with_lid 91: 0 for 0. One AND-miss in six runs; recorded, not fixed here.
+- Not hypothesised, observed: the stool's first run (88) failed its third refinement at
+  the 24-call turn cap after two op gate failures (`boolean_union` on leg 1 and
+  `trim_soles_flat`, both "2 triangles face inward") and two full tear-down rebuilds;
+  that turn made no `search_ops` call. The second run (92) passed all three refinements
+  in 38 API calls ($1.85; the whole-set run 86 took 44, $2.12). One failure in two runs
+  of the one multi-turn brief: the cap, not the surface, is the mechanism on the record,
+  and the roll (OT-27) is where a rate gets measured.

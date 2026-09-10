@@ -83,12 +83,13 @@ def prompt_parts(revision: int | None = None, lane: str | None = None) -> tuple[
 
 
 def tool_parts(tools: list[dict]) -> list[Part]:
-    """The tool set as each lane puts it on the wire."""
+    """The OFFERED tool set as each lane puts it on the wire (OT-25: the
+    service tools, the readers and the core; the rest ride search_ops)."""
     from blended.agent.claude_code import TOOL_PROTOCOL_NOTE, envelope_schema
     from blended.agent.tools import OP_TOOL_SCHEMAS, SERVICE_TOOL_SCHEMAS
 
     return [
-        Part("tools: OpenAI/Ollama `tools` field (all)", json.dumps(tools)),
+        Part("tools: OpenAI/Ollama `tools` field (offered)", json.dumps(tools)),
         Part("  of which op tools", json.dumps([t for t in tools if t in OP_TOOL_SCHEMAS])),
         Part("  of which service tools", json.dumps([t for t in tools if t in SERVICE_TOOL_SCHEMAS])),
         Part("tools: Claude Code envelope + protocol note", json.dumps(envelope_schema(tools)) + "\n\n" + TOOL_PROTOCOL_NOTE),
@@ -162,7 +163,7 @@ SPEC_ROW_LABEL = "| Context per call |"
 def spec_row(rows: list[CountedPart], tokenizer_name: str, date_text: str, revision_text: str = "") -> str:
     by_name = {row.name.strip(): row for row in rows}
     whole = by_name["system prompt (assembled)"]
-    tools_all = by_name["tools: OpenAI/Ollama `tools` field (all)"]
+    tools_all = by_name["tools: OpenAI/Ollama `tools` field (offered)"]
     op_tools = by_name["of which op tools"]
     cli = by_name["tools: Claude Code envelope + protocol note"]
     static_openai = by_name["STATIC PER CALL, OpenAI/Ollama lanes"]

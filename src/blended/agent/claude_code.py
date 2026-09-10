@@ -448,6 +448,19 @@ def parse_rate_limit(frame: dict) -> RateLimitSnapshot:
     )
 
 
+
+class NoBilledInput(ValueError):
+    """No prompt-side tokens at all: nothing to take a fraction of."""
+
+
+def cache_read_fraction(input_tokens: int, cache_read_tokens: int, cache_write_tokens: int) -> float:
+    """cache reads over everything billed on the prompt side (OT-26)."""
+    billed = input_tokens + cache_read_tokens + cache_write_tokens
+    if billed <= 0:
+        raise NoBilledInput("no prompt-side tokens were billed; the fraction is undefined")
+    return cache_read_tokens / billed
+
+
 @dataclass(frozen=True)
 class TurnCost:
     """What one invocation actually spent.
@@ -478,6 +491,15 @@ class TurnCost:
         """Everything the prompt side cost, cached or not."""
         return self.input_tokens + self.cache_read_tokens + self.cache_write_tokens
 
+    @property
+    def cache_read_fraction(self) -> float:
+        """The share of the prompt side served from cache (OT-26). A ratio:
+        it FALLS when the static prefix shrinks (OT-25 took it from 0.829
+        to 0.791 on the planter with fewer tokens per call), so a change
+        of order is judged by `cache_write_tokens` per call, not by this.
+        Undefined before anything was billed."""
+        return cache_read_fraction(self.input_tokens, self.cache_read_tokens, self.cache_write_tokens)
+
     def plus(self, other: TurnCost) -> TurnCost:
         """Accumulate across the turns of one run."""
         return TurnCost(
@@ -493,7 +515,9 @@ class TurnCost:
         return (
             f"{self.api_calls} api call(s), "
             f"{self.billed_input_tokens:,} input tok "
-            f"({self.cache_read_tokens:,} cached), "
+            f"({self.cache_read_tokens:,} cached"
+            + (f", {self.cache_read_fraction:.0%}" if self.billed_input_tokens else "")
+            + "), "
             f"{self.output_tokens:,} out, ${self.cost_usd:.4f}"
         )
 
