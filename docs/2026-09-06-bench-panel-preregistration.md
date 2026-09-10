@@ -295,3 +295,21 @@ scorable, and it stays on disk as the record. **H3'/H4 (executability on a local
 therefore unmeasured, and no local claim may be made from anything in this document.** The
 cloud arm continues as pre-registered and is unaffected: it ranks against the six-roll
 `deepseek-v10` incumbent group, which is what OT-9 needs.
+
+18:37: **cloud roll 1 complete and scored** — 20 instances swept, 19 baked (one produced
+no script), 18 GLBs loaded. Executability 18/20; `cd_pca` 0.02700 over n=18 against the
+incumbent group's 0.0252. One roll ranks nothing (BEN-10); rolls 2 and 3 follow.
+
+Read before scoring, as the rule requires, and **one of the two failures is the
+instrument, not the surface**: Spoon_seed0 baked to `UnknownObject: no object named
+'Spoon'`. Its first `run_python` chunk raised `TypeError: create_uvsphere: keyword
+"diameter" is invalid` — but the very next `list_scene` shows `Spoon: 956 tris`, so the
+chunk had already built the handle before it failed on the bowl. The bridge includes a
+call only when its `stage_reached` is `locate`/`gate`/`export`/`done` (OT-20), so a chunk
+that raised midway is dropped — even though the live scene kept everything it made and
+every later call in the recorded conversation depended on it. The baked script therefore
+cannot reproduce the run it replays. Scheduled as OT-31, **not fixed now**: changing the
+instrument between rolls 1 and 3 would make them incomparable. The other failure
+(Pillar_seed0, `ERR_MODEL_CALL`) was a transient connection reset on the Ollama cloud
+lane. So roll 1's honest reading is 18/20 executable with 1 instance attributable to the
+bridge and 1 to the network, and the outcome line below must say so when it is filled.

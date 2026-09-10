@@ -138,6 +138,25 @@ either shows the number is fine or names the turn that hit it. **Do not raise it
 **Done means:** the per-brief table is in the spec's measured-state section with cost and
 gate outcome per lane; a brief that fails on this lane is named with its failure.
 
+### OT-31 The bake reproduces a chunk that raised after it changed the scene
+
+**What:** `bench_bridge` includes a recorded call only when its `stage_reached` reached
+`locate`/`gate`/`export`/`done`. A `run_python` chunk that raised PART WAY THROUGH is
+excluded — but the objects it made up to that point stayed in the live scene, and every
+later call in the recorded conversation was written against them. The baked script must
+reproduce the scene the run actually had, which means emitting such a chunk with its
+failure reproduced, not omitting it.
+**Why:** measured in OT-27's cloud roll 1 (Spoon_seed0, 2026-09-10): the first chunk built
+the handle, then raised `TypeError: create_uvsphere: keyword "diameter" is invalid`; the
+next `list_scene` reported `Spoon: 956 tris`; the bake dropped the chunk and died with
+`UnknownObject: no object named 'Spoon'`. One instance in twenty — 5 % of an executability
+score that ranks configurations lexicographically first (BEN-5).
+**Not before:** OT-27's rolls finish. Changing the instrument between rolls 1 and 3 makes
+them incomparable; roll 1's reading already names the affected instance.
+**Done means:** a Blender test records a chunk that creates an object and then raises,
+bakes it, and the object exists in the fresh scene with the later calls succeeding; the
+inclusion rule is stated in terms of "changed the scene", not "reached a stage".
+
 ### OT-30 Paired bench rolls on the metered writer (gated)
 
 **What:** three paired holdout rolls, disclosed tree against the incumbent tree, writer and
