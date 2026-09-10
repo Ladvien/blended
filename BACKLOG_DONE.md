@@ -215,3 +215,19 @@ regression reopens the item in `BACKLOG.md` with a pointer back to this entry.
 **Measured:** 45 op tools; tool-set fingerprint `t:2614a1448ba7`; assembled prompt `a10:107d5c63f0b0` (the manifest gained the selectors module and three config objects).
 **Layers:** pure 678 passed / 1 skipped / 1 xfailed; Blender 323 passed / 3 skipped.
 **Commit:** `36afbd7`.
+
+---
+
+## OT-12 Missing-op mining
+
+**What:** `scripts/mine_candidate_ops.py` MUST read v2 transcripts and iteration logs, group `run_python` events by `reason` and by normalized source shape, and emit a dated markdown report ranking candidate ops by frequency × gate-pass rate.
+**Why:** Vocabulary growth should be driven by measured demand, not guessed. Every hatch use is a vote.
+**Done means:** the script is self-checking (fails on a v1 transcript rather than silently reading nothing) and produces a report on the existing five-brief runs after OT-8 lands.
+
+**Closed:** 2026-09-10.
+**Gating tests:** `tests/pure/test_candidate_ops.py::test_a_record_without_tool_events_is_refused_not_read_as_empty` (v1 records and schema-1 transcripts refused by name), `::test_a_reason_is_one_spelling_and_a_shape_ignores_literals`, `::test_the_ranking_is_frequency_times_gate_pass_rate`, `::test_a_refused_hatch_call_is_not_a_vote`; the script refuses the un-filtered log (`iteration 1 ... predates OT-8`) and produced the report on the post-OT-8 runs.
+**Spec:** CNV-14 added; §2.4 `make mine-ops`; §6.3 CNV 13 → 14.
+**Shape of the change:** `blended.evaluate.candidate_ops` (pure) groups hatch events by normalized reason and by source shape (the dotted API the chunk called, facade imports included, literals and builtins excluded), ranks by frequency × gate-pass rate, and reports hatch calls per gate-passing brief — the v12 hypothesis metric. `scripts/mine_candidate_ops.py` / `make mine-ops FROM=68` write a dated Markdown report under `docs/candidate_ops/`.
+**Measured (the report):** iterations 68–73, five gate-passing briefs' worth of runs on v12: 10 hatch calls on 68–71 plus 0 on 73; 3.00 hatch calls per gate-passing brief (hypothesis < 1.0: NOT met on this roll — one roll, no claim). Ranked candidates: rename an object (4 calls, 4/4 gate-passing), world-bounds reader (5 chunks, 4/4), mark UV seams by selector, lathe profile from rib parameters; two "placeholder" reasons show the reason field is gameable. The strongest finding is not a missing op: `location_m` was read as a center in both planter runs because the base convention never reaches the model (summary line only). All recorded on OT-13.
+**Layers:** pure 678 passed / 1 skipped / 1 xfailed; Blender 323 passed / 3 skipped.
+**Commit:** recorded in the follow-up commit.
