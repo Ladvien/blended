@@ -17,7 +17,7 @@ bpy = pytest.importorskip("bpy", reason="requires Blender-as-module")
 
 pytestmark = pytest.mark.blender
 
-from blended.ui.workspace import (  # noqa: E402
+from blended.ui.workspace import (
     BLENDED_WORKSPACE_NAME,
     ensure_workspace,
     workspace_exists,

@@ -16,6 +16,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from blended.ops._objects import ObjectName
+
 MINIMUM_BONE_LENGTH_M = 1e-6
 """Bones shorter than this are treated as zero-length and rejected.
 
@@ -83,7 +85,7 @@ def add_armature(
     name: str,
     bones: tuple[BoneSpec, ...],
     location_m: tuple[float, float, float] = (0.0, 0.0, 0.0),
-) -> str:
+) -> ObjectName:
     """Create an armature object with the given edit bones, linked into the scene.
 
     Idempotent by name (removes any existing object + armature data of
@@ -163,7 +165,7 @@ def bind_mesh_to_armature(
     mesh_name: str,
     armature_name: str,
     automatic_weights: bool = True,
-) -> str:
+) -> ObjectName:
     """Parent the named mesh to the named armature with an Armature modifier.
 
     Uses the data API for the parent relationship and modifier

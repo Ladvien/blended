@@ -113,9 +113,9 @@ def test_a_vertex_group_that_names_no_bone_is_reported(empty_scene):
 
 
 def test_a_bone_no_group_names_is_reported(empty_scene):
+    from blended.ops.primitives import add_box, link_into_scene
     from blended.ops.rigging import BoneSpec, add_armature, bind_mesh_to_armature
     from blended.ops.weights import assign_weights_by_height, weight_report
-    from blended.ops.primitives import add_box, link_into_scene
 
     box = add_box("Subject", 0.3, 0.3, 1.0)
     link_into_scene(box)
@@ -209,8 +209,9 @@ def test_inspect_domain_surfaces_the_new_fields(empty_scene, tmp_path):
 
     box, _ = _rigged_pair()
     assign_weights_by_height(box, "Tp", 0.5, 1.0, WEIGHT)
-    text, _ = dispatch_tool(
+    _outcome = dispatch_tool(
         "inspect_domain", {"object_name": "Subject", "domain": "weights"}, tmp_path
     )
+    text, _ = _outcome.text, list(_outcome.images)
     assert "groups_without_bones" in text
     assert "Tp" in text

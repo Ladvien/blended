@@ -3033,6 +3033,42 @@ MISTAKES: tuple[MistakeRecord, ...] = (
         ),
         recorded_on="2026-09-10",
     ),
+    MistakeRecord(
+        identifier="a-typing-object-compared-by-identity-breaks-under-dev-reload",
+        scope="harness_code",
+        failure=(
+            "OT-5 introduced ObjectName = NewType('ObjectName', str) and "
+            "detected object-returning ops with `hint is ObjectName`. "
+            "tests/pure/test_tool_schemas.py and the contract test: 187 "
+            "passed alone; 24 failed in the full pure suite — every "
+            "object-returning op read as text-returning, and the three "
+            "ungated constructors tripped 'marked @op(gated=False) but its "
+            "return names no object'."
+        ),
+        cause=(
+            "test_devreload.py reloads the ops modules earlier in the run. "
+            "A reload re-executes _objects.py and mints a NEW NewType "
+            "object, while typing.get_type_hints on a function resolved "
+            "earlier still returns the OLD one; `is` between the two is "
+            "False. The same shape as the OT-3 fixture that patched a "
+            "collected-time module object — identity across a reload is "
+            "not a stable fact."
+        ),
+        fix=(
+            "Match the NewType structurally: __supertype__ is str, __name__ "
+            "== 'ObjectName', __module__ == 'blended.ops._objects'. Any "
+            "future typing marker must be compared the same way, never by "
+            "identity."
+        ),
+        guarded_by=(
+            "tests/pure/test_tool_schemas.py::"
+            "test_the_three_unlinked_constructors_are_the_only_ungated_object_returners "
+            "and ::test_the_description_is_the_summary_and_the_return, which "
+            "run AFTER test_devreload in the full suite and were the tests "
+            "that failed"
+        ),
+        recorded_on="2026-09-10",
+    ),
 )
 
 

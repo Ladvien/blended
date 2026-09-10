@@ -22,7 +22,11 @@ from blended.ops._contract import (
     UNITLESS_NUMERIC_NAMES,
     contract_violations,
     facade_ops,
+    is_gated,
+    op,
+    returns_object_names,
 )
+from blended.ops._objects import ObjectName
 
 # --- the fixture that proves the gate can fail (NFR-15) ------------------
 
@@ -70,3 +74,42 @@ def test_typing_is_not_needed_at_import():
     for op_name, function in facade_ops():
         hints = typing.get_type_hints(function)
         assert hints, f"{op_name}: no resolvable type hints"
+
+
+# --- gating markers (OT-5) ----------------------------------------------------
+
+
+def test_returns_object_names_reads_the_annotation_not_the_runtime_type():
+    def names_one(name: str) -> ObjectName:
+        """Returns the object."""
+        return ObjectName(name)
+
+    def names_many(name_prefix: str, count: int) -> list[ObjectName]:
+        """Returns the objects."""
+        return []
+
+    def names_none(object_name: str) -> str:
+        """Returns a material name."""
+        return "Wood"
+
+    assert returns_object_names(names_one) and returns_object_names(names_many)
+    assert not returns_object_names(names_none)
+    assert is_gated(names_one) and not is_gated(op(gated=False)(names_one))
+
+
+def test_the_ungated_marker_on_a_text_returning_op_is_a_violation():
+    @op(gated=False)
+    def marked_but_returns_text(name: str) -> str:
+        """Returns text, so there is nothing to exempt from the gate."""
+        return name
+
+    assert any("nothing to exempt" in v for v in contract_violations(marked_but_returns_text))
+
+
+def test_an_ungated_constructor_must_take_the_name_it_returns():
+    @op(gated=False)
+    def anonymous(width_m: float) -> ObjectName:
+        """Creates something it will not let the caller name."""
+        return ObjectName("x")
+
+    assert any("takes no `name` parameter" in v for v in contract_violations(anonymous))

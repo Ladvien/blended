@@ -12,6 +12,8 @@ single most common way a designed mesh silently goes non-manifold.
 
 from __future__ import annotations
 
+from blended.ops._objects import ObjectName
+
 BOOLEAN_SOLVER_DEFAULT = "EXACT"
 
 
@@ -120,7 +122,7 @@ def _apply_boolean(
 
 def boolean_difference(
     target_name: str, cutter_name: str, solver: str = BOOLEAN_SOLVER_DEFAULT
-) -> str:
+) -> ObjectName:
     """Subtract the named cutter from the named target; the cutter is consumed."""
     _apply_boolean(target_name, cutter_name, "DIFFERENCE", solver)
     return target_name
@@ -128,7 +130,7 @@ def boolean_difference(
 
 def boolean_union(
     target_name: str, addend_name: str, solver: str = BOOLEAN_SOLVER_DEFAULT
-) -> str:
+) -> ObjectName:
     """Merge the named addend into the named target as one solid; the addend is consumed."""
     _apply_boolean(target_name, addend_name, "UNION", solver)
     return target_name
@@ -136,7 +138,7 @@ def boolean_union(
 
 def boolean_intersect(
     target_name: str, operand_name: str, solver: str = BOOLEAN_SOLVER_DEFAULT
-) -> str:
+) -> ObjectName:
     """Keep only the overlap of the two named solids; the operand is consumed."""
     _apply_boolean(target_name, operand_name, "INTERSECT", solver)
     return target_name

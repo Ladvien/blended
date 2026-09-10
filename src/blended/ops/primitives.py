@@ -18,14 +18,18 @@ constructor first removes any existing object with its target name.
 
 from __future__ import annotations
 
+from blended.ops._contract import op
+from blended.ops._objects import ObjectName
 
+
+@op(gated=False)
 def add_box(
     name: str,
     width_m: float,
     depth_m: float,
     height_m: float,
     location_m: tuple[float, float, float] = (0.0, 0.0, 0.0),
-) -> str:
+) -> ObjectName:
     """Create a closed box mesh object of the given outer dimensions.
 
     The box is centered on X/Y and sits with its base at location_m[2],
@@ -53,7 +57,7 @@ def add_box(
     return box_object.name
 
 
-def link_into_scene(object_name: str) -> str:
+def link_into_scene(object_name: str) -> ObjectName:
     """Link the named object into the active scene collection.
 
     Never skip this: an unlinked object has no depsgraph instance, so
@@ -63,8 +67,13 @@ def link_into_scene(object_name: str) -> str:
 
     from blended.ops._objects import object_by_name
 
-    bpy.context.scene.collection.objects.link(object_by_name(object_name))
-    return object_name
+    blender_object = object_by_name(object_name)
+    collection = bpy.context.scene.collection
+    # Idempotent by name like every constructor: the gate (OT-5) makes
+    # linking the first measured step, and a second link must not fail.
+    if blender_object.name not in collection.objects:
+        collection.objects.link(blender_object)
+    return ObjectName(object_name)
 
 
 def remove_object_and_mesh(object_name: str) -> None:
@@ -85,13 +94,14 @@ def remove_object_and_mesh(object_name: str) -> None:
         bpy.data.meshes.remove(existing_mesh)
 
 
+@op(gated=False)
 def add_cylinder(
     name: str,
     radius_m: float,
     height_m: float,
     segment_count: int = 24,
     location_m: tuple[float, float, float] = (0.0, 0.0, 0.0),
-) -> str:
+) -> ObjectName:
     """Create a closed cylinder mesh object, base at location_m[2], idempotent by name."""
     import bmesh
     import bpy

@@ -40,6 +40,8 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 
+from blended.ops._objects import ObjectName
+
 # The reference stool's measured values, promoted from the fixture that
 # proved them. Named here so a caller never writes the literal.
 DEFAULT_LEG_SEGMENT_COUNT = 12
@@ -148,7 +150,7 @@ class SplayedLegSpec:
         return math.radians(self.foot_bearing_deg)
 
 
-def add_splayed_leg(name: str, spec: SplayedLegSpec) -> str:
+def add_splayed_leg(name: str, spec: SplayedLegSpec) -> ObjectName:
     """Build one splayed leg mesh object, LINKED and with its transform applied.
 
     Positioned so that trimming flush with the floor leaves a sole
@@ -196,7 +198,7 @@ def splayed_leg_ring(
     count: int,
     spec: SplayedLegSpec,
     first_bearing_deg: float = 0.0,
-) -> list[str]:
+) -> list[ObjectName]:
     """Build `count` leg mesh objects evenly spaced, the first at `first_bearing_deg`.
 
     Spacing is computed, not listed, so three legs cannot come out at
@@ -222,7 +224,7 @@ def trim_soles_flat(
     object_name: str,
     span_m: float,
     cutter_depth_m: float = DEFAULT_GROUND_CUTTER_DEPTH_M,
-) -> str:
+) -> ObjectName:
     """Cut everything below z=0 off the named mesh, so feet present faces not edges.
 
     `span_m` is the widest dimension of the object being trimmed; the

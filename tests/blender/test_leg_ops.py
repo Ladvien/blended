@@ -20,8 +20,8 @@ bpy = pytest.importorskip("bpy", reason="requires Blender-as-module")
 
 pytestmark = pytest.mark.blender
 
-from blended.evaluate import briefs  # noqa: E402 — needs bpy importable first
-from blended.ops.legs import (  # noqa: E402
+from blended.evaluate import briefs
+from blended.ops.legs import (
     SplayedLegSpec,
     add_splayed_leg,
     splayed_leg_ring,

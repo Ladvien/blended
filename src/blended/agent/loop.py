@@ -26,14 +26,14 @@ from pathlib import Path
 from blended.agent.claude_code import (
     CLAUDE_CODE_DEFAULT_EFFORT,
     CLAUDE_CODE_ENDPOINT,
-    CLAUDE_CODE_MODEL_IDS,
     CLAUDE_CODE_REQUEST_TIMEOUT_SECONDS,
     IMAGE_PLACEHOLDER_TOKEN,
     ClaudeCodeTransport,
     TurnCost,
     is_claude_code_model,
 )
-
+from blended.agent.intermediates import IntermediateLedger
+from blended.agent.outcome import ToolOutcome
 from blended.agent.plan import (
     MISSING_PLAN_REFUSAL,
     PLAN_TOOL_NAME,
@@ -1312,7 +1312,7 @@ ToolDispatch = Callable[[str, dict, Path], tuple[str, list[Path]]]
 
 def dispatch_here(
     tool_name: str, arguments: dict, output_directory: Path
-) -> tuple[str, list[Path]]:
+) -> ToolOutcome:
     """Execute the tool on the CALLING thread. Main thread only."""
     from blended.agent.tools import dispatch_tool
 
@@ -1417,6 +1417,8 @@ class AgentSession:
         # Per-turn plan state. A plan belongs to one turn: declared at
         # the start, advanced through its steps, discarded at the end.
         turn_plan: TurnPlan | None = None
+        # Per-turn account of unlinked intermediates (OT-5).
+        ledger = IntermediateLedger()
         while executed_tool_call_count < self.maximum_tool_calls_per_turn:
             if self.stream_replies:
                 assistant_message = self.client.chat(
@@ -1437,6 +1439,16 @@ class AgentSession:
 
             tool_calls = assistant_message.get("tool_calls") or []
             if not tool_calls:
+                # OT-5: a turn may not end while an unlinked intermediate
+                # is unresolved. The refusal reaches the model as the next
+                # user message and counts against the budget so a model
+                # that never resolves still terminates.
+                refusal = ledger.refusal()
+                if refusal:
+                    executed_tool_call_count += 1
+                    emit("result", refusal)
+                    self.messages.append({"role": "user", "content": refusal})
+                    continue
                 answer = assistant_message.get("content", "")
                 emit("answer", answer)
                 return answer
@@ -1476,17 +1488,17 @@ class AgentSession:
                 emit("tool", f"{tool_name}({json.dumps(arguments)})")
                 executed_tool_call_count += 1
                 try:
-                    result_text, image_paths = self.dispatch(
-                        tool_name, arguments, self.output_directory
-                    )
+                    outcome = self.dispatch(tool_name, arguments, self.output_directory)
                 except Exception as tool_error:  # noqa: BLE001 — reported to the model
                     import traceback
 
-                    result_text = (
+                    outcome = ToolOutcome(
                         f"Tool raised {type(tool_error).__name__}: {tool_error}\n"
                         f"{traceback.format_exc()[:1500]}"
                     )
-                    image_paths = []
+                result_text = outcome.text
+                image_paths = list(outcome.images)
+                ledger.record(tool_name, outcome)
                 emit("result", result_text)
 
                 # When the model declared its plan, parse and store it

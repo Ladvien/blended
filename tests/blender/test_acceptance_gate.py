@@ -9,7 +9,6 @@ Each test builds the defect deliberately, then asserts that exactly the
 intended check trips — not merely that something failed.
 """
 
-from pathlib import Path
 
 import pytest
 
@@ -279,9 +278,7 @@ def _build_reference_stool(*, angled_feet: bool = False, leg_angles_deg=None):
     POINT. Grounding passes; the stool rocks on three edges. It is a
     test input, not a second way to build a stool.
     """
-    import math
 
-    from mathutils import Euler
 
     from blended.evaluate import briefs
     from blended.ops.booleans import boolean_union
@@ -626,12 +623,12 @@ REBUILT_LEG_ANGLES_DEG = (24.0, 144.0, 264.0)
 
 def _refined_outcome(before_report, brief, *, rebuild: bool):
     """Apply the refinement either as an edit or as a full rebuild."""
+    from blended.evaluate import briefs as brief_module
     from blended.evaluate.acceptance import (
         RefinementOutcome,
         evaluate_brief,
         refine_brief,
     )
-    from blended.evaluate import briefs as brief_module
     from blended.ops.primitives import remove_object_and_mesh
     from blended.ops.transforms import apply_object_transform
 

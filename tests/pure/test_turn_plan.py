@@ -18,11 +18,11 @@ from __future__ import annotations
 
 import dataclasses
 import json
-from pathlib import Path
 
 import pytest
 
 from blended.agent import loop as live_loop
+from blended.agent.outcome import ToolOutcome
 from blended.agent.plan import (
     MAXIMUM_PLAN_STEPS,
     MISSING_PLAN_REFUSAL,
@@ -33,7 +33,6 @@ from blended.agent.plan import (
     plan_required_for,
     plan_step_of,
 )
-
 
 # ---------------------------------------------------------------------------
 # Scripted client — copies the established pattern from test_agent_cancel.
@@ -247,7 +246,7 @@ def test_require_plan_refuses_run_python_without_plan(tmp_path):
 
     def dispatch(tool_name, arguments, output_directory):
         dispatched.append((tool_name, arguments))
-        return "ok", []
+        return ToolOutcome("ok")
 
     session.dispatch = dispatch
     events = []
@@ -282,7 +281,7 @@ def test_require_plan_false_executes_immediately(tmp_path):
 
     def dispatch(tool_name, arguments, output_directory):
         dispatched.append((tool_name, arguments))
-        return "ok", []
+        return ToolOutcome("ok")
 
     session.dispatch = dispatch
     answer = session.send("build it")
@@ -308,7 +307,7 @@ def test_plan_step_emits_step_event_and_advances_progress(tmp_path):
     )
 
     def dispatch(tool_name, arguments, output_directory):
-        return "ok", []
+        return ToolOutcome("ok")
 
     session.dispatch = dispatch
     events = []
@@ -348,7 +347,7 @@ def test_render_event_emitted_before_vision(tmp_path, monkeypatch):
     monkeypatch.setattr(live_loop, "VisionDescriber", FakeDescriber)
 
     def dispatch(tool_name, arguments, output_directory):
-        return "rendered", [render_path]
+        return ToolOutcome("rendered", (render_path,))
 
     session.dispatch = dispatch
     events = []
@@ -377,7 +376,7 @@ def test_render_event_emitted_in_images_to_writer_config(tmp_path):
     session = live_loop.AgentSession(client=ScriptedClient(replies))
 
     def dispatch(tool_name, arguments, output_directory):
-        return "rendered", [render_path]
+        return ToolOutcome("rendered", (render_path,))
 
     session.dispatch = dispatch
     events = []
@@ -397,8 +396,9 @@ def test_render_event_emitted_in_images_to_writer_config(tmp_path):
 def test_dispatch_tool_declare_plan_returns_failure_for_empty_list():
     from blended.agent.tools import dispatch_tool
 
-    result, images = dispatch_tool("declare_plan", {"steps": []})
-    assert images == []
+    outcome = dispatch_tool("declare_plan", {"steps": []})
+    result = outcome.text
+    assert outcome.images == ()
     assert "FAILED" in result
     assert "empty" in result
 
@@ -406,10 +406,11 @@ def test_dispatch_tool_declare_plan_returns_failure_for_empty_list():
 def test_dispatch_tool_declare_plan_returns_failure_for_too_many():
     from blended.agent.tools import dispatch_tool
 
-    result, images = dispatch_tool(
+    outcome = dispatch_tool(
         "declare_plan", {"steps": [f"s{i}" for i in range(MAXIMUM_PLAN_STEPS + 1)]}
     )
-    assert images == []
+    result = outcome.text
+    assert outcome.images == ()
     assert "FAILED" in result
     assert str(MAXIMUM_PLAN_STEPS) in result
 
@@ -417,8 +418,9 @@ def test_dispatch_tool_declare_plan_returns_failure_for_too_many():
 def test_dispatch_tool_declare_plan_returns_failure_for_blank_step():
     from blended.agent.tools import dispatch_tool
 
-    result, images = dispatch_tool("declare_plan", {"steps": ["build", "   "]})
-    assert images == []
+    outcome = dispatch_tool("declare_plan", {"steps": ["build", "   "]})
+    result = outcome.text
+    assert outcome.images == ()
     assert "FAILED" in result
     assert "empty or whitespace" in result
 
@@ -426,7 +428,8 @@ def test_dispatch_tool_declare_plan_returns_failure_for_blank_step():
 def test_dispatch_tool_declare_plan_echoes_steps():
     from blended.agent.tools import dispatch_tool
 
-    result, images = dispatch_tool("declare_plan", {"steps": ["build", "export"]})
-    assert images == []
+    outcome = dispatch_tool("declare_plan", {"steps": ["build", "export"]})
+    result = outcome.text
+    assert outcome.images == ()
     assert "1. build" in result
     assert "2. export" in result

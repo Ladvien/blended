@@ -45,12 +45,118 @@ class HarnessSettings:
 
 
 @dataclass(frozen=True)
+class GateVerdict:
+    """What the gate measured about ONE named object.
+
+    Shared by `run_chunk` (the object a chunk was asked to gate) and by
+    an op-tool call (the object the op returned, OT-5), so the two paths
+    cannot disagree about what "gated" means. `stage_reached` is
+    `locate` when the object is missing or unusable, `gate` when the
+    analyzer failed it, `done` when it passed.
+    """
+
+    object_name: str
+    stage_reached: str  # locate | gate | done
+    object_type: str = "MESH"
+    scene_state: str = ""  # why the object is unusable; "" when usable
+    report: MeshReport | None = None
+    gate_failures: tuple[str, ...] = field(default_factory=tuple)
+    world_extents_m: tuple[float, float, float] | None = None
+
+    @property
+    def ok(self) -> bool:
+        return self.stage_reached == STAGE_DONE
+
+
+def gate_summary_lines(
+    object_type: str,
+    report: MeshReport | None,
+    gate_failures: tuple[str, ...],
+    world_extents_m: tuple[float, float, float] | None,
+) -> list[str]:
+    """The gate's lines of a result summary, one text for both paths."""
+    lines: list[str] = []
+    if report is not None:
+        lines.append(
+            f"  gate: {'PASS' if not gate_failures else 'FAIL'} "
+            f"({report.triangle_count} tris, "
+            f"{report.connected_component_count} components)"
+        )
+    elif object_type != "MESH":
+        lines.append(f"  gate: scene state only ({object_type} has no mesh to analyze)")
+    if world_extents_m is not None:
+        # Computed by the pure text function from the stored tuple, so
+        # summaries stay free of bpy and the tool the writer checks its
+        # own work with cannot disagree with the gate.
+        from blended.ops.canonical_orientation import orientation_reading
+
+        lines.append(f"  orient: {orientation_reading(world_extents_m)}")
+    lines.extend(f"    - {failure}" for failure in gate_failures)
+    return lines
+
+
+def gate_object(blender_object, budget: MeshBudget) -> GateVerdict:
+    """Scene state first, then the analyzer — for a MESH. Anything else
+    (an armature) is judged on scene state alone: the analyzer measures
+    meshes, and `to_mesh()` on an armature is None."""
+    unusable = scene_state_failure(blender_object)
+    if unusable:
+        return GateVerdict(
+            object_name=blender_object.name,
+            stage_reached=STAGE_LOCATE,
+            object_type=blender_object.type,
+            scene_state=unusable,
+        )
+    # Read AFTER scene_state_failure, which synchronises the view layer:
+    # `dimensions` comes from the evaluated transform, so reading it
+    # earlier measures the previous frame. Carried on every verdict from
+    # here on, including the gate-FAIL one — a writer whose gate just
+    # failed is exactly who needs to know which axis holds which extent.
+    world_extents_m = tuple(float(extent) for extent in blender_object.dimensions)
+    if blender_object.type != "MESH":
+        return GateVerdict(
+            object_name=blender_object.name,
+            stage_reached=STAGE_DONE,
+            object_type=blender_object.type,
+            world_extents_m=world_extents_m,
+        )
+    from blended.analyze import analyze_object
+
+    report = analyze_object(blender_object)
+    gate_failures = tuple(report.failures(budget))
+    return GateVerdict(
+        object_name=blender_object.name,
+        stage_reached=STAGE_GATE if gate_failures else STAGE_DONE,
+        object_type=blender_object.type,
+        report=report,
+        gate_failures=gate_failures,
+        world_extents_m=world_extents_m,
+    )
+
+
+def gate_named_object(object_name: str, budget: MeshBudget) -> GateVerdict:
+    """`gate_object` by name; a missing object fails at `locate`."""
+    import bpy
+
+    blender_object = bpy.data.objects.get(object_name)
+    if blender_object is None:
+        return GateVerdict(
+            object_name=object_name,
+            stage_reached=STAGE_LOCATE,
+            object_type="",
+            scene_state=f"no object named {object_name!r} in bpy.data.objects",
+        )
+    return gate_object(blender_object, budget)
+
+
+@dataclass(frozen=True)
 class HarnessResult:
     ok: bool
     stage_reached: str  # one of blended.stages.STAGES (EXE-6)
     object_name: str = ""
     report: MeshReport | None = None
     gate_failures: tuple[str, ...] = field(default_factory=tuple)
+    object_type: str = "MESH"
     contact_sheet_path: Path | None = None
     export_failures: tuple[str, ...] = field(default_factory=tuple)
     export_path: Path | None = None
@@ -69,20 +175,11 @@ class HarnessResult:
         lines = [f"{verdict}: {self.object_name or '<no object>'}"]
         if self.execution_summary:
             lines.append(f"  execute: {self.execution_summary}")
-        if self.report is not None:
-            lines.append(
-                f"  gate: {'PASS' if not self.gate_failures else 'FAIL'} "
-                f"({self.report.triangle_count} tris, "
-                f"{self.report.connected_component_count} components)"
+        lines.extend(
+            gate_summary_lines(
+                self.object_type, self.report, self.gate_failures, self.world_extents_m
             )
-        if self.world_extents_m is not None:
-            # Computed by the pure text function from the stored tuple, so
-            # `summary()` stays free of bpy and the tool the writer checks
-            # its own work with cannot disagree with the gate.
-            from blended.ops.canonical_orientation import orientation_reading
-
-            lines.append(f"  orient: {orientation_reading(self.world_extents_m)}")
-        lines.extend(f"    - {failure}" for failure in self.gate_failures)
+        )
         lines.extend(f"  export: {failure}" for failure in self.export_failures)
         if self.export_path is not None and not self.export_failures:
             lines.append(
@@ -271,44 +368,46 @@ def scene_state_failure(blender_object) -> str:
 def _gate_capture_export(
     blender_object, settings: HarnessSettings, execution_summary: str
 ) -> HarnessResult:
-    """The shared back half: scene state, analyze, sheet, optionally export."""
-    from blended.analyze import analyze_object
+    """The shared back half: gate (scene state + analyzer), sheet, optionally export."""
     from blended.capture import capture_contact_sheet
 
-    unusable = scene_state_failure(blender_object)
-    if unusable:
+    verdict = gate_object(blender_object, settings.budget)
+    if verdict.stage_reached == STAGE_LOCATE:
         return HarnessResult(
             ok=False,
             stage_reached=STAGE_LOCATE,
-            object_name=blender_object.name,
-            execution_summary=execution_summary + "; " + unusable,
+            object_name=verdict.object_name,
+            object_type=verdict.object_type,
+            execution_summary=execution_summary + "; " + verdict.scene_state,
         )
-
-    # Read AFTER scene_state_failure, which synchronises the view layer:
-    # `dimensions` comes from the evaluated transform, so reading it
-    # earlier measures the previous frame. Carried on every result from
-    # here on, including the gate-FAIL one — a writer whose gate just
-    # failed is exactly who needs to know which axis holds which extent.
-    world_extents_m = tuple(float(extent) for extent in blender_object.dimensions)
-
-    report = analyze_object(blender_object)
-    gate_failures = tuple(report.failures(settings.budget))
+    if verdict.report is None:
+        # Not a mesh: scene state was the whole gate, and there is no
+        # mesh to sheet or to round-trip.
+        return HarnessResult(
+            ok=True,
+            stage_reached=STAGE_DONE,
+            object_name=verdict.object_name,
+            object_type=verdict.object_type,
+            execution_summary=execution_summary,
+            world_extents_m=verdict.world_extents_m,
+        )
     contact_sheet_path = capture_contact_sheet(
         blender_object,
         settings.output_directory,
-        report=report,
+        report=verdict.report,
         budget=settings.budget,
     )
-    if gate_failures:
+    if verdict.gate_failures:
         return HarnessResult(
             ok=False,
             stage_reached=STAGE_GATE,
-            object_name=blender_object.name,
-            report=report,
-            gate_failures=gate_failures,
+            object_name=verdict.object_name,
+            object_type=verdict.object_type,
+            report=verdict.report,
+            gate_failures=verdict.gate_failures,
             contact_sheet_path=contact_sheet_path,
             execution_summary=execution_summary,
-            world_extents_m=world_extents_m,
+            world_extents_m=verdict.world_extents_m,
         )
 
     export_path: Path | None = None
@@ -324,24 +423,26 @@ def _gate_capture_export(
             return HarnessResult(
                 ok=False,
                 stage_reached=STAGE_EXPORT,
-                object_name=blender_object.name,
-                report=report,
+                object_name=verdict.object_name,
+                object_type=verdict.object_type,
+                report=verdict.report,
                 contact_sheet_path=contact_sheet_path,
                 export_failures=export_failures,
                 execution_summary=execution_summary,
-                world_extents_m=world_extents_m,
+                world_extents_m=verdict.world_extents_m,
             )
 
     return HarnessResult(
         ok=True,
         stage_reached=STAGE_DONE,
-        object_name=blender_object.name,
-        report=report,
+        object_name=verdict.object_name,
+        object_type=verdict.object_type,
+        report=verdict.report,
         contact_sheet_path=contact_sheet_path,
         export_path=export_path,
         export_file_size_bytes=export_file_size_bytes,
         execution_summary=execution_summary,
-        world_extents_m=world_extents_m,
+        world_extents_m=verdict.world_extents_m,
     )
 
 

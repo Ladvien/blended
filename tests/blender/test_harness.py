@@ -269,13 +269,15 @@ def test_inspect_object_agrees_with_the_gate(empty_scene, tmp_path):
     hidden = _visible_box("Checked")
     hidden.hide_viewport = True
     bpy.context.view_layer.update()
-    text, _ = dispatch_tool("inspect_object", {"object_name": "Checked"}, tmp_path)
+    _outcome = dispatch_tool("inspect_object", {"object_name": "Checked"}, tmp_path)
+    text, _ = _outcome.text, list(_outcome.images)
     assert "GATE FAIL" in text
     assert "HIDDEN" in text
 
     hidden.hide_viewport = False
     bpy.context.view_layer.update()
-    text, _ = dispatch_tool("inspect_object", {"object_name": "Checked"}, tmp_path)
+    _outcome = dispatch_tool("inspect_object", {"object_name": "Checked"}, tmp_path)
+    text, _ = _outcome.text, list(_outcome.images)
     assert "GATE PASS" in text
 
 

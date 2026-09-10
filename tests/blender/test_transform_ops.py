@@ -13,7 +13,7 @@ import pytest
 
 bpy = pytest.importorskip("bpy", reason="requires Blender-as-module")
 
-from mathutils import Vector  # noqa: E402 — needs bpy importable first
+from mathutils import Vector
 
 pytestmark = pytest.mark.blender
 
@@ -97,9 +97,10 @@ def test_both_ops_are_discoverable_through_search(empty_scene, tmp_path):
     """A whitelisted op nobody can find is not whitelisted."""
     from blended.agent.tools import dispatch_tool
 
-    text, _ = dispatch_tool(
+    _outcome = dispatch_tool(
         "search_ops", {"query": "rotate"}, output_directory=tmp_path
     )
+    text, _ = _outcome.text, list(_outcome.images)
     assert "rotate_object_euler" in text
 
 
@@ -127,7 +128,8 @@ def test_multi_word_search_finds_the_op(
     """
     from blended.agent.tools import dispatch_tool
 
-    text, _ = dispatch_tool("search_ops", {"query": query}, output_directory=tmp_path)
+    _outcome = dispatch_tool("search_ops", {"query": query}, output_directory=tmp_path)
+    text, _ = _outcome.text, list(_outcome.images)
     assert expected_operation in text, text
 
 
@@ -136,12 +138,14 @@ def test_search_still_narrows(empty_scene, tmp_path):
     every word has to appear, so more words match fewer ops."""
     from blended.agent.tools import dispatch_tool
 
-    broad, _ = dispatch_tool(
+    _outcome = dispatch_tool(
         "search_ops", {"query": "object"}, output_directory=tmp_path
     )
-    narrow, _ = dispatch_tool(
+    broad, _ = _outcome.text, list(_outcome.images)
+    _outcome = dispatch_tool(
         "search_ops", {"query": "rotate object euler"}, output_directory=tmp_path
     )
+    narrow, _ = _outcome.text, list(_outcome.images)
     assert "rotate_object_euler" in narrow
     assert narrow.count("blended.ops.") < broad.count("blended.ops.")
 
@@ -152,6 +156,7 @@ def test_a_query_with_no_words_is_refused(empty_scene, tmp_path):
     op in the manifest. It is refused instead."""
     from blended.agent.tools import dispatch_tool
 
-    text, _ = dispatch_tool("search_ops", {"query": "???"}, output_directory=tmp_path)
+    _outcome = dispatch_tool("search_ops", {"query": "???"}, output_directory=tmp_path)
+    text, _ = _outcome.text, list(_outcome.images)
     assert "no searchable words" in text
     assert "blended.ops." not in text

@@ -9,6 +9,8 @@ poison every later turn of the session.
 
 import dataclasses
 
+from blended.agent.outcome import ToolOutcome
+
 TWO_CALL_REPLY = {
     "role": "assistant",
     "content": "",
@@ -48,7 +50,7 @@ def test_cancel_between_tool_calls_answers_every_pending_call(tmp_path):
     def dispatch(tool_name, arguments, output_directory):
         executed.append(arguments["source"])
         session.cancel()  # the user hits Stop while the first tool runs
-        return "ok", []
+        return ToolOutcome("ok")
 
     session.dispatch = dispatch
     events = []

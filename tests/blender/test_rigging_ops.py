@@ -48,7 +48,7 @@ def _three_bone_chain():
 
 
 def test_add_armature_creates_n_bones_with_parenting(empty_scene):
-    from blended.ops.rigging import add_armature, BoneSpec
+    from blended.ops.rigging import BoneSpec, add_armature
 
     bones = (
         BoneSpec("Root", (0, 0, 0.0), (0, 0, 0.5)),
@@ -67,7 +67,7 @@ def test_add_armature_creates_n_bones_with_parenting(empty_scene):
 
 
 def test_add_armature_is_idempotent_by_name(empty_scene):
-    from blended.ops.rigging import add_armature, BoneSpec
+    from blended.ops.rigging import BoneSpec, add_armature
 
     bones = (BoneSpec("Only", (0, 0, 0), (0, 0, 0.5)),)
     add_armature("Twin", bones)
@@ -86,14 +86,14 @@ def test_add_armature_rejects_empty_bones(empty_scene):
 
 
 def test_add_armature_rejects_zero_length_bone(empty_scene):
-    from blended.ops.rigging import add_armature, BoneSpec
+    from blended.ops.rigging import BoneSpec, add_armature
 
     with pytest.raises(ValueError, match="zero length"):
         add_armature("Stub", (BoneSpec("Stub", (0, 0, 0), (0, 0, 0)),))
 
 
 def test_add_armature_rejects_unknown_parent(empty_scene):
-    from blended.ops.rigging import add_armature, BoneSpec
+    from blended.ops.rigging import BoneSpec, add_armature
 
     with pytest.raises(ValueError, match="unknown parent"):
         add_armature(
@@ -108,7 +108,7 @@ def test_add_armature_rejects_unknown_parent(empty_scene):
 
 
 def test_bind_with_automatic_weights_weights_all_vertices(empty_scene):
-    from blended.ops.rigging import bind_mesh_to_armature, rig_report
+    from blended.ops.rigging import bind_mesh_to_armature
     from blended.ops.weights import weight_report
 
     box = _tall_box()

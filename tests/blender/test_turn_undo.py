@@ -16,7 +16,7 @@ bpy = pytest.importorskip("bpy", reason="requires Blender-as-module")
 
 pytestmark = pytest.mark.blender
 
-from blended.ui.turn_undo import TurnUndoGuard, revert_turn  # noqa: E402
+from blended.ui.turn_undo import TurnUndoGuard, revert_turn
 
 
 @pytest.fixture()

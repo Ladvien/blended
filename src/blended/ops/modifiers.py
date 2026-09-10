@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from blended.ops._objects import ObjectName
+
 BEVEL_MODIFIER_NAME = "Bevel"
 
 
@@ -9,7 +11,7 @@ def add_bevel(
     object_name: str,
     width_m: float,
     segment_count: int,
-) -> str:
+) -> ObjectName:
     """Add a bevel modifier to every edge of the named object."""
     from blended.ops._objects import object_by_name
 
@@ -23,7 +25,7 @@ def add_bevel(
     return object_name
 
 
-def apply_all_modifiers(object_name: str) -> str:
+def apply_all_modifiers(object_name: str) -> ObjectName:
     """Bake the named object's evaluated (post-modifier) mesh back into it.
 
     Uses the depsgraph rather than bpy.ops.object.modifier_apply, so it

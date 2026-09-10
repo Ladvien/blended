@@ -82,3 +82,22 @@ regression reopens the item in `BACKLOG.md` with a pointer back to this entry.
 **Pre-registration (OT-9):** appended before this shipped, as the backlog required.
 **Layers:** pure 626 passed / 1 skipped / 1 xfailed; Blender 310 passed / 3 skipped.
 **Commit:** `ace7618`.
+
+---
+
+## OT-5 Gate every scene-changing op call
+
+**What:** An op tool whose return names an object MUST run the scene-state gate and the analyzer on that object and return the verdict, exactly as `run_python` does when `object_name` is given (AGT-3). An op that creates an intermediate (an operand about to be consumed by a boolean) MAY be marked `@op(gated=False)` in the signature contract, and the marker MUST appear in the schema description.
+**Why:** OPS-20 already requires re-analysis after every CSG result. This makes the rule uniform and automatic.
+**Amends:** AGT-3, OPS-20.
+**Done means:** `tests/blender/test_agent_loop.py` asserts a gate verdict on every gated op result, and that an ungated intermediate is followed by a gated consumer before the turn can end with an answer.
+
+**Closed:** 2026-09-10.
+**Gating tests:** `tests/blender/test_agent_loop.py::test_a_brief_reaches_gate_pass_with_op_tools_only` (a gate verdict on every gated op result, none on the ungated constructor or the material op), `::test_an_unresolved_intermediate_blocks_the_answer_until_resolved`, `::test_a_gate_failure_on_an_op_result_is_reported_at_gate` (two disjoint boxes unioned: `FAILED at gate`, 2 components), `::test_an_armature_is_gated_on_scene_state_only`, `::test_a_gated_op_on_a_missing_object_fails_at_locate`; `tests/pure/test_intermediates.py` (ledger debits before credits; refusal names creator; loop refuses then accepts; refusal counts against the budget); `tests/pure/test_ops_signature_contract.py` (marker rules: `@op(gated=False)` on a text-returning op is a violation, an ungated constructor must take `name`); `tests/pure/test_tool_schemas.py::test_the_three_unlinked_constructors_are_the_only_ungated_object_returners`, `::test_the_description_is_the_summary_and_the_return` (marker in the description).
+**Spec:** AGT-3 amended (op tools gated through the same `gate_named_object`; marker; ledger refusal); OPS-20 amended (booleans return `ObjectName`, gated automatically); OPS-4 amended (`link_into_scene` idempotent); §2.2, §5.4.
+**Shape of the change:** "whose return names an object" is machine-checkable: `blended.ops._objects.ObjectName = NewType("ObjectName", str)` is the return type of the 22 ops that create or modify an object (material and weight ops return datablock names and stay `-> str`). `@op(gated=False)` marks `add_box`, `add_cylinder`, `add_lathe` — the three constructors that return an unlinked object, where a gate would say "not linked" on every call. `blended.harness.GateVerdict` / `gate_object` is the ONE gate: scene state, then the analyzer for a mesh, scene state alone for an armature; `run_chunk` and `op_call` both read it, and `gate_summary_lines` renders it for both. `ToolOutcome` replaces the `(text, images)` tuple across the dispatch seam so the loop's `IntermediateLedger` learns what each call created and resolved without parsing text; an answer while the ledger is non-empty is refused with the pending objects named and counts against the budget.
+**Measured:** planter_box via nine op calls: the two `link_into_scene` and two `boolean_difference` results carry `gate: PASS` and an `orient:` line, the four constructors and `assign_material` carry none. Contact sheets are NOT captured per op call (a sheet per call would be N renders per turn; `render_views` and `run_python` keep theirs). Tool-set fingerprint `t:959b39398cda`; assembled prompt `a10:673809a9e687` (the manifest now shows `-> ObjectName`).
+**Observation for OT-13, not acted on:** in the recorded goldens the model forgot `link_into_scene` on the first attempt in three of five briefs; a constructor that links would remove that failure class and the ungated set with it.
+**Mistake recorded:** `a-typing-object-compared-by-identity-breaks-under-dev-reload`.
+**Layers:** pure 634 passed / 1 skipped / 1 xfailed; Blender 314 passed / 3 skipped.
+**Commit:** recorded in the follow-up commit.

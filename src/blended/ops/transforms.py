@@ -14,6 +14,8 @@ catalog.
 
 from __future__ import annotations
 
+from blended.ops._objects import ObjectName
+
 
 def _refresh_dependency_graph() -> None:
     """Force matrix_world to reflect pending location/rotation changes."""
@@ -22,7 +24,7 @@ def _refresh_dependency_graph() -> None:
     bpy.context.view_layer.update()
 
 
-def apply_object_transform(object_name: str) -> str:
+def apply_object_transform(object_name: str) -> ObjectName:
     """Bake the named object's matrix into its mesh and reset it to identity.
 
     Do this before export or measurement whenever the object transform
@@ -46,7 +48,7 @@ def rotate_object_euler(
     y_rad: float = 0.0,
     z_rad: float = 0.0,
     order: str = "XYZ",
-) -> str:
+) -> ObjectName:
     """Set the named object's Euler rotation, in radians, about its own origin.
 
     Exists because the whitelisted vocabulary had no way to rotate
@@ -72,7 +74,7 @@ def rotate_object_euler(
     return object_name
 
 
-def move_object_to(object_name: str, location_m: tuple[float, float, float]) -> str:
+def move_object_to(object_name: str, location_m: tuple[float, float, float]) -> ObjectName:
     """Set the named object's world location in metres, then refresh.
 
     Same reason as rotate_object_euler: placement is half of assembly,
@@ -108,7 +110,7 @@ def snap_base_to_ground(object_name: str) -> float:
     return offset_z_m
 
 
-def center_on_origin_xy(object_name: str) -> str:
+def center_on_origin_xy(object_name: str) -> ObjectName:
     """Center the named object's world-space bounds on the X/Y origin."""
     from mathutils import Vector
 

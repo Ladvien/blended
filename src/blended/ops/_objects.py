@@ -13,6 +13,15 @@ modules for exactly this reason.
 
 from __future__ import annotations
 
+from typing import NewType
+
+# The return type of an op that CREATES OR MODIFIES an object. `str` at
+# runtime; distinct to the contract, the schema generator and the gate:
+# an op annotated `-> ObjectName` names a scene object the harness can
+# locate and measure, an op annotated `-> str` returns text (a material
+# name, a reading). OT-5 gates on this distinction.
+ObjectName = NewType("ObjectName", str)
+
 
 class UnknownObject(LookupError):
     """No datablock of the requested name exists in `bpy.data.objects`."""

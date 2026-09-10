@@ -33,6 +33,8 @@ from blended.ops._contract import (
     UNITLESS_NUMERIC_NAMES,
     ContractViolation,
     facade_ops,
+    is_gated,
+    returns_object_names,
 )
 
 PINNED_TOOL_SCHEMAS_FINGERPRINT_PATH = (
@@ -142,7 +144,15 @@ def test_the_description_is_the_summary_and_the_return(op_name, function):
     description = _op_tool(op_name)["function"]["description"]
     summary = (inspect.getdoc(function) or "").split("\n", 1)[0].strip()
     assert description.startswith(summary)
-    assert description.endswith(f"Returns {inspect.signature(function).return_annotation}.")
+    assert f"Returns {inspect.signature(function).return_annotation}." in description
+    # OT-5: the gating marker is part of what the model reads, and only
+    # an op whose return names an object carries one.
+    if returns_object_names(function):
+        expected = generator.GATED_DESCRIPTION if is_gated(function) else generator.UNGATED_DESCRIPTION
+        assert description.endswith(expected), op_name
+    else:
+        assert generator.GATED_DESCRIPTION not in description
+        assert generator.UNGATED_DESCRIPTION not in description
 
 
 # --- the type mapping, case by case ------------------------------------------
@@ -220,3 +230,16 @@ def test_the_tool_set_has_not_drifted():
         f"or a service tool moved. If intended, update "
         f"{PINNED_TOOL_SCHEMAS_FINGERPRINT_PATH.name} in the same commit."
     )
+
+
+def test_the_three_unlinked_constructors_are_the_only_ungated_object_returners():
+    """Measured set (OT-5): add_box, add_cylinder and add_lathe return an
+    object nothing has linked yet. Every other op whose return names an
+    object is gated. A new ungated op must be added here on purpose."""
+    ungated = sorted(
+        name for name, function in facade_ops() if returns_object_names(function) and not is_gated(function)
+    )
+    assert ungated == ["add_box", "add_cylinder", "add_lathe"]
+    assert not returns_object_names(ops_facade.assign_material)  # a material name, not an object
+    assert not returns_object_names(ops_facade.orientation_reading)  # prose
+    assert is_gated(ops_facade.link_into_scene) and is_gated(ops_facade.boolean_union)

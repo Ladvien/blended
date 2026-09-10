@@ -13,7 +13,7 @@ import pytest
 
 bpy = pytest.importorskip("bpy", reason="requires Blender-as-module")
 
-from mathutils import Vector  # noqa: E402 — needs bpy importable first
+from mathutils import Vector
 
 pytestmark = pytest.mark.blender
 

@@ -575,8 +575,7 @@ class _ToolRequest:
         self.arguments = arguments
         self.output_directory = output_directory
         self.completed = threading.Event()
-        self.result_text = ""
-        self.image_paths: list = []
+        self.outcome = None  # a ToolOutcome once the main thread ran it
         self.error = ""
 
 
@@ -590,7 +589,7 @@ def _drain_tool_requests():
         except queue.Empty:
             break
         try:
-            request.result_text, request.image_paths = dispatch_tool(
+            request.outcome = dispatch_tool(
                 request.tool_name, request.arguments, request.output_directory
             )
         except Exception as tool_error:  # noqa: BLE001 — surfaced to the model
@@ -641,8 +640,10 @@ def _dispatch_on_main_thread(tool_name, arguments, output_directory):
     _TOOL_REQUESTS.put(request)
     request.completed.wait()
     if request.error:
-        return request.error, []
-    return request.result_text, request.image_paths
+        from blended.agent.outcome import ToolOutcome
+
+        return ToolOutcome(request.error)
+    return request.outcome
 
 
 # --- Session state ---------------------------------------------------------
@@ -1153,7 +1154,6 @@ class BLENDED_OT_reload(bpy.types.Operator):
             # state; nothing else to do here but wake the UI.
             _hot_reload(preferences)
             _redraw_sidebars()
-            return None  # one-shot
 
         bpy.app.timers.register(_fire_reload, first_interval=0.0)
         return {"FINISHED"}
@@ -2267,7 +2267,6 @@ class BLENDED_Preferences(bpy.types.AddonPreferences):
     )
 
     def draw(self, context):
-        import os
 
         layout = self.layout
 
@@ -2395,7 +2394,6 @@ def _on_prompt_confirmed(self, context):
             bpy.ops.blended.send_message()
         except Exception:  # noqa: BLE001 — a failed send must not kill the timer
             pass
-        return None  # one-shot
 
     bpy.app.timers.register(_fire_send, first_interval=0.0)
 

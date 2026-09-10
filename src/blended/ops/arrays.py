@@ -9,6 +9,7 @@ verifies it happened.
 
 from __future__ import annotations
 
+from blended.ops._objects import ObjectName
 
 MINIMUM_ARRAY_COUNT = 2
 ARRAY_MODIFIER_NAME = "LinearArray"
@@ -18,7 +19,7 @@ def linear_array(
     object_name: str,
     count: int,
     offset_m: tuple[float, float, float],
-) -> str:
+) -> ObjectName:
     """Repeat the named object `count` times at a constant metric offset, baked into its mesh."""
     from blended.ops._objects import object_by_name
     from blended.ops.modifiers import apply_all_modifiers

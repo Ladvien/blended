@@ -60,11 +60,12 @@ def test_run_python_tool_returns_printed_output(empty_scene, tmp_path):
     model actually reads."""
     from blended.agent.tools import dispatch_tool
 
-    text, images = dispatch_tool(
+    _outcome = dispatch_tool(
         "run_python",
         {"source": "print('component_count=1')"},
         output_directory=tmp_path,
     )
+    text, images = _outcome.text, list(_outcome.images)
     assert "component_count=1" in text
     assert images == []
 
@@ -74,15 +75,15 @@ def test_run_python_tool_says_so_when_nothing_was_printed(empty_scene, tmp_path)
     nothing' from 'printing does not work here'."""
     from blended.agent.tools import dispatch_tool
 
-    text, _ = dispatch_tool(
+    _outcome = dispatch_tool(
         "run_python", {"source": "value = 1 + 1"}, output_directory=tmp_path
     )
+    text, _ = _outcome.text, list(_outcome.images)
     assert "(nothing printed)" in text
 
 
 def test_gated_run_python_also_carries_printed_output(empty_scene, tmp_path):
     from blended.agent.tools import dispatch_tool
-    from blended.ops.primitives import add_box, link_into_scene
 
     source = (
         "import bpy\n"
@@ -91,7 +92,8 @@ def test_gated_run_python_also_carries_printed_output(empty_scene, tmp_path):
         "link_into_scene(box)\n"
         "print('vertices=%d' % len(bpy.data.objects[box].data.vertices))\n"
     )
-    text, _images = dispatch_tool(
+    _outcome = dispatch_tool(
         "run_python", {"source": source, "object_name": "Probe"}, output_directory=tmp_path
     )
+    text, _images = _outcome.text, list(_outcome.images)
     assert "vertices=8" in text

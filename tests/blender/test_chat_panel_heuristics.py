@@ -33,14 +33,14 @@ bpy = pytest.importorskip("bpy", reason="requires Blender")
 
 pytestmark = pytest.mark.blender
 
-from test_addon_draw import (  # noqa: E402
+from test_addon_draw import (
     _draw,
     _draw_all,
     _load_addon,
     _make_context,
 )
 
-from blended.agent.plan import TurnPlan  # noqa: E402
+from blended.agent.plan import TurnPlan
 
 PLAN_STEPS = ("Build the crate body", "Add the slats", "Render and verify")
 STUB_ICON_IDENTIFIER = 4242

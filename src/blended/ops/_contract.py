@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import inspect
 import re
+import typing
 
 # --- the contract -------------------------------------------------------
 
@@ -78,6 +79,74 @@ MAXIMUM_SUMMARY_CHARACTERS = 120
 
 
 
+# --- gating (OT-5) --------------------------------------------------------
+
+# The attribute `@op(gated=...)` stamps on a function. Read only through
+# `is_gated`, so the default lives in one place.
+GATED_ATTRIBUTE = "__blended_gated__"
+
+
+def op(*, gated: bool):
+    """Mark an op's gating explicitly. Today the only sanctioned use is
+    `@op(gated=False)` on a constructor that returns an UNLINKED
+    intermediate (add_box, add_cylinder, add_lathe): gating it would
+    report "not linked" on every call and teach the model nothing. The
+    schema generator prints the marker in the tool description, and the
+    loop refuses to end a turn while such an intermediate is unresolved."""
+
+    def mark(function):
+        setattr(function, GATED_ATTRIBUTE, gated)
+        return function
+
+    return mark
+
+
+def _is_object_name_type(hint) -> bool:
+    """`hint` is the ObjectName NewType — matched by name, supertype and
+    home module rather than identity, because a dev reload re-creates the
+    NewType object while functions resolved earlier still hold the old one."""
+    return (
+        getattr(hint, "__supertype__", None) is str
+        and getattr(hint, "__name__", "") == "ObjectName"
+        and getattr(hint, "__module__", "") == "blended.ops._objects"
+    )
+
+
+def _names_objects(hint) -> bool:
+    """True when `hint` is ObjectName or a list/tuple of ObjectName."""
+    if _is_object_name_type(hint):
+        return True
+    origin = typing.get_origin(hint)
+    if origin in (list, tuple):
+        members = [member for member in typing.get_args(hint) if member is not Ellipsis]
+        return bool(members) and all(_names_objects(member) for member in members)
+    return False
+
+
+def returns_object_names(function) -> bool:
+    """Does this op's return annotation name scene object(s)?"""
+    return _names_objects(typing.get_type_hints(function).get("return"))
+
+
+def is_gated(function) -> bool:
+    """An op whose return names an object is gated unless marked otherwise."""
+    return returns_object_names(function) and getattr(function, GATED_ATTRIBUTE, True)
+
+
+def is_marked_ungated(function) -> bool:
+    return getattr(function, GATED_ATTRIBUTE, True) is False
+
+
+def object_name_parameters(function) -> tuple[str, ...]:
+    """The parameters that carry object names (`name`, `object_name`,
+    `target_name`, ...), by the same pattern the contract checks."""
+    return tuple(
+        name
+        for name in inspect.signature(function).parameters
+        if _OBJECT_NAME_PATTERN.search(name)
+    )
+
+
 class ContractViolation(TypeError):
     """An op reached the generator without satisfying OPS-21."""
 
@@ -108,6 +177,13 @@ def _numeric_scalar(annotation_text: str) -> bool:
     return annotation_text in NUMERIC_ANNOTATIONS
 
 
+def _returns_object_names_or_false(function) -> bool:
+    try:
+        return returns_object_names(function)
+    except (NameError, TypeError):  # unresolvable hints are reported elsewhere
+        return False
+
+
 def contract_violations(function) -> list[str]:
     """Every way `function` fails OPS-21, as one line each."""
     violations: list[str] = []
@@ -136,6 +212,18 @@ def contract_violations(function) -> list[str]:
                     f"numeric parameter {parameter.name!r} carries no unit suffix "
                     f"{UNIT_SUFFIXES} and is not a declared unitless quantity"
                 )
+
+    if is_marked_ungated(function):
+        if not _returns_object_names_or_false(function):
+            violations.append(
+                "marked @op(gated=False) but its return names no object; "
+                "the marker has nothing to exempt"
+            )
+        if "name" not in signature.parameters:
+            violations.append(
+                "marked @op(gated=False) but takes no `name` parameter; an "
+                "ungated constructor must return the name it was given"
+            )
 
     return_text = _annotation_text(signature.return_annotation)
     if not return_text:

@@ -289,11 +289,13 @@ def test_the_budget_counts_calls_not_messages(empty_scene, tmp_path):
 def test_search_ops_finds_operations_without_guessing(empty_scene, tmp_path):
     from blended.agent.tools import dispatch_tool
 
-    result_text, images = dispatch_tool("search_ops", {"query": "boolean"}, tmp_path)
+    _outcome = dispatch_tool("search_ops", {"query": "boolean"}, tmp_path)
+    result_text, images = _outcome.text, list(_outcome.images)
     assert "boolean_union" in result_text
     assert images == []
 
-    miss_text, _ = dispatch_tool("search_ops", {"query": "zzzz"}, tmp_path)
+    _outcome = dispatch_tool("search_ops", {"query": "zzzz"}, tmp_path)
+    miss_text, _ = _outcome.text, list(_outcome.images)
     assert "No operation matches" in miss_text
 
 
@@ -302,11 +304,12 @@ def test_export_tool_verifies_the_written_file(empty_scene, tmp_path):
     from blended.builders import CrateBuilder, CrateParameters
 
     CrateBuilder(CrateParameters(name="ExportMe")).build()
-    result_text, _ = dispatch_tool(
+    _outcome = dispatch_tool(
         "export_asset",
         {"object_name": "ExportMe", "path": str(tmp_path / "crate.glb")},
         tmp_path,
     )
+    result_text, _ = _outcome.text, list(_outcome.images)
     assert "Exported and verified" in result_text
     assert (tmp_path / "crate.glb").exists()
 
@@ -581,6 +584,13 @@ def test_a_brief_reaches_gate_pass_with_op_tools_only(empty_scene, tmp_path):
     for message in tool_messages:
         assert message["content"].startswith(f"OK: {message['tool_name']}"), message["content"]
     assert 'returned: "PlanterBox"' in tool_messages[0]["content"]
+    # OT-5: every GATED op result carries the gate verdict; an ungated
+    # constructor (unlinked intermediate) carries none, and the material
+    # op returns a material name, so it is not gated either.
+    for message in tool_messages:
+        gated = message["tool_name"] in {"link_into_scene", "boolean_difference"}
+        assert ("gate: PASS" in message["content"]) == gated, message["content"]
+        assert ("orient:" in message["content"]) == gated, message["content"]
 
     brief = get_brief("planter_box")
     report = evaluate_brief(brief)
@@ -591,25 +601,68 @@ def test_a_brief_reaches_gate_pass_with_op_tools_only(empty_scene, tmp_path):
 def test_an_op_tool_failure_names_the_op_error_to_the_model(empty_scene, tmp_path):
     """An op's own exception (here: an unlinked boolean operand) comes back
     as a FAILED result at `execute`, not as a loop crash."""
+    from blended.agent.tools import dispatch_tool
+
+    for name in ("A", "B"):
+        dispatch_tool("add_box", {"name": name, "width_m": 0.1, "depth_m": 0.1, "height_m": 0.1}, tmp_path)
+    union_result = dispatch_tool("boolean_union", {"target_name": "A", "addend_name": "B"}, tmp_path).text
+
+    assert union_result.startswith("FAILED at execute: boolean_union")
+    assert "UnlinkedOperand" in union_result
+
+
+def test_an_unresolved_intermediate_blocks_the_answer_until_resolved(empty_scene, tmp_path):
+    """OT-5: add_box leaves an unlinked object; the answer is refused with
+    the object named; removing it lets the same answer through."""
     from blended.agent import AgentSession
 
+    answer = {"role": "assistant", "content": "Cutter made."}
     client = ScriptedClient(
         [
-            {
-                "role": "assistant",
-                "content": "",
-                "tool_calls": [
-                    _op_call("add_box", name="A", width_m=0.1, depth_m=0.1, height_m=0.1),
-                    _op_call("add_box", name="B", width_m=0.1, depth_m=0.1, height_m=0.1),
-                    _op_call("boolean_union", target_name="A", addend_name="B"),
-                ],
-            },
-            {"role": "assistant", "content": "Done."},
+            {"role": "assistant", "content": "", "tool_calls": [_op_call("add_box", name="Cutter", width_m=0.1, depth_m=0.1, height_m=0.1)]},
+            answer,
+            {"role": "assistant", "content": "", "tool_calls": [_op_call("remove_object_and_mesh", object_name="Cutter")]},
+            answer,
         ]
     )
     session = AgentSession(client=client, output_directory=tmp_path)
-    session.send("Union two boxes.")
+    events = []
+    reply = session.send("Make a cutter.", on_event=lambda kind, text: events.append((kind, text)))
 
-    union_result = [m for m in session.messages if m.get("role") == "tool"][-1]["content"]
-    assert union_result.startswith("FAILED at execute: boolean_union")
-    assert "UnlinkedOperand" in union_result
+    assert reply == "Cutter made."
+    refusals = [text for kind, text in events if text.startswith("Cannot end the turn")]
+    assert len(refusals) == 1 and "'Cutter' (from add_box)" in refusals[0]
+    assert "Cutter" not in bpy.data.objects
+
+
+def test_a_gated_op_on_a_missing_object_fails_at_locate(empty_scene, tmp_path):
+    from blended.agent.tools import dispatch_tool
+
+    text = dispatch_tool("link_into_scene", {"object_name": "Ghost"}, tmp_path).text
+    assert text.startswith("FAILED at execute: link_into_scene")
+    assert "UnknownObject" in text
+
+
+def test_a_gate_failure_on_an_op_result_is_reported_at_gate(empty_scene, tmp_path):
+    """Two unconnected boxes unioned into one object: 2 components, FAIL at gate."""
+    from blended.agent.tools import dispatch_tool
+
+    for name, x in (("A", 0.0), ("B", 5.0)):
+        dispatch_tool("add_box", {"name": name, "width_m": 0.1, "depth_m": 0.1, "height_m": 0.1, "location_m": [x, 0.0, 0.0]}, tmp_path)
+        dispatch_tool("link_into_scene", {"object_name": name}, tmp_path)
+    text = dispatch_tool("boolean_union", {"target_name": "A", "addend_name": "B"}, tmp_path).text
+
+    assert text.startswith("FAILED at gate: boolean_union"), text
+    assert "gate: FAIL (24 tris, 2 components)" in text
+
+
+def test_an_armature_is_gated_on_scene_state_only(empty_scene, tmp_path):
+    from blended.agent.tools import dispatch_tool
+
+    text = dispatch_tool(
+        "add_armature",
+        {"name": "Rig", "bones": [{"name": "root", "head_m": [0, 0, 0], "tail_m": [0, 0, 0.5]}]},
+        tmp_path,
+    ).text
+    assert text.startswith("OK: add_armature"), text
+    assert "gate: scene state only (ARMATURE has no mesh to analyze)" in text

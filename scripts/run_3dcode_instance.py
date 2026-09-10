@@ -233,10 +233,10 @@ def main(argv) -> int:
     recorded: list[tuple[str, str]] = []
 
     def recording_dispatch(tool_name, arguments_dict, output_directory):
-        text, images = dispatch_here(tool_name, arguments_dict, output_directory)
+        outcome = dispatch_here(tool_name, arguments_dict, output_directory)
         if tool_name == "run_python":
-            recorded.append((arguments_dict.get("source", ""), text))
-        return text, images
+            recorded.append((arguments_dict.get("source", ""), outcome.text))
+        return outcome
 
     session = AgentSession(
         client=client,

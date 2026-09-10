@@ -29,8 +29,11 @@ import typing
 from collections.abc import Callable
 from dataclasses import dataclass, field
 
+from blended.analyze.mesh_checks import MeshBudget
+from blended.harness import GateVerdict
+from blended.ops._contract import is_gated, object_name_parameters, returns_object_names
 from blended.run.executor import RunResult, execute_captured
-from blended.stages import STAGE_DONE, STAGE_EXECUTE
+from blended.stages import STAGE_DONE, STAGE_EXECUTE, STAGE_LOCATE, STAGES
 from blended.version import TARGET_BLENDER_SERIES
 
 
@@ -84,6 +87,9 @@ def convert_argument(hint, value, path: str):
         if value is not None:
             raise ArgumentError(f"{path}: expected null, got {value!r}")
         return None
+    supertype = getattr(hint, "__supertype__", None)  # a NewType, e.g. ObjectName
+    if supertype is not None:
+        return hint(convert_argument(supertype, value, path))
     if hint is bool:
         if not isinstance(value, bool):
             raise ArgumentError(f"{path}: expected a boolean, got {value!r}")
@@ -192,25 +198,70 @@ class OpCallResult:
     execution: RunResult
     returned: object = None
     bound_arguments: dict = field(default_factory=dict)
+    # One verdict per object the op returned, when the op is gated (OT-5).
+    gates: tuple[GateVerdict, ...] = ()
+    # Scene effects the loop's ledger reads; the model never sees these.
+    intermediates_created: tuple[str, ...] = ()
+    intermediates_resolved: tuple[str, ...] = ()
 
     def summary(self, maximum_traceback_characters: int) -> str:
-        """The text the model reads. Same first line shape as `HarnessResult`."""
+        """The text the model reads. Same line shapes as `HarnessResult`."""
         import json
+
+        from blended.harness import gate_summary_lines
 
         verdict = "OK" if self.ok else f"FAILED at {self.stage_reached}"
         lines = [f"{verdict}: {self.op_name}", f"  execute: {self.execution.summary()}"]
-        if self.ok:
-            lines.append(f"  returned: {json.dumps(self.returned)}")
-        elif self.execution.error_type != ArgumentError.__name__:
-            # A binding failure IS its message; the frames below it are
-            # this module's, not the model's. An op's own traceback is
-            # kept, bounded to the observation window like run_python's.
-            lines.append(self.execution.traceback_text[:maximum_traceback_characters])
+        if not self.execution.ok:
+            if self.execution.error_type != ArgumentError.__name__:
+                # A binding failure IS its message; the frames below it
+                # are this module's, not the model's. An op's own
+                # traceback is kept, bounded like run_python's.
+                lines.append(self.execution.traceback_text[:maximum_traceback_characters])
+            return "\n".join(lines)
+        lines.append(f"  returned: {json.dumps(self.returned)}")
+        for gate in self.gates:
+            label = f" [{gate.object_name}]" if len(self.gates) > 1 else ""
+            if gate.stage_reached == STAGE_LOCATE:
+                lines.append(f"  locate{label}: {gate.scene_state}")
+                continue
+            gate_lines = gate_summary_lines(
+                gate.object_type, gate.report, gate.gate_failures, gate.world_extents_m
+            )
+            lines.extend(line.replace("  gate:", f"  gate{label}:", 1) for line in gate_lines)
         return "\n".join(lines)
 
 
-def call_op(op_name: str, function: Callable, arguments: dict) -> OpCallResult:
-    """Bind, run, report. Never raises for the model's mistakes or the op's."""
+def _returned_object_names(function, returned) -> tuple[str, ...]:
+    if not returns_object_names(function):
+        return ()
+    if isinstance(returned, str):
+        return (returned,)
+    return tuple(str(name) for name in returned)
+
+
+def _resolved_object_names(function, bound: dict) -> tuple[str, ...]:
+    """Every object name the call named in an object-name parameter."""
+    names: list[str] = []
+    for parameter in object_name_parameters(function):
+        value = bound.get(parameter)
+        if isinstance(value, str):
+            names.append(value)
+        elif isinstance(value, (list, tuple)):
+            names.extend(str(item) for item in value)
+    return tuple(names)
+
+
+def _worst_stage(gates: tuple[GateVerdict, ...]) -> str:
+    """The earliest stage any gate stopped at; `done` when all passed."""
+    return min((gate.stage_reached for gate in gates), key=STAGES.index, default=STAGE_DONE)
+
+
+def call_op(
+    op_name: str, function: Callable, arguments: dict, budget: MeshBudget = MeshBudget()
+) -> OpCallResult:
+    """Bind, run, gate what was returned (OT-5), report. Never raises for
+    the model's mistakes or the op's."""
     bound: dict = {}
 
     def bind_and_call():
@@ -228,12 +279,22 @@ def call_op(op_name: str, function: Callable, arguments: dict) -> OpCallResult:
             execution=execution,
             bound_arguments=bound,
         )
+    returned_names = _returned_object_names(function, returned)
+    gates: tuple[GateVerdict, ...] = ()
+    if returned_names and is_gated(function):
+        from blended.harness import gate_named_object
+
+        gates = tuple(gate_named_object(name, budget) for name in returned_names)
+    stage_reached = _worst_stage(gates)
     return OpCallResult(
-        ok=True,
-        stage_reached=STAGE_DONE,
+        ok=stage_reached == STAGE_DONE,
+        stage_reached=stage_reached,
         op_name=op_name,
         arguments=arguments,
         execution=execution,
         returned=json_returned(returned),
         bound_arguments=bound,
+        gates=gates,
+        intermediates_created=returned_names if not is_gated(function) else (),
+        intermediates_resolved=_resolved_object_names(function, bound),
     )

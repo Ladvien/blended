@@ -11,15 +11,19 @@ from __future__ import annotations
 import itertools
 import math
 
+from blended.ops._contract import op
+from blended.ops._objects import ObjectName
+
 MINIMUM_PROFILE_POINTS = 2
 MINIMUM_SEGMENTS = 3
 
 
+@op(gated=False)
 def add_lathe(
     name: str,
     profile_m: list[tuple[float, float]],
     segment_count: int = 24,
-) -> str:
+) -> ObjectName:
     """Revolve `profile_m` [(radius_m, z_m), ...] around Z into a closed mesh object."""
     import bmesh
     import bpy

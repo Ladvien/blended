@@ -60,9 +60,10 @@ def _rigged_animated_textured_box():
 def _inspect(object_name, domain, tmp_path):
     from blended.agent.tools import dispatch_tool
 
-    text, images = dispatch_tool(
+    _outcome = dispatch_tool(
         "inspect_domain", {"object_name": object_name, "domain": domain}, tmp_path
     )
+    text, images = _outcome.text, list(_outcome.images)
     assert images == []
     return json.loads(text.split("\n", 1)[1])
 
@@ -92,7 +93,9 @@ def test_a_wrong_object_type_is_named_not_crashed(empty_scene, tmp_path):
     from blended.agent.tools import dispatch_tool
 
     _rigged_animated_textured_box()
-    text, _ = dispatch_tool("inspect_domain", {"object_name": "Body", "domain": "rig"}, tmp_path)
+    _outcome = dispatch_tool("inspect_domain", {"object_name": "Body", "domain": "rig"}, tmp_path)
+    text, _ = _outcome.text, list(_outcome.images)
     assert "not an ARMATURE" in text
-    text, _ = dispatch_tool("inspect_domain", {"object_name": "Nope", "domain": "rig"}, tmp_path)
+    _outcome = dispatch_tool("inspect_domain", {"object_name": "Nope", "domain": "rig"}, tmp_path)
+    text, _ = _outcome.text, list(_outcome.images)
     assert "No object named" in text

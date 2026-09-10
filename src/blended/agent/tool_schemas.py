@@ -33,7 +33,12 @@ import pathlib
 import types
 import typing
 
-from blended.ops._contract import assert_satisfies_contract, facade_ops
+from blended.ops._contract import (
+    assert_satisfies_contract,
+    facade_ops,
+    is_gated,
+    returns_object_names,
+)
 
 # The fingerprint of the tool set the model can call. Prefixed `t` so it
 # can never be mistaken in a log for the working-agreement identity
@@ -50,6 +55,19 @@ JSON_TYPE_FOR_SCALAR: dict[type, str] = {
 }
 
 
+# What the model reads about gating (OT-5), verbatim in every op tool
+# description whose return names an object.
+GATED_DESCRIPTION = (
+    "Gated: the returned object is located and measured against the "
+    "analyzer and scene-state gate; the verdict comes back with the result."
+)
+UNGATED_DESCRIPTION = (
+    "UNGATED: returns an unlinked intermediate. link_into_scene it, "
+    "consume it in a boolean, or remove it before you answer — the turn "
+    "cannot end while it is unresolved."
+)
+
+
 class UnsupportedAnnotation(TypeError):
     """A facade signature carries a type the generator cannot express.
 
@@ -63,6 +81,9 @@ def json_schema_for_type(hint) -> dict:
     """JSON schema for one resolved typing object, recursively."""
     if hint is type(None):
         return {"type": "null"}
+    supertype = getattr(hint, "__supertype__", None)  # a NewType, e.g. ObjectName
+    if supertype is not None:
+        return json_schema_for_type(supertype)
     if hint in JSON_TYPE_FOR_SCALAR:
         return {"type": JSON_TYPE_FOR_SCALAR[hint]}
     if hint is pathlib.Path:
@@ -152,11 +173,14 @@ def op_tool_schema(op_name: str, function) -> dict:
     return_text = signature.return_annotation
     if not isinstance(return_text, str):
         return_text = getattr(return_text, "__name__", str(return_text))
+    description = f"{_summary(function)} Returns {return_text}."
+    if returns_object_names(function):
+        description += " " + (GATED_DESCRIPTION if is_gated(function) else UNGATED_DESCRIPTION)
     return {
         "type": "function",
         "function": {
             "name": op_name,
-            "description": f"{_summary(function)} Returns {return_text}.",
+            "description": description,
             "parameters": {
                 "type": "object",
                 "properties": properties,

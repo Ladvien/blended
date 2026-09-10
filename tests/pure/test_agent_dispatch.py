@@ -21,6 +21,8 @@ import threading
 
 import pytest
 
+from blended.agent.outcome import ToolOutcome
+
 TOOL_CALL_REPLY = {
     "role": "assistant",
     "content": "",
@@ -68,7 +70,7 @@ def test_the_injected_dispatcher_is_what_runs_the_tool(tmp_path):
 
     def recording_dispatch(tool_name, arguments, output_directory):
         calls.append((tool_name, arguments, output_directory))
-        return "GATE PASS", []
+        return ToolOutcome("GATE PASS")
 
     answer = _session(recording_dispatch, tmp_path).send("Make me a crate.")
 
@@ -89,7 +91,7 @@ def test_a_turn_driven_off_the_main_thread_still_uses_the_injection(tmp_path):
 
     def recording_dispatch(tool_name, arguments, output_directory):
         dispatching_threads.append(threading.current_thread())
-        return "GATE PASS", []
+        return ToolOutcome("GATE PASS")
 
     session = _session(recording_dispatch, tmp_path)
     worker = threading.Thread(target=lambda: session.send("Make me a crate."))
@@ -206,11 +208,11 @@ def test_an_op_tool_call_binds_runs_and_reports_done():
     from blended.agent.tools import OP_FUNCTIONS, dispatch_tool
     from blended.stages import STAGE_DONE
 
-    text, images = dispatch_tool("middle_extent_m", {"extents_m": [0.3, 0.2, 0.25]}, None)
+    outcome = dispatch_tool("middle_extent_m", {"extents_m": [0.3, 0.2, 0.25]}, None)
 
-    assert text.startswith("OK: middle_extent_m")
-    assert "returned: 0.25" in text
-    assert images == []
+    assert outcome.text.startswith("OK: middle_extent_m")
+    assert "returned: 0.25" in outcome.text
+    assert outcome.images == ()
     result = call_op("middle_extent_m", OP_FUNCTIONS["middle_extent_m"], {"extents_m": [0.3, 0.2, 0.25]})
     assert result.ok and result.stage_reached == STAGE_DONE
     assert result.bound_arguments == {"extents_m": (0.3, 0.2, 0.25)}
@@ -221,13 +223,13 @@ def test_an_unregistered_tool_is_refused_at_the_door_without_bpy():
     which is what makes this assertion possible in the pure layer."""
     from blended.agent.tools import dispatch_tool
 
-    assert dispatch_tool("add_boxx", {"name": "Crate"}, None) == ("Unknown tool: add_boxx", [])
+    assert dispatch_tool("add_boxx", {"name": "Crate"}, None) == ToolOutcome("Unknown tool: add_boxx")
 
 
 def test_a_mistyped_argument_fails_at_execute_with_the_cause_and_no_traceback():
     from blended.agent.tools import dispatch_tool
 
-    text, _ = dispatch_tool("middle_extent_m", {"extents_m": "big"}, None)
+    text = dispatch_tool("middle_extent_m", {"extents_m": "big"}, None).text
 
     assert text.startswith("FAILED at execute: middle_extent_m")
     assert "ArgumentError" in text and "expected an array" in text

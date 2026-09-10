@@ -21,6 +21,7 @@ import re
 import threading
 from pathlib import Path
 
+from blended.agent.outcome import ToolOutcome
 from blended.agent.plan import (
     MAXIMUM_PLAN_STEPS,
     parse_plan_arguments,
@@ -332,12 +333,12 @@ def dispatch_tool(
     tool_name: str,
     arguments: dict,
     output_directory: Path = Path("_renders/agent"),
-) -> tuple[str, list[Path]]:
-    """Execute one tool call. Returns (text_result, image_paths).
+) -> ToolOutcome:
+    """Execute one tool call.
 
-    Image paths are returned separately so the caller can attach them to
-    the model's next message as actual images — a contact sheet the
-    model cannot see is worthless.
+    The outcome carries the text the model reads, the images to attach
+    to its next message (a contact sheet the model cannot see is
+    worthless), and the scene effects the loop's ledger needs (OT-5).
 
     MAIN THREAD ONLY. Everything below touches bpy.
     """
@@ -360,26 +361,38 @@ def dispatch_tool(
         try:
             plan = parse_plan_arguments(arguments)
         except ValueError as error:
-            return f"FAILED: {error}", []
+            return ToolOutcome(f"FAILED: {error}")
         numbered = "\n".join(
             f"  {index}. {step}"
             for index, step in enumerate(plan.steps, start=1)
         )
-        return f"Plan declared:\n{numbered}", []
+        return ToolOutcome(f"Plan declared:\n{numbered}")
 
-    # An op tool (OT-4): bound, run and reported by op_call; the op body
-    # is what reaches bpy, so this branch too stays above the import.
+    # An op tool (OT-4): bound, run, gated (OT-5) and reported by
+    # op_call; the op body is what reaches bpy, so this branch too stays
+    # above the import.
     op_function = OP_FUNCTIONS.get(tool_name)
     if op_function is not None:
         from blended.agent.op_call import call_op
 
         result = call_op(tool_name, op_function, arguments)
-        return result.summary(MAXIMUM_TRACEBACK_CHARACTERS), []
+        return ToolOutcome(
+            text=result.summary(MAXIMUM_TRACEBACK_CHARACTERS),
+            intermediates_created=result.intermediates_created,
+            intermediates_resolved=result.intermediates_resolved,
+        )
     # Refused at the door, before bpy: a name that is neither a service
     # tool nor a facade op has no schema and was never offered.
     if tool_name not in SERVICE_TOOL_NAMES:
-        return f"Unknown tool: {tool_name}", []
+        return ToolOutcome(f"Unknown tool: {tool_name}")
+    text, image_paths = _dispatch_service_tool(tool_name, arguments, output_directory)
+    return ToolOutcome(text, tuple(image_paths))
 
+
+def _dispatch_service_tool(
+    tool_name: str, arguments: dict, output_directory: Path
+) -> tuple[str, list[Path]]:
+    """The service tools' branches. Returns (text, image_paths)."""
     import bpy
 
     from blended.analyze import MeshBudget, analyze_object
