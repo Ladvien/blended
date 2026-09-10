@@ -10,6 +10,9 @@
 # WORKTREE is a FROZEN checkout (git worktree) so the main tree can move
 # while a roll runs; the diagnose json lands in the main tree's
 # outputs/bench/ for bench_panel.py.
+# TOOLS (default WORKTREE) is the tree whose bake and diagnose scripts run:
+# an incumbent worktree from before OT-21 has no bake script, and both
+# scripts read bench result directories without importing either harness.
 set -u
 : ${WORKTREE:?frozen worktree path}
 : ${MODEL_DIR:?results/text_to_3D_agent/<dir>}
@@ -19,6 +22,7 @@ set -u
 : ${INSTANCES:=$WORKTREE/bench_sets/instances_holdout.txt}
 : ${OUT:=/Users/ladvien/blended/outputs/bench}
 : ${TIMEOUT:=1500}
+: ${TOOLS:=$WORKTREE}   # the tree whose bake/diagnose scripts run (an incumbent tree predates them)
 L=$OUT/logs; mkdir -p $L
 RESULTS=$BENCH_ROOT/results/text_to_3D_agent
 say() { echo "[chain] $MODEL_DIR $1 $(date)" >> $L/chain_$MODEL_DIR.log; }
@@ -30,7 +34,7 @@ $WORKTREE/.venv/bin/python $WORKTREE/scripts/sweep_3dcode.py --bench-root $BENCH
   --model-dir $MODEL_DIR > $L/${MODEL_DIR}_sweep.log 2>&1
 say "sweep exit $?"
 
-$WORKTREE/.venv/bin/python $WORKTREE/scripts/bake_3dcode.py --bench-root $BENCH_ROOT \
+$TOOLS/.venv/bin/python $TOOLS/scripts/bake_3dcode.py --bench-root $BENCH_ROOT \
   --model-dir $MODEL_DIR > $L/${MODEL_DIR}_bake.log 2>&1
 BAKE=$?
 say "bake exit $BAKE"
@@ -38,6 +42,6 @@ if [ $BAKE -ne 0 ]; then say "NOT SCORED: bake left artifacts missing"; exit $BA
 
 (cd $BENCH_ROOT && .venv/bin/python metrics/executability.py --model $MODEL_DIR --results-root $RESULTS > $L/${MODEL_DIR}_exec.log 2>&1)
 (cd $BENCH_ROOT && .venv/bin/python metrics/shape_chamfer.py --model $MODEL_DIR --results-root $RESULTS > $L/${MODEL_DIR}_chamfer.log 2>&1)
-(cd $WORKTREE && $BENCH_ROOT/.venv/bin/python scripts/diagnose_3dcode.py --bench-root $BENCH_ROOT --model-dir $MODEL_DIR \
+(cd $TOOLS && $BENCH_ROOT/.venv/bin/python scripts/diagnose_3dcode.py --bench-root $BENCH_ROOT --model-dir $MODEL_DIR \
   --instances-file $INSTANCES --out $OUT/diagnose_$MODEL_DIR.md --json $OUT/diagnose_$MODEL_DIR.json > $L/${MODEL_DIR}_diagnose.log 2>&1)
 say "scored exit $?"

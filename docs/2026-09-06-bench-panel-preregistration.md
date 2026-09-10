@@ -197,3 +197,64 @@ on bmb's tokenizer (from 13,727 / 14,967).
   in 38 API calls ($1.85; the whole-set run 86 took 44, $2.12). One failure in two runs
   of the one multi-turn brief: the cap, not the surface, is the mechanism on the record,
   and the roll (OT-27) is where a rate gets measured.
+
+---
+
+## Disclosed-surface rolls — 2026-09-10 (OT-27)
+
+Written BEFORE any benchmark roll on the disclosed surface. The rolls stopped earlier
+today (OT-9 roll 1, OT-10 roll 1) measured a bridge that dropped op calls and a chain
+that never baked; nothing from them ranks. This section names what runs now; only the
+outcome line is filled afterwards, from `scripts/bench_panel.py`, never by hand.
+
+**Candidate.** The harness at the OT-25/OT-26 closing commit, frozen as the worktree
+`/Users/ladvien/blended-bench-v2`: 29 of 56 tools offered per call, the rest reachable
+by name after `search_ops` (OT-25); `run_python` offered as the escape hatch with a
+`reason` (OT-7); working agreement v14, no operations section in the prompt (OT-24);
+the bridge carries op calls and the chain bakes before it scores (OT-20, OT-21); the
+context preflight and the 2,000 s llama-swap request ceiling (OT-22).
+
+**Incumbents.** Cloud lane: group `deepseek-v10` above — six existing `run_python`-only
+rolls (120/120 executable, `cd_pca` 0.0252, SE 0.0007); nothing is re-run. Local lane:
+the `run_python`-only tree at `4277aa3` (the OT-1 close, the same incumbent OT-10 named)
+with exactly one change, `LLAMA_SWAP_REQUEST_TIMEOUT_SECONDS` 900 → 2000, so both ACIs
+meet the same request ceiling — the 900 s ceiling was measured to cut a local turn
+(AquariumTank) before either surface could finish it. Branch `incumbent-ot27`, worktree
+`/Users/ladvien/blended-bench-incumbent`. The incumbent's own bridge (chunks only) is
+complete for a lane that emits chunks only; the bake and the diagnose come from the
+candidate tree's scripts, which read bench result directories and import nothing from
+either harness.
+
+**Writers.** Cloud: `deepseek-v4-pro:cloud`, eye `kimi-k2.7-code:cloud`, as the
+incumbent rolls. Local: `qwen3.8-27b` on bmb's llama-swap as writer and as its own eye;
+big's GPU is under a foreign claim and is not touched. No paid lane (NFR-27).
+
+**Instance set and rolls.** `bench_sets/instances_holdout.txt` (20). Cloud: three rolls,
+`blended-deepseek-v4-pro-disclosed-roll{1,2,3}`, per-instance timeout 1,500 s. Local:
+three paired rolls, `blended-local-qwen38-disclosed-roll{1,2,3}` alternating with
+`blended-local-qwen38-hatch-roll{1,2,3}`, per-instance timeout 3,000 s. Every roll runs
+`scripts/bench_chain.sh`: sweep → bake → `executability.py` → `shape_chamfer.py` →
+`diagnose_3dcode.py`; an incomplete bake leaves the roll unscored.
+
+**Ranking rule and target.** As the OT-9 section: executability first, then `cd_pca`;
+`TARGET_RELATIVE_IMPROVEMENT` 0.15 on the incumbent's mean (0.0252 → 0.0214);
+regression = a one-sided move beyond `REGRESSION_SIGMA` (2.0) on the paired SE.
+
+**Hypotheses, stated before the roll.**
+
+- H1' (executability, cloud writer): 60/60 over three rolls against 120/120 — the surface
+  loses nothing on a writer that already executes everything.
+- H2' (`cd_pca`, cloud writer): within the 0.0021 detectable effect; a loss beyond 2σ
+  falsifies the surface on this writer.
+- H3'/H4 (executability, local lane): the disclosed rolls beat the hatch rolls by more
+  than the hatch rolls' own per-roll band, read off the panel. This is the claim the
+  whole phase was built for.
+- H6 (hatch calls per gate-passing instance, hatch offered): recorded from the v2
+  transcripts of the disclosed rolls and reported beside the panel; the OT-25
+  pre-registration's H6 is read here because these are the first hatch-offered runs
+  on the disclosed surface.
+- Recorded, not ranked: `search_ops` calls per instance; the local lane's per-request
+  wall time (the 2,000 s ceiling is a measured derivation and a hit on it is a finding).
+
+**Outcome.** *(pending — launched 2026-09-10; the cloud chain is ≈ 3 h per roll, the
+local chain was ≈ 8 h per sweep on the whole set)*
