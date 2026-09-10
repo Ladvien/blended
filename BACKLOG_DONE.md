@@ -247,3 +247,30 @@ regression reopens the item in `BACKLOG.md` with a pointer back to this entry.
 **Measured beside it:** v12's outcome is recorded on the revision as measured once — the E2E passes without the hatch, while the five-brief roll sits at 3.00 hatch calls per gate-passing brief and the planter fails the form gate on the `location_m` convention (OT-13's first evidence).
 **Layers:** pure passing with the revision outcome filled (below); Blender 323 passed / 3 skipped (unchanged since OT-14).
 **Commit:** `485917e`.
+
+---
+
+## OT-13 First vocabulary expansion, from the five briefs
+
+**What:** Implement the ops the five briefs (`planter_box`, `three_leg_stool`, `uv_crate`, `ribbed_column`, `crate_with_lid`) need to reach gate-pass with zero hatch calls. Expected from the brief contents, to be confirmed by OT-12: hollow-out with named wall thickness, bevel by edge selector, radial array, inset faces, mirror across a named plane, edge-selector primitives (by angle, by material, by name pattern).
+**Why:** These are the briefs the convergence loop and the goldens already exercise; closing them first means every downstream instrument keeps working.
+**Amends:** adds one `OPS-n` row per op, each with a fixture that trips its validation (GATE-18 discipline applied to ops).
+**Done means:** `make converge` on each brief reaches structural + form gate pass with `run_python` disabled.
+**Evidence 2026-09-10 (v12, Claude Code lane, iterations 68–73; report `docs/candidate_ops/2026-09-10-candidate-ops.md`):**
+- Hatch calls per gate-passing brief: 3.00 over 3 (stool 6, uv_crate 1, column 2); planter 0 on its re-run (73) but it failed the form gate.
+- Top candidate by reason and by gate-pass rate: **rename an object** (4 calls, 4/4 gate-passing) — `boolean_union` keeps the target's name and the brief wants `Stool`. Cheapest op in the list.
+- Top by source shape: **read world bounds** (5 measurement chunks, 4/4 gate-passing) — the writer wants both operands' world boxes when a boolean says "no overlap".
+- **Mark UV seams by edge selector** (uv_crate), **compute a lathe profile from rib parameters** (ribbed_column, 2 calls: the tool call cannot take a computed list), and "placeholder" reasons (2 on the stool: the reason field is gameable; count them).
+- **Measured twice, not a missing op: `location_m` read as a CENTER** (68 and 73 both built the planter at base z 0.125 and failed the floor probe). Mechanism: `add_box`'s base-at-z convention lives in the docstring BODY, and both the manifest and the generated tool description carry only the summary line. Fix belongs here: either the parameter name carries the convention (`base_center_m`, which breaks every recorded golden source and costs a re-converge) or the schema carries the convention sentence. Decide by measurement on the planter.
+- Cost of the surface on this lane: 58k tokens per call with 50 tools vs 26k with 8 (OT-17 correction); run 72 (crate_with_lid) died on `error_max_structured_output_retries` with the 50-variant envelope — one occurrence, not yet a cause.
+- **First fix, measured (commit `fa3b1e5`, iteration 74):** `add_box`'s summary line now states BASE at `location_m[2]` (no rename). The planter then passed both deterministic gates on op tools alone: 14 calls, 0 hatch calls, base_z +0.0000, $0.30. One run; the pixel gate reports "the render moved" against golden 66 as any fresh run does.
+
+**Closed:** 2026-09-10.
+**Gating runs (`make converge ... ARGS="--no-hatch"`, v12, Claude Code lane, `run_python` withheld):** planter_box 75 (14 calls), three_leg_stool 76 (51 calls, three turns), ribbed_column 78 (7 calls), crate_with_lid 79 (15 calls), uv_crate 80 (11 calls) — every one passed the structural AND form gates with zero hatch calls, by construction. uv_crate's first sample (77) failed: seams on every edge above 30° after the bevel gave 26 islands against the cap of 12, seven `select_edges` probes and three rebuilds spent the 24-call budget, and the last box was left unlinked. The second sample used seams then unwrap and passed with 6 islands and 0 overlaps.
+**Gating tests:** `tests/blender/test_vocabulary_ot13.py` (each op and the fixture that trips it: `NameTaken`, an empty new name, `NoEdgesSelected`; all three dispatch as tools with a gate verdict on the object-returning ones); `tests/blender/test_selectors.py` (OT-14) for the selector kinds the seam op uses.
+**Spec:** OPS-23 (`rename_object`), OPS-24 (`world_bounds`), OPS-25 (`mark_uv_seams`); §2.4 `--no-hatch`; §6.3 OPS 22 → 25.
+**What was built, and why these and not the expected list:** the backlog expected hollow-out, bevel by selector, radial array, inset, mirror. The measured demand (OT-12) was different: the stool needed to rename a boolean's result (4/4 gate-passing hatch calls), the writer wanted world bounds when a boolean reported no overlap (5 chunks), and the crate set seams through bmesh. Those three became ops. The `location_m` misread (planter, twice) was fixed by stating the base convention in `add_box`'s summary line (`fa3b1e5`), which is all the manifest and schema carry — measured true on iteration 74 and again on 75. Nothing from the expected list was needed to pass the five briefs; each stays unbuilt until a run asks for it.
+**Costs, measured:** the five passing no-hatch runs billed $0.3–2.3 each on this lane. 75 briefs' worth of runs today; the account's 7-day window was at 62% before them.
+**Observations for the next roll, not acted on:** `select_edges` used as a probe loop (seven calls in 77) suggests the reader should return what the edges ARE (their dihedral angles, count) rather than indices; the structured-output failure on run 72 has one occurrence.
+**Layers:** pure 690 passed / 1 skipped / 1 xfailed; Blender 328 passed / 3 skipped.
+**Commit:** recorded in the follow-up commit.
