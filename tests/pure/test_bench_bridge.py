@@ -54,6 +54,10 @@ def test_a_record_of_chunks_only_keeps_the_chunk_format():
     script = standalone_script(calls, PRELUDE, EPILOGUE)
     assert script.text == PRELUDE + "\n# --- chunk 1 ---\na = 1\n" + EPILOGUE
     assert PRELUDE.startswith("import sys\nsys.path.insert(0, '/venv/site-packages')\nsys.path.insert(0, '/repo/src')\n")
+    # The host Blender's own `blended` (an installed addon's bundled copy)
+    # is evicted before the script imports the tree it names.
+    assert "del sys.modules[_name]" in PRELUDE
+    assert PRELUDE.index("del sys.modules") < PRELUDE.index("from blended.agent.op_call")
 
 
 def test_nothing_ran_means_no_epilogue():

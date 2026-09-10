@@ -22,6 +22,7 @@
 | Blender test layer | 328 passed, 3 skipped, inside Blender 5.2.0 LTS (hash `fbe6228777e7`) | `make test-blender-app`, same run |
 | Test files | 47 pure, 45 blender | `tests/pure/`, `tests/blender/` |
 | The agent's tool surface | 8 hand-written service tools + 48 generated op tools = 56; 35 require a declared plan; 14 op tools are readers; tool-set fingerprint `t:fd10e7f510a8` pinned | `src/blended/agent/tools.py`, `_evaluate/golden/pinned_tool_schemas_fingerprint.txt` |
+| Context per call | bmb qwen3.8-27b tokenizer, 2026-09-10: system prompt 7,569 (operations section 3,074); tools 9,245 on the OpenAI/Ollama lanes (op tools 7,904), 10,485 as the Claude Code envelope; static per call 16,814 / 18,054 before scene and history | `scripts/context_composition.py` |
 | The ops facade | 48 ops under the OPS-21 contract: 21 return an object (`ObjectName`), 18 of those are gated on every call, 3 are the unlinked constructors (`add_box`, `add_cylinder`, `add_lathe`); 3 typed selectors | `src/blended/ops/__init__.py`, `src/blended/ops/_contract.py`, `tests/pure/test_ops_signature_contract.py` |
 | Briefs | 5 (`planter_box`, `three_leg_stool`, `uv_crate`, `ribbed_column`, `crate_with_lid`); `validate_briefs() == []`; every one passes both deterministic gates with `run_python` withheld (iterations 75, 76, 78, 79, 80) | `src/blended/evaluate/briefs.py`, `_evaluate/iterations.jsonl` |
 | Mistake-memory records | 83; `validate_memory() == []` | `src/blended/evaluate/mistake_memory.py` |
@@ -233,8 +234,10 @@ Routing is by model id (`src/blended/agent/loop.py:340-363`); credentials come f
 | `make calibrate-visual-gate` | `scripts/calibrate_visual_gate.py --revision` | writes the pixel-gate thresholds (`Makefile:89`) |
 | `make pin-golden-views` | `scripts/pin_golden_views.py --revision` | mints per-view golden references (`Makefile:97`) |
 | `make bench-3dcode` | `scripts/sweep_3dcode.py --bench-root --instances-file` | the external benchmark sweep (`Makefile:129-132`) |
+| `scripts/bench_chain.sh` | sweep → `scripts/bake_3dcode.py` → the bench's scorers → `diagnose_3dcode.py`, from a frozen worktree | one rankable roll; the scorers run only after a complete bake (OT-21) |
 | `make chat-e2e` | `scripts/chat_e2e.py` | six interactive scenarios, hard-asserted; `ARGS="--no-hatch"` withholds `run_python` and lists missing-op evidence (OT-11) |
 | `make mine-ops` | `scripts/mine_candidate_ops.py --from-iteration` | the candidate-op report from v2 records (OT-12) |
+| `scripts/context_composition.py` | the assembled prompt and the tool set split into parts and counted with bmb's tokenizer; `--spec` rewrites the "Context per call" row | what one call is made of, per lane (OT-23); refuses to estimate when the tokenizer is unreachable |
 | `make photo-to-model` | `scripts/photo_to_model.py` | photo in, gated model out (`Makefile:151`) |
 | `make provider-smoke` | `scripts/provider_smoke.py` | one text + one image call per lane (`Makefile:160`) |
 
@@ -512,6 +515,7 @@ The form gate answers "does the object deliver the brief", deterministically, be
 | BEN-8 | The instance sets MUST be a frozen 20-instance holdout and a 145-instance dev set, with policies derived on dev only and the holdout touched for ranking. | `bench_sets/instances_holdout.txt`, `bench_sets/instances_dev_all.txt` | `scripts/bench_split.py` (self-checking) |
 | BEN-9 | A roll MUST retain `glb/` and `renders/` so an unmeasured axis (image similarity) can be added later without a full re-sweep. | `docs/2026-09-06-bench-panel-preregistration.md` | `(unverified)` |
 | BEN-10 | A single roll MUST NOT be used to claim an improvement: the per-roll noise band (`ORIENT_ARTIFACT_THRESHOLD` = 0.02, and the measured SDs) exceeds any single-roll delta. | `scripts/bench_thresholds.py:10`, `docs/2026-09-06-bench-panel-preregistration.md` | `tests/pure/test_bench_panel.py` |
+| BEN-11 | A benchmark roll MUST be baked by the bench's own `core/render.py` and `core/export_glb.py` before its scorers run, and MUST NOT be scored while any instance with a script lacks `renders/render_log.json` or `glb/<inst>.glb` (`scripts/bake_3dcode.py` exits 2 naming them; `scripts/bench_chain.sh` stops there). Measured 2026-09-10: an unbaked dir scored 0/20 with the fingerprint "no render_log.json", which reads as a model failure (OT-21). | `scripts/bake_3dcode.py`, `scripts/bench_chain.sh` | `scripts/bake_3dcode.py` (self-checking) |
 
 ## 3.15 In-Blender UI (`UI`)
 
@@ -789,7 +793,7 @@ The document holds **224 requirements**, of which **6 have no automated check**:
 | PRM | 15 | 15 | 0 |
 | VIS | 14 | 14 | 0 |
 | CNV | 14 | 14 | 0 |
-| BEN | 10 | 9 | 1 |
+| BEN | 11 | 10 | 1 |
 | UI | 20 | 20 | 0 |
 | NFR | 30 | 27 | 3 |
 

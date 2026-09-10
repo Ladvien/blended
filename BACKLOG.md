@@ -89,24 +89,12 @@ Both Phase 5 items (OT-16, OT-17) are closed — see `BACKLOG_DONE.md`.
 
 **Measured 2026-09-10 (bmb's own `qwen3.8-27b` tokenizer, via llama-server `/tokenize`):** a fresh call carries 7,569 tokens of system prompt (working agreement v12 1,770; manifest 5,843, of which the ops section is 3,074) plus 7,407 tokens of tool schemas (48 op tools 6,254; 8 service tools 1,155): **15.0k static tokens before any scene or history, and every op described twice.** On the Claude Code lane the same surface billed 58,241 tokens per harness call against 25,851 with eight tools (91 % cache reads). The five briefs that pass with the hatch withheld used 4–8 distinct ops each (planter 5, stool 8, column 4, crate_with_lid 5, uv_crate 7), 15 distinct in all, out of 48. bmb serves `qwen3.8-27b` at 65,536 context; the Ollama-native lane sends `num_ctx` 32,768; no lane preflights the prompt against either. Two dependencies come first, because the benchmark cannot measure the surface until they land.
 
-### OT-21 The bench chain bakes before it scores
-
-**What:** the sweep chain MUST run the bench's own bake (`/Users/ladvien/3dcodebench/.venv/bin/python core/render.py --model <dir> --results-root <root> --blender <Blender>`) between the sweep and the scorers, and MUST refuse to score a model dir whose instances lack `renders/render_log.json`.
-**Why:** `executability.py` and `shape_chamfer.py` read what the bake wrote; without it they report 0/20 with a fingerprint that reads like a model failure.
-**Done means:** `outputs/bench/logs/*_chain.sh` carry the step; a dry run on roll 1's existing scripts produces 20 render logs; the scorer step is guarded.
-
 ### OT-22 Context preflight and truncation as failures
 
 **What:** every lane MUST know its model context (`ModelConfig.context_tokens`: 65,536 for bmb's `qwen3.8-27b`, `num_ctx` for Ollama-native, the CLI's for Claude Code) and the loop MUST refuse to send a request whose prompt tokens plus tool schema plus the reply ceiling exceed it, naming the sizes; a transport reply that reports truncation MUST be an error, never a result. The per-request ceiling on the llama-swap lane (`LLAMA_SWAP_REQUEST_TIMEOUT_SECONDS` = 900) MUST be measured against a real 27B turn and re-derived the way the token budget was.
 **Why:** the one place the fail-loud rule is missing. A 65k-context lane holding 15k of static prefix reaches its limit inside a long turn, and the OT-10 roll's first instance died at the request ceiling instead.
 **Amends:** NFR-13; adds `AGT-23`.
 **Done means:** `tests/pure/test_context_preflight.py` refuses an oversize prompt with the sizes named and passes one that fits; a fake transport reporting `truncated` is an error.
-
-### OT-23 Measure the composition of a call, per lane
-
-**What:** `scripts/context_composition.py` MUST split one call's tokens into working agreement, manifest sections, tool schemas, scene block and history, per lane, using each lane's own tokenizer where one is reachable (bmb's `/tokenize`) and the transport's `usage` otherwise, and write the row into the spec's measured-state table.
-**Why:** everything in this phase is sized by this number; `TurnCost` measures the total only.
-**Done means:** the script is self-checking (the parts sum to the assembled whole within the tokenizer's join error) and its output is in the spec.
 
 ### OT-24 One description per op: drop the manifest's ops section
 

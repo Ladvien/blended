@@ -3103,6 +3103,41 @@ MISTAKES: tuple[MistakeRecord, ...] = (
         ),
         recorded_on="2026-09-10",
     ),
+    MistakeRecord(
+        identifier="the-host-blender-already-holds-an-older-blended",
+        scope="harness_code",
+        failure=(
+            "OT-21 smoke: one bench instance through the new runner "
+            "(OK_AGENT_DONE, 690 s, 1 op call in the script) re-baked as "
+            "ERR_EXEC — 'ModuleNotFoundError: No module named "
+            "blended.agent.op_call' — although the module exists on disk "
+            "and the same three prelude lines import it fine in a bare "
+            "Blender."
+        ),
+        cause=(
+            "The bench bakes with `blender --background --python "
+            "core/render.py`, no --factory-startup, so the user's addons "
+            "load first: the installed blended_agent addon bundles a copy "
+            "of `blended` and imports it at startup (measured: "
+            "sys.modules['blended'] pointed at scripts/addons/blended_agent/"
+            "blended/, with blended.ui already loaded). The script's "
+            "sys.path inserts came too late; `import blended.agent.op_call` "
+            "resolved against the addon's older package."
+        ),
+        fix=(
+            "The emitted script's prelude evicts every `blended*` entry from "
+            "sys.modules before its first blended import, so the script "
+            "imports the tree it names whatever the host Blender preloaded. "
+            "Roll 1's 13 OK bakes had only used blended.ops names the old "
+            "copy also had, which is why the defect stayed invisible."
+        ),
+        guarded_by=(
+            "tests/pure/test_bench_bridge.py::"
+            "test_a_record_of_chunks_only_keeps_the_chunk_format (eviction "
+            "precedes the first import); the OT-21 smoke re-bake"
+        ),
+        recorded_on="2026-09-10",
+    ),
 )
 
 

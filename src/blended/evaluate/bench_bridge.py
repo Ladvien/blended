@@ -70,6 +70,15 @@ def prelude(venv_site_packages: str, repository_src: str) -> str:
         "import sys\n"
         f"sys.path.insert(0, {venv_site_packages!r})\n"
         f"sys.path.insert(0, {repository_src!r})\n"
+        # The host Blender may have ALREADY imported a `blended` — the
+        # installed blended_agent addon bundles a copy and loads it at
+        # startup, and the bench bakes without --factory-startup.
+        # Measured 2026-09-10: the smoke re-bake failed with
+        # ModuleNotFoundError for blended.agent.op_call, a module that
+        # existed on disk, because sys.modules held the addon's older
+        # copy. Evict it, so the script imports the tree it names.
+        "for _name in [n for n in sys.modules if n == 'blended' or n.startswith('blended.')]:\n"
+        "    del sys.modules[_name]\n"
         "\n"
         "from blended.agent.op_call import bind_arguments as _bind\n"
         "from blended.agent.tools import OP_FUNCTIONS as _OPS\n"
