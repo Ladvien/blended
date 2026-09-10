@@ -270,3 +270,10 @@ window from `/api/show` at `check_connection` (writer 1,048,576; eye 262,144) an
 `/Users/ladvien/blended-bench-v3` (`8d05411`), same model directories. The local chain
 kept running from v2: its lane is llama-swap, whose window is table-driven and unaffected;
 the two candidate trees differ only in the Ollama lane's window discovery.
+15:33: the relaunch's first instance died `ERR_MODEL_CALL` — the fix had also sent
+`max_completion_tokens` (16,384) as `num_predict`, and deepseek-v4-pro's planning turn
+was cut there after 87 s (`done_reason=length`); stopped, directory removed. Fix
+`c6e4bfc`: the number is headroom under the window on this wire, never a cap. 15:35: the
+cloud chain relaunched from `/Users/ladvien/blended-bench-v4` (`c6e4bfc`), same model
+directories; the local chain still runs from v2 (unaffected: llama-swap sends
+`max_tokens` as before, and its window is table-driven).
