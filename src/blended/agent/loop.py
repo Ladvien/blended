@@ -45,6 +45,7 @@ from blended.agent.plan import (
     plan_required_for,
     plan_step_of,
 )
+from blended.agent.tool_disclosure import offered_fingerprint
 from blended.agent.tool_event import TOOL_EVENT_KIND, ToolEvent, encode_tool_event
 from blended.stages import STAGE_DONE
 
@@ -999,12 +1000,15 @@ class OllamaClient:
         """
         if self.config.uses_claude_code:
             transport = self._claude_code_transport(PREFLIGHT_TIMEOUT_SECONDS)
-            from blended.agent.tools import TOOL_SCHEMAS
+            from blended.agent.tool_disclosure import core_ops, offered_tools
+            from blended.agent.tools import SERVICE_TOOL_NAMES, TOOL_SCHEMAS
 
-            # The preflight ping carries the REAL envelope schema, so a
-            # CLI too old for --json-schema fails here rather than
-            # mid-conversation.
-            ok, detail = transport.check_connection(TOOL_SCHEMAS)
+            # The preflight ping carries the REAL envelope schema — the
+            # disclosed set (OT-25) — so a CLI too old for --json-schema
+            # fails here rather than mid-conversation.
+            ok, detail = transport.check_connection(
+                offered_tools(TOOL_SCHEMAS, core_ops(), SERVICE_TOOL_NAMES)
+            )
             return ConnectionStatus(ok, CLAUDE_CODE_ENDPOINT, detail)
         attempts = [self.config.endpoint]
         if (
@@ -1504,11 +1508,9 @@ class AgentSession:
         fragments that precede the whole "thinking"/"answer" event.
         Returns the assistant's final text.
         """
-        from blended.agent.tools import TOOL_SCHEMAS
 
-        offered_tools = [
-            tool for tool in TOOL_SCHEMAS if tool["function"]["name"] not in self.disabled_tools
-        ]
+        offered_tools = self.offered_tools()
+        offered_fingerprint_text = offered_fingerprint(offered_tools)
 
         def emit(kind: str, text: str) -> None:
             if on_event is not None:
@@ -1638,6 +1640,7 @@ class AgentSession:
                                 wall_time_s=0.0,
                                 plan_step=_plan_step_or_none(arguments),
                                 refusal=refusal,
+                                offered_tools_fingerprint=offered_fingerprint_text,
                             )
                         ),
                     )
@@ -1673,6 +1676,7 @@ class AgentSession:
                                 wall_time_s=0.0,
                                 plan_step=_plan_step_or_none(arguments),
                                 refusal=MISSING_PLAN_REFUSAL,
+                                offered_tools_fingerprint=offered_fingerprint_text,
                             )
                         ),
                     )
@@ -1722,6 +1726,7 @@ class AgentSession:
                             images=tuple(str(path) for path in image_paths),
                             hatch_reason=outcome.hatch_reason,
                             source_sha256=outcome.source_sha256,
+                            offered_tools_fingerprint=offered_fingerprint_text,
                         )
                     ),
                 )
@@ -1803,6 +1808,22 @@ class AgentSession:
         )
         emit("answer", exhausted)
         return exhausted
+
+    def offered_tools(self) -> list[dict]:
+        """The schemas a call carries (OT-25): the service tools, every
+        reader and the derived core set, minus any withheld tool. Every
+        other facade op is reachable by name after `search_ops`."""
+        from blended.agent.tool_disclosure import core_ops, offered_tools
+        from blended.agent.tools import SERVICE_TOOL_NAMES, TOOL_SCHEMAS
+
+        return [
+            tool
+            for tool in offered_tools(TOOL_SCHEMAS, core_ops(), SERVICE_TOOL_NAMES)
+            if tool["function"]["name"] not in self.disabled_tools
+        ]
+
+    def offered_tools_fingerprint(self) -> str:
+        return offered_fingerprint(self.offered_tools())
 
     def _answer_pending_tool_calls(self, assistant_message: dict, text: str) -> None:
         """Give every tool_call the model issued a tool result — an

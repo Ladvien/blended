@@ -1,7 +1,7 @@
 """Derive and pin the core op set from the iteration log (OT-25).
 
     .venv/bin/python scripts/derive_core_tools.py
-    .venv/bin/python scripts/derive_core_tools.py --check   # exit 2 if the pin drifted
+    .venv/bin/python scripts/derive_core_tools.py --check   # exit 2 if core_tools.py drifted
 """
 
 from __future__ import annotations
@@ -16,11 +16,11 @@ REPOSITORY_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPOSITORY_ROOT / "src"))
 
 from blended.agent.tool_disclosure import (
-    CORE_PIN_PATH,
+    CORE_MODULE_PATH,
     MINIMUM_BRIEFS_USING_OP,
+    core_ops,
     derive_core_ops,
-    read_core_pin,
-    write_core_pin,
+    write_core_module,
 )
 
 
@@ -39,16 +39,15 @@ def main(argv) -> int:
                     counts[event["tool_name"]].add(record["brief_name"])
     brief_counts = {name: len(counts[name]) for name in core}
     print(f"[core] threshold >= {MINIMUM_BRIEFS_USING_OP} briefs; {len(core)} op(s): " + ", ".join(f"{n} ({brief_counts[n]})" for n in core))
-    pin_path = REPOSITORY_ROOT / CORE_PIN_PATH
     if arguments.check:
-        pinned = read_core_pin(pin_path)
+        pinned = core_ops()
         if pinned != core:
             print(f"[core] pin drifted: pinned {pinned} vs derived {core}", file=sys.stderr)
             return 2
         print("[core] pin matches the derivation")
         return 0
-    write_core_pin(core, brief_counts, pin_path)
-    print(f"[core] wrote {pin_path}")
+    write_core_module(core, brief_counts, CORE_MODULE_PATH)
+    print(f"[core] wrote {CORE_MODULE_PATH}")
     return 0
 
 

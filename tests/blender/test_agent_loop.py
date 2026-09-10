@@ -732,3 +732,37 @@ def test_a_builder_that_always_fails_the_gate_trips_the_cap(empty_scene, tmp_pat
     assert all("FAILED at gate" in m["content"] for m in tool_messages)
     renders = [text for kind, text in events if kind == "render"]
     assert renders and renders[-1].endswith("Bad_sheet.png")
+
+
+def test_an_undisclosed_op_found_by_search_ops_runs_through_the_real_dispatcher(empty_scene, tmp_path):
+    """OT-25: the model is shown the core set only; `boolean_union` is
+    not in it. Searching for it and then calling it by name binds, runs
+    and gates like a disclosed op — the door never shrank."""
+    from blended.agent import AgentSession
+
+    client = ScriptedClient(
+        [
+            {"role": "assistant", "content": "", "tool_calls": [
+                _op_call("add_box", name="Left", width_m=0.2, depth_m=0.2, height_m=0.2),
+                _op_call("link_into_scene", object_name="Left"),
+                _op_call("add_box", name="Right", width_m=0.2, depth_m=0.2, height_m=0.2, location_m=[0.15, 0.0, 0.0]),
+                _op_call("link_into_scene", object_name="Right"),
+            ]},
+            {"role": "assistant", "content": "", "tool_calls": [_op_call("search_ops", query="boolean union")]},
+            {"role": "assistant", "content": "", "tool_calls": [_op_call("boolean_union", target_name="Left", addend_name="Right")]},
+            {"role": "assistant", "content": "Joined Left and Right."},
+        ]
+    )
+    session = AgentSession(client=client, output_directory=tmp_path)
+    offered = {t["function"]["name"] for t in session.offered_tools()}
+    assert "boolean_union" not in offered and "search_ops" in offered
+
+    answer = session.send("Join the two boxes.")
+
+    assert "Joined" in answer
+    tool_messages = [m for m in session.messages if m.get("role") == "tool"]
+    search, union = tool_messages[-2], tool_messages[-1]
+    assert search["tool_name"] == "search_ops" and "boolean_union: " in search["content"]
+    assert union["tool_name"] == "boolean_union" and union["content"].startswith("OK: boolean_union"), union["content"]
+    assert "gate: PASS" in union["content"]
+    assert sorted(o.name for o in bpy.context.scene.objects) == ["Left"]

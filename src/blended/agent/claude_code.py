@@ -330,6 +330,29 @@ def envelope_schema(tools: list[dict]) -> dict:
                 "required": ["name", "arguments"],
             }
         )
+    # OT-25: the disclosed set is a subset of the facade. An op the model
+    # found through search_ops is called by name; its arguments are
+    # validated at the door and the binder, not here.
+    from blended.agent.tools import OP_FUNCTIONS
+
+    offered_names = {tool["function"]["name"] for tool in tools}
+    undisclosed = sorted(name for name in OP_FUNCTIONS if name not in offered_names)
+    if undisclosed:
+        variants.append(
+            {
+                "type": "object",
+                "description": (
+                    "An op found through search_ops: name it and pass the "
+                    "arguments its schema showed. Bound and gated like any op."
+                ),
+                "additionalProperties": False,
+                "properties": {
+                    "name": {"enum": undisclosed},
+                    "arguments": {"type": "object"},
+                },
+                "required": ["name", "arguments"],
+            }
+        )
     return {
         "type": "object",
         "additionalProperties": False,

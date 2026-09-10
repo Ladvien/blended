@@ -454,6 +454,7 @@ def main(argv) -> int:
         prompt_revision=revision.revision,
         assembled_prompt_fingerprint=assembled_prompt_fingerprint(revision.revision),
         tool_schemas_fingerprint=TOOL_SCHEMAS_FINGERPRINT,
+        offered_tools_fingerprint=session.offered_tools_fingerprint(),
         started_at=started_at,
         writer_model=client.config.model,
         vision_model=client.config.vision_model,

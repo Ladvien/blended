@@ -45,6 +45,9 @@ class ToolEvent:
     # Non-empty when the loop refused the call before dispatch (plan
     # not declared). A refused call has ok=False and no stage.
     refusal: str = ""
+    # The tool set the model was SHOWN for this call (OT-25): service
+    # tools + readers + the core set, fingerprinted like the whole set.
+    offered_tools_fingerprint: str = ""
     schema_version: int = TOOL_EVENT_SCHEMA_VERSION
 
 

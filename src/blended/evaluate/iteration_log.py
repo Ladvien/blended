@@ -88,6 +88,9 @@ class IterationRecord:
     # op tool (OT-3), fingerprinted like the assembled prompt. Defaulted
     # so records from before OT-3 load unchanged.
     tool_schemas_fingerprint: str = ""
+    # The subset actually OFFERED per call (OT-25): service tools, readers,
+    # the derived core. Empty on records from before OT-25.
+    offered_tools_fingerprint: str = ""
     # WHICH MODELS RAN. A prompt is tuned against a model, not in the
     # abstract: v1-v5 were all scored against deepseek-v4-flash, and a
     # log that does not say so would silently compare runs from
