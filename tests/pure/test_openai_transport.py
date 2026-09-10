@@ -594,3 +594,49 @@ def test_the_completion_cap_is_per_config_so_a_metered_lane_can_bound_spend(
     )
     client.chat([{"role": "user", "content": "ping"}])
     assert payloads[0]["max_tokens"] == 64
+
+
+def test_the_assistant_tool_calls_travel_with_their_results():
+    """The history must show the model its OWN calls, not only answers.
+
+    `_to_openai_messages` dropped `tool_calls`, so every tool message
+    answered a `tool_call_id` that appeared nowhere in the request. bmb's
+    llama-swap and Ollama's cloud tolerated it; a strict upstream
+    returned HTTP 400 on the SECOND call of every converge run — the
+    first, carrying no tool result yet, always succeeded (measured
+    2026-09-10: five briefs, five identical failures). The protocol also
+    wants `arguments` as a JSON string, not the dict the loop keeps.
+    """
+    import json as _json
+
+    from blended.agent.loop import _to_openai_messages
+
+    converted = _to_openai_messages(
+        [
+            {"role": "user", "content": "build"},
+            {
+                "role": "assistant",
+                "content": "",
+                "tool_calls": [
+                    {"id": "call_1", "function": {"name": "add_box", "arguments": {"name": "Crate", "width_m": 0.5}}}
+                ],
+            },
+            {"role": "tool", "tool_name": "add_box", "tool_call_id": "call_1", "content": "OK: add_box"},
+        ]
+    )
+    assistant, tool_result = converted[1], converted[2]
+    (call,) = assistant["tool_calls"]
+    assert call["id"] == "call_1" and call["type"] == "function"
+    assert call["function"]["name"] == "add_box"
+    assert _json.loads(call["function"]["arguments"]) == {"name": "Crate", "width_m": 0.5}
+    # Every tool result answers a call that is actually in the request.
+    assert tool_result["tool_call_id"] == call["id"]
+
+    # A string already in protocol shape is passed through untouched.
+    (passthrough,) = _to_openai_messages(
+        [{"role": "assistant", "content": "", "tool_calls": [{"id": "b", "function": {"name": "f", "arguments": '{"a":1}'}}]}]
+    )[0]["tool_calls"]
+    assert passthrough["function"]["arguments"] == '{"a":1}'
+
+    # An assistant turn that made no calls carries no empty key.
+    assert "tool_calls" not in _to_openai_messages([{"role": "assistant", "content": "done"}])[0]

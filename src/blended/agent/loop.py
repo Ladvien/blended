@@ -780,11 +780,20 @@ class ConnectionStatus:
 def _to_openai_messages(messages: list[dict]) -> list[dict]:
     """Convert Ollama-style message dicts to OpenAI chat message dicts.
 
-    The common subset survives: role + content, tool results with their
-    tool_call_id, and the Ollama `images` field becomes OpenAI
-    image_url parts — bmb's qwen3.8 is used as the EYE too, so the
-    OpenAI lane carries images, not just text. Unknown keys are dropped
-    silently.
+    The common subset survives: role + content, the assistant's own
+    tool_calls, tool results with their tool_call_id, and the Ollama
+    `images` field becomes OpenAI image_url parts — bmb's qwen3.8 is
+    used as the EYE too, so the OpenAI lane carries images, not just
+    text. Unknown keys are dropped silently.
+
+    The assistant's `tool_calls` used to be among the dropped keys, and
+    the result was a history in which every tool message answered a call
+    the model was never shown making. bmb's llama-swap and Ollama's
+    cloud tolerated it; a strict upstream does not, and returned HTTP 400
+    on the SECOND call of every converge run — the first call, which
+    carries no tool result yet, always succeeded (measured 2026-09-10,
+    five briefs, five identical failures). `arguments` goes back as the
+    JSON STRING the protocol specifies, not the dict the loop keeps.
     """
     converted: list[dict] = []
     for message in messages:
@@ -806,10 +815,33 @@ def _to_openai_messages(messages: list[dict]) -> list[dict]:
             converted_message["content"] = parts
         else:
             converted_message["content"] = content
+        tool_calls = message.get("tool_calls") or []
+        if role == "assistant" and tool_calls:
+            converted_message["tool_calls"] = [
+                {
+                    "id": call.get("id", ""),
+                    "type": "function",
+                    "function": {
+                        "name": (call.get("function") or {}).get("name", ""),
+                        "arguments": _openai_tool_arguments(call),
+                    },
+                }
+                for call in tool_calls
+            ]
         if role == "tool" and message.get("tool_call_id"):
             converted_message["tool_call_id"] = message["tool_call_id"]
         converted.append(converted_message)
     return converted
+
+
+def _openai_tool_arguments(call: dict) -> str:
+    """The protocol carries a call's arguments as a JSON string; the loop
+    keeps them as a dict, and both wires hand them back in their own
+    shape."""
+    arguments = (call.get("function") or {}).get("arguments", {})
+    if isinstance(arguments, str):
+        return arguments
+    return json.dumps(arguments)
 
 
 def _to_openai_tools(tools: list[dict]) -> list[dict]:
