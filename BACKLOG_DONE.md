@@ -167,4 +167,4 @@ regression reopens the item in `BACKLOG.md` with a pointer back to this entry.
 **Spec:** AGT-18 amended.
 **Shape of the change:** `search_ops` is a pure function over `OP_TOOL_SCHEMAS` (name, module, generated description) dispatched above `import bpy`; each hit prints the tool's description and its parameters schema as compact JSON; hits are ranked name-match first, shorter name first, facade order after — measured need: with facade order alone, "assign material" returned `assign_image_texture_material` first. The manifest-text search path is gone.
 **Layers:** pure 653 passed / 1 skipped / 1 xfailed; Blender 317 passed / 3 skipped.
-**Commit:** recorded in the follow-up commit.
+**Commit:** `0967110`.
