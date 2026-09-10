@@ -57,7 +57,7 @@ def _describe(tmp_path: Path, image_count: int, **keywords) -> None:
         path = tmp_path / f"view_{index}.png"
         path.write_bytes(f"png-{index}".encode())
         paths.append(path)
-    client = OllamaClient(ModelConfig.from_environment(model="writer"))
+    client = OllamaClient(ModelConfig.from_environment(context_length=32_768, eye_context_length=32_768, model="writer"))
     VisionDescriber(client, "eye").describe(paths, **keywords)
 
 

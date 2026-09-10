@@ -53,6 +53,7 @@ LOCAL_ENDPOINT = "http://localhost:11434"
 CLOUD_ENDPOINT = "https://ollama.com"
 CHAT_PATH = "/api/chat"
 TAGS_PATH = "/api/tags"
+SHOW_PATH = "/api/show"  # the daemon's own model card: context_length lives in model_info
 OPENAI_CHAT_PATH = "/v1/chat/completions"
 # llama-swap on bmb speaks the OpenAI protocol; bmb exposes the port
 # directly on the LAN at this address (no SSH tunnel needed).
@@ -501,7 +502,18 @@ class ModelConfig:
     vision_model: str = RECOMMENDED_MODELS["eye"][0]
     endpoint: str = LOCAL_ENDPOINT
     temperature: float = 0.3  # low: this is engineering, not brainstorming
-    context_length: int = 32768
+    # The Ollama lane's window, sent as `num_ctx` and used by the
+    # preflight (OT-22). None until `OllamaClient.discover_context` reads
+    # it from the daemon's /api/show (`<family>.context_length`): a fixed
+    # 32,768 refused the first cloud instance of OT-27 at its third call
+    # (estimated 17,336 + 16,384 reserved > 32,768) on a model whose
+    # window is 1,048,576. Never a constant; a lane that cannot say is
+    # refused, not guessed.
+    context_length: int | None = None
+    # The eye's own window when the eye rides an Ollama lane, discovered
+    # beside the writer's by `check_connection`; `eye_config()` hands it
+    # to the eye client as ITS `context_length`.
+    eye_context_length: int | None = None
     api_key: str = ""
     # Completion ceiling on the OpenAI-protocol lanes. The bmb writer is
     # a REASONING build: its 65536-token context and thinking budget
@@ -622,7 +634,7 @@ class ModelConfig:
             return CLAUDE_CODE_CONTEXT_TOKENS
         if self.uses_openai_protocol:
             return CONTEXT_TOKENS_BY_MODEL.get(self.model)
-        return self.context_length  # what the Ollama request sends as num_ctx
+        return self.context_length  # what the Ollama request sends as num_ctx; None until discovered
 
     @property
     def uses_separate_eye(self) -> bool:
@@ -664,6 +676,10 @@ class ModelConfig:
             model=self.vision_model,
             endpoint=eye_endpoint,
             api_key=_implied_api_key(self.vision_model, ollama_lane_key),
+            # The writer's discovered window is the writer's; the eye's
+            # was read from the daemon for its own model.
+            context_length=self.eye_context_length,
+            eye_context_length=None,
         )
 
     def describe_routing(self) -> str:
@@ -945,6 +961,25 @@ class OllamaClient:
                 if line:
                     yield line
 
+    def discover_context(self, timeout_seconds: int = PREFLIGHT_TIMEOUT_SECONDS) -> int:
+        """Read the served model's window from the daemon and pin it on the
+        config (OT-27). One key, `<family>.context_length` in `model_info`;
+        anything else is a refusal that names what the daemon said."""
+        body = self._request(SHOW_PATH, {"model": self.config.model}, timeout_seconds)
+        info = body.get("model_info") or {}
+        keys = [key for key in info if key.endswith(".context_length")]
+        if len(keys) != 1:
+            raise ContextUndiscovered(
+                f"{self.config.model} on {self.config.endpoint}: {SHOW_PATH} reports "
+                f"{len(keys)} context_length key(s) in model_info ({sorted(info)[:8]}); "
+                f"the lane's window cannot be known"
+            )
+        window = int(info[keys[0]])
+        if window <= 0:
+            raise ContextUndiscovered(f"{self.config.model}: {keys[0]} = {window}")
+        self.config = replace(self.config, context_length=window)
+        return window
+
     def _chat_path(self) -> str:
         return OPENAI_CHAT_PATH if self.config.uses_openai_protocol else CHAT_PATH
 
@@ -961,6 +996,12 @@ class OllamaClient:
             if tools:
                 payload["tools"] = _to_openai_tools(tools)
             return payload
+        if self.config.context_length is None:
+            raise ContextUndiscovered(
+                f"{self.config.model} on {self.config.endpoint}: the Ollama lane's "
+                f"context is read from the daemon ({SHOW_PATH}) by check_connection; "
+                f"call it before chat"
+            )
         payload = {
             "model": self.config.model,
             "messages": messages,
@@ -968,6 +1009,9 @@ class OllamaClient:
             "options": {
                 "temperature": self.config.temperature,
                 "num_ctx": self.config.context_length,
+                # The completion ceiling the preflight reserves, made real on
+                # this wire too; without it the reservation was arithmetic only.
+                "num_predict": self.config.max_completion_tokens,
             },
         }
         if tools:
@@ -1025,6 +1069,9 @@ class OllamaClient:
         for endpoint in attempts:
             probe_client = OllamaClient(self.config.with_endpoint(endpoint))
             try:
+                if not self.config.uses_openai_protocol:
+                    # The window first: the ping itself needs num_ctx.
+                    probe_client.discover_context(PREFLIGHT_TIMEOUT_SECONDS)
                 probe_client._request(
                     probe_client._chat_path(),
                     probe_client._chat_payload(
@@ -1040,7 +1087,23 @@ class OllamaClient:
             except Exception as error:  # noqa: BLE001 — diagnostic path
                 failures.append(f"{endpoint}: {error}")
                 continue
-            self.config = self.config.with_endpoint(endpoint)
+            self.config = probe_client.config  # endpoint, and the discovered window
+            eye_window = ""
+            if self.config.uses_separate_eye:
+                eye_probe = OllamaClient(self.config.eye_config())
+                if not eye_probe.config.uses_openai_protocol and not eye_probe.config.uses_claude_code:
+                    # The eye's window rides the same config so every eye
+                    # client built from it knows its own num_ctx.
+                    try:
+                        eye_window_tokens = eye_probe.discover_context(PREFLIGHT_TIMEOUT_SECONDS)
+                    except Exception as error:  # noqa: BLE001 — diagnostic path
+                        return ConnectionStatus(
+                            False,
+                            endpoint,
+                            f"eye {self.config.vision_model}: {error}",
+                        )
+                    self.config = replace(self.config, eye_context_length=eye_window_tokens)
+                    eye_window = f"; eye context {eye_window_tokens:,}"
             if BMB_ENDPOINT in endpoint:
                 route = f"llama-swap on bmb ({BMB_ENDPOINT})"
             elif BIG_ENDPOINT in endpoint:
@@ -1049,7 +1112,12 @@ class OllamaClient:
                 route = "direct cloud (Bearer key)"
             else:
                 route = "local daemon (proxying cloud models if signed in)"
-            return ConnectionStatus(True, endpoint, f"{self.config.model} via {route}")
+            window = (
+                f", context {self.config.context_length:,}"
+                if not self.config.uses_openai_protocol
+                else ""
+            )
+            return ConnectionStatus(True, endpoint, f"{self.config.model} via {route}{window}{eye_window}")
 
         # The hint follows the OBSERVED failure, never the mere absence
         # of a key. A signed-in daemon needs no key, so keying the hint
@@ -1197,6 +1265,10 @@ def _turn_cost_from_body(body: dict) -> TurnCost:
         output_tokens=int(body.get("eval_count") or 0),
     )
 
+
+
+class ContextUndiscovered(RuntimeError):
+    """An Ollama-lane request before the daemon said how wide the model is."""
 
 
 class EyeUnreachable(RuntimeError):

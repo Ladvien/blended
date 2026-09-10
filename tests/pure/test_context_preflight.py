@@ -31,7 +31,7 @@ from blended.agent.outcome import ToolOutcome
 def test_context_tokens_come_from_each_lanes_own_number():
     assert ModelConfig(model="qwen3.8-27b", endpoint=BMB_ENDPOINT).context_tokens == 65_536
     assert ModelConfig(model="qwen3-32b", endpoint=BMB_ENDPOINT).context_tokens == 32_768
-    assert ModelConfig(model="anything", endpoint=LOCAL_ENDPOINT).context_tokens == 32_768  # num_ctx
+    assert ModelConfig(model="anything", endpoint=LOCAL_ENDPOINT).context_tokens is None  # until the daemon says (OT-27)
     assert ModelConfig(model="claude-code:sonnet", endpoint=CLAUDE_CODE_ENDPOINT).context_tokens == CLAUDE_CODE_CONTEXT_TOKENS
     assert ModelConfig(model="some/cloud-model", endpoint=OPENROUTER_ENDPOINT).context_tokens is None
 
@@ -111,3 +111,63 @@ def test_an_attached_image_counts_as_an_image_not_as_its_base64():
     text_only = [{"role": "tool", "content": "GATE PASS"}]
     with_image = [{"role": "tool", "content": "GATE PASS", "images": ["A" * 900_000]}]
     assert estimate_request_tokens(with_image, None) == estimate_request_tokens(text_only, None) + TOKENS_PER_IMAGE_ESTIMATE
+
+
+# --- the Ollama lane's window comes from the daemon (OT-27) ---
+
+
+def _daemon(monkeypatch, model_info):
+    """A daemon that answers /api/show with `model_info` and pings back."""
+    from blended.agent.loop import SHOW_PATH, OllamaClient
+
+    calls = []
+
+    def fake_request(self, path, payload, timeout_seconds):
+        calls.append((path, payload))
+        if path == SHOW_PATH:
+            return {"model_info": model_info, "details": {"family": "deepseek4"}}
+        return {"message": {"role": "assistant", "content": "pong"}}
+
+    monkeypatch.setattr(OllamaClient, "_request", fake_request)
+    return calls
+
+
+def test_the_ollama_lane_learns_its_window_from_the_daemon(monkeypatch):
+    from blended.agent.loop import SHOW_PATH, OllamaClient
+
+    calls = _daemon(monkeypatch, {"deepseek4.context_length": 1_048_576, "deepseek4.embedding_length": 4096})
+    client = OllamaClient(ModelConfig(model="deepseek-v4-pro:cloud", endpoint=LOCAL_ENDPOINT, vision_model=""))
+    assert client.config.context_tokens is None
+
+    status = client.check_connection()
+
+    assert status.ok and "context 1,048,576" in status.detail
+    assert calls[0] == (SHOW_PATH, {"model": "deepseek-v4-pro:cloud"})  # the window before the ping
+    assert client.config.context_length == 1_048_576 == client.config.context_tokens
+    options = client._chat_payload([{"role": "user", "content": "x"}])["options"]
+    assert options["num_ctx"] == 1_048_576 and options["num_predict"] == client.config.max_completion_tokens
+
+
+def test_a_daemon_that_cannot_say_its_window_is_refused(monkeypatch):
+    from blended.agent.loop import OllamaClient
+
+    _daemon(monkeypatch, {"deepseek4.embedding_length": 4096})
+    client = OllamaClient(ModelConfig(model="mystery:cloud", endpoint=LOCAL_ENDPOINT, vision_model="", api_key=""))
+
+    status = client.check_connection()
+
+    assert not status.ok and "0 context_length key(s)" in status.detail
+    assert client.config.context_length is None
+
+
+def test_an_ollama_chat_before_discovery_is_refused_not_guessed():
+    from blended.agent.loop import ContextUndiscovered, OllamaClient
+
+    client = OllamaClient(ModelConfig(model="anything", endpoint=LOCAL_ENDPOINT, vision_model=""))
+    with pytest.raises(ContextUndiscovered, match="check_connection"):
+        client._chat_payload([{"role": "user", "content": "x"}])
+
+
+def test_the_eye_does_not_inherit_the_writers_window():
+    config = ModelConfig(model="deepseek-v4-pro:cloud", vision_model="kimi-k2.7-code:cloud", endpoint=LOCAL_ENDPOINT, context_length=1_048_576)
+    assert config.eye_config().context_length is None

@@ -76,7 +76,7 @@ def _client(monkeypatch, frames, endpoint):
         lambda self, path, payload, timeout: iter(frames),
     )
     return live_loop.OllamaClient(
-        live_loop.ModelConfig(model="m", vision_model="", endpoint=endpoint, api_key="k")
+        live_loop.ModelConfig(model="m", vision_model="", endpoint=endpoint, api_key="k", context_length=32_768)
     )
 
 

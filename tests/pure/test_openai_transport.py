@@ -132,7 +132,9 @@ def test_a_llama_swap_turn_gets_the_long_ceiling_and_the_cloud_keeps_the_short_o
 
     monkeypatch.setattr(live_loop.OllamaClient, "_request", capture_ollama)
     cloud = live_loop.OllamaClient(
-        live_loop.ModelConfig.from_environment(model="deepseek-v4-pro:cloud")
+        # The Ollama lane sends num_ctx, which the daemon tells it (OT-27);
+        # this test is about the wall clock, so the window is given.
+        live_loop.ModelConfig.from_environment(model="deepseek-v4-pro:cloud", context_length=1_048_576)
     )
     cloud.chat([{"role": "user", "content": "ping"}])
 
@@ -228,7 +230,7 @@ def test_ollama_endpoint_keeps_the_ollama_wire_shape(monkeypatch):
 
     monkeypatch.setattr(OllamaClient, "_request", capture)
     client = OllamaClient(
-        ModelConfig.from_environment(model="deepseek-v4-pro:cloud")
+        ModelConfig.from_environment(model="deepseek-v4-pro:cloud", context_length=1_048_576)
     )
     client.chat([{"role": "user", "content": "hi"}])
 

@@ -31,6 +31,8 @@ from blended.agent.loop import (
 
 PHOTO_BYTES = b"png-bytes-of-a-three-legged-stool"
 SYSTEM_MESSAGE = {"role": "system", "content": "system prompt"}
+# The daemon's window, given here as check_connection would have read it (OT-27).
+WINDOW = 32_768
 EYE_MODEL = "eye-model"
 EYE_DESCRIPTION = "A stool with three splayed legs."
 
@@ -58,7 +60,7 @@ def photo(tmp_path) -> Path:
 
 def _session(tmp_path: Path, vision_model: str) -> AgentSession:
     client = OllamaClient(
-        ModelConfig.from_environment(model="writer", vision_model=vision_model)
+        ModelConfig.from_environment(context_length=WINDOW, eye_context_length=WINDOW, model="writer", vision_model=vision_model)
     )
     return AgentSession(
         client=client,
@@ -228,7 +230,7 @@ def test_a_blind_eye_on_the_render_path_still_reports_a_note(tmp_path, monkeypat
 
     monkeypatch.setattr(OllamaClient, "_request", capture)
     client = OllamaClient(
-        ModelConfig.from_environment(model="writer", vision_model=EYE_MODEL)
+        ModelConfig.from_environment(context_length=WINDOW, eye_context_length=WINDOW, model="writer", vision_model=EYE_MODEL)
     )
     render = tmp_path / "render.png"
     render.write_bytes(PHOTO_BYTES)
