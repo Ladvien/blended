@@ -234,7 +234,7 @@ def main(argv) -> int:
     payload = {
         "minimum_silhouette_iou": minimum_silhouette_iou,
         "maximum_shading_rmse": maximum_shading_rmse,
-        "recorded_at": _datetime.datetime.now(_datetime.timezone.utc).isoformat(),
+        "recorded_at": _datetime.datetime.now(_datetime.UTC).isoformat(),
         "revision": revision.revision,
         "blender_series": "5.2",
         "capture_resolution_px": CaptureSettings().resolution_px,
@@ -257,4 +257,8 @@ def main(argv) -> int:
 
 
 extra_arguments = sys.argv[sys.argv.index("--") + 1 :] if "--" in sys.argv else []
-raise SystemExit(main(extra_arguments))
+# Blender exits 0 on an uncaught Python exception, so a run that
+# died would read as a success (OT-32).
+from blended.run.script_exit import run_script_main
+
+raise SystemExit(run_script_main(main, extra_arguments))

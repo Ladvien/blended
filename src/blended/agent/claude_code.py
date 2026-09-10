@@ -491,6 +491,10 @@ class TurnCost:
     # how the provider smoke starved at 32. Recorded so the next such
     # failure is read off a number instead of inferred from a corpse.
     reasoning_tokens: int = 0
+    # Calls the transport had to send again because the gateway said
+    # "not now" (429/5xx). A lane that needs many is unhealthy, and the
+    # record should show that rather than only a longer wall clock.
+    retried_calls: int = 0
     cost_usd: float = 0.0
 
     @property
@@ -516,6 +520,7 @@ class TurnCost:
             cache_write_tokens=self.cache_write_tokens + other.cache_write_tokens,
             output_tokens=self.output_tokens + other.output_tokens,
             reasoning_tokens=self.reasoning_tokens + other.reasoning_tokens,
+            retried_calls=self.retried_calls + other.retried_calls,
             cost_usd=self.cost_usd + other.cost_usd,
         )
 
@@ -528,6 +533,7 @@ class TurnCost:
             + "), "
             f"{self.output_tokens:,} out"
             + (f" ({self.reasoning_tokens:,} reasoning)" if self.reasoning_tokens else "")
+            + (f", {self.retried_calls} retried" if self.retried_calls else "")
             + f", ${self.cost_usd:.4f}"
         )
 

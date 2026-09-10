@@ -79,7 +79,7 @@ def parse_arguments(argv=None):
 
 
 def _now() -> str:
-    return _datetime.datetime.now(_datetime.timezone.utc).isoformat()
+    return _datetime.datetime.now(_datetime.UTC).isoformat()
 
 
 def _client(model: str, vision_model: str):

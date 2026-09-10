@@ -138,6 +138,22 @@ either shows the number is fine or names the turn that hit it. **Do not raise it
 **Done means:** the per-brief table is in the spec's measured-state section with cost and
 gate outcome per lane; a brief that fails on this lane is named with its failure.
 
+### OT-32 The lane survives a gateway, and a crash is not a success
+
+**What:** two defects found by running the five briefs on the metered lane, neither in the
+tool surface. (1) Blender exits 0 on an uncaught Python exception, so a converge run that
+died mid-way reported success to every caller that gates on the exit status. (2) A
+gateway's transient "not now" killed whole runs.
+**Why:** measured 2026-09-10. Iteration 109's visual gate raised `EmptyFrame` after the
+build and export and `make converge` returned 0; three metered briefs died on HTTP 429 and
+returned 0 as well, so one chain recorded four successes it never had — while the repo's
+closing rule gates commits on exactly such exit codes. Separately, five briefs in a row
+failed inside ~2 minutes on upstream 429s while a probe minutes later passed 12 of 12.
+**Done means:** `tests/pure/test_script_exit.py` (a crash exits 70, a deliberate exit
+passes through, an interrupt is 130, and every Blender-hosted entry point is guarded) and
+the three retry tests in `tests/pure/test_metered_lane.py`; a converge run given a bad
+brief exits 70 instead of 0.
+
 ### OT-31 The bake reproduces a chunk that raised after it changed the scene
 
 **What:** `bench_bridge` includes a recorded call only when its `stage_reached` reached

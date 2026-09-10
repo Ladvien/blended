@@ -459,7 +459,7 @@ def main(argv) -> int:
     calibration = {
         "examiner_identity": examiner_identity(vision_model),
         "vision_model": vision_model,
-        "recorded_at": _datetime.datetime.now(_datetime.timezone.utc).isoformat(),
+        "recorded_at": _datetime.datetime.now(_datetime.UTC).isoformat(),
         "view_names": list(EXAMINED_VIEW_NAMES),
         "fixtures": fixture_records,
         "sensitivity": sensitivity,
@@ -507,4 +507,8 @@ def _converging_iteration(brief_name: str) -> int:
 
 
 extra_arguments = sys.argv[sys.argv.index("--") + 1 :] if "--" in sys.argv else []
-raise SystemExit(main(extra_arguments))
+# Blender exits 0 on an uncaught Python exception, so a run that
+# died would read as a success (OT-32).
+from blended.run.script_exit import run_script_main
+
+raise SystemExit(run_script_main(main, extra_arguments))

@@ -200,6 +200,22 @@ OPENROUTER_PINNED_PROVIDER = "gmicloud"
 # Without it a metered run's record says 0 dollars, which is a lie the
 # spend cap cannot be built on.
 OPENROUTER_USAGE_EXTENSION = {"include": True}
+# A gateway saying "not now": rate limits and server-side faults, which
+# the SAME request can pass moments later. Everything else — 400 (a
+# malformed request), 401/403 (a credential), 404 (a wrong id) — is a
+# fact about the call and repeating it only wastes time.
+RETRYABLE_HTTP_STATUSES = frozenset({408, 429, 500, 502, 503, 504})
+# Waits between attempts, in seconds. NOT a fallback: the same request
+# goes to the same endpoint and the same provider, a bounded number of
+# times, and then fails loudly.
+# Derived from measured windows on 2026-09-10: five converge briefs in a
+# row failed within ~2 minutes on upstream 429s, a probe of 12
+# consecutive calls minutes later passed 12/12, and a later chain lost
+# 3 of 5 the same way. The windows are intermittent and last on the
+# order of a minute or two — bounded below by observation, not measured
+# to the second — so the budget sums to 155 s, enough to ride out a
+# short one without turning a stalled lane into an unbounded wait.
+RETRY_BACKOFF_SECONDS = (5, 15, 45, 90)
 # NFR-27's cap, per RUN (one client: one brief with its refinements, or
 # one bench instance — each is its own process with its own client).
 # Derived from measurement the way MAXIMUM_TURN_TOKENS is, not chosen:
@@ -1050,11 +1066,37 @@ class OllamaClient:
         return request
 
     def _request(self, path: str, payload: dict | None, timeout_seconds: int):
-        request = self._build_request(path, payload)
-        with urllib.request.urlopen(
-            request, timeout=timeout_seconds, context=_tls_context()
-        ) as response:
-            return json.loads(response.read().decode("utf-8"))
+        """One HTTP call, retried while the gateway says "not now".
+
+        A retry is the same request to the same endpoint and the same
+        provider, `len(RETRY_BACKOFF_SECONDS)` times at most, and then
+        the error is raised as it stands — there is no second path and no
+        degraded answer. Retries are counted on `spent` so a lane that
+        needed twenty of them is visible in the record rather than
+        merely slow.
+        """
+        last_error: urllib.error.HTTPError | None = None
+        for attempt, wait_seconds in enumerate((*RETRY_BACKOFF_SECONDS, None)):
+            request = self._build_request(path, payload)
+            try:
+                with urllib.request.urlopen(
+                    request, timeout=timeout_seconds, context=_tls_context()
+                ) as response:
+                    return json.loads(response.read().decode("utf-8"))
+            except urllib.error.HTTPError as http_error:
+                if http_error.code not in RETRYABLE_HTTP_STATUSES or wait_seconds is None:
+                    raise
+                last_error = http_error
+                detail = http_error.read().decode("utf-8", "replace")[:160]
+                print(
+                    f"[retry] HTTP {http_error.code} from {self.config.endpoint}"
+                    f"{path}; attempt {attempt + 1} of "
+                    f"{len(RETRY_BACKOFF_SECONDS)}, waiting {wait_seconds}s. {detail}",
+                    flush=True,
+                )
+                self.spent = self.spent.plus(TurnCost(retried_calls=1))
+                time.sleep(wait_seconds)
+        raise last_error  # unreachable: the last pass re-raises
 
     def _stream_lines(self, path: str, payload: dict, timeout_seconds: int):
         """Yield the response body line by line as it arrives.

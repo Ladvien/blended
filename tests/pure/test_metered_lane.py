@@ -8,6 +8,9 @@ tabled, never assumed — and the second is what NFR-27's cap is built on.
 
 from __future__ import annotations
 
+import contextlib
+import io
+
 import pytest
 
 from blended.agent.loop import (
@@ -28,6 +31,19 @@ from blended.agent.loop import (
 # writer and its own eye — tools, structured outputs, text and image.
 METERED_MODEL = "deepseek/deepseek-v4.1-flash"
 METERED_WINDOW = 1_048_576
+
+
+def _urlopen_from(handler):
+    """Turn a `(self, path, payload, timeout)` handler into a urlopen stand-in
+    so a test can drive `_request`'s retry loop at the HTTP boundary."""
+    @contextlib.contextmanager
+    def urlopen(request, timeout=None, context=None):
+        import json as _json
+
+        body = handler(None, request, None, timeout)
+        yield io.BytesIO(_json.dumps(body).encode())
+
+    return urlopen
 
 
 def _metered_config(**overrides) -> ModelConfig:
@@ -233,3 +249,91 @@ def test_the_cap_is_derived_from_the_heaviest_measured_run():
     assert unreachable == pytest.approx(0.2178, abs=1e-4)
     assert MAXIMUM_RUN_COST_USD == 1.00
     assert MAXIMUM_RUN_COST_USD > 2 * reachable * 0.99  # ~2.3x the heaviest run
+
+
+# --- a gateway saying "not now" is retried, bounded, then loud (OT-32) ---
+
+
+def test_a_rate_limited_call_is_retried_then_succeeds(monkeypatch):
+    """Measured 2026-09-10: five converge briefs in a row died on upstream
+    429s within ~2 minutes, a probe minutes later passed 12 of 12, and a
+    later chain lost 3 of 5 the same way. The windows are short and
+    intermittent, so the same request sent again rides them out."""
+    import urllib.error
+
+    from blended.agent.loop import RETRY_BACKOFF_SECONDS, OllamaClient
+
+    waits = []
+    monkeypatch.setattr("blended.agent.loop.time.sleep", lambda s: waits.append(s))
+    attempts = {"n": 0}
+
+    def flaky(self, path, payload, timeout_seconds):
+        attempts["n"] += 1
+        if attempts["n"] <= 2:
+            raise urllib.error.HTTPError(path, 429, "Too Many Requests", {}, io.BytesIO(b"rate limited"))
+        return {"choices": [{"message": {"role": "assistant", "content": "pong"}}], "usage": {"prompt_tokens": 5, "completion_tokens": 1}}
+
+    monkeypatch.setattr(OllamaClient, "_build_request", lambda self, path, payload: path)
+    monkeypatch.setattr("blended.agent.loop.urllib.request.urlopen", _urlopen_from(flaky))
+    client = OllamaClient(_metered_config(context_length=METERED_WINDOW))
+
+    body = client._request("/v1/chat/completions", {"model": "m"}, 60)
+
+    assert body["choices"][0]["message"]["content"] == "pong"
+    assert waits == list(RETRY_BACKOFF_SECONDS[:2])  # the measured backoff, in order
+    assert client.spent.retried_calls == 2
+    assert "2 retried" in client.spent.summary()
+
+
+def test_a_permanent_error_is_not_retried(monkeypatch):
+    """400 means the request is wrong and 404 means the id is; sending
+    either again only wastes the window. The HTTP 400 that cost three
+    chain re-runs today was our own malformed history, not a rate limit."""
+    import urllib.error
+
+    from blended.agent.loop import OllamaClient
+
+    waits = []
+    monkeypatch.setattr("blended.agent.loop.time.sleep", lambda s: waits.append(s))
+    calls = {"n": 0}
+
+    def refuses(self, path, payload, timeout_seconds):
+        calls["n"] += 1
+        raise urllib.error.HTTPError(path, 400, "Bad Request", {}, io.BytesIO(b"malformed"))
+
+    monkeypatch.setattr(OllamaClient, "_build_request", lambda self, path, payload: path)
+    monkeypatch.setattr("blended.agent.loop.urllib.request.urlopen", _urlopen_from(refuses))
+    client = OllamaClient(_metered_config(context_length=METERED_WINDOW))
+
+    with pytest.raises(urllib.error.HTTPError) as raised:
+        client._request("/v1/chat/completions", {"model": "m"}, 60)
+
+    assert raised.value.code == 400
+    assert calls["n"] == 1 and waits == [] and client.spent.retried_calls == 0
+
+
+def test_a_window_that_never_lifts_fails_loudly(monkeypatch):
+    import urllib.error
+
+    from blended.agent.loop import RETRY_BACKOFF_SECONDS, OllamaClient
+
+    waits = []
+    monkeypatch.setattr("blended.agent.loop.time.sleep", lambda s: waits.append(s))
+    calls = {"n": 0}
+
+    def always_limited(self, path, payload, timeout_seconds):
+        calls["n"] += 1
+        raise urllib.error.HTTPError(path, 503, "Service Unavailable", {}, io.BytesIO(b"down"))
+
+    monkeypatch.setattr(OllamaClient, "_build_request", lambda self, path, payload: path)
+    monkeypatch.setattr("blended.agent.loop.urllib.request.urlopen", _urlopen_from(always_limited))
+    client = OllamaClient(_metered_config(context_length=METERED_WINDOW))
+
+    with pytest.raises(urllib.error.HTTPError) as raised:
+        client._request("/v1/chat/completions", {"model": "m"}, 60)
+
+    assert raised.value.code == 503
+    # Bounded: one attempt per backoff step, plus the first.
+    assert calls["n"] == len(RETRY_BACKOFF_SECONDS) + 1
+    assert waits == list(RETRY_BACKOFF_SECONDS)
+    assert sum(RETRY_BACKOFF_SECONDS) == 155  # the measured budget

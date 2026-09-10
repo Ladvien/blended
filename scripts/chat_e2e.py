@@ -478,4 +478,8 @@ def main(argv) -> int:
 
 if __name__ == "__main__":
     extra = sys.argv[sys.argv.index("--") + 1 :] if "--" in sys.argv else []
-    raise SystemExit(main(extra))
+    # Blender exits 0 on an uncaught Python exception, so a run that
+    # died would read as a success (OT-32).
+    from blended.run.script_exit import run_script_main
+
+    raise SystemExit(run_script_main(main, extra))
