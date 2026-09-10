@@ -22,6 +22,7 @@ import pytest
 
 import blended.ops as ops_facade
 from blended.agent import tool_schemas as generator
+from blended.agent.plan import PLAN_STEP_ARGUMENT, PLAN_STEP_SCHEMA
 from blended.agent.tools import (
     OP_TOOL_SCHEMAS,
     SERVICE_TOOL_SCHEMAS,
@@ -32,6 +33,7 @@ from blended.ops._contract import (
     UNIT_SUFFIXES,
     UNITLESS_NUMERIC_NAMES,
     ContractViolation,
+    changes_scene,
     facade_ops,
     is_gated,
     returns_object_names,
@@ -116,7 +118,12 @@ def test_a_contract_violation_refuses_the_whole_set(monkeypatch):
 def test_the_parameter_set_equals_the_signature(op_name, function):
     parameters = _op_tool(op_name)["function"]["parameters"]
     signature = inspect.signature(function)
-    assert list(parameters["properties"]) == list(signature.parameters)
+    # plan_step is the harness's (OT-6): present on every scene-changing
+    # op tool, absent from readers, never part of the signature.
+    own_properties = [name for name in parameters["properties"] if name != PLAN_STEP_ARGUMENT]
+    assert own_properties == list(signature.parameters)
+    assert (PLAN_STEP_ARGUMENT in parameters["properties"]) == changes_scene(function)
+    assert PLAN_STEP_ARGUMENT not in parameters["required"]
     assert parameters["required"] == [
         name
         for name, parameter in signature.parameters.items()
@@ -132,6 +139,8 @@ def test_the_parameter_set_equals_the_signature(op_name, function):
 def test_every_numeric_parameter_carries_a_unit_in_its_name(op_name, function):
     properties = _op_tool(op_name)["function"]["parameters"]["properties"]
     for name, property_schema in properties.items():
+        if name == PLAN_STEP_ARGUMENT:  # the harness's index, not a quantity
+            continue
         if property_schema.get("type") not in NUMERIC_JSON_TYPES:
             continue
         assert name.endswith(UNIT_SUFFIXES) or name in UNITLESS_NUMERIC_NAMES, (
@@ -243,3 +252,21 @@ def test_the_three_unlinked_constructors_are_the_only_ungated_object_returners()
     assert not returns_object_names(ops_facade.assign_material)  # a material name, not an object
     assert not returns_object_names(ops_facade.orientation_reading)  # prose
     assert is_gated(ops_facade.link_into_scene) and is_gated(ops_facade.boolean_union)
+
+
+def test_the_readers_are_the_only_plan_free_op_tools():
+    """Measured set (OT-6): reports, readings and pure computations."""
+    readers = sorted(name for name, function in facade_ops() if not changes_scene(function))
+    assert readers == [
+        "animation_report",
+        "canonical_depth_axis_rotation_euler_rad",
+        "deforming_bone_names",
+        "depth_axis_extent_rank",
+        "depth_axis_holds_middle_extent",
+        "material_report",
+        "middle_extent_m",
+        "orientation_reading",
+        "rig_report",
+        "weight_report",
+    ]
+    assert _op_tool("add_box")["function"]["parameters"]["properties"][PLAN_STEP_ARGUMENT] == PLAN_STEP_SCHEMA

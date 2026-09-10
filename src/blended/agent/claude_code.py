@@ -455,7 +455,7 @@ class TurnCost:
         """Everything the prompt side cost, cached or not."""
         return self.input_tokens + self.cache_read_tokens + self.cache_write_tokens
 
-    def plus(self, other: "TurnCost") -> "TurnCost":
+    def plus(self, other: TurnCost) -> TurnCost:
         """Accumulate across the turns of one run."""
         return TurnCost(
             api_calls=self.api_calls + other.api_calls,

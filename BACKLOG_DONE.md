@@ -101,3 +101,19 @@ regression reopens the item in `BACKLOG.md` with a pointer back to this entry.
 **Mistake recorded:** `a-typing-object-compared-by-identity-breaks-under-dev-reload`.
 **Layers:** pure 634 passed / 1 skipped / 1 xfailed; Blender 314 passed / 3 skipped.
 **Commit:** `ab97d36`.
+
+---
+
+## OT-6 Plan integration
+
+**What:** Generated op tools MUST be members of `PLAN_REQUIRED_TOOLS` (AGT-5) and MUST accept `plan_step`, so a scene-changing op without a declared plan is refused with the same text as `run_python`.
+**Amends:** AGT-5, AGT-7.
+**Done means:** `tests/pure/test_turn_plan.py` covers refusal and progress reporting for an op tool.
+
+**Closed:** 2026-09-10.
+**Gating tests:** `tests/pure/test_turn_plan.py::test_plan_required_tools_are_run_python_and_every_scene_changing_op`, `::test_an_op_tool_without_a_plan_is_refused_with_the_same_text` (refusal text identical to `run_python`'s; dispatch never reached), `::test_a_reader_op_needs_no_plan`, `::test_an_op_tool_call_with_plan_step_reports_progress` (step event), `::test_dispatch_strips_plan_step_before_binding`; `tests/pure/test_tool_schemas.py::test_the_readers_are_the_only_plan_free_op_tools`, `::test_the_parameter_set_equals_the_signature` (plan_step on every action op tool, never required, never on a reader); `tests/pure/test_ops_signature_contract.py::test_a_reader_that_returns_an_object_name_is_a_violation`; `tests/blender/test_agent_loop.py::test_an_action_op_accepts_plan_step_and_the_op_never_sees_it`.
+**Spec:** AGT-5 amended (`PLAN_REQUIRED_TOOLS` derived from the facade: `run_python` + every op not `@op(reads_only=True)`); AGT-7 amended (`PLAN_STEP_SCHEMA` defined once, carried by every plan-requiring tool, stripped before binding); §5.4.
+**Shape of the change:** `@op(reads_only=True)` marks the ten inspection ops (four `*_report`, `deforming_bone_names`, `orientation_reading`, four pure orientation computations); the contract refuses a reader that returns an `ObjectName`. `PLAN_REQUIRED_TOOLS` is computed, not listed: 33 entries. The generator adds `plan_step` to every scene-changing op tool's schema; `dispatch_tool` removes it before `call_op` binds, so the op signature stays the only source of the op's arguments. The four identical hand-written `plan_step` schemas in the service tools now reference `PLAN_STEP_SCHEMA`.
+**Measured:** tool-set fingerprint `t:8e3f56aff46c` (plan_step on 32 op tools). The assembled prompt fingerprint did not move.
+**Layers:** pure 641 passed / 1 skipped / 1 xfailed; Blender 315 passed / 3 skipped.
+**Commit:** recorded in the follow-up commit.

@@ -40,9 +40,9 @@ import bpy
 
 __all__ = [
     "BLENDED_WORKSPACE_NAME",
-    "ensure_workspace",
     "activate_chat_tab",
     "arrange_workspace",
+    "ensure_workspace",
     "workspace_exists",
 ]
 

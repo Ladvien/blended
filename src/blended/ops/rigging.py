@@ -16,6 +16,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from blended.ops._contract import op
 from blended.ops._objects import ObjectName
 
 MINIMUM_BONE_LENGTH_M = 1e-6
@@ -229,6 +230,7 @@ def bind_mesh_to_armature(
     return mesh_name
 
 
+@op(reads_only=True)
 def rig_report(armature_name: str) -> RigReport:
     """Return a frozen snapshot of the named armature and its bound meshes.
 

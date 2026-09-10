@@ -24,6 +24,8 @@ from pathlib import Path
 from blended.agent.outcome import ToolOutcome
 from blended.agent.plan import (
     MAXIMUM_PLAN_STEPS,
+    PLAN_STEP_ARGUMENT,
+    PLAN_STEP_SCHEMA,
     parse_plan_arguments,
 )
 
@@ -94,12 +96,7 @@ SERVICE_TOOL_SCHEMAS = [
                 "type": "object",
                 "properties": {
                     "object_name": {"type": "string"},
-                    "plan_step": {
-                        "type": "integer",
-                        "description": (
-                            "The 1-based plan step this call belongs to."
-                        ),
-                    },
+                    "plan_step": PLAN_STEP_SCHEMA,
                 },
                 "required": ["object_name"],
             },
@@ -135,12 +132,7 @@ SERVICE_TOOL_SCHEMAS = [
                         "type": "string",
                         "enum": ["rig", "weights", "animation", "material"],
                     },
-                    "plan_step": {
-                        "type": "integer",
-                        "description": (
-                            "The 1-based plan step this call belongs to."
-                        ),
-                    },
+                    "plan_step": PLAN_STEP_SCHEMA,
                 },
                 "required": ["object_name", "domain"],
             },
@@ -178,12 +170,7 @@ SERVICE_TOOL_SCHEMAS = [
                             "your actual question."
                         ),
                     },
-                    "plan_step": {
-                        "type": "integer",
-                        "description": (
-                            "The 1-based plan step this call belongs to."
-                        ),
-                    },
+                    "plan_step": PLAN_STEP_SCHEMA,
                 },
                 "required": ["object_name"],
             },
@@ -241,12 +228,7 @@ SERVICE_TOOL_SCHEMAS = [
                 "properties": {
                     "object_name": {"type": "string"},
                     "path": {"type": "string", "description": "Output .glb path."},
-                    "plan_step": {
-                        "type": "integer",
-                        "description": (
-                            "The 1-based plan step this call belongs to."
-                        ),
-                    },
+                    "plan_step": PLAN_STEP_SCHEMA,
                 },
                 "required": ["object_name", "path"],
             },
@@ -375,7 +357,11 @@ def dispatch_tool(
     if op_function is not None:
         from blended.agent.op_call import call_op
 
-        result = call_op(tool_name, op_function, arguments)
+        # plan_step is the harness's argument (AGT-7), not the op's.
+        op_arguments = {
+            key: value for key, value in arguments.items() if key != PLAN_STEP_ARGUMENT
+        }
+        result = call_op(tool_name, op_function, op_arguments)
         return ToolOutcome(
             text=result.summary(MAXIMUM_TRACEBACK_CHARACTERS),
             intermediates_created=result.intermediates_created,

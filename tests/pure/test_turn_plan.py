@@ -433,3 +433,76 @@ def test_dispatch_tool_declare_plan_echoes_steps():
     assert outcome.images == ()
     assert "1. build" in result
     assert "2. export" in result
+
+# --- op tools (OT-6): plan-required like run_python, plan_step honoured ---
+
+
+def test_plan_required_tools_are_run_python_and_every_scene_changing_op():
+    from blended.agent.plan import PLAN_REQUIRED_TOOLS
+    from blended.ops._contract import changes_scene, facade_ops
+
+    assert PLAN_REQUIRED_TOOLS[0] == "run_python"
+    assert set(PLAN_REQUIRED_TOOLS[1:]) == {name for name, f in facade_ops() if changes_scene(f)}
+    assert "add_box" in PLAN_REQUIRED_TOOLS and "rig_report" not in PLAN_REQUIRED_TOOLS
+
+
+def test_an_op_tool_without_a_plan_is_refused_with_the_same_text(tmp_path):
+    add_box = _tool_call("o1", "add_box", {"name": "Crate", "width_m": 0.5, "depth_m": 0.5, "height_m": 0.5})
+    replies = [_assistant(add_box), PLAN_REPLY, _assistant(add_box), ANSWER_REPLY]
+    session = live_loop.AgentSession(client=ScriptedClient(replies), require_plan=True)
+    dispatched = []
+
+    def dispatch(tool_name, arguments, output_directory):
+        dispatched.append(tool_name)
+        return ToolOutcome("ok")
+
+    session.dispatch = dispatch
+    events = []
+    session.send("build it", on_event=lambda k, t: events.append((k, t)))
+
+    assert dispatched == ["declare_plan", "add_box"]  # the first add_box never reached dispatch
+    assert [t for k, t in events if k == "result" and t == MISSING_PLAN_REFUSAL] == [MISSING_PLAN_REFUSAL]
+
+
+def test_a_reader_op_needs_no_plan(tmp_path):
+    replies = [_assistant(_tool_call("r1", "rig_report", {"armature_name": "Rig"})), ANSWER_REPLY]
+    session = live_loop.AgentSession(client=ScriptedClient(replies), require_plan=True)
+    dispatched = []
+
+    def dispatch(tool_name, arguments, output_directory):
+        dispatched.append(tool_name)
+        return ToolOutcome("ok")
+
+    session.dispatch = dispatch
+    session.send("check the rig")
+
+    assert dispatched == ["rig_report"]
+
+
+def test_an_op_tool_call_with_plan_step_reports_progress(tmp_path):
+    step_reply = _assistant(
+        _tool_call("o2", "link_into_scene", {"object_name": "Crate", "plan_step": 3}),
+    )
+    session = live_loop.AgentSession(client=ScriptedClient([PLAN_REPLY, step_reply, ANSWER_REPLY]), require_plan=True)
+    seen_arguments = []
+
+    def dispatch(tool_name, arguments, output_directory):
+        seen_arguments.append(arguments)
+        return ToolOutcome("ok")
+
+    session.dispatch = dispatch
+    events = []
+    session.send("build it", on_event=lambda k, t: events.append((k, t)))
+
+    assert [t for k, t in events if k == "step"] == ["3"]
+    # The loop hands the call through untouched; dispatch_tool strips plan_step before binding.
+    assert seen_arguments[-1] == {"object_name": "Crate", "plan_step": 3}
+
+
+def test_dispatch_strips_plan_step_before_binding():
+    """plan_step is the harness's argument: the op never sees it, and a
+    reader called with it is not refused as 'unknown parameter'."""
+    from blended.agent.tools import dispatch_tool
+
+    text = dispatch_tool("middle_extent_m", {"extents_m": [0.3, 0.2, 0.25], "plan_step": 2}, None).text
+    assert text.startswith("OK: middle_extent_m"), text

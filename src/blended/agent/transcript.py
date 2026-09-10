@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 TRANSCRIPT_SCHEMA_VERSION = 1
@@ -94,7 +94,7 @@ class ChatTranscript:
         record = {
             "schema_version": TRANSCRIPT_SCHEMA_VERSION,
             "index": self._event_index,
-            "at": datetime.now(timezone.utc).isoformat(),
+            "at": datetime.now(UTC).isoformat(),
             "kind": kind,
             "text": text,
             "images": list(image_paths),

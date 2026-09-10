@@ -33,8 +33,10 @@ import pathlib
 import types
 import typing
 
+from blended.agent.plan import PLAN_STEP_ARGUMENT, PLAN_STEP_SCHEMA
 from blended.ops._contract import (
     assert_satisfies_contract,
+    changes_scene,
     facade_ops,
     is_gated,
     returns_object_names,
@@ -173,6 +175,11 @@ def op_tool_schema(op_name: str, function) -> dict:
     return_text = signature.return_annotation
     if not isinstance(return_text, str):
         return_text = getattr(return_text, "__name__", str(return_text))
+    if changes_scene(function):
+        # A scene-changing op is an ACTION tool: it requires a declared
+        # plan and carries the step it belongs to (AGT-5, AGT-7, OT-6).
+        # Stripped again before binding; the op never sees it.
+        properties[PLAN_STEP_ARGUMENT] = dict(PLAN_STEP_SCHEMA)
     description = f"{_summary(function)} Returns {return_text}."
     if returns_object_names(function):
         description += " " + (GATED_DESCRIPTION if is_gated(function) else UNGATED_DESCRIPTION)

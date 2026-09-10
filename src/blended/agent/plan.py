@@ -37,10 +37,25 @@ PLAN_STEP_ARGUMENT = "plan_step"
 # A plan longer than this is a plan the user cannot hold in their head.
 # Magentic-UI's plans are short sequences; eight is the ceiling.
 MAXIMUM_PLAN_STEPS = 8
+# The JSON-schema property every plan-requiring tool carries.
+PLAN_STEP_SCHEMA = {
+    "type": "integer",
+    "description": "The 1-based plan step this call belongs to.",
+}
+
+
+def _scene_changing_op_names() -> tuple[str, ...]:
+    from blended.ops._contract import changes_scene, facade_ops
+
+    return tuple(name for name, function in facade_ops() if changes_scene(function))
+
+
 # The tools that actually change the scene and therefore require a
-# declared plan first. Lookups (search_ops, list_scene) are plan-free —
-# a model orienting itself before planning should not be blocked.
-PLAN_REQUIRED_TOOLS = ("run_python",)
+# declared plan first: run_python, and every op tool not marked
+# `@op(reads_only=True)` (OT-6). Lookups (search_ops, list_scene) and
+# readers (rig_report, orientation_reading) are plan-free — a model
+# orienting itself before planning should not be blocked.
+PLAN_REQUIRED_TOOLS = ("run_python", *_scene_changing_op_names())
 # What a plan-requiring tool call gets back when no plan was declared
 # this turn. Returned as the tool result so the model can correct itself
 # on its next turn without a special protocol — it just sees a refusal

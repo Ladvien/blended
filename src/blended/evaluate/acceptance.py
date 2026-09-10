@@ -26,7 +26,6 @@ from blended.evaluate.briefs import (
     DistinctMaterialSpec,
     GroundContactProbe,
     NoInterpenetrationSpec,
-    PartSpec,
     RefinementStep,
     SharedCentreSpec,
     SolidityProbe,

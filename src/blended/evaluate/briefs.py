@@ -37,7 +37,6 @@ from __future__ import annotations
 import math
 import re
 import sys
-
 from dataclasses import dataclass, field
 
 from blended.analyze.mesh_checks import DEFAULT_PROP_TRIANGLE_BUDGET, MeshBudget

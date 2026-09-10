@@ -19,6 +19,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
+from blended.ops._contract import op
+
 PRINCIPLED_NODE_NAME = "Principled BSDF"
 BASE_COLOR_INPUT_NAME = "Base Color"
 
@@ -271,6 +273,7 @@ def _sync_diffuse_from_image(material, image):
     material.diffuse_color = (r_avg, g_avg, b_avg, 1.0)
 
 
+@op(reads_only=True)
 def material_report(object_name: str) -> MaterialReport:
     """Snapshot the named mesh's first material slot shader graph for assertion."""
     from blended.ops._objects import object_by_name

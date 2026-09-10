@@ -28,8 +28,8 @@ absent.  Every other kind is ignored.
 """
 from __future__ import annotations
 
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Sequence
 
 # The event kind that carries a render contact-sheet path on the shared
 # ``(kind, text)`` channel.  See the plan's "New transcript event kinds"

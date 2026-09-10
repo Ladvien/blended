@@ -50,6 +50,8 @@ from __future__ import annotations
 
 import math
 
+from blended.ops._contract import op
+
 DEPTH_AXIS_EXTENT_RANK = 1        # middle extent goes on the depth axis
 DEPTH_AXIS_INDEX = 1              # Blender Y; glTF Z after export_yup
 DEGENERATE_EXTENT_M = 1e-9        # below this the object has no geometry
@@ -66,6 +68,7 @@ _ROTATION_ONTO_DEPTH_AXIS_RAD = {
 }
 
 
+@op(reads_only=True)
 def middle_extent_m(extents_m: tuple[float, float, float]) -> float:
     """The rank-DEPTH_AXIS_EXTENT_RANK extent VALUE, not its axis.
 
@@ -76,6 +79,7 @@ def middle_extent_m(extents_m: tuple[float, float, float]) -> float:
     return sorted(float(extent) for extent in extents_m)[DEPTH_AXIS_EXTENT_RANK]
 
 
+@op(reads_only=True)
 def depth_axis_holds_middle_extent(
     extents_m: tuple[float, float, float]
 ) -> bool:
@@ -88,6 +92,7 @@ def depth_axis_holds_middle_extent(
     return difference <= POST_CONDITION_TOLERANCE_RATIO * largest
 
 
+@op(reads_only=True)
 def canonical_depth_axis_rotation_euler_rad(
     extent_x_m: float, extent_y_m: float, extent_z_m: float
 ) -> tuple[float, float, float]:
@@ -116,6 +121,7 @@ def canonical_depth_axis_rotation_euler_rad(
     return _ROTATION_ONTO_DEPTH_AXIS_RAD[source_axis]
 
 
+@op(reads_only=True)
 def depth_axis_extent_rank(extents_m: tuple[float, float, float]) -> int:
     """How many extents are strictly larger than the depth-axis extent.
 
@@ -131,6 +137,7 @@ AXIS_NAMES = ("x", "y", "z")
 ORIENTATION_READING_DECIMALS = 4
 
 
+@op(reads_only=True)
 def orientation_reading(extents_m: tuple[float, float, float]) -> str:
     """One line naming the extents and where the middle one sits.
 

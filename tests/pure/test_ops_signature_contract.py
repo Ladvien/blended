@@ -113,3 +113,12 @@ def test_an_ungated_constructor_must_take_the_name_it_returns():
         return ObjectName("x")
 
     assert any("takes no `name` parameter" in v for v in contract_violations(anonymous))
+
+
+def test_a_reader_that_returns_an_object_name_is_a_violation():
+    @op(reads_only=True)
+    def reader_that_writes(object_name: str) -> ObjectName:
+        """Claims to read, returns what it modified."""
+        return ObjectName(object_name)
+
+    assert any("a reader creates or modifies nothing" in v for v in contract_violations(reader_that_writes))

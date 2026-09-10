@@ -666,3 +666,17 @@ def test_an_armature_is_gated_on_scene_state_only(empty_scene, tmp_path):
     ).text
     assert text.startswith("OK: add_armature"), text
     assert "gate: scene state only (ARMATURE has no mesh to analyze)" in text
+
+
+def test_an_action_op_accepts_plan_step_and_the_op_never_sees_it(empty_scene, tmp_path):
+    """OT-6: plan_step rides on the call like on run_python; binding gets
+    the op's own arguments only."""
+    from blended.agent.tools import dispatch_tool
+
+    text = dispatch_tool(
+        "add_box",
+        {"name": "Crate", "width_m": 0.5, "depth_m": 0.5, "height_m": 0.5, "plan_step": 1},
+        tmp_path,
+    ).text
+    assert text.startswith("OK: add_box"), text
+    assert "Crate" in bpy.data.objects

@@ -84,21 +84,42 @@ MAXIMUM_SUMMARY_CHARACTERS = 120
 # The attribute `@op(gated=...)` stamps on a function. Read only through
 # `is_gated`, so the default lives in one place.
 GATED_ATTRIBUTE = "__blended_gated__"
+# The attribute `@op(reads_only=True)` stamps: the op inspects the scene
+# and changes nothing, so it needs no declared plan (AGT-5, OT-6).
+READS_ONLY_ATTRIBUTE = "__blended_reads_only__"
 
 
-def op(*, gated: bool):
-    """Mark an op's gating explicitly. Today the only sanctioned use is
-    `@op(gated=False)` on a constructor that returns an UNLINKED
-    intermediate (add_box, add_cylinder, add_lathe): gating it would
+def op(*, gated: bool | None = None, reads_only: bool = False):
+    """Mark what the contract cannot read off the signature.
+
+    `gated=False` (OT-5): a constructor that returns an UNLINKED
+    intermediate (add_box, add_cylinder, add_lathe) — gating it would
     report "not linked" on every call and teach the model nothing. The
     schema generator prints the marker in the tool description, and the
-    loop refuses to end a turn while such an intermediate is unresolved."""
+    loop refuses to end a turn while such an intermediate is unresolved.
+
+    `reads_only=True` (OT-6): a report, a reading, a pure computation.
+    Everything else changes the scene and requires a declared plan
+    first, exactly like run_python.
+    """
 
     def mark(function):
-        setattr(function, GATED_ATTRIBUTE, gated)
+        if gated is not None:
+            setattr(function, GATED_ATTRIBUTE, gated)
+        if reads_only:
+            setattr(function, READS_ONLY_ATTRIBUTE, True)
         return function
 
     return mark
+
+
+def is_reads_only(function) -> bool:
+    return getattr(function, READS_ONLY_ATTRIBUTE, False) is True
+
+
+def changes_scene(function) -> bool:
+    """Every op that is not marked reads-only changes the scene."""
+    return not is_reads_only(function)
 
 
 def _is_object_name_type(hint) -> bool:
@@ -213,6 +234,11 @@ def contract_violations(function) -> list[str]:
                     f"{UNIT_SUFFIXES} and is not a declared unitless quantity"
                 )
 
+    if is_reads_only(function) and _returns_object_names_or_false(function):
+        violations.append(
+            "marked @op(reads_only=True) but returns an object name; a reader "
+            "creates or modifies nothing"
+        )
     if is_marked_ungated(function):
         if not _returns_object_names_or_false(function):
             violations.append(

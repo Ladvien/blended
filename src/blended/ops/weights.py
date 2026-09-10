@@ -11,6 +11,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from blended.ops._contract import op
+
 MINIMUM_WEIGHT = 0.0
 MAXIMUM_WEIGHT = 1.0
 
@@ -111,6 +113,7 @@ def assign_weights_by_height(
     return len(in_range_indices)
 
 
+@op(reads_only=True)
 def deforming_bone_names(object_name: str) -> tuple[str, ...]:
     """Bones of the armature that actually deforms the named mesh.
 
@@ -133,6 +136,7 @@ def deforming_bone_names(object_name: str) -> tuple[str, ...]:
     return ()
 
 
+@op(reads_only=True)
 def weight_report(object_name: str) -> WeightReport:
     """Return a frozen snapshot of the named mesh's vertex-group weights.
 

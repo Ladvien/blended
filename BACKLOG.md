@@ -37,12 +37,6 @@ All Phase 1 items (OT-1, OT-2, OT-3) are closed — see `BACKLOG_DONE.md`.
 
 ## Phase 2 — The surface
 
-### OT-6 Plan integration
-
-**What:** Generated op tools MUST be members of `PLAN_REQUIRED_TOOLS` (AGT-5) and MUST accept `plan_step`, so a scene-changing op without a declared plan is refused with the same text as `run_python`.
-**Amends:** AGT-5, AGT-7.
-**Done means:** `tests/pure/test_turn_plan.py` covers refusal and progress reporting for an op tool.
-
 ### OT-7 Demote `run_python` to an escape hatch
 
 **What:** `run_python` MUST require a non-blank `reason` parameter naming what the ops vocabulary could not express. The working agreement MUST gain a revision (one hunk, PRM-5) stating that construction goes through op tools and `run_python` is for what they cannot do. Each `run_python` call MUST be transcribed as a `candidate_op` record (see OT-8).

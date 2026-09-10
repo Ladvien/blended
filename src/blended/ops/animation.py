@@ -20,6 +20,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from blended.ops._contract import op
+
 # Conversion: Blender stores rotation_euler in radians; the caller
 # thinks in degrees.  One named constant, no implicit conversion.
 _RAD_PER_DEG = 0.017453292519943295
@@ -125,6 +127,7 @@ def keyframe_pose_bone_rotation(
     return _fcurve_count(armature_object)
 
 
+@op(reads_only=True)
 def animation_report(object_name: str) -> AnimationReport:
     """Summarise the named object's animation against the active scene's frame range.
 
