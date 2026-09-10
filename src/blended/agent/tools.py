@@ -291,6 +291,7 @@ SERVICE_TOOL_SCHEMAS = [
 
 
 from blended.agent.tool_schemas import build_tool_schemas, tool_schemas_fingerprint
+from blended.ops._contract import facade_ops
 
 # One generated tool per facade op (OT-3): introspected, never written.
 OP_TOOL_SCHEMAS = build_tool_schemas()
@@ -311,6 +312,11 @@ _assert_tool_names_disjoint(SERVICE_TOOL_SCHEMAS, OP_TOOL_SCHEMAS)
 
 # What the model can call: the service tools plus every facade op.
 TOOL_SCHEMAS = SERVICE_TOOL_SCHEMAS + OP_TOOL_SCHEMAS
+# The dispatch tables (OT-4): a service tool name reaches its branch in
+# `dispatch_tool`; an op tool name reaches its facade function through
+# `op_call.call_op`; any other name is refused at the door.
+SERVICE_TOOL_NAMES = frozenset(tool["function"]["name"] for tool in SERVICE_TOOL_SCHEMAS)
+OP_FUNCTIONS: dict[str, object] = dict(facade_ops())
 # Fingerprint of that set, pinned beside the assembled-prompt fingerprint
 # and written into every iteration record (PRM-7 discipline for tools).
 TOOL_SCHEMAS_FINGERPRINT = tool_schemas_fingerprint(TOOL_SCHEMAS)
@@ -360,6 +366,19 @@ def dispatch_tool(
             for index, step in enumerate(plan.steps, start=1)
         )
         return f"Plan declared:\n{numbered}", []
+
+    # An op tool (OT-4): bound, run and reported by op_call; the op body
+    # is what reaches bpy, so this branch too stays above the import.
+    op_function = OP_FUNCTIONS.get(tool_name)
+    if op_function is not None:
+        from blended.agent.op_call import call_op
+
+        result = call_op(tool_name, op_function, arguments)
+        return result.summary(MAXIMUM_TRACEBACK_CHARACTERS), []
+    # Refused at the door, before bpy: a name that is neither a service
+    # tool nor a facade op has no schema and was never offered.
+    if tool_name not in SERVICE_TOOL_NAMES:
+        return f"Unknown tool: {tool_name}", []
 
     import bpy
 
@@ -597,4 +616,6 @@ def dispatch_tool(
             [],
         )
 
-    return f"Unknown tool: {tool_name}", []
+    raise AssertionError(
+        f"service tool {tool_name!r} has a schema but no dispatch branch"
+    )

@@ -24,6 +24,7 @@ import subprocess
 import tempfile
 import time
 import traceback as traceback_module
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -75,12 +76,18 @@ def _bounded_stdout(captured_text: str) -> str:
     return f"[{dropped} earlier characters dropped]\n" + trimmed[-MAXIMUM_STDOUT_CHARACTERS:]
 
 
-def run_source_in_process(source_code: str, script_name: str = "<agent>") -> RunResult:
-    """Execute Python source against the current bpy, capturing failure."""
-    import bpy
+def execute_captured(
+    thunk: Callable[[], object], name: str, blender_version: str
+) -> tuple[RunResult, object]:
+    """Run `thunk` with stdout captured and failure reported, never raised.
 
+    The ONE capture path: a Python chunk (`run_source_in_process`) and a
+    facade op called as a tool (`agent.op_call`) both come through here,
+    so a traceback is bounded, drift-matched and summarised the same way
+    whichever door the model used. Returns the result and what the thunk
+    returned (None on failure).
+    """
     started_at = time.perf_counter()
-    execution_namespace: dict = {"__name__": "__main__"}
     # print() is the agent's only way to ask the scene a question. Without
     # this capture the answer goes to Blender's console, invisible to the
     # model — measured 2026-08-22: an agent with no observation channel
@@ -88,27 +95,46 @@ def run_source_in_process(source_code: str, script_name: str = "<agent>") -> Run
     # traceback, one wasted tool call per value.
     stdout_buffer = io.StringIO()
     try:
-        compiled = compile(source_code, script_name, "exec")
         with contextlib.redirect_stdout(stdout_buffer):
-            exec(compiled, execution_namespace)  # noqa: S102 - the harness's job
+            returned = thunk()
     except Exception as error:  # noqa: BLE001 - we report, not swallow
         traceback_text = traceback_module.format_exc()
-        return RunResult(
-            ok=False,
-            duration_s=time.perf_counter() - started_at,
-            blender_version=bpy.app.version_string,
-            error_type=type(error).__name__,
-            error_message=str(error),
-            traceback_text=traceback_text,
-            stdout_text=_bounded_stdout(stdout_buffer.getvalue()),
-            matched_drift=tuple(match_traceback(traceback_text)),
+        return (
+            RunResult(
+                ok=False,
+                duration_s=time.perf_counter() - started_at,
+                blender_version=blender_version,
+                error_type=type(error).__name__,
+                error_message=str(error),
+                traceback_text=traceback_text,
+                stdout_text=_bounded_stdout(stdout_buffer.getvalue()),
+                matched_drift=tuple(match_traceback(traceback_text)),
+            ),
+            None,
         )
-    return RunResult(
-        ok=True,
-        duration_s=time.perf_counter() - started_at,
-        blender_version=bpy.app.version_string,
-        stdout_text=_bounded_stdout(stdout_buffer.getvalue()),
+    return (
+        RunResult(
+            ok=True,
+            duration_s=time.perf_counter() - started_at,
+            blender_version=blender_version,
+            stdout_text=_bounded_stdout(stdout_buffer.getvalue()),
+        ),
+        returned,
     )
+
+
+def run_source_in_process(source_code: str, script_name: str = "<agent>") -> RunResult:
+    """Execute Python source against the current bpy, capturing failure."""
+    import bpy
+
+    execution_namespace: dict = {"__name__": "__main__"}
+
+    def execute_source() -> None:
+        compiled = compile(source_code, script_name, "exec")
+        exec(compiled, execution_namespace)  # noqa: S102 - the harness's job
+
+    result, _ = execute_captured(execute_source, script_name, bpy.app.version_string)
+    return result
 
 
 def run_script_subprocess(

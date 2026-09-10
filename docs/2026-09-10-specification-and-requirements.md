@@ -135,7 +135,7 @@ The visual gate asks "did the render move from the accepted state?" and compares
 
 ## 2.2 Agent tool surface (the ACI)
 
-`TOOL_SCHEMAS` (`src/blended/agent/tools.py`) is the eight hand-written **service tools** below plus one **generated op tool per facade op** (`OP_TOOL_SCHEMAS`, built by `blended.agent.tool_schemas.build_tool_schemas()` from the OPS-21 signatures: parameters are the signature, quantities carry their unit in the name, object references are names, config dataclasses become object schemas). The whole set is fingerprinted `t:{hex12}` (`TOOL_SCHEMAS_FINGERPRINT`), pinned in `_evaluate/golden/pinned_tool_schemas_fingerprint.txt`, and written into every `IterationRecord`. Service tools are executed by `dispatch_tool`; op-tool dispatch is OT-4.
+`TOOL_SCHEMAS` (`src/blended/agent/tools.py`) is the eight hand-written **service tools** below plus one **generated op tool per facade op** (`OP_TOOL_SCHEMAS`, built by `blended.agent.tool_schemas.build_tool_schemas()` from the OPS-21 signatures: parameters are the signature, quantities carry their unit in the name, object references are names, config dataclasses become object schemas). The whole set is fingerprinted `t:{hex12}` (`TOOL_SCHEMAS_FINGERPRINT`), pinned in `_evaluate/golden/pinned_tool_schemas_fingerprint.txt`, and written into every `IterationRecord`. Service tools are executed by `dispatch_tool`'s own branches; an op tool is bound and run by `blended.agent.op_call.call_op` (AGT-21), and any other name is refused before bpy is touched.
 
 | Tool | Parameters | Purpose |
 |---|---|---|
@@ -213,7 +213,7 @@ Each row is one normative statement with its evidence and the mechanism that ver
 | EXE-3 | A failed traceback MUST be matched against the drift catalog and the matched entries attached to the result. | `src/blended/run/executor.py:78-110`, `src/blended/drift/catalog.py:30` | `tests/pure/test_drift_catalog.py` |
 | EXE-4 | The retry loop MUST cap at `MAXIMUM_RETRIES_DEFAULT` (2) and MUST NOT retry past it. | `src/blended/run/retry.py:23,78` | `tests/blender/test_retry.py` |
 | EXE-5 | The retry prompt MUST contain the exact source that ran, the full traceback, and every matched drift fix. | `src/blended/run/retry.py:51` | `tests/pure/test_retry_prompt.py` |
-| EXE-6 | `run_chunk` MUST report `stage_reached` as one of `execute`, `locate`, `gate`, `export`, `done`, and MUST NOT claim success past the stage that failed. | `src/blended/harness.py:41-58,341` | `tests/blender/test_harness.py` |
+| EXE-6 | `run_chunk` and an op-tool call MUST report `stage_reached` as one of `execute`, `locate`, `gate`, `export`, `done` — defined once in `blended.stages` — and MUST NOT claim success past the stage that failed. | `src/blended/stages.py`, `src/blended/harness.py:41-58`, `src/blended/agent/op_call.py` | `tests/blender/test_harness.py`, `tests/pure/test_agent_dispatch.py` |
 | EXE-7 | `run_builder` MUST report a builder exception as `stage_reached="execute"` with the traceback, and MUST NOT apply the retry loop (no `fix_source` exists on that path). | `src/blended/harness.py:397` | `tests/blender/test_harness.py` |
 | EXE-8 | The session log MUST be append-only JSONL, one line per attempt, at `LOG_SCHEMA_VERSION` 1, with a 12-character source hash. | `src/blended/run/session_log.py:19,20` | `tests/pure/test_session_log.py` |
 | EXE-9 | The subprocess executor MUST time out at `SUBPROCESS_TIMEOUT_SECONDS` (240) and MUST take the Blender binary from the `BLENDER` environment variable. | `src/blended/run/executor.py:32,33` | `tests/blender/test_executor.py` |
@@ -374,6 +374,7 @@ The form gate answers "does the object deliver the brief", deterministically, be
 | AGT-18 | `list_scene` MUST cap its listing at `MAXIMUM_SCENE_OBJECTS_LISTED` (40), `search_ops` at `MAXIMUM_SEARCH_RESULTS` (8), and a returned traceback at `MAXIMUM_TRACEBACK_CHARACTERS` (1500). | `src/blended/agent/tools.py:29,30,35` | `tests/pure/test_agent_dispatch.py` |
 | AGT-19 | The session MUST NOT volunteer work: no proactive suggestions and no auto-continuation; a turn runs only from an explicit user act. | `docs/harness_design.md` row 22 | `(unverified)` |
 | AGT-20 | There is **no enforced retry cap or turn cap in the agent loop**; the working agreement's "stop after three honest attempts" is prose to the model, not code. (Gap, §7.) | `src/blended/agent/loop.py:1365-1544` | `(unverified)` |
+| AGT-21 | `dispatch_tool` MUST route a generated op tool to its facade function on the main thread (AGT-2); MUST bind the JSON arguments against the signature's type hints — the hints the schema was generated from — failing loud on an unknown, missing or mistyped parameter (NFR-13); MUST refuse a name that is neither a service tool nor a facade op before touching bpy; MUST run the op through the executor's one capture path; and MUST report `stage_reached` from `blended.stages` (`execute` on failure, `done` on return; gating is OT-5). (OT-4) | `src/blended/agent/op_call.py`, `src/blended/agent/tools.py` (`OP_FUNCTIONS`, `SERVICE_TOOL_NAMES`), `src/blended/run/executor.py` (`execute_captured`) | `tests/pure/test_agent_dispatch.py::test_an_op_tool_call_binds_runs_and_reports_done`, `::test_an_unregistered_tool_is_refused_at_the_door_without_bpy`, `::test_a_mistyped_argument_fails_at_execute_with_the_cause_and_no_traceback`, `::test_an_op_tool_off_the_main_thread_is_refused_like_any_tool`; `tests/blender/test_agent_loop.py::test_a_brief_reaches_gate_pass_with_op_tools_only` |
 
 ## 3.11 The prompt system (`PRM`)
 
@@ -708,7 +709,7 @@ The document holds **215 requirements**, of which **8 have no automated check**:
 | EXP | 4 | 4 | 0 |
 | ING | 4 | 4 | 0 |
 | OPS | 21 | 21 | 0 |
-| AGT | 20 | 18 | 2 |
+| AGT | 21 | 19 | 2 |
 | PRM | 14 | 14 | 0 |
 | VIS | 14 | 14 | 0 |
 | CNV | 13 | 13 | 0 |

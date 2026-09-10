@@ -2998,6 +2998,41 @@ MISTAKES: tuple[MistakeRecord, ...] = (
         ),
         recorded_on="2026-09-10",
     ),
+    MistakeRecord(
+        identifier="a-pure-helper-under-a-package-whose-init-imports-the-harness-is-a-cycle",
+        scope="harness_code",
+        failure=(
+            "OT-4 put the EXE-6 stage vocabulary in blended/run/stages.py "
+            "and imported it from harness.py. make test-pure: 625 passed. "
+            "make test-blender-app -k agent_loop: 6 failed — every "
+            "run_python tool call answered 'Tool raised ImportError: cannot "
+            "import name HarnessResult from partially initialized module "
+            "blended.harness', and the scene stayed empty."
+        ),
+        cause=(
+            "blended/run/__init__.py eagerly imports run.batch, which "
+            "imports blended.harness at module level. harness -> "
+            "run.stages -> run/__init__ -> run.batch -> harness is a cycle "
+            "whenever harness is the FIRST of the two imported. The pure "
+            "suite never saw it because an earlier test had already "
+            "imported blended.run.executor, so the package was initialised "
+            "before harness loaded; a Blender probe that imported executor "
+            "first passed for the same reason and was misleading."
+        ),
+        fix=(
+            "Moved the vocabulary to blended/stages.py, a top-level module "
+            "under the side-effect-free blended/__init__.py, and repointed "
+            "harness.py, agent/op_call.py, the tests and the spec. Added a "
+            "fresh-interpreter import test so import order is probed in a "
+            "process that has imported nothing else."
+        ),
+        guarded_by=(
+            "tests/pure/test_import_integrity.py::"
+            "test_the_harness_imports_first_in_a_fresh_interpreter; "
+            "tests/blender/test_agent_loop.py::test_loop_runs_a_tool_then_answers"
+        ),
+        recorded_on="2026-09-10",
+    ),
 )
 
 

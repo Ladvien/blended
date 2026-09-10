@@ -193,3 +193,150 @@ def test_a_rebuilt_refinement_does_not_count_as_passed():
         refinement_gate_passed=False,
         refinement_failures=("seat_diameter_x moved +0.0180 m",),
     ).passed
+
+
+# --- op tools (OT-4, AGT-21): a facade op called as a tool -------------------
+#
+# `middle_extent_m` is a facade op with no bpy in its body, so the WHOLE
+# path — door check, binding, capture, stage — runs in the pure layer.
+
+
+def test_an_op_tool_call_binds_runs_and_reports_done():
+    from blended.agent.op_call import call_op
+    from blended.agent.tools import OP_FUNCTIONS, dispatch_tool
+    from blended.stages import STAGE_DONE
+
+    text, images = dispatch_tool("middle_extent_m", {"extents_m": [0.3, 0.2, 0.25]}, None)
+
+    assert text.startswith("OK: middle_extent_m")
+    assert "returned: 0.25" in text
+    assert images == []
+    result = call_op("middle_extent_m", OP_FUNCTIONS["middle_extent_m"], {"extents_m": [0.3, 0.2, 0.25]})
+    assert result.ok and result.stage_reached == STAGE_DONE
+    assert result.bound_arguments == {"extents_m": (0.3, 0.2, 0.25)}
+
+
+def test_an_unregistered_tool_is_refused_at_the_door_without_bpy():
+    """Neither a service tool nor a facade op: refused before `import bpy`,
+    which is what makes this assertion possible in the pure layer."""
+    from blended.agent.tools import dispatch_tool
+
+    assert dispatch_tool("add_boxx", {"name": "Crate"}, None) == ("Unknown tool: add_boxx", [])
+
+
+def test_a_mistyped_argument_fails_at_execute_with_the_cause_and_no_traceback():
+    from blended.agent.tools import dispatch_tool
+
+    text, _ = dispatch_tool("middle_extent_m", {"extents_m": "big"}, None)
+
+    assert text.startswith("FAILED at execute: middle_extent_m")
+    assert "ArgumentError" in text and "expected an array" in text
+    assert "Traceback" not in text
+
+
+def test_unknown_and_missing_parameters_are_named():
+    from blended.agent.op_call import ArgumentError, bind_arguments
+    from blended.agent.tools import OP_FUNCTIONS
+
+    with pytest.raises(ArgumentError, match=r"unknown parameter\(s\) \['widht_m'\]"):
+        bind_arguments("add_box", OP_FUNCTIONS["add_box"], {"name": "Crate", "widht_m": 0.5, "depth_m": 0.5, "height_m": 0.5})
+    with pytest.raises(ArgumentError, match=r"missing required parameter\(s\) \['height_m'\]"):
+        bind_arguments("add_box", OP_FUNCTIONS["add_box"], {"name": "Crate", "width_m": 0.5, "depth_m": 0.5})
+
+
+def test_arguments_are_converted_to_the_signature_types():
+    """JSON in, the op's own types out — the same hints the schema came from."""
+    from pathlib import Path
+
+    from blended.agent.op_call import bind_arguments
+    from blended.agent.tools import OP_FUNCTIONS
+    from blended.ops import BoneSpec, SplayedLegSpec
+
+    leg = bind_arguments(
+        "add_splayed_leg",
+        OP_FUNCTIONS["add_splayed_leg"],
+        {"name": "Leg", "spec": {"foot_radius_m": 0.14, "foot_bearing_deg": 0, "top_radius_m": 0.1, "top_z_m": 0.4, "leg_radius_m": 0.02}},
+    )
+    assert isinstance(leg["spec"], SplayedLegSpec)
+    assert leg["spec"].foot_bearing_deg == 0.0 and isinstance(leg["spec"].foot_bearing_deg, float)
+
+    armature = bind_arguments(
+        "add_armature",
+        OP_FUNCTIONS["add_armature"],
+        {"name": "Rig", "bones": [{"name": "root", "head_m": [0, 0, 0], "tail_m": [0, 0, 0.5]}]},
+    )
+    assert armature["bones"] == (BoneSpec(name="root", head_m=(0.0, 0.0, 0.0), tail_m=(0.0, 0.0, 0.5)),)
+
+    textured = bind_arguments(
+        "assign_image_texture_material",
+        OP_FUNCTIONS["assign_image_texture_material"],
+        {"object_name": "Crate", "name": "Wood", "image_path": "textures/wood.png"},
+    )
+    assert textured["image_path"] == Path("textures/wood.png")
+
+    keyed = bind_arguments(
+        "keyframe_object_transform",
+        OP_FUNCTIONS["keyframe_object_transform"],
+        {"object_name": "Crate", "frame": 1, "location_m": None, "scale": [1, 1, 1]},
+    )
+    assert keyed["location_m"] is None and keyed["scale"] == (1.0, 1.0, 1.0)
+
+
+def test_binding_is_strict_about_json_types():
+    from blended.agent.op_call import ArgumentError, convert_argument
+    from blended.ops import SplayedLegSpec
+
+    with pytest.raises(ArgumentError, match="expected an integer"):
+        convert_argument(int, True, "x.count")
+    with pytest.raises(ArgumentError, match="expected a number"):
+        convert_argument(float, "0.5", "x.width_m")
+    with pytest.raises(ArgumentError, match="exactly 3 items"):
+        convert_argument(tuple[float, float, float], [0.0, 0.0], "x.location_m")
+    with pytest.raises(ArgumentError, match=r"unknown field\(s\) \['radius'\]"):
+        convert_argument(SplayedLegSpec, {"radius": 1.0}, "x.spec")
+
+
+def test_an_op_that_raises_is_a_failed_call_with_its_type_and_traceback():
+    from blended.agent.op_call import call_op
+    from blended.stages import STAGE_EXECUTE
+
+    def exploding_op(width_m: float) -> str:
+        """Always raises."""
+        raise ValueError("the operand is unlinked")
+
+    result = call_op("exploding_op", exploding_op, {"width_m": 0.5})
+    text = result.summary(1500)
+
+    assert not result.ok and result.stage_reached == STAGE_EXECUTE
+    assert "FAILED at execute: exploding_op" in text
+    assert "ValueError: the operand is unlinked" in text
+    assert "Traceback" in text
+
+
+def test_a_returned_report_is_rendered_as_json():
+    from blended.agent.op_call import json_returned
+    from blended.ops import BoneSpec
+
+    assert json_returned(BoneSpec(name="root", head_m=(0.0, 0.0, 0.0), tail_m=(0.0, 0.0, 0.5))) == {
+        "name": "root", "head_m": [0.0, 0.0, 0.0], "tail_m": [0.0, 0.0, 0.5], "parent_name": "", "connected": False,
+    }
+    with pytest.raises(TypeError, match="no JSON form"):
+        json_returned(object())
+
+
+def test_an_op_tool_off_the_main_thread_is_refused_like_any_tool():
+    from blended.agent.tools import dispatch_tool
+
+    failures = []
+
+    def call_from_worker():
+        try:
+            dispatch_tool("middle_extent_m", {"extents_m": [1.0, 2.0, 3.0]}, None)
+        except BaseException as error:  # noqa: BLE001 — the assertion IS the error
+            failures.append(error)
+
+    worker = threading.Thread(target=call_from_worker, name="not-main")
+    worker.start()
+    worker.join(timeout=10)
+
+    assert len(failures) == 1 and "not the main thread" in str(failures[0])

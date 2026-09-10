@@ -24,6 +24,13 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from blended.analyze.mesh_checks import MeshBudget, MeshReport
+from blended.stages import (
+    STAGE_DONE,
+    STAGE_EXECUTE,
+    STAGE_EXPORT,
+    STAGE_GATE,
+    STAGE_LOCATE,
+)
 
 DEFAULT_OUTPUT_DIRECTORY = Path("_renders/harness")
 
@@ -40,7 +47,7 @@ class HarnessSettings:
 @dataclass(frozen=True)
 class HarnessResult:
     ok: bool
-    stage_reached: str  # "execute" | "locate" | "gate" | "export" | "done"
+    stage_reached: str  # one of blended.stages.STAGES (EXE-6)
     object_name: str = ""
     report: MeshReport | None = None
     gate_failures: tuple[str, ...] = field(default_factory=tuple)
@@ -272,7 +279,7 @@ def _gate_capture_export(
     if unusable:
         return HarnessResult(
             ok=False,
-            stage_reached="locate",
+            stage_reached=STAGE_LOCATE,
             object_name=blender_object.name,
             execution_summary=execution_summary + "; " + unusable,
         )
@@ -295,7 +302,7 @@ def _gate_capture_export(
     if gate_failures:
         return HarnessResult(
             ok=False,
-            stage_reached="gate",
+            stage_reached=STAGE_GATE,
             object_name=blender_object.name,
             report=report,
             gate_failures=gate_failures,
@@ -316,7 +323,7 @@ def _gate_capture_export(
         if export_failures:
             return HarnessResult(
                 ok=False,
-                stage_reached="export",
+                stage_reached=STAGE_EXPORT,
                 object_name=blender_object.name,
                 report=report,
                 contact_sheet_path=contact_sheet_path,
@@ -327,7 +334,7 @@ def _gate_capture_export(
 
     return HarnessResult(
         ok=True,
-        stage_reached="done",
+        stage_reached=STAGE_DONE,
         object_name=blender_object.name,
         report=report,
         contact_sheet_path=contact_sheet_path,
@@ -378,14 +385,14 @@ def run_chunk(
     )
     if not outcome.ok:
         return HarnessResult(
-            ok=False, stage_reached="execute", execution_summary=execution_summary
+            ok=False, stage_reached=STAGE_EXECUTE, execution_summary=execution_summary
         )
 
     built_object = bpy.data.objects.get(object_name)
     if built_object is None:
         return HarnessResult(
             ok=False,
-            stage_reached="locate",
+            stage_reached=STAGE_LOCATE,
             object_name=object_name,
             execution_summary=execution_summary
             + f"; expected object {object_name!r} does not exist "
@@ -405,7 +412,7 @@ def run_builder(
 
         return HarnessResult(
             ok=False,
-            stage_reached="execute",
+            stage_reached=STAGE_EXECUTE,
             execution_summary=(
                 f"builder raised {type(build_error).__name__}: {build_error}\n"
                 f"{traceback.format_exc()}"

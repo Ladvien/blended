@@ -37,13 +37,6 @@ All Phase 1 items (OT-1, OT-2, OT-3) are closed — see `BACKLOG_DONE.md`.
 
 ## Phase 2 — The surface
 
-### OT-4 Op-call dispatch
-
-**What:** `dispatch_tool` MUST route a generated op tool to the facade function, on the main thread (AGT-2), with argument validation failing loud on unknown or missing parameters (NFR-13). The result MUST carry the same `stage_reached` vocabulary as `run_chunk` (EXE-6).
-**Why:** The op tool must be at least as observable as `run_python`, or the agent will prefer the hatch.
-**Amends:** adds `AGT-21`.
-**Done means:** `tests/pure/test_agent_dispatch.py` covers valid call, unknown op, bad argument type, off-main-thread refusal. `tests/blender/test_agent_loop.py` runs a brief to gate-pass using only op tools.
-
 ### OT-5 Gate every scene-changing op call
 
 **What:** An op tool whose return names an object MUST run the scene-state gate and the analyzer on that object and return the verdict, exactly as `run_python` does when `object_name` is given (AGT-3). An op that creates an intermediate (an operand about to be consumed by a boolean) MAY be marked `@op(gated=False)` in the signature contract, and the marker MUST appear in the schema description.
@@ -80,6 +73,7 @@ All Phase 1 items (OT-1, OT-2, OT-3) are closed — see `BACKLOG_DONE.md`.
 **What:** Before OT-4 ships, append a pre-registration to `docs/2026-09-06-bench-panel-preregistration.md` naming the comparison (ops tools + hatch vs incumbent `run_python`-only), the writer (`deepseek-v4-pro:cloud`, unchanged), the instance set (dev, then holdout only for ranking, BEN-8), the ranking rule (executability first, then `cd_pca`, BEN-4/5), the target (`TARGET_RELATIVE_IMPROVEMENT` on the incumbent's own mean, BEN-7), and the hypothesis.
 **Why:** BEN-10 forbids single-roll claims; a pre-registration forbids post-hoc ones.
 **Done means:** the pre-registration is committed with a date before the first ops-lane roll's directory timestamp.
+**Status 2026-09-10:** pre-registration appended to `docs/2026-09-06-bench-panel-preregistration.md` (§ "Ops-lane pre-registration — 2026-09-10 (OT-9)") before OT-4 shipped, hypotheses H1–H3 stated; outcome line pending the first paired roll. Stays open until the outcome is filled from measurement (closing rule).
 **Hypothesis to state:** executability stays at parity or better; `cd_pca` moves within noise on the cloud writer (the cloud writer already executes 120/120, so the gain there is expected to be small). The real gain is expected in OT-10.
 
 ### OT-10 Local-lane roll

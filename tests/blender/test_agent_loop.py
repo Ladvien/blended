@@ -29,7 +29,6 @@ class ScriptedClient:
         import dataclasses
 
         from blended.agent import ModelConfig
-
         from blended.agent.claude_code import TurnCost
 
         self.replies = list(replies)
@@ -534,3 +533,83 @@ def test_preflight_timeout_allows_a_cold_start():
 
     assert PREFLIGHT_TIMEOUT_SECONDS > OBSERVED_COLD_START_SECONDS
     assert PREFLIGHT_TIMEOUT_SECONDS < REQUEST_TIMEOUT_SECONDS
+
+
+# --- op tools (OT-4): a brief to gate-pass with no run_python at all ---------
+
+
+def _op_call(tool_name: str, **arguments) -> dict:
+    return {"function": {"name": tool_name, "arguments": arguments}}
+
+
+PLANTER_OP_CALLS = [
+    # The golden planter recipe (iteration 66), as op calls instead of
+    # a chunk: outer box, inner cavity, drain cutter, two differences,
+    # a material. Every number is the brief's.
+    _op_call("add_box", name="PlanterBox", width_m=0.3, depth_m=0.2, height_m=0.25),
+    _op_call("link_into_scene", object_name="PlanterBox"),
+    _op_call("add_box", name="InnerCavity", width_m=0.26, depth_m=0.16, height_m=0.28, location_m=[0.0, 0.0, 0.02]),
+    _op_call("link_into_scene", object_name="InnerCavity"),
+    _op_call("boolean_difference", target_name="PlanterBox", cutter_name="InnerCavity"),
+    _op_call("add_cylinder", name="DrainCutter", radius_m=0.015, height_m=0.06, location_m=[0.0, 0.0, -0.01]),
+    _op_call("link_into_scene", object_name="DrainCutter"),
+    _op_call("boolean_difference", target_name="PlanterBox", cutter_name="DrainCutter"),
+    _op_call("assign_material", object_name="PlanterBox", name="PlanterWood", base_color_rgb=[0.55, 0.35, 0.2], roughness=0.8),
+]
+
+
+def test_a_brief_reaches_gate_pass_with_op_tools_only(empty_scene, tmp_path):
+    """OT-4's acceptance: the vocabulary alone builds a brief the form
+    gate passes, and every op result speaks the stage vocabulary."""
+    from blended.agent import AgentSession
+    from blended.evaluate.acceptance import evaluate_brief
+    from blended.evaluate.briefs import get_brief
+
+    client = ScriptedClient(
+        [
+            {"role": "assistant", "content": "", "tool_calls": PLANTER_OP_CALLS},
+            {"role": "assistant", "content": "Built PlanterBox with op tools."},
+        ]
+    )
+    session = AgentSession(client=client, output_directory=tmp_path)
+
+    answer = session.send("Build the planter.")
+
+    assert "op tools" in answer
+    tool_messages = [m for m in session.messages if m.get("role") == "tool"]
+    assert [m["tool_name"] for m in tool_messages] == [c["function"]["name"] for c in PLANTER_OP_CALLS]
+    for message in tool_messages:
+        assert message["content"].startswith(f"OK: {message['tool_name']}"), message["content"]
+    assert 'returned: "PlanterBox"' in tool_messages[0]["content"]
+
+    brief = get_brief("planter_box")
+    report = evaluate_brief(brief)
+    assert report.passes(brief), report.summary(brief)
+    assert sorted(o.name for o in bpy.context.scene.objects) == ["PlanterBox"]
+
+
+def test_an_op_tool_failure_names_the_op_error_to_the_model(empty_scene, tmp_path):
+    """An op's own exception (here: an unlinked boolean operand) comes back
+    as a FAILED result at `execute`, not as a loop crash."""
+    from blended.agent import AgentSession
+
+    client = ScriptedClient(
+        [
+            {
+                "role": "assistant",
+                "content": "",
+                "tool_calls": [
+                    _op_call("add_box", name="A", width_m=0.1, depth_m=0.1, height_m=0.1),
+                    _op_call("add_box", name="B", width_m=0.1, depth_m=0.1, height_m=0.1),
+                    _op_call("boolean_union", target_name="A", addend_name="B"),
+                ],
+            },
+            {"role": "assistant", "content": "Done."},
+        ]
+    )
+    session = AgentSession(client=client, output_directory=tmp_path)
+    session.send("Union two boxes.")
+
+    union_result = [m for m in session.messages if m.get("role") == "tool"][-1]["content"]
+    assert union_result.startswith("FAILED at execute: boolean_union")
+    assert "UnlinkedOperand" in union_result

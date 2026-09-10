@@ -97,3 +97,53 @@ The detectable effect is quoted at the RULE'S FLOOR of 3 rolls, not at the roll 
 The generated meshes are NOT gone: every `model_dir` above resolves with its `glb/<instance>.glb` present, and the reference GLBs survive under `data/<instance>/glb/`. So the axis is missing its packages and its reference images, not its geometry.
 
 **Requirement on the next roll:** retain `glb/` and `renders/`. With both kept, image similarity can be added to this panel without re-running a single instance; discard them and the axis costs a full sweep to recover.
+
+---
+
+## Ops-lane pre-registration — 2026-09-10 (OT-9)
+
+Written BEFORE op-call dispatch (OT-4) shipped, as the backlog requires, so the first
+ops-lane roll cannot be judged post hoc. Nothing in this section may be edited after
+the first ops-lane roll's directory timestamp; the outcome line is the only line that
+gets filled in, and it gets filled from `scripts/bench_panel.py` output, not by hand.
+
+**Comparison.** Candidate: the agent whose ACI is the generated op tools (OT-3) with
+`run_python` demoted to an escape hatch that requires a `reason` (OT-7) — "ops tools +
+hatch". Incumbent: the `run_python`-only ACI, group `deepseek-v10` above (6 rolls,
+120/120 executable, `cd_pca` 0.0252, SE 0.0007).
+
+**Writer.** `deepseek-v4-pro:cloud`, unchanged; the same lane configuration the
+incumbent rolls ran. A different writer is a different experiment and ranks nothing here.
+
+**Instance set.** `bench_sets/instances_dev_sweep.txt` while the surface is being built; `bench_sets/instances_holdout.txt`
+(20 instances) for any roll that is to be RANKED (BEN-8). A holdout roll made before the
+surface is complete through OT-7 is reported and never ranked.
+
+**Ranking rule.** Executability lexicographically first, then `cd_pca` (BEN-4/5;
+`RANKING_METRIC` in `scripts/bench_thresholds.py`). `cd_yawmin` and `delta_orient` are
+reported on every panel and rank nothing.
+
+**Rolls.** At least `MINIMUM_PAIRED_ROLLS` (3) paired rolls of at least
+`MINIMUM_INSTANCES_FOR_RANKING` (20) instances each, the same instances as the
+incumbent's rolls.
+
+**Target.** `TARGET_RELATIVE_IMPROVEMENT` (0.15) on the incumbent's own measured mean:
+`cd_pca` 0.0252 → 0.0214. A regression is a one-sided move of more than
+`REGRESSION_SIGMA` (2.0) on the paired standard error. At the 3-roll floor the 2σ
+detectable effect on `cd_pca` is 0.0021 (table above).
+
+**Hypotheses, stated before the roll.**
+
+- H1 (executability, cloud writer): parity or better — 60/60 over three rolls against
+  the incumbent's 120/120. The cloud writer already executes every instance under the
+  hatch, so there is no room to gain here and the claim is that the surface loses nothing.
+- H2 (`cd_pca`, cloud writer): moves within noise — |Δ| below the 0.0021 detectable
+  effect. A gain on this writer is NOT expected; a loss beyond 2σ falsifies the surface.
+- H3 (local lane, OT-10): executability on one local lane (`bmb` llama-swap) improves by
+  more than that lane's own per-roll noise band. The band is measured from the incumbent
+  ACI on the same local lane BEFORE the candidate runs, and quoted here when it exists.
+- Recorded, not ranked: escape-hatch calls per gate-passing instance (from v2 transcripts,
+  OT-8). The OT-7 prompt revision's own hypothesis — below 1.0 per brief on the five
+  briefs within three paired rolls — is measured on the convergence suite, not here.
+
+**Outcome.** *(pending — no ops-lane roll has run as of 2026-09-10)*

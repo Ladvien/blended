@@ -63,3 +63,22 @@ regression reopens the item in `BACKLOG.md` with a pointer back to this entry.
 **Known gap, closed by OT-4:** `dispatch_tool` does not yet route an op tool; a call to one returns the existing `Unknown tool` result until OT-4 lands. No live lane ran in between.
 **Layers:** pure 616 passed / 1 skipped / 1 xfailed; Blender 308 passed / 3 skipped.
 **Commit:** `5275dc2`.
+
+---
+
+## OT-4 Op-call dispatch
+
+**What:** `dispatch_tool` MUST route a generated op tool to the facade function, on the main thread (AGT-2), with argument validation failing loud on unknown or missing parameters (NFR-13). The result MUST carry the same `stage_reached` vocabulary as `run_chunk` (EXE-6).
+**Why:** The op tool must be at least as observable as `run_python`, or the agent will prefer the hatch.
+**Amends:** adds `AGT-21`.
+**Done means:** `tests/pure/test_agent_dispatch.py` covers valid call, unknown op, bad argument type, off-main-thread refusal. `tests/blender/test_agent_loop.py` runs a brief to gate-pass using only op tools.
+
+**Closed:** 2026-09-10.
+**Gating tests:** `tests/pure/test_agent_dispatch.py::test_an_op_tool_call_binds_runs_and_reports_done`, `::test_an_unregistered_tool_is_refused_at_the_door_without_bpy`, `::test_a_mistyped_argument_fails_at_execute_with_the_cause_and_no_traceback`, `::test_unknown_and_missing_parameters_are_named`, `::test_arguments_are_converted_to_the_signature_types`, `::test_binding_is_strict_about_json_types`, `::test_an_op_that_raises_is_a_failed_call_with_its_type_and_traceback`, `::test_an_op_tool_off_the_main_thread_is_refused_like_any_tool`; `tests/blender/test_agent_loop.py::test_a_brief_reaches_gate_pass_with_op_tools_only` (planter_box, nine op calls, zero `run_python`, form gate PASS), `::test_an_op_tool_failure_names_the_op_error_to_the_model`; `tests/pure/test_import_integrity.py::test_the_harness_imports_first_in_a_fresh_interpreter`.
+**Spec:** AGT-21 added; EXE-6 amended (vocabulary defined once in `blended.stages`, shared by `run_chunk` and op calls); §2.2 updated; §6.3 AGT 20 → 21.
+**Shape of the change:** `blended.agent.op_call` binds JSON arguments against the op's type hints (the hints the schema came from) — unknown, missing and mistyped parameters fail loud, nested config dataclasses and paths convert — runs the op through `run.executor.execute_captured`, the one capture path `run_source_in_process` now also uses, and reports `stage_reached` (`execute` on failure, `done` on return). `dispatch_tool` routes op tools and refuses unregistered names before `import bpy`; a service tool with a schema but no branch is an assertion, not a fallthrough. `blended.stages` replaces five inline stage literals in `harness.py`.
+**Measured:** pure op `middle_extent_m` runs end to end in the pure layer (door, binding, capture, stage). A binding failure reports no traceback (its frames are the harness's); an op's own exception keeps its traceback, bounded to `MAXIMUM_TRACEBACK_CHARACTERS`.
+**Mistake recorded:** `a-pure-helper-under-a-package-whose-init-imports-the-harness-is-a-cycle` — the first placement of the stage module under `blended.run` made `harness → run.stages → run/__init__ → run.batch → harness` a cycle that the pure suite could not see (executor already imported) and six Blender agent-loop tests did; guarded by a fresh-interpreter import test.
+**Pre-registration (OT-9):** appended before this shipped, as the backlog required.
+**Layers:** pure 626 passed / 1 skipped / 1 xfailed; Blender 310 passed / 3 skipped.
+**Commit:** recorded in the follow-up commit.

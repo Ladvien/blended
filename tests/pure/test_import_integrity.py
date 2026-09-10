@@ -295,3 +295,25 @@ def _imported_name_exists(module_dotted: str, name: str) -> bool:
     if name in _module_level_names(module_dotted):
         return True
     return False
+
+def test_the_harness_imports_first_in_a_fresh_interpreter():
+    """`blended.harness` must be importable BEFORE anything under
+    `blended.run`, in a process that has imported nothing else.
+
+    Measured 2026-09-10 (OT-4): a stage-vocabulary module placed under
+    `blended.run` made `harness -> run.stages -> run/__init__ -> run.batch
+    -> harness` a cycle. The pure suite never saw it because an earlier
+    test had already imported `blended.run.executor`; the agent-loop
+    tests inside Blender, which import the harness first, did. A fresh
+    interpreter is the only honest probe of import order.
+    """
+    import subprocess
+    import sys
+
+    completed = subprocess.run(
+        [sys.executable, "-c", "import blended.harness; import blended.agent.tools"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert completed.returncode == 0, completed.stderr[-1500:]
