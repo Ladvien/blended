@@ -183,4 +183,4 @@ regression reopens the item in `BACKLOG.md` with a pointer back to this entry.
 **Spec:** AGT-20 rewritten from gap to requirement (verified); §7.2 gap row removed; §5.4 `MAXIMUM_GATE_FAILURES_PER_OBJECT`; §6.3 AGT unverified 2 → 1.
 **Shape of the change:** the loop keeps a per-turn count of consecutive non-`done` gate verdicts per object, read from `ToolOutcome.gates` (so `run_python` with `object_name` and every gated op tool count alike); at `MAXIMUM_GATE_FAILURES_PER_OBJECT` it renders the object through the same dispatch seam (`render_views`), answers the model's queued calls with `GATE_CAP_TOOL_RESULT`, and returns `GATE_CAP_ANSWER` naming the object, the count and the last verdict. `_answer_pending_tool_calls` is now shared by cancel and the cap, and positional rather than id-based — measured: a scripted call with no id was answered twice under the id-based rule.
 **Layers:** pure 656 passed / 1 skipped / 1 xfailed; Blender 318 passed / 3 skipped.
-**Commit:** recorded in the follow-up commit.
+**Commit:** `be4c33f`.
