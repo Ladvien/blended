@@ -30,10 +30,14 @@ def add_box(
     height_m: float,
     location_m: tuple[float, float, float] = (0.0, 0.0, 0.0),
 ) -> ObjectName:
-    """Create a closed box mesh object of the given outer dimensions.
+    """Create a closed box mesh object, centred on X/Y with its BASE at location_m[2], idempotent by name.
 
-    The box is centered on X/Y and sits with its base at location_m[2],
-    which matches the game-asset convention of feet/base at z=0.
+    location_m is NOT the centre: the box sits on z = location_m[2],
+    which matches the game-asset convention of feet/base at z=0. Said
+    in the summary line because that line is all the manifest and the
+    tool schema carry — measured 2026-09-10 (iterations 68 and 73): a
+    writer given only "of the given outer dimensions" placed the
+    planter's centre at the base and failed the floor probe twice.
     """
     import bmesh
     import bpy
