@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import dataclasses
 
+from blended.agent.claude_code import TurnCost
 from blended.agent.intermediates import (
     UNRESOLVED_INTERMEDIATES_REFUSAL,
     IntermediateLedger,
@@ -38,6 +39,7 @@ def _client(replies):
     class Scripted:
         def __init__(self):
             self.replies = list(replies)
+            self.spent = TurnCost()
             self.config = dataclasses.replace(ModelConfig.from_environment(), model="scripted", vision_model="")
 
         def chat(self, messages, tools=None):

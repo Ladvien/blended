@@ -1329,6 +1329,30 @@ GATE_CAP_ANSWER = (
 )
 
 
+# OT-17: a token budget per turn, checked at the seam after every model
+# reply. Derived from measurement, not chosen: the tool-call budget is
+# 24 calls, and one call on the Claude Code lane billed 25,851 input
+# tokens for a 12.5k prompt (TurnCost, 2026-09-06), so a turn that
+# spends its whole call budget on that lane bills about 620k; 750k
+# leaves a fifth for a long answer. Op tools shrink per-call tokens,
+# which is what makes this reachable at all — a chunk-only turn used to
+# exhaust the call budget first.
+MAXIMUM_TURN_TOKENS = 750_000
+TOKEN_CAP_TOOL_RESULT = "Not run: the turn stopped at the token budget."
+TOKEN_CAP_ANSWER = (
+    "Stopped after {tokens:,} tokens in one turn (budget {budget:,}) without "
+    "reaching an answer. Tell me how to narrow this."
+)
+
+
+def _tokens_since(start: TurnCost, now: TurnCost) -> int:
+    """Tokens billed between two readings of a client's `spent`: input
+    (including cache reads and writes) plus output."""
+    return (now.billed_input_tokens - start.billed_input_tokens) + (
+        now.output_tokens - start.output_tokens
+    )
+
+
 def _plan_step_or_none(arguments: dict) -> int | None:
     """The call's plan_step for the record; a malformed one is None here
     and reported by `plan_step_of` where the loop reads it."""
@@ -1360,6 +1384,7 @@ class AgentSession:
     # one failed chunk, while still capping a runaway loop.
     maximum_tool_calls_per_turn: int = 24
     maximum_gate_failures_per_object: int = MAXIMUM_GATE_FAILURES_PER_OBJECT
+    maximum_turn_tokens: int = MAXIMUM_TURN_TOKENS
     messages: list[dict] = field(default_factory=list)
     # A plain function as a dataclass default: __init__ assigns it to the
     # INSTANCE, so `self.dispatch(...)` calls it unbound — no phantom
@@ -1450,6 +1475,9 @@ class AgentSession:
         ledger = IntermediateLedger()
         # Per-turn count of consecutive gate failures per object (OT-16).
         gate_failures: dict[str, int] = {}
+        # Where this turn's spending starts (OT-17). `spent` accumulates
+        # for the session; the budget is per turn.
+        spent_at_turn_start = self.client.spent
         while executed_tool_call_count < self.maximum_tool_calls_per_turn:
             if self.stream_replies:
                 assistant_message = self.client.chat(
@@ -1469,6 +1497,17 @@ class AgentSession:
                 emit("thinking", thinking_text)
 
             tool_calls = assistant_message.get("tool_calls") or []
+            # OT-17: the seam. A reply that is already an answer ends the
+            # turn whatever it cost; a reply that wants more tool calls
+            # is refused when the turn's tokens exceed the budget.
+            turn_tokens = _tokens_since(spent_at_turn_start, self.client.spent)
+            if tool_calls and turn_tokens > self.maximum_turn_tokens:
+                self._answer_pending_tool_calls(assistant_message, TOKEN_CAP_TOOL_RESULT)
+                exhausted = TOKEN_CAP_ANSWER.format(
+                    tokens=turn_tokens, budget=self.maximum_turn_tokens
+                )
+                emit("answer", exhausted)
+                return exhausted
             if not tool_calls:
                 # OT-5: a turn may not end while an unlinked intermediate
                 # is unresolved. The refusal reaches the model as the next
@@ -1658,8 +1697,14 @@ class AgentSession:
         # assistant message answer its calls in order, and a lane that
         # mints no ids (a scripted client, Ollama) must not get a second
         # result for a call that already has one.
+        # The message being closed is the LATEST occurrence: a scripted
+        # client may replay one dict object twice.
         position = next(
-            (index for index, message in enumerate(self.messages) if message is assistant_message),
+            (
+                index
+                for index in range(len(self.messages) - 1, -1, -1)
+                if self.messages[index] is assistant_message
+            ),
             len(self.messages),
         )
         already_answered = sum(

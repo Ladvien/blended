@@ -184,3 +184,18 @@ regression reopens the item in `BACKLOG.md` with a pointer back to this entry.
 **Shape of the change:** the loop keeps a per-turn count of consecutive non-`done` gate verdicts per object, read from `ToolOutcome.gates` (so `run_python` with `object_name` and every gated op tool count alike); at `MAXIMUM_GATE_FAILURES_PER_OBJECT` it renders the object through the same dispatch seam (`render_views`), answers the model's queued calls with `GATE_CAP_TOOL_RESULT`, and returns `GATE_CAP_ANSWER` naming the object, the count and the last verdict. `_answer_pending_tool_calls` is now shared by cancel and the cap, and positional rather than id-based — measured: a scripted call with no id was answered twice under the id-based rule.
 **Layers:** pure 656 passed / 1 skipped / 1 xfailed; Blender 318 passed / 3 skipped.
 **Commit:** `be4c33f`.
+
+---
+
+## OT-17 Token budget per turn
+
+**What:** `TurnCost` MUST be compared against a named `MAXIMUM_TURN_TOKENS` and the turn MUST stop at the next seam when exceeded, reported as text (same shape as the tool-call budget exhaustion, AGT-9).
+**Why:** Cost is measured, not bounded (spec §7.2). Op tools shrink per-call tokens, which makes a budget that used to be unreachable reachable.
+**Done means:** `tests/pure/test_agent_cancel.py` covers the seam.
+
+**Closed:** 2026-09-10.
+**Gating tests:** `tests/pure/test_agent_cancel.py::test_the_turn_stops_at_the_seam_when_the_token_budget_is_exceeded` (reply 1 runs, reply 2 takes the turn over budget: its calls answered `TOKEN_CAP_TOOL_RESULT`, the turn ends with the exhaustion text), `::test_an_answer_over_budget_is_still_returned`, `::test_the_budget_is_per_turn_not_per_session`.
+**Spec:** AGT-9 amended; §7.2 gap row removed (both §7.2 loop-limit rows are now closed); §5.4 `MAXIMUM_TURN_TOKENS`.
+**Shape of the change:** `MAXIMUM_TURN_TOKENS` = 750,000, derived from measurement (24 calls × 25,851 tokens measured per call on the Claude Code lane ≈ 620k, plus a fifth). The loop snapshots `client.spent` at turn start and, at the seam after every reply, compares tokens billed since (input including cache reads and writes, plus output); a reply that wants more tool calls over budget has them answered `TOKEN_CAP_TOOL_RESULT` and the turn ends with `TOKEN_CAP_ANSWER`, the same shape as the tool-call exhaustion; a reply that already answers ends the turn whatever it cost. Every scripted client in the pure tests now carries `spent` like the real ones. `_answer_pending_tool_calls` finds the reply being closed as the LATEST occurrence in history — measured: a scripted client replaying one dict object twice made the first-occurrence search skip the pending calls.
+**Layers:** pure 659 passed / 1 skipped / 1 xfailed; Blender 318 passed / 3 skipped.
+**Commit:** recorded in the follow-up commit.

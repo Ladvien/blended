@@ -7,6 +7,7 @@ import dataclasses
 
 import pytest
 
+from blended.agent.claude_code import TurnCost
 from blended.agent.outcome import ToolOutcome
 from blended.agent.tool_event import (
     TOOL_EVENT_KIND,
@@ -44,6 +45,7 @@ def _client(replies):
     class Scripted:
         def __init__(self):
             self.replies = list(replies)
+            self.spent = TurnCost()
             self.config = dataclasses.replace(ModelConfig.from_environment(), model="scripted", vision_model="")
 
         def chat(self, messages, tools=None):

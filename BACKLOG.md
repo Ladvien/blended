@@ -25,7 +25,7 @@
 | Manifest generation | introspects ops modules for prose AND for tool schemas (OT-3, closed) | PRM-2, `src/blended/manifest.py`, `src/blended/agent/tool_schemas.py` |
 | Bench incumbent | `deepseek-v4-pro:cloud`, 6 rolls, 120/120 exec, `cd_pca` 0.0252 | `docs/2026-09-06-bench-panel-preregistration.md` |
 | Transcript schema | `TRANSCRIPT_SCHEMA_VERSION` 2: structured `tool_event` per call, `IterationRecord.tool_events` (OT-8, closed) | AGT-17, `src/blended/agent/tool_event.py` |
-| Retry / turn caps in the loop | gate-failure cap per object, 3 consecutive (OT-16, closed); token budget open (OT-17) | AGT-20, spec §7.2 |
+| Retry / turn caps in the loop | gate-failure cap per object, 3 consecutive (OT-16); 750k-token budget per turn at the seam (OT-17); both closed | AGT-20, AGT-9 |
 
 ---
 
@@ -90,11 +90,7 @@ All Phase 2 items (OT-4 through OT-8) are closed — see `BACKLOG_DONE.md`.
 
 ## Phase 5 — Bounding cost (cheap, and the ops lane makes it safe to do)
 
-### OT-17 Token budget per turn
-
-**What:** `TurnCost` MUST be compared against a named `MAXIMUM_TURN_TOKENS` and the turn MUST stop at the next seam when exceeded, reported as text (same shape as the tool-call budget exhaustion, AGT-9).
-**Why:** Cost is measured, not bounded (spec §7.2). Op tools shrink per-call tokens, which makes a budget that used to be unreachable reachable.
-**Done means:** `tests/pure/test_agent_cancel.py` covers the seam.
+Both Phase 5 items (OT-16, OT-17) are closed — see `BACKLOG_DONE.md`.
 
 ---
 

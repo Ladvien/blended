@@ -13,14 +13,14 @@ pin-verified-behavior rule exists to prevent.
 """
 
 from blended.evaluate.briefs import (
-    AssetBrief,
-    Correction,
-    Provenance,
     SOURCE_ART_DIRECTION,
     SOURCE_LITERATURE,
     STOOL_LEG_COUNT,
     STOOL_SEAT_DIAMETER_M,
     THREE_LEG_STOOL_BRIEF,
+    AssetBrief,
+    Correction,
+    Provenance,
     _validate_brief,
     validate_briefs,
 )

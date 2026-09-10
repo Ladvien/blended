@@ -22,6 +22,7 @@ import json
 import pytest
 
 from blended.agent import loop as live_loop
+from blended.agent.claude_code import TurnCost
 from blended.agent.outcome import ToolOutcome
 from blended.agent.plan import (
     MAXIMUM_PLAN_STEPS,
@@ -42,6 +43,7 @@ from blended.agent.plan import (
 class ScriptedClient:
     def __init__(self, replies, vision_model=""):
         self.replies = list(replies)
+        self.spent = TurnCost()
         self.config = dataclasses.replace(
             live_loop.ModelConfig.from_environment(),
             model="scripted",

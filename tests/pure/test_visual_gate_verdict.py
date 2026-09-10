@@ -8,9 +8,9 @@ uncalibrated refusal are testable in the pure tier.
 import pytest
 
 from blended.evaluate.visual_diff import (
+    ViewComparison,
     VisualGateNotCalibrated,
     VisualGateThresholds,
-    ViewComparison,
     gate_failures,
     load_thresholds,
 )

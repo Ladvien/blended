@@ -362,7 +362,7 @@ The form gate answers "does the object deliver the brief", deterministically, be
 | AGT-6 | A plan MUST hold at most `MAXIMUM_PLAN_STEPS` (8) non-empty steps; a malformed plan MUST raise rather than truncate. | `src/blended/agent/plan.py:39,104` | `tests/pure/test_turn_plan.py` |
 | AGT-7 | Plan progress MUST be reported as a clamped 0.0–1.0 fraction plus `step n/total`, and MUST survive an out-of-range step index without raising. Every plan-requiring tool — the service action tools and every generated scene-changing op tool — MUST accept `plan_step` (`PLAN_STEP_SCHEMA`, defined once); for an op tool it is stripped before binding, so the op never sees it (OT-6). | `src/blended/agent/plan.py` (`PLAN_STEP_SCHEMA`), `src/blended/agent/tool_schemas.py`, `src/blended/agent/tools.py` | `tests/pure/test_turn_plan.py`, `::test_an_op_tool_call_with_plan_step_reports_progress`, `::test_dispatch_strips_plan_step_before_binding`, `tests/pure/test_tool_schemas.py::test_the_parameter_set_equals_the_signature` |
 | AGT-8 | `AgentSession.send` MUST run one turn to completion, executing tool calls until an answer is reached or the tool-call budget is exhausted. | `src/blended/agent/loop.py:1365,1420` | `tests/blender/test_agent_loop.py` |
-| AGT-9 | A turn MUST be capped at `maximum_tool_calls_per_turn` (24), and exhaustion MUST be reported as text asking the user to narrow the task. | `src/blended/agent/loop.py:1333,1420` | `tests/blender/test_agent_loop.py` |
+| AGT-9 | A turn MUST be capped at `maximum_tool_calls_per_turn` (24) and at `maximum_turn_tokens` (`MAXIMUM_TURN_TOKENS`, 750,000 tokens billed since the turn started: input including cache reads and writes, plus output), checked at the seam after every model reply; a reply that wants more tool calls over either budget is refused (its calls answered `TOKEN_CAP_TOOL_RESULT`) and the exhaustion MUST be reported as text asking the user to narrow the task; a reply that already answers ends the turn whatever it cost (OT-17). | `src/blended/agent/loop.py` (`MAXIMUM_TURN_TOKENS`, `_tokens_since`) | `tests/blender/test_agent_loop.py`, `tests/pure/test_agent_cancel.py::test_the_turn_stops_at_the_seam_when_the_token_budget_is_exceeded`, `::test_an_answer_over_budget_is_still_returned`, `::test_the_budget_is_per_turn_not_per_session` |
 | AGT-10 | `cancel()` MUST stop the turn at the next seam, and the turn MUST be closed consistently: every issued tool call gets a result, and the cancelled answer is appended. | `src/blended/agent/loop.py:1356` | `tests/pure/test_agent_cancel.py` |
 | AGT-11 | Streaming MUST emit typed events — `thinking`, `tool`, `result`, `answer`, `vision`, `plan`, `step`, `render`, `reference` — plus `content_delta` / `thinking_delta` when streaming is on. | `src/blended/agent/loop.py:1365` | `tests/pure/test_streaming.py` |
 | AGT-12 | A half-received tool call MUST be dropped according to the lane's own rule (OpenAI: on stop; Ollama: only if the stream cut before `done`). | `src/blended/agent/loop.py:843` | `tests/pure/test_streaming.py`, `tests/pure/test_openai_transport.py` |
@@ -604,6 +604,7 @@ Every value below was resolved from its definition line in the tree at this revi
 |---|---|---|
 | `maximum_tool_calls_per_turn` | `24` | `src/blended/agent/loop.py:1333` |
 | `MAXIMUM_GATE_FAILURES_PER_OBJECT` | `3` | `src/blended/agent/loop.py` |
+| `MAXIMUM_TURN_TOKENS` | `750_000` (24 calls × 25,851 measured input tokens per call ≈ 620k, plus a fifth) | `src/blended/agent/loop.py` |
 | `REQUEST_TIMEOUT_SECONDS` | `300` | `src/blended/agent/loop.py:65` |
 | `LLAMA_SWAP_REQUEST_TIMEOUT_SECONDS` | `900` | `src/blended/agent/loop.py:77` |
 | `PREFLIGHT_TIMEOUT_SECONDS` | `90` | `src/blended/agent/loop.py:85` |
@@ -740,7 +741,6 @@ Note the doc drift: `src/blended/evaluate/visual_diff.py:1-9` states the reason 
 
 | Gap | Evidence | Consequence |
 |---|---|---|
-| No token budget is enforced. `TurnCost` records usage; the ceiling is per-call (`max_completion_tokens` 16384 on OpenAI lanes, `num_ctx` 32768 on Ollama). | `src/blended/agent/claude_code.py` (`TurnCost`), `src/blended/agent/loop.py:463` | cost is measured, not bounded |
 | Lane skill modules are registered but never selected at runtime. | `src/blended/agent/skill_modules.py:263` | module evidence is not yet earning its place in the live prompt |
 
 ## 7.3 Two paths where the spec says one

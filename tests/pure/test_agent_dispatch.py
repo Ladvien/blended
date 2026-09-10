@@ -22,6 +22,7 @@ import threading
 
 import pytest
 
+from blended.agent.claude_code import TurnCost
 from blended.agent.outcome import ToolOutcome
 
 TOOL_CALL_REPLY = {
@@ -46,6 +47,8 @@ class ScriptedClient:
         from blended.agent.loop import ModelConfig
 
         self.replies = list(replies)
+
+        self.spent = TurnCost()
         self.seen_messages = []
         self.config = dataclasses.replace(
             ModelConfig.from_environment(), model="scripted", vision_model=""
