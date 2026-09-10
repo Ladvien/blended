@@ -80,6 +80,39 @@ def link_into_scene(object_name: str) -> ObjectName:
     return ObjectName(object_name)
 
 
+class NameTaken(ValueError):
+    """The requested name already belongs to another object."""
+
+
+def rename_object(object_name: str, new_name: str) -> ObjectName:
+    """Rename the named object (and its mesh data) to new_name; loud if new_name is taken.
+
+    Measured demand (OT-12, iterations 69): a boolean keeps its TARGET's
+    name, so a brief that names the finished asset differently needed
+    four escape-hatch calls to rename it. Blender would silently mint
+    `new_name.001` on a collision; that is a second object nobody asked
+    for, so a taken name raises NameTaken instead.
+    """
+    import bpy
+
+    from blended.ops._objects import object_by_name
+
+    if not new_name.strip():
+        raise ValueError("new_name must be non-empty")
+    blender_object = object_by_name(object_name)
+    if new_name == blender_object.name:
+        return ObjectName(new_name)
+    if new_name in bpy.data.objects:
+        raise NameTaken(
+            f"cannot rename {object_name!r} to {new_name!r}: an object of that "
+            f"name already exists (remove_object_and_mesh it first)"
+        )
+    blender_object.name = new_name
+    if blender_object.data is not None:
+        blender_object.data.name = new_name
+    return ObjectName(new_name)
+
+
 def remove_object_and_mesh(object_name: str) -> None:
     """Remove an object (and its now-orphaned mesh) by exact name.
 

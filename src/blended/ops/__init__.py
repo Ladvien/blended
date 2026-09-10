@@ -39,10 +39,12 @@ from blended.ops.material_nodes import (
 from blended.ops.materials import assign_material
 from blended.ops.modifiers import add_bevel, apply_all_modifiers
 from blended.ops.primitives import (
+    NameTaken,
     add_box,
     add_cylinder,
     link_into_scene,
     remove_object_and_mesh,
+    rename_object,
 )
 from blended.ops.rigging import (
     BoneSpec,
@@ -66,8 +68,9 @@ from blended.ops.transforms import (
     move_object_to,
     rotate_object_euler,
     snap_base_to_ground,
+    world_bounds,
 )
-from blended.ops.uv import UnwrapReport, unwrap_uvs
+from blended.ops.uv import NoEdgesSelected, UnwrapReport, mark_uv_seams, unwrap_uvs
 from blended.ops.weights import (
     WeightReport,
     assign_vertex_group_weights,
@@ -85,6 +88,8 @@ __all__ = [
     "ImpossibleLeg",
     "InvalidSelector",
     "MaterialReport",
+    "NameTaken",
+    "NoEdgesSelected",
     "RigReport",
     "SplayedLegSpec",
     "UnlinkedOperand",
@@ -119,11 +124,13 @@ __all__ = [
     "keyframe_pose_bone_rotation",
     "linear_array",
     "link_into_scene",
+    "mark_uv_seams",
     "material_report",
     "middle_extent_m",
     "move_object_to",
     "orientation_reading",
     "remove_object_and_mesh",
+    "rename_object",
     "rig_report",
     "rotate_object_euler",
     "select_edges",
@@ -136,4 +143,5 @@ __all__ = [
     "unwrap_uvs",
     "weight_report",
     "weld_and_dissolve",
+    "world_bounds",
 ]

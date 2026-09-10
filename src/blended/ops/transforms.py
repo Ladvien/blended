@@ -14,6 +14,7 @@ catalog.
 
 from __future__ import annotations
 
+from blended.ops._contract import op
 from blended.ops._objects import ObjectName
 
 
@@ -22,6 +23,32 @@ def _refresh_dependency_graph() -> None:
     import bpy
 
     bpy.context.view_layer.update()
+
+
+@op(reads_only=True)
+def world_bounds(object_name: str) -> dict[str, list[float]]:
+    """Read the named object's world-space bounding box: min_m, max_m, extents_m corners of its evaluated bounds.
+
+    Measured demand (OT-12): five escape-hatch chunks in the v12 runs
+    existed only to print world extents of a target and a cutter when a
+    boolean reported no overlap. The depsgraph is refreshed first
+    (OPS-14) so the box is this frame's, not the previous one's.
+    """
+    import bpy
+    from mathutils import Vector
+
+    from blended.ops._objects import object_by_name
+
+    blender_object = object_by_name(object_name)
+    bpy.context.view_layer.update()
+    corners = [blender_object.matrix_world @ Vector(corner) for corner in blender_object.bound_box]
+    minimum = [min(corner[axis] for corner in corners) for axis in range(3)]
+    maximum = [max(corner[axis] for corner in corners) for axis in range(3)]
+    return {
+        "min_m": minimum,
+        "max_m": maximum,
+        "extents_m": [maximum[axis] - minimum[axis] for axis in range(3)],
+    }
 
 
 def apply_object_transform(object_name: str) -> ObjectName:

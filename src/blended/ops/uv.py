@@ -29,6 +29,9 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 
+from blended.ops._objects import ObjectName
+from blended.ops.selectors import EdgeSelector
+
 ANGLE_LIMIT_RAD = math.radians(66.0)
 # A 1/512 margin keeps islands a texel apart at 512px so filtering does
 # not bleed across seams (Vaughan: space islands to avoid bleed without
@@ -58,6 +61,30 @@ class UnwrapReport:
             f"{self.overlapping_face_pair_count} overlapping pairs, "
             f"{self.coverage_fraction:.1%} area sum"
         )
+
+
+class NoEdgesSelected(ValueError):
+    """The selector matched no edge, so marking would change nothing."""
+
+
+def mark_uv_seams(object_name: str, edges: EdgeSelector) -> ObjectName:
+    """Mark UV seams on the edges an EdgeSelector picks; loud when it picks none.
+
+    Measured demand (OT-12, iteration 70): the uv_crate run reached for
+    the escape hatch once, to set seams through bmesh before calling
+    unwrap_uvs. A selector that matches nothing is an error, not a
+    no-op, for the same reason BooleanNoOp exists.
+    """
+    from blended.ops._objects import object_by_name
+    from blended.ops.selectors import select_edges
+
+    mesh_object = object_by_name(object_name, "MESH")
+    selected = select_edges(object_name, edges)
+    if not selected:
+        raise NoEdgesSelected(f"{edges!r} selects no edge of {object_name!r}")
+    for index in selected:
+        mesh_object.data.edges[index].use_seam = True
+    return ObjectName(object_name)
 
 
 def unwrap_uvs(

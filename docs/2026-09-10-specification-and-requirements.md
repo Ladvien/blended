@@ -169,7 +169,7 @@ Routing is by model id (`src/blended/agent/loop.py:337-360`); credentials come f
 | `make test-pure` | `.venv/bin/python -m pytest tests/pure -q` | the Blender-free layer (`Makefile:15`) |
 | `make test-blender-app` | installed Blender + `scripts/run_tests_in_blender.py` | the environment the addon ships into (`Makefile:25`) |
 | `make test-repro` | `scripts/rebuild_twice.py` | two fresh Blenders, different `PYTHONHASHSEED`, identical digests (`Makefile:35`) |
-| `make converge` | `scripts/run_agent_task.py --brief --revision --iteration` | one gated, rendered, logged iteration (`Makefile:44`) |
+| `make converge` | `scripts/run_agent_task.py --brief --revision --iteration` | one gated, rendered, logged iteration (`Makefile:44`); `ARGS="--no-hatch"` withholds `run_python` (OT-13) |
 | `make converge-local` | same driver, local writer+eye, `outputs/local_pair` | the fully local pair, kept out of `_evaluate/` (`Makefile:59`) |
 | `make converge-auto` | `scripts/converge_auto.py --revision` | the unattended loop; ends in a pin proposal or a halt report (`Makefile:113`) |
 | `make pin` | `scripts/pin_revision.py --revision` | the one human act: applying a pin (`Makefile:120`) |
@@ -351,6 +351,9 @@ The form gate answers "does the object deliver the brief", deterministically, be
 | OPS-20 | Every CSG result MUST be re-analyzed before it is treated as an asset; through the op tools this is automatic — `boolean_*` return `ObjectName` and are gated (OT-5). | `src/blended/ops/booleans.py:1-20`, `src/blended/agent/op_call.py` | `tests/blender/test_csg_ops.py`, `tests/blender/test_agent_loop.py::test_a_gate_failure_on_an_op_result_is_reported_at_gate` |
 | OPS-21 | Every facade op MUST satisfy a machine-checkable signature contract: every parameter annotated, an explicit return annotation, a unit suffix on every numeric quantity (NFR-8) unless the name is in the declared unitless allowlist, a one-line docstring summary, and no `bpy` type anywhere in the signature — object references travel as names (`str`) and are resolved through `blended.ops._objects.object_by_name`, which raises `UnknownObject` / `WrongObjectType` rather than letting a bad reference surface as whichever attribute error bpy hits first (OT-2). | `src/blended/ops/_objects.py`, `src/blended/ops/primitives.py:28,53` | `tests/pure/test_ops_signature_contract.py::test_facade_op_satisfies_the_signature_contract`, `::test_the_contract_trips_on_a_seeded_defect` (NFR-15) |
 | OPS-22 | An op that acts on a subset of geometry MUST take a typed selector, never indices: `EdgeSelector` (dihedral angle, material slot, vertex-group name pattern, all), `FaceSelector` (axis-aligned normal, material slot, vertex-group pattern, all), `VertexSelector` (vertex-group pattern, height range, all). Each is a frozen dataclass whose `kind` is a `Literal` enum, validated in `__post_init__` (`InvalidSelector`), mapped by the schema generator to an object with an enum and bound back from JSON; `select_edges` / `select_faces` / `select_vertices` resolve one to sorted indices and are readers (OT-14). | `src/blended/ops/selectors.py`, `src/blended/ops/weights.py` (`assign_vertex_group_weights` takes a `VertexSelector`) | `tests/blender/test_selectors.py`, `tests/pure/test_tool_schemas.py::test_a_selector_round_trips_as_an_object_with_an_enum_of_kinds`, `::test_the_select_ops_are_readers_with_selector_parameters` |
+| OPS-23 | `rename_object(object_name, new_name)` MUST rename the object and its data, MUST be idempotent on its own name, and MUST raise `NameTaken` on a collision rather than let Blender mint `.001` (OT-13, measured demand: four hatch calls on the stool). | `src/blended/ops/primitives.py` | `tests/blender/test_vocabulary_ot13.py::test_rename_object_refuses_a_taken_name_instead_of_minting_dot_001` |
+| OPS-24 | `world_bounds(object_name)` MUST refresh the depsgraph (OPS-14) and return the world-space `min_m`, `max_m` and `extents_m` of the evaluated bounds; it is a reader (OT-13, measured demand: five measurement chunks). | `src/blended/ops/transforms.py` | `tests/blender/test_vocabulary_ot13.py::test_world_bounds_reads_the_placed_box` |
+| OPS-25 | `mark_uv_seams(object_name, edges: EdgeSelector)` MUST mark seams on exactly the selected edges and MUST raise `NoEdgesSelected` when the selector matches nothing (OT-13, measured demand: the uv_crate hatch call). | `src/blended/ops/uv.py` | `tests/blender/test_vocabulary_ot13.py::test_mark_uv_seams_by_selector_and_refuses_an_empty_selection` |
 
 ## 3.10 The agent loop and its tools (`AGT`)
 
@@ -722,7 +725,7 @@ The document holds **215 requirements**, of which **8 have no automated check**:
 | CAP | 7 | 6 | 1 |
 | EXP | 4 | 4 | 0 |
 | ING | 4 | 4 | 0 |
-| OPS | 22 | 22 | 0 |
+| OPS | 25 | 25 | 0 |
 | AGT | 22 | 21 | 1 |
 | PRM | 15 | 15 | 0 |
 | VIS | 14 | 14 | 0 |

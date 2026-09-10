@@ -271,6 +271,7 @@ def test_the_readers_are_the_only_plan_free_op_tools():
         "select_faces",
         "select_vertices",
         "weight_report",
+        "world_bounds",
     ]
     assert _op_tool("add_box")["function"]["parameters"]["properties"][PLAN_STEP_ARGUMENT] == PLAN_STEP_SCHEMA
 

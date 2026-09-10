@@ -14,6 +14,9 @@ from dataclasses import dataclass
 from blended.ops._contract import op
 from blended.ops.selectors import VertexSelector
 
+# The default selection: every vertex. A frozen instance is safe to share.
+ALL_VERTICES = VertexSelector(kind="all")
+
 MINIMUM_WEIGHT = 0.0
 MAXIMUM_WEIGHT = 1.0
 
@@ -41,7 +44,7 @@ def assign_vertex_group_weights(
     object_name: str,
     group_name: str,
     weight: float,
-    vertices: VertexSelector = VertexSelector(kind="all"),
+    vertices: VertexSelector = ALL_VERTICES,
 ) -> str:
     """Create or reuse a vertex group on the named mesh and assign ``weight`` to the selected vertices.
 

@@ -61,6 +61,8 @@ def parse_arguments(argv):
     # leaves room to report and to absorb one failed chunk, while still
     # capping a runaway loop: planter_box answers in 3.
     parser.add_argument("--max-tool-calls", type=int, default=24)
+    # OT-13's acceptance: the vocabulary alone has to carry the brief.
+    parser.add_argument("--no-hatch", action="store_true", help="withhold run_python entirely")
     return parser.parse_args(argv)
 
 
@@ -190,6 +192,7 @@ def main(argv) -> int:
         output_directory=render_directory / "agent",
         maximum_tool_calls_per_turn=arguments.max_tool_calls,
         messages=[{"role": "system", "content": system_prompt}],
+        disabled_tools=frozenset({"run_python"}) if arguments.no_hatch else frozenset(),
     )
 
     tool_calls: list[str] = []
