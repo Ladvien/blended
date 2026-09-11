@@ -458,7 +458,7 @@ on the passes), so the model flails rather than stops when it cannot find an op.
 **What the lane found, none of it in the tool surface:** four harness defects, each of which had been latent on every lane the harness has ever used — the assistant's tool calls never reached the model (AGT-26), an empty reply was read as an answer (AGT-25), a crash exited 0 (NFR-28), and a transient gateway killed whole runs (AGT-27). That is the return on the item.
 **Record gap:** iterations 93–117 were run on the broken transport from worktrees since removed; only 118–122 are in `_evaluate/iterations.jsonl`. The failures are recorded in the commits above, not in the log.
 **Layers:** pure 747 passed / 1 skipped / 1 xfailed; Blender 330 passed / 3 skipped (both by exit code).
-**Commit:** `74d990b`; closing commit recorded in the follow-up commit.
+**Commit:** `74d990b`; closing `92b7d7e`.
 
 ## OT-32 The lane survives a gateway, and a crash is not a success
 
