@@ -25,6 +25,14 @@ from pathlib import Path
 REPOSITORY_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_BLENDER = "/Applications/Blender.app/Contents/MacOS/Blender"
 RUNNER = REPOSITORY_ROOT / "scripts" / "run_3dcode_instance.py"
+sys.path.insert(0, str(REPOSITORY_ROOT / "src"))
+from blended.agent.loop import exhausted_credits_error  # noqa: E402 — ONE definition of "out of credits"
+
+# The sweep's own exit code for a lane that cannot answer until the user
+# acts: every later instance would fail identically, so the roll stops
+# here and the chain log says why. Measured 2026-09-11: six instances,
+# ~5 min of backoff each, on a lane out of cloud credits.
+LANE_EXHAUSTED_EXIT = 3
 SWEEP_TIMEOUT_SECONDS = 1500        # 1.28x the measured worst instance
                                     # (Oven_seed0, 1167 s) — see --timeout
 
@@ -97,6 +105,16 @@ def work_directory(arguments, instance: str) -> Path:
     )
 
 
+def read_error(directory: Path) -> str:
+    metadata_path = directory / ".agent_meta.json"
+    if not metadata_path.exists():
+        return ""
+    try:
+        return str(json.loads(metadata_path.read_text()).get("error", "") or "")
+    except json.JSONDecodeError:
+        return ""
+
+
 def read_status(directory: Path) -> str:
     metadata_path = directory / ".agent_meta.json"
     if not metadata_path.exists():
@@ -167,11 +185,25 @@ def main(argv) -> int:
             status = f"ERR_EXIT_{completed.returncode}"
         statuses[status] += 1
         print(f"[STATUS] {instance} {status} {duration:.1f}s", flush=True)
+        if status.startswith("ERR_") and exhausted_credits_error(read_error(directory)):
+            print(
+                f"\n[SWEEP STOPPED] {instance}: the lane is out of credits — "
+                f"{read_error(directory)[:160]}; {len(instances) - position} instance(s) "
+                f"not attempted (re-run the sweep once credits are restored)",
+                flush=True,
+            )
+            _print_histogram(statuses)
+            return LANE_EXHAUSTED_EXIT
 
-    print("\n=== sweep status histogram ===")
-    for status, count in statuses.most_common():
-        print(f"  {status:<16} {count:>4}")
+    _print_histogram(statuses)
     return 0
 
 
-raise SystemExit(main(sys.argv[1:]))
+def _print_histogram(statuses: Counter) -> None:
+    print("\n=== sweep status histogram ===")
+    for status, count in statuses.most_common():
+        print(f"  {status:<16} {count:>4}")
+
+
+if __name__ == "__main__":
+    raise SystemExit(main(sys.argv[1:]))

@@ -343,6 +343,40 @@ def test_a_window_that_never_lifts_fails_loudly(monkeypatch):
     assert sum(RETRY_BACKOFF_SECONDS) == 155  # the measured budget
 
 
+def test_an_exhausted_credit_lane_is_not_retried(monkeypatch):
+    """Measured 2026-09-11 (OT-37, third set): from 15:20 CDT Ollama cloud
+    answered every call 429 with "usage credits auto reload monthly max
+    reached", six instances in a row each burned the full backoff, and
+    the roll went on. That 429 is not "not now" — nothing but the user
+    adding credits changes it — so it is raised at once with its body."""
+    import urllib.error
+
+    from blended.agent.loop import EXHAUSTED_CREDITS_SIGNATURE, exhausted_credits_error
+
+    waits = []
+    monkeypatch.setattr("blended.agent.loop.time.sleep", lambda s: waits.append(s))
+    calls = {"n": 0}
+    body = b'{"error":"usage credits auto reload monthly max reached, increase your monthly max"}'
+
+    def out_of_credits(self, path, payload, timeout_seconds):
+        calls["n"] += 1
+        raise urllib.error.HTTPError(path, 429, "Too Many Requests", {}, io.BytesIO(body))
+
+    monkeypatch.setattr(OllamaClient, "_build_request", lambda self, path, payload: path)
+    monkeypatch.setattr("blended.agent.loop.urllib.request.urlopen", _urlopen_from(out_of_credits))
+    client = OllamaClient(_metered_config(context_length=METERED_WINDOW))
+
+    with pytest.raises(urllib.error.HTTPError) as raised:
+        client._request("/v1/chat/completions", {"model": "m"}, 60)
+
+    assert raised.value.code == 429
+    assert calls["n"] == 1 and waits == [] and client.spent.retried_calls == 0
+    # The body was read to decide; it is handed on so the caller can say why.
+    assert EXHAUSTED_CREDITS_SIGNATURE in raised.value.read().decode("utf-8")
+    assert exhausted_credits_error(body.decode("utf-8"))
+    assert not exhausted_credits_error("rate limited")
+
+
 # --- the transport saying "not now" is the same case (OT-37, roll 2) ---
 
 

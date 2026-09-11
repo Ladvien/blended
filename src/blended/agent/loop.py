@@ -15,6 +15,7 @@ the reasoning behind the defaults.
 from __future__ import annotations
 
 import base64
+import io
 import json
 import threading
 import time
@@ -229,6 +230,20 @@ RETRYABLE_HTTP_STATUSES = frozenset({408, 429, 500, 502, 503, 504})
 # tuple did not exist and the retry caught `HTTPError` alone. The
 # roll finished 16/20 and the set was void.
 RETRYABLE_TRANSPORT_ERRORS = (urllib.error.URLError, TimeoutError, ConnectionError)
+# A 429 that is NOT "not now": Ollama cloud answers every call with this
+# body once the account's usage credits are spent, until the user adds
+# credits. Measured 2026-09-11 (OT-37, third set): from 15:20 CDT six
+# instances in a row each burned the full backoff (45 retried calls in
+# the roll) on a lane that could not answer until a person acted, and the
+# sweep went on to the next instance every time. Raised at once instead,
+# and the sweep stops on it (`exhausted_credits_error`).
+EXHAUSTED_CREDITS_SIGNATURE = "usage credits"
+
+
+def exhausted_credits_error(detail: str) -> bool:
+    """True when a gateway error body says the lane is out of credits —
+    a condition no retry and no next instance can change."""
+    return EXHAUSTED_CREDITS_SIGNATURE in detail
 # Waits between attempts, in seconds. NOT a fallback: the same request
 # goes to the same endpoint and the same provider, a bounded number of
 # times, and then fails loudly.
@@ -1160,8 +1175,15 @@ class OllamaClient:
                 # BEFORE the transport clause below can see it.
                 if http_error.code not in RETRYABLE_HTTP_STATUSES or wait_seconds is None:
                     raise
-                last_error = http_error
                 detail = http_error.read().decode("utf-8", "replace")[:160]
+                if exhausted_credits_error(detail):
+                    # The body was consumed to read it; hand it on where
+                    # check_connection and the sweep read the detail.
+                    raise urllib.error.HTTPError(
+                        http_error.url, http_error.code, detail, http_error.hdrs,
+                        io.BytesIO(detail.encode("utf-8")),
+                    ) from http_error
+                last_error = http_error
                 what = f"HTTP {http_error.code}"
             except RETRYABLE_TRANSPORT_ERRORS as transport_error:
                 if wait_seconds is None:
