@@ -356,4 +356,70 @@ thin in their own frame (`Mirror` 0.006, `Rug` 0.007, `LeafBananaTree` 0.04, `Le
 (`Leaf` 31 faces, `FoodBox` 44, `Mirror` 108, `Rug` 508, `DoorCasing` 604). `Nautilus` is
 posed off-axis and its proportion-oracle number is therefore invalid (see BEN-6c).
 
-**Outcome.** *(pending — to be filled from the first roll set ranked on F-score)*
+**Outcome.** *(pending — to be filled from the first roll set ranked on F-score, which is
+the "second set" registered below; the panel that fills it also fills that section's line)*
+
+**Instrument note, 2026-09-11 (OT-36).** F-score moved from `bench_fscore.py`'s sidecar into
+every diagnose row (`fscore_005`, `precision_005`, `recall_005`, one implementation in
+`scripts/bench_surface_metrics.py`), and the nine rolls on disk were re-diagnosed with every
+re-derived `cd_pca` asserted equal to its stored value (all 180 rows, tolerance 1e-9). The
+per-roll F@0.05 the panel now carries differs from the table above in the fourth decimal —
+roll 1 0.4066 against 0.4060, roll 2 0.4465 against 0.4454 — because the sidecar drew from
+the scorer's RNG stream for every instance in the list while the diagnose skips an
+instance with no GLB before sampling, so the two sample different points on the instances
+after a failure. The panel's numbers are the ones that rank; the table above is the record
+of what was read before the axis was chosen.
+
+---
+
+## Disclosed-surface rolls, second set — 2026-09-11 (OT-37)
+
+Written BEFORE the set is launched and AFTER the first set (rolls 1–3 above) was read: it
+finished 18/20, 18/20 and 13/20 and is void under §P8a, so nothing in it ranks and its
+outcome line reads "not measured". Only the outcome line here is filled afterwards, from
+`scripts/bench_panel.py`, never by hand.
+
+**Candidate.** The harness at `main` after OT-34 and OT-36, frozen by
+`scripts/freeze_worktree.sh HEAD` into `~/blended-worktrees/<commit>`; the commit is named in
+the launch record below. Beyond the first set's candidate it carries: the bake replays a
+chunk that raised after changing the scene (OT-31); the gateway retry on the bench lane
+(`179ab11`, which the first set's tree `c6e4bfc` predated — the cause of roll 3's seven
+`HTTP 502` losses); the `orient:` reading computed from world extents (OT-34); F-score in
+every diagnose row (OT-36). Everything else is the first set's candidate unchanged.
+
+**Incumbent.** Group `deepseek-v10`, the same six `run_python`-only rolls, re-diagnosed on
+the same GLBs. Measured before launch: executability 120/120; **F@0.05 mean 0.4528, between-
+roll SD 0.0200** (rolls 0.4578, 0.4708, 0.4613, 0.4140, 0.4516, 0.4615); precision 0.4943,
+recall 0.4871; `cd_pca` 0.0252 unchanged. SE of a 20-mean 0.0192; at the three-roll floor
+0.0111; the 15 % target is 0.0679 against a 2σ detectable effect of 0.0221 (margin 3.07×,
+against 1.84× on `cd_pca`) — the registered axis is the more resolving of the two.
+
+**Writer and eye.** `deepseek-v4-pro:cloud` and `kimi-k2.7-code:cloud`, unchanged; the
+Ollama lane through the local daemon; per-instance timeout 1500 s.
+
+**Instance set and rolls.** The frozen 20-instance holdout, three rolls, model directories
+`blended-deepseek-v4-pro-disclosed2-roll{1,2,3}` — new names, because the sweep resumes any
+directory that already holds a script. Every roll runs `scripts/bench_chain.sh` from the
+freeze: sweep → bake → `executability.py` → `shape_chamfer.py` → `diagnose_3dcode.py`.
+
+**Ranking rule and target.** Executability 20/20 on every roll (§P8a; the panel now refuses
+any roll below it by name), then **F@0.05 as a mean over the three rolls, higher is better**,
+per the F-score pre-registration above. Target: `TARGET_RELATIVE_IMPROVEMENT` (15 %) above
+the incumbent's mean, i.e. 0.5207. Regression: a one-sided fall of more than
+`REGRESSION_SIGMA` (2) paired standard errors. `cd_pca` is reported so H2' stays readable;
+it ranks nothing.
+
+**Hypotheses, stated before the roll.**
+- H1'' (executability): 60/60 over three rolls against 120/120. A roll below 20/20 whose
+  losses are the gateway's voids the set again; one whose losses are ours is a finding.
+- H2'' (F@0.05): the disclosed surface is not below the incumbent by more than 2σ; a fall
+  beyond that falsifies the surface on this writer. The first set's rolls, void as they are,
+  read 0.4066, 0.4465 and 0.4001 — each below the incumbent's 0.4528, and roll 1 by more
+  than the incumbent's between-roll SD — so this hypothesis is at real risk, which is the
+  point of running it.
+- Recorded, not ranked: `cd_pca` (H2' as originally stated), precision and recall, turns and
+  seconds per instance.
+
+**Outcome.** *(pending — launched per the launch record below; ≈ 3 h per roll)*
+
+**Launch record (appended, not edited).**

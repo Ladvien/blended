@@ -532,3 +532,26 @@ red before the change, green after; OPS-18 amended in place; both layers green.
 **Shape of the change:** `ops/transforms._world_bounds_m` / `_world_extents_m` is the one place `matrix_world @ bound_box` is measured; `world_bounds`, `apply_canonical_depth_axis`, `harness.gate_object`, `tools.inspect_object` and `tools.list_scene` read it; the duplicate in `canonical_orientation.py` is deleted. Mistake memory: `the-reading-and-the-op-measured-different-boxes`.
 **Layers:** pure 749 passed / 1 skipped / 1 xfailed; Blender 333 passed / 3 skipped (both by exit code).
 **Commit:** `57562c6`.
+
+## OT-36 F-score ranks the next roll set, and a roll below 20/20 cannot rank
+
+**What:** per the OT-33 pre-registration and the user's decision of 2026-09-11, F@0.05
+becomes `RANKING_METRIC` with an explicit direction; `diagnose_3dcode.py` writes
+`fscore_005`, `precision_005`, `recall_005` per row from ONE implementation shared with
+`bench_fscore.py`; `bench_panel.py` honours the direction and refuses any group in which a
+roll executed fewer instances than it attempted (§P8a). The nine rolls on disk (six
+incumbent, three void disclosed) are re-diagnosed, asserting every re-derived `cd_pca`
+reproduces the stored value.
+**Why:** the panel cannot rank on a column it does not carry, and it currently accepts a
+19/20 roll as rankable, which the rule forbids.
+**Done means:** the panel on the nine JSONs ranks on F@0.05 and refuses the disclosed group;
+a pure test feeds a 19/20 roll and asserts the refusal; BEN-4/BEN-5 amended in place; the
+second-set pre-registration is written with the incumbent's F@0.05 mean and SD before launch.
+
+**Closed:** 2026-09-11.
+**Gating tests:** `tests/pure/test_bench_panel.py::test_the_ranking_axis_is_f_score_and_higher_ranks_first`, `::test_a_roll_that_failed_one_instance_cannot_rank` (a 20-row roll with one `ERR_MODEL_CALL` is refused by name with "executability 19/20"), `::test_a_worse_executability_cannot_rank_first` (rewritten: a group with failed instances is refused, not ranked lower), `tests/pure/test_paired_bench_delta.py::test_the_ranking_metric_is_f_score_at_the_registered_threshold`, `::test_a_falling_f_score_is_a_regression_and_a_rising_one_is_not`.
+**Spec:** BEN-4 and BEN-6 amended in place.
+**Shape of the change:** `scripts/bench_surface_metrics.py` holds the one alignment search and the one F-score; `diagnose_3dcode.py` writes `fscore_005`/`precision_005`/`recall_005` per row on the same aligned cloud as `cd_pca`; `bench_fscore.py` and `shape_error_decompose.py` import from it. `bench_thresholds.py`: `RANKING_METRIC = "fscore_005"`, `higher_is_better`/`worsening_sign` read by the panel's sort and the paired delta's sign and target. `bench_panel.is_rankable` requires executed == attempted ≥ 20 and every attempt scored.
+**Measured:** nine rolls re-diagnosed, 180/180 `cd_pca` values reproduced to 1e-9. Incumbent `deepseek-v10` F@0.05 0.4528, SD 0.0200, margin at the floor 3.07× (cd_pca 1.84×). The panel on both groups exits 1: "group disclosed has 0 rankable roll(s) … roll1 (18 instances scored, executability 19/20), roll2 (18, 19/20), roll3 (13, 13/20)". Sidecar-vs-diagnose F@0.05 differ in the fourth decimal (0.4060 vs 0.4066) from RNG stream order around unscoreable instances; recorded in the pre-registration.
+**Layers:** pure 752 passed / 1 skipped / 1 xfailed (by exit code); no Blender-layer file touched.
+**Commit:** _(recorded in the follow-up commit)_

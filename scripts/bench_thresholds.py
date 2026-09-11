@@ -15,16 +15,73 @@ ORIENT_ARTIFACT_THRESHOLD = 0.02    # Δ_orient at/above which an instance's
 
 # --- The pre-registered ranking rule -------------------------------------
 #
-# Ranking is on the POSE-NORMALIZED axis. Measured over the six surviving
-# 20-instance rolls: cd_pca mean 0.0252, between-roll SD 0.0022, SE of a
-# 20-mean 0.0018; cd_yawmin mean 0.0769, SD 0.0072, SE 0.0090.
-# delta_orient = cd_yawmin - cd_pca carries 89% of the headline variance,
-# so ranking on cd_yawmin ranks a per-instance orientation coin flip.
-RANKING_METRIC = "cd_pca"
-# Reported on every panel, never ranked on. cd_yawmin is the scorer's own
-# number and stays visible; delta_orient is the pose axis and is owned by
-# the orientation work, not by a shape candidate.
-REPORTED_METRICS = ("cd_yawmin", "delta_orient")
+# Ranking is on F-SCORE at a fixed distance threshold, pose-normalised the
+# same way cd_pca is (best alignment over the 24-rotation PCA frame).
+#
+# Why not Chamfer. Tatarchenko, Richter, Ranftl, Li, Koltun & Brox, "What
+# Do Single-View 3D Reconstruction Networks Learn?", CVPR 2019
+# (DOI 10.1109/cvpr.2019.00352): under CD and IoU, retrieval and
+# classification baselines are statistically indistinguishable from
+# reconstruction — the metrics rank category priors, not surface
+# agreement — and F-score at a threshold is the discriminative axis.
+# Measured here (OT-33, 2026-09-10, disclosed rolls 1 and 2, 18 instances
+# each): cd_pca ranked roll 1 better (0.0270 vs 0.0289) while F@0.05
+# ranked roll 2 better (0.4060 vs 0.4454); the mean absolute rank shift
+# between the two metrics across roll 1's instances was 2.78 places of 18.
+# The proportion oracle moved cd_pca by only 0.0043, and the orientation
+# term sat at the holdout's documented floor. So CD could not see what
+# the writer changed.
+#
+# Registered BEFORE any roll was ranked on it (the OT-33 pre-registration
+# in docs/2026-09-06-bench-panel-preregistration.md), for the next roll
+# set onward; rolls 1-3 of the disclosed surface stay on cd_pca as their
+# own pre-registration said, and none of them reached 20/20 anyway.
+# Thresholds were fixed a priori; re-choosing the one that flatters a
+# result after reading it is selection on the test set.
+FSCORE_THRESHOLDS = (0.01, 0.02, 0.05, 0.10)
+PRIMARY_FSCORE_THRESHOLD = 0.05
+
+
+def metric_column(name: str, threshold: float) -> str:
+    """The column a thresholded metric is written under, e.g. `fscore_005`.
+
+    The threshold is in the name so a later re-choice is visible in every
+    table that carries it, not hidden behind a constant.
+    """
+    return f"{name}_{round(threshold * 100):03d}"
+
+
+RANKING_METRIC = metric_column("fscore", PRIMARY_FSCORE_THRESHOLD)
+# Reported on every panel, never ranked on. Precision and recall say
+# "invented surface" versus "missed surface", which F folds into one
+# number; cd_pca stays so the earlier hypotheses (H2') remain readable;
+# cd_yawmin is the scorer's own number; delta_orient is the pose axis and
+# is owned by the orientation work, not by a shape candidate.
+REPORTED_METRICS = (
+    metric_column("precision", PRIMARY_FSCORE_THRESHOLD),
+    metric_column("recall", PRIMARY_FSCORE_THRESHOLD),
+    "cd_pca",
+    "cd_yawmin",
+    "delta_orient",
+)
+# Which way is better, per metric family. F-score, precision and recall
+# are fractions of surface in agreement (1 is perfect); every Chamfer
+# axis is a distance (0 is perfect). Every consumer that sorts, signs a
+# delta or names a target reads THIS, so two files cannot disagree about
+# what "better" means.
+HIGHER_IS_BETTER_PREFIXES = ("fscore_", "precision_", "recall_")
+
+
+def higher_is_better(metric: str) -> bool:
+    return metric.startswith(HIGHER_IS_BETTER_PREFIXES)
+
+
+def worsening_sign(metric: str) -> int:
+    """Multiply `candidate - baseline` by this and a positive number is a
+    regression whichever way the metric points."""
+    return -1 if higher_is_better(metric) else 1
+
+
 # A candidate is a MEAN over at least this many paired rolls of the same
 # instance set: 3 rolls take the SE of the 20-mean from 0.0018 to 0.0010.
 MINIMUM_PAIRED_ROLLS = 3

@@ -56,7 +56,7 @@ from pathlib import Path
 import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from diagnose_3dcode import pca_frame, signed_permutations  # helpers, reused
+from bench_surface_metrics import pca_frame, signed_permutations  # helpers, reused
 
 DECOMPOSE_N_POINTS = 8192           # scorer parity (--n-points default)
 DECOMPOSE_SEED = 0                  # scorer parity (--seed default)

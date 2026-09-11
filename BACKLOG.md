@@ -147,21 +147,6 @@ streams delivers every delta once with `retried_calls == 2`; a stream cut mid-bo
 with no retry; a streamed `done` frame's counts land on `spent` — red before, green after;
 AGT-27 amended to name both `chat` paths.
 
-### OT-36 F-score ranks the next roll set, and a roll below 20/20 cannot rank
-
-**What:** per the OT-33 pre-registration and the user's decision of 2026-09-11, F@0.05
-becomes `RANKING_METRIC` with an explicit direction; `diagnose_3dcode.py` writes
-`fscore_005`, `precision_005`, `recall_005` per row from ONE implementation shared with
-`bench_fscore.py`; `bench_panel.py` honours the direction and refuses any group in which a
-roll executed fewer instances than it attempted (§P8a). The nine rolls on disk (six
-incumbent, three void disclosed) are re-diagnosed, asserting every re-derived `cd_pca`
-reproduces the stored value.
-**Why:** the panel cannot rank on a column it does not carry, and it currently accepts a
-19/20 roll as rankable, which the rule forbids.
-**Done means:** the panel on the nine JSONs ranks on F@0.05 and refuses the disclosed group;
-a pure test feeds a 19/20 roll and asserts the refusal; BEN-4/BEN-5 amended in place; the
-second-set pre-registration is written with the incumbent's F@0.05 mean and SD before launch.
-
 ### OT-37 Record roll 3, freeze HEAD, relaunch three rolls
 
 **What:** the OT-27 launch record gets roll 2 (19:53, 18/20) and roll 3 (01:47, 13/20, the
@@ -203,6 +188,7 @@ Entries in `BACKLOG_DONE.md` are never edited; a measured correction to a closed
 | Item | Correction | Measured | Commit |
 |---|---|---|---|
 | OT-17 (`2922411`) | `MAXIMUM_TURN_TOKENS` re-derived 750,000 → 1,700,000. The 750k figure came from the 8-tool lane (25,851 tokens per call); with 50 op tools the Claude Code lane bills 58,241 per call (91 % cache reads), and the budget stopped iteration 68 (planter_box, v12) at call 16 of 24. Mistake memory: `a-budget-derived-before-the-surface-changed-stops-honest-turns`. | iteration 68: 931,851 tokens / 16 calls | `6fdd91a` |
+| OT-33 (`0635f6e`) | F@0.05 is now the ranking axis (`RANKING_METRIC = "fscore_005"`, higher is better), as that item's pre-registration registered for the next roll set; the panel carries precision and recall beside it and `cd_pca` is reported, not ranked. `bench_fscore.py`'s own F-score and alignment search moved to `scripts/bench_surface_metrics.py`, the one implementation `diagnose_3dcode.py` also writes per row. The nine rolls on disk were re-diagnosed; every re-derived `cd_pca` reproduced the stored value (OT-36). | disclosed rolls 1–2: cd_pca 0.0270/0.0289 vs F@0.05 0.4060/0.4454 — the metrics disagreed | OT-36 closing commit |
 | OT-22 (`6ef543c`) | Closed with two Blender tests red: the closing chain gated the commit on a `grep` that succeeded on the failure lines. The cause was real — the request estimate counted a contact sheet's base64 as text (~239k "tokens") and refused a turn that fit. Fixed the same hour: an attached image counts as `TOKENS_PER_IMAGE_ESTIMATE` (1,400, Anthropic's documented w×h/750 for a 1024² sheet), not as its bytes. | Blender 327/2 at the close; 329/0 after | `d7ed393` |
 
 ## Not in this backlog, and why

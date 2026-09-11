@@ -50,6 +50,8 @@ from bench_thresholds import (  # the pre-registered ranking rule
     REGRESSION_SIGMA,
     REPORTED_METRICS,
     TARGET_RELATIVE_IMPROVEMENT,
+    higher_is_better,
+    worsening_sign,
 )
 from compare_3dcode_rolls import (  # shared loader + set intersection
     load_roll,
@@ -124,9 +126,14 @@ def paired_delta(baseline_rolls, candidate_rolls, instances, metric) -> dict:
             f"{MINIMUM_PAIRED_INSTANCES} instances to carry a standard "
             f"error; got {len(instances)}"
         )
+    # Signed so that POSITIVE IS WORSE whichever way the metric points:
+    # F-score rises when a candidate improves, Chamfer falls, and the
+    # sign lives in `bench_thresholds` so this file and the panel cannot
+    # disagree about what "better" means.
+    sign = worsening_sign(metric)
     deltas = [
-        instance_mean(candidate_rolls, instance, metric)
-        - instance_mean(baseline_rolls, instance, metric)
+        sign * (instance_mean(candidate_rolls, instance, metric)
+                - instance_mean(baseline_rolls, instance, metric))
         for instance in instances
     ]
     mean_delta = statistics.fmean(deltas)
@@ -192,8 +199,9 @@ def render_report(baseline_rolls, candidate_rolls, instances, arguments) -> str:
     # draws being quoted as an expected value. A relative target moves
     # with the incumbent and cannot go stale.
     guard = set_mean(baseline_rolls, instances, PRIMARY_METRIC)
-    target = guard * (1.0 - TARGET_RELATIVE_IMPROVEMENT)
-    effect = guard - target
+    effect = guard * TARGET_RELATIVE_IMPROVEMENT
+    target = (guard + effect if higher_is_better(PRIMARY_METRIC)
+              else guard - effect)
     baseline_names = [roll["model_dir"] for roll in baseline_rolls]
     candidate_names = [roll["model_dir"] for roll in candidate_rolls]
     scope = (f"the {len(instances)} instances named in "
@@ -228,8 +236,8 @@ def render_report(baseline_rolls, candidate_rolls, instances, arguments) -> str:
         "",
         "## Paired difference, per metric",
         "",
-        ("| metric | mean delta | paired SD | SE of the mean | sigma "
-         "| worse/better |"),
+        ("| metric | mean delta (+ is worse) | paired SD | SE of the mean "
+         "| sigma | worse/better |"),
         "|---|---|---|---|---|---|",
     ]
     for metric in REPORT_METRICS:

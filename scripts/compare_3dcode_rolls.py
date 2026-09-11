@@ -27,9 +27,17 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from bench_thresholds import ORIENT_ARTIFACT_THRESHOLD  # shared, stdlib-only
+from bench_thresholds import (  # shared, stdlib-only
+    ORIENT_ARTIFACT_THRESHOLD,
+    RANKING_METRIC,
+    REPORTED_METRICS,
+)
 
-NOISE_METRICS = ("cd_yawmin", "cd_pca", "delta_orient")
+# Every metric the panel ranks or reports, ranking axis first. A row that
+# lacks any of them is unscoreable for the panel, and a diagnose JSON
+# written before OT-36 (no F-score columns) has to be re-diagnosed — the
+# GLBs are retained for exactly that (BEN-9).
+NOISE_METRICS = (RANKING_METRIC,) + REPORTED_METRICS
 MINIMUM_ROLLS = 2                   # a paired difference needs two rolls; an
                                     # SD of the roll means needs three
 OUTPUT_DIRECTORY = Path("outputs/bench")

@@ -58,24 +58,25 @@ from pathlib import Path
 
 import numpy as np
 import trimesh
-from scipy.spatial import cKDTree
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from bench_surface_metrics import (  # ONE alignment search, ONE F-score (OT-36)
+    FSCORE_THRESHOLDS,
+    PRIMARY_FSCORE_THRESHOLD,
+    best_pca_alignment,
+    fscore,
+)
 
 # The scorer's defaults, so every number here is comparable with the
 # panel's. Both are the shape_chamfer.py argparse defaults.
 N_POINTS = 8192
 SEED = 0
 
-# Thresholds as a fraction of the unit-sphere radius the scorer
-# normalises to (`normalize_unit_sphere`: centre at centroid, scale so
-# max||p|| = 1). Chosen A PRIORI, before looking at which separates best
-# — picking the threshold that flatters a result is selecting on the test
-# set, and this repo has a measured note about that
+# Thresholds live in `bench_thresholds.FSCORE_THRESHOLDS`, chosen A PRIORI
+# before any of them was read; `PRIMARY_FSCORE_THRESHOLD` is the one the
+# panel ranks on. Re-choosing after the fact is selection on the test set
 # (DOI 10.48550/arXiv.2507.02554, quoted in ops/canonical_orientation.py).
-FSCORE_THRESHOLDS = (0.01, 0.02, 0.05, 0.10)
-# The one the panel ranks on: 5% of the object's radius is the scale at
-# which a surface is either in the right place or is not. The others are
-# reported so the choice can be re-read, never re-chosen after the fact.
-PRIMARY_THRESHOLD = 0.05
+PRIMARY_THRESHOLD = PRIMARY_FSCORE_THRESHOLD
 
 # A reference is flagged thin when its smallest extent IN ITS OWN FRAME
 # is this fraction of its largest. Own frame, not world axes: measured
@@ -107,25 +108,6 @@ def parse_arguments(argv):
     parser.add_argument("--out", default="", help="Markdown path; default stdout")
     parser.add_argument("--json", default="", help="optional JSON sidecar")
     return parser.parse_args(argv)
-
-
-def fscore(reference_points, generated_points, threshold):
-    """Precision, recall and their harmonic mean at `threshold`.
-
-    Precision: the fraction of GENERATED points within `threshold` of the
-    reference surface — surface we made that belongs. Recall: the
-    fraction of REFERENCE points within `threshold` of ours — surface
-    that should be there and is. Distances are Euclidean on clouds the
-    scorer has already normalised to a unit sphere, so `threshold` reads
-    as a fraction of the object's radius.
-    """
-    generated_to_reference, _ = cKDTree(reference_points).query(generated_points, k=1)
-    reference_to_generated, _ = cKDTree(generated_points).query(reference_points, k=1)
-    precision = float((generated_to_reference < threshold).mean())
-    recall = float((reference_to_generated < threshold).mean())
-    if precision + recall <= 0.0:
-        return 0.0, precision, recall
-    return 2.0 * precision * recall / (precision + recall), precision, recall
 
 
 def own_frame_extents(mesh):
@@ -353,24 +335,13 @@ def main(argv) -> int:
             continue
         reference_points = sc.normalize_unit_sphere(reference_points)
         generated_points = sc.normalize_unit_sphere(generated_points)
-        # Orientation is quotiented out the same way diagnose_3dcode.py
-        # does, so F-score and cd_pca answer the same question about the
+        # Orientation is quotiented out by the same search diagnose_3dcode.py
+        # uses, so F-score and cd_pca answer the same question about the
         # same pose: is the SHAPE right, given the best frame alignment.
-        sys.path.insert(0, str(Path(__file__).resolve().parent))
-        from diagnose_3dcode import pca_frame, signed_permutations
-
-        best_rotation, best_distance = None, np.inf
-        reference_frame = pca_frame(reference_points)
-        generated_frame = pca_frame(generated_points)
-        for permutation in signed_permutations():
-            rotation = reference_frame @ permutation @ generated_frame.T
-            if np.linalg.det(rotation) <= 0.0:
-                continue
-            distance = sc.chamfer_squared(reference_points, generated_points @ rotation.T)
-            if distance < best_distance:
-                best_rotation, best_distance = rotation, distance
+        best_rotation, best_distance = best_pca_alignment(
+            sc, reference_points, generated_points)
         aligned = generated_points @ best_rotation.T
-        row["cd_pca"] = float(best_distance)
+        row["cd_pca"] = best_distance
         row["fscore"], row["precision"], row["recall"] = {}, {}, {}
         for threshold in FSCORE_THRESHOLDS:
             value, precision, recall = fscore(reference_points, aligned, threshold)

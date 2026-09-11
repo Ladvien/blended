@@ -8,8 +8,11 @@ named baseline". Neither puts the axes side by side with an executability
 gate and a written ranking rule, which is what a decision needs.
 
 The rule is pre-registered in `bench_thresholds`, not chosen here, and it
-is chosen BEFORE the next experiment on purpose. Measured over the six
-surviving 20-instance rolls:
+is chosen BEFORE the next experiment on purpose. Since OT-36 the ranking
+axis is F-score at `PRIMARY_FSCORE_THRESHOLD` (higher is better; see
+`bench_thresholds` for the DOI and the measurement); the Chamfer history
+below is why `cd_pca` rather than `cd_yawmin` is the Chamfer axis still
+reported beside it. Measured over the six surviving 20-instance rolls:
 
     axis          mean     between-roll SD   SE of a 20-mean
     cd_yawmin     0.0769   0.0072            0.0090
@@ -45,6 +48,8 @@ from bench_thresholds import (  # the pre-registered ranking rule
     REGRESSION_SIGMA,
     REPORTED_METRICS,
     TARGET_RELATIVE_IMPROVEMENT,
+    higher_is_better,
+    worsening_sign,
 )
 from compare_3dcode_rolls import load_roll, shared_instances
 
@@ -133,7 +138,27 @@ def executability(roll: dict) -> tuple[int, int]:
 
 
 def is_rankable(roll: dict) -> bool:
-    return len(roll["per_instance"]) >= MINIMUM_INSTANCES_FOR_RANKING
+    """A roll ranks only when it attempted the whole frozen set, executed
+    ALL of it, and every attempt scored.
+
+    §P8a (docs/2026-09-04-chat-harness-plan.md): "executability 20/20 on
+    every roll". Until OT-36 this checked only the scored-row count, so a
+    19/20 roll whose failure happened to leave a scoreable mesh would have
+    ranked; and the rule the panel enforced was weaker than the rule the
+    pre-registration stated. Measured 2026-09-11: OT-27's disclosed rolls
+    came back 18/20, 18/20 and 13/20, and the set is void under this rule.
+    """
+    executed, attempted = executability(roll)
+    return (
+        attempted >= MINIMUM_INSTANCES_FOR_RANKING
+        and executed == attempted
+        and len(roll["per_instance"]) == attempted
+    )
+
+
+def ranked_key(mean: float) -> float:
+    """Lower is better in ranking space, whichever way the metric points."""
+    return worsening_sign(RANKING_METRIC) * mean
 
 
 def roll_mean(roll: dict, instances, metric: str) -> float:
@@ -231,10 +256,15 @@ def refuse_unrankable_groups(groups) -> None:
     for group in groups:
         rankable = [roll for roll in group["rolls"] if is_rankable(roll)]
         if len(rankable) < MINIMUM_PAIRED_ROLLS:
-            short = [
-                f"{roll['model_dir']} ({len(roll['per_instance'])} instances)"
-                for roll in group["rolls"] if not is_rankable(roll)
-            ]
+            short = []
+            for roll in group["rolls"]:
+                if is_rankable(roll):
+                    continue
+                executed, attempted = executability(roll)
+                short.append(
+                    f"{roll['model_dir']} ({len(roll['per_instance'])} "
+                    f"instances scored, executability {executed}/{attempted})"
+                )
             raise SystemExit(
                 f"group {group['label']} has {len(rankable)} rankable "
                 f"roll(s); ranking needs {MINIMUM_PAIRED_ROLLS} "
@@ -274,9 +304,10 @@ def render_rule(instances_file: str, frozen_size) -> list[str]:
     return [
         "## Pre-registered rule",
         "",
-        (f"Ranking is on **`{RANKING_METRIC}`** alone. "
-         f"`{'`, `'.join(REPORTED_METRICS)}` are reported on every panel "
-         f"and rank nothing."),
+        (f"Ranking is on **`{RANKING_METRIC}`** alone "
+         f"({'higher' if higher_is_better(RANKING_METRIC) else 'lower'} is "
+         f"better). `{'`, `'.join(REPORTED_METRICS)}` are reported on every "
+         f"panel and rank nothing."),
         "",
         (f"**Executability is lexicographically first.** A group whose "
          f"executability is below another's cannot rank better, however "
@@ -286,9 +317,11 @@ def render_rule(instances_file: str, frozen_size) -> list[str]:
          f"attempted the same work."),
         "",
         (f"A candidate is a mean over at least **{MINIMUM_PAIRED_ROLLS} "
-         f"paired rolls** of the same instance set, each covering at least "
-         f"**{MINIMUM_INSTANCES_FOR_RANKING} instances**. A roll below that "
-         f"instance count is reported and never ranked.{frozen}"),
+         f"paired rolls** of the same instance set, each attempting at "
+         f"least **{MINIMUM_INSTANCES_FOR_RANKING} instances** and "
+         f"executing **all of them** (§P8a). A roll below that instance "
+         f"count, or with any failed instance, is reported and never "
+         f"ranked.{frozen}"),
         "",
         (f"The target is **relative**: "
          f"{TARGET_RELATIVE_IMPROVEMENT:.0%} better than the incumbent's "
@@ -335,11 +368,12 @@ def roll_row(roll: dict, instances) -> str:
 
 def render_groups(statistics_rows) -> list[str]:
     """Groups in RANKED order: executability first, then the ranking
-    metric ascending. The order is the rule being applied, not described."""
+    metric in its own direction. The order is the rule being applied, not
+    described."""
     ranked = sorted(
         statistics_rows,
         key=lambda row: (-row["executability"],
-                         row["axes"][RANKING_METRIC]["mean"]),
+                         ranked_key(row["axes"][RANKING_METRIC]["mean"])),
     )
     lines = [
         "## Groups",

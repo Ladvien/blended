@@ -5,7 +5,10 @@ Replicates the scorer's numbers by IMPORTING its own functions
 (<bench>/metrics/shape_chamfer.py) rather than reimplementing them, adds a
 diagnostic-only `cd_pca` (best alignment over the 24-rotation PCA frame ->
 covers pitch/roll/axis swaps the yaw-only scorer cannot see), and reports the
-per-instance gap `Δ_orient = cd_yawmin - cd_pca`:
+per-instance gap `Δ_orient = cd_yawmin - cd_pca`, and — since OT-36 — the
+F-score, precision and recall at `PRIMARY_FSCORE_THRESHOLD` on the same
+aligned cloud (`bench_surface_metrics`, DOI 10.1109/cvpr.2019.00352), which
+is what `bench_panel.py` ranks on:
 
     ≈ 0            -> true shape mismatch (orientation is not the problem)
     >= 0.02        -> orientation artifact (shape is fine, placement is not)
@@ -34,7 +37,20 @@ import numpy as np
 import trimesh
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from bench_thresholds import ORIENT_ARTIFACT_THRESHOLD  # shared, stdlib-only
+from bench_surface_metrics import (  # ONE alignment search, ONE F-score (OT-36)
+    best_pca_alignment,
+    cd_pca,
+    surface_columns,
+)
+from bench_thresholds import (  # shared, stdlib-only
+    ORIENT_ARTIFACT_THRESHOLD,
+    PRIMARY_FSCORE_THRESHOLD,
+    RANKING_METRIC,
+    REPORTED_METRICS,
+)
+
+# Every metric a diagnose row carries and the panel may rank or report.
+ROW_METRICS = (RANKING_METRIC,) + REPORTED_METRICS
 
 DIAGNOSTIC_N_POINTS = 8192          # scorer default --n-points
 DIAGNOSTIC_SEED = 0                 # scorer default --seed
@@ -58,46 +74,6 @@ def parse_arguments(argv):
     parser.add_argument("--json", default="",
                         help="Also write per-instance rows as JSON.")
     return parser.parse_args(argv)
-
-
-def signed_permutations():
-    """All 24 signed permutation matrices (6 axis orders x 8 sign choices)."""
-    out = []
-    for perm in ((0, 1, 2), (0, 2, 1), (1, 0, 2),
-                 (1, 2, 0), (2, 0, 1), (2, 1, 0)):
-        for signs in ((1, 1, 1), (1, 1, -1), (1, -1, 1), (1, -1, -1),
-                      (-1, 1, 1), (-1, 1, -1), (-1, -1, 1), (-1, -1, -1)):
-            matrix = np.zeros((3, 3))
-            for row, col in enumerate(perm):
-                matrix[row, col] = signs[row]
-            out.append(matrix)
-    return out
-
-
-PERMUTATIONS = signed_permutations()
-
-
-def pca_frame(points):
-    """Right singular vectors of the (centered) cloud, columns = axes."""
-    _, _, vt = np.linalg.svd(points, full_matrices=False)
-    return vt.T
-
-
-def cd_pca(sc, ref_pts, gen_pts):
-    """Min symmetric squared chamfer over the 24-rotation PCA frame.
-
-    Rotates the generated cloud by every proper rotation mapping its PCA
-    frame onto the reference's, reusing the scorer's own chamfer_squared.
-    """
-    ref_frame = pca_frame(ref_pts)
-    gen_frame = pca_frame(gen_pts)
-    best = np.inf
-    for perm in PERMUTATIONS:
-        rot = ref_frame @ perm @ gen_frame.T
-        if np.linalg.det(rot) <= 0.0:
-            continue
-        best = min(best, sc.chamfer_squared(ref_pts, gen_pts @ rot.T))
-    return best
 
 
 def self_test(sc):
@@ -267,6 +243,8 @@ def main(argv) -> int:
             "cd_yawmin_scored": (scored.get(instance) or {}).get("cd_yawmin"),
             "cd_pca": None,
             "delta_orient": None,
+            **{metric: None for metric in ROW_METRICS
+               if metric not in ("cd_yawmin", "cd_pca", "delta_orient")},
             "thin_gen": gen_geo["thinness"] if gen_geo else None,
             "thin_ref": ref_geo["thinness"] if ref_geo else None,
             "anatomy": anatomy,
@@ -296,11 +274,16 @@ def main(argv) -> int:
         ref_pts = sc.normalize_unit_sphere(ref_pts)
         gen_pts = sc.normalize_unit_sphere(gen_pts)
         _, cd_yaw_min, _, _ = sc.chamfer_with_yaw(ref_pts, gen_pts)
-        cd_pca_value = cd_pca(sc, ref_pts, gen_pts)
+        rotation, cd_pca_value = best_pca_alignment(sc, ref_pts, gen_pts)
 
         row["cd_yawmin"] = cd_yaw_min
         row["cd_pca"] = cd_pca_value
         row["delta_orient"] = cd_yaw_min - cd_pca_value
+        # F-score, precision and recall on the SAME aligned cloud cd_pca
+        # was measured on (OT-36): the ranking axis and the reported
+        # Chamfer answer one question about one pose.
+        row.update(surface_columns(ref_pts, gen_pts @ rotation.T,
+                                   PRIMARY_FSCORE_THRESHOLD))
         scored_value = row["cd_yawmin_scored"]
         if scored_value is not None and abs(scored_value - cd_yaw_min) > 1e-9:
             mismatched.append((instance, scored_value, cd_yaw_min))
@@ -334,14 +317,14 @@ def main(argv) -> int:
         "",
         "## Per-instance (sorted by cd_yawmin descending)",
         "",
-        "| instance | cd_yawmin | cd_pca | Δ_orient | verdict | thin_gen | thin_ref |"
-        " brief(words/quant/orient) | turns | dur_s |",
-        "|---|---|---|---|---|---|---|---|---|---|",
+        (f"| instance | {RANKING_METRIC} | cd_yawmin | cd_pca | Δ_orient | verdict "
+         "| thin_gen | thin_ref | brief(words/quant/orient) | turns | dur_s |"),
+        "|---|---|---|---|---|---|---|---|---|---|---|",
     ]
     for r in report_order:
         if r["cd_yawmin"] is None:
             lines.append(
-                f"| {r['instance']} | — | — | — | unscoreable | "
+                f"| {r['instance']} | — | — | — | — | unscoreable | "
                 f"{r['thin_gen']} | {r['thin_ref']} | "
                 f"{r['anatomy']['words']}/"
                 f"{'q' if r['anatomy']['quantitative'] else '-'}/"
@@ -350,7 +333,8 @@ def main(argv) -> int:
             continue
         verdict = dominant_factor(r["delta_orient"], r["anatomy"])
         lines.append(
-            f"| {r['instance']} | {r['cd_yawmin']:.4f} | {r['cd_pca']:.4f} | "
+            f"| {r['instance']} | {r[RANKING_METRIC]:.4f} | "
+            f"{r['cd_yawmin']:.4f} | {r['cd_pca']:.4f} | "
             f"{r['delta_orient']:+.4f} | {verdict} | "
             f"{r['thin_gen']:.2f} | {r['thin_ref']:.2f} | "
             f"{r['anatomy']['words']}/"
@@ -421,8 +405,8 @@ def main(argv) -> int:
             "n_points": DIAGNOSTIC_N_POINTS,
             "seed": DIAGNOSTIC_SEED,
             "per_instance": [
-                {"instance": r["instance"], "cd_yawmin": r["cd_yawmin"],
-                 "cd_pca": r["cd_pca"], "delta_orient": r["delta_orient"],
+                {"instance": r["instance"],
+                 **{metric: r[metric] for metric in ROW_METRICS},
                  "status": r["status"], "num_turns": r["num_turns"],
                  "duration_s": r["duration_s"]}
                 for r in rows
@@ -430,7 +414,7 @@ def main(argv) -> int:
             "means": {
                 key: (sum(r[key] for r in scoreable) / len(scoreable)
                       if scoreable else None)
-                for key in ("cd_yawmin", "cd_pca", "delta_orient")
+                for key in ROW_METRICS
             } | {"n": len(scoreable)},
         }
         Path(args.json).write_text(json.dumps(document, indent=2) + "\n")

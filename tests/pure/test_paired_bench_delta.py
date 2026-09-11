@@ -26,7 +26,14 @@ import paired_bench_delta as tool
 
 
 def write_roll(path: Path, model_dir: str, values: dict) -> Path:
-    """A diagnose JSON with `{instance: (cd_yawmin, cd_pca, delta_orient)}`."""
+    """A diagnose JSON with `{instance: (cd_yawmin, cd_pca, delta_orient)}`.
+
+    The F-score columns the panel ranks on since OT-36 are derived from
+    cd_pca (`1 - 10 * cd_pca`) so that "better Chamfer" and "better
+    F-score" agree in every existing case and the arithmetic these tests
+    pin — which was written on cd_pca — reads through unchanged on the
+    registered axis in its own direction.
+    """
     path.write_text(
         json.dumps(
             {
@@ -37,6 +44,9 @@ def write_roll(path: Path, model_dir: str, values: dict) -> Path:
                         "cd_yawmin": yawmin,
                         "cd_pca": pca,
                         "delta_orient": orient,
+                        "fscore_005": 1.0 - 10.0 * pca,
+                        "precision_005": 1.0 - 10.0 * pca,
+                        "recall_005": 1.0 - 10.0 * pca,
                     }
                     for instance, (yawmin, pca, orient) in values.items()
                 ],
@@ -187,16 +197,39 @@ def test_a_missing_diagnose_file_is_refused(tmp_path):
         tool.load_rolls([tmp_path / "absent.json"])
 
 
-def test_the_ranking_metric_is_the_pose_normalized_axis():
-    """Ranking on cd_yawmin ranks an orientation coin flip.
+def test_the_ranking_metric_is_f_score_at_the_registered_threshold():
+    """OT-36: F@0.05 ranks, higher is better; cd_pca and cd_yawmin are
+    reported beside it and rank nothing.
 
-    Measured over six 20-instance rolls: delta_orient carries 89% of
-    cd_yawmin's between-roll variance, so a shape candidate judged on
-    cd_yawmin is judged mostly on which yaws it happened to draw.
+    Registered by OT-33 before any roll was ranked on it: CD ranks
+    category priors (DOI 10.1109/cvpr.2019.00352), and on the two
+    disclosed rolls in hand the two metrics disagreed about which roll
+    was better (cd_pca 0.0270 vs 0.0289; F@0.05 0.4060 vs 0.4454).
     """
-    assert tool.PRIMARY_METRIC == "cd_pca"
-    assert tool.RANKING_METRIC == "cd_pca"
+    assert tool.PRIMARY_METRIC == "fscore_005"
+    assert tool.RANKING_METRIC == "fscore_005"
+    assert tool.higher_is_better(tool.RANKING_METRIC)
+    assert tool.worsening_sign(tool.RANKING_METRIC) == -1
+    assert tool.worsening_sign("cd_pca") == 1
+    assert "cd_pca" in tool.REPORTED_METRICS
     assert "cd_yawmin" in tool.REPORTED_METRICS
+
+
+def test_a_falling_f_score_is_a_regression_and_a_rising_one_is_not(tmp_path):
+    """The sign convention, applied: on the ranking axis a candidate whose
+    F-score fell on every instance regresses; one whose F-score rose does
+    not, even though its Chamfer rows are identical to the baseline's."""
+    baseline = load(write_roll(tmp_path / "b.json", "b",
+                               {f"I{n}": (0.10, 0.03, 0.07) for n in range(4)}))
+    fell = load(write_roll(tmp_path / "f.json", "f",
+                           {f"I{n}": (0.10, 0.05, 0.05) for n in range(4)}))
+    rose = load(write_roll(tmp_path / "r.json", "r",
+                           {f"I{n}": (0.10, 0.01, 0.09) for n in range(4)}))
+    instances = [f"I{n}" for n in range(4)]
+    worse = tool.paired_delta(baseline, fell, instances, tool.RANKING_METRIC)
+    better = tool.paired_delta(baseline, rose, instances, tool.RANKING_METRIC)
+    assert worse["mean_delta"] > 0 and worse["worse_count"] == 4
+    assert better["mean_delta"] < 0 and better["better_count"] == 4
 
 
 def test_the_target_is_a_fraction_of_the_baselines_own_mean(tmp_path):
@@ -229,7 +262,7 @@ def test_the_target_is_a_fraction_of_the_baselines_own_mean(tmp_path):
     )
     instances = ["A", "B", "C", "D"]
     guard = tool.set_mean(baseline, instances, tool.RANKING_METRIC)
-    assert guard == pytest.approx(0.05)
+    assert guard == pytest.approx(0.5)  # F = 1 - 10 * mean cd_pca of 0.05
     report = tool.render_report(
         baseline,
         baseline,
@@ -238,7 +271,9 @@ def test_the_target_is_a_fraction_of_the_baselines_own_mean(tmp_path):
             ["--baseline", "b.json", "--candidate", "c.json", "--label", "x"]
         ),
     )
-    expected_target = guard * (1.0 - tool.TARGET_RELATIVE_IMPROVEMENT)
+    # Higher is better on the registered axis, so the target sits ABOVE
+    # the guard by the relative improvement.
+    expected_target = guard * (1.0 + tool.TARGET_RELATIVE_IMPROVEMENT)
     assert f"{expected_target:.4f}" in report
     assert f"{guard * tool.TARGET_RELATIVE_IMPROVEMENT:.4f}" in report
 
