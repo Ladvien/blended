@@ -515,3 +515,11 @@ set; a loss with fewer retries than that is ours and a finding.
 
 **Outcome.** *(pending — launched per the launch record below; ≈ 2 h per roll measured
 on the second set)*
+
+**Launch record (appended, not edited).** 2026-09-11 13:48:48 CDT: three cloud rolls
+launched from the freeze `/Users/ladvien/blended-worktrees/b26d6cf` (commit `b26d6cf`,
+`main` after the transport-retry fix), chain `outputs/bench/logs/ot37b_cloud_chain.sh`,
+progress in `ot37b_chain.log`; the chain log's first line records the frozen commit. Both
+writer and eye answered a one-word probe through the daemon one minute before launch.
+The second set's freeze `bd81028` is left in place until its diagnose files are no
+longer needed (`scripts/freeze_worktree.sh --prune` removes idle ones).
