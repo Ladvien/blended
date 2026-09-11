@@ -555,3 +555,25 @@ second-set pre-registration is written with the incumbent's F@0.05 mean and SD b
 **Measured:** nine rolls re-diagnosed, 180/180 `cd_pca` values reproduced to 1e-9. Incumbent `deepseek-v10` F@0.05 0.4528, SD 0.0200, margin at the floor 3.07× (cd_pca 1.84×). The panel on both groups exits 1: "group disclosed has 0 rankable roll(s) … roll1 (18 instances scored, executability 19/20), roll2 (18, 19/20), roll3 (13, 13/20)". Sidecar-vs-diagnose F@0.05 differ in the fourth decimal (0.4060 vs 0.4066) from RNG stream order around unscoreable instances; recorded in the pre-registration.
 **Layers:** pure 752 passed / 1 skipped / 1 xfailed (by exit code); no Blender-layer file touched.
 **Commit:** `359ec63`.
+
+## OT-35 One transport path: the stream retries and is costed
+
+**What:** `OllamaClient._request` retries a gateway's "not now" (OT-32); its streaming twin
+`_stream_lines` does not, and `_chat_streamed` returns before the cost fold and the NFR-27
+cap at `loop.py:1496-1499`. One opener carries the retry; `_stream_lines` opens eagerly
+through it so an `HTTPError` surfaces before any delta is emitted (the only safe replay
+point; a stream cut mid-body is not retried). The assemblers keep the final frame's counts
+and the streamed branch folds `_turn_cost_from_body` and runs `_check_run_cost`.
+**Why:** the addon's `stream_replies=True` lane is the one the user watches, and it is the
+one lane with no retry and a turn record that says 0 tokens.
+**Done means:** pure tests at the `urlopen` boundary — a streamed call that 502s twice then
+streams delivers every delta once with `retried_calls == 2`; a stream cut mid-body raises
+with no retry; a streamed `done` frame's counts land on `spent` — red before, green after;
+AGT-27 amended to name both `chat` paths.
+
+**Closed:** 2026-09-11.
+**Gating tests:** `tests/pure/test_streaming.py::test_a_streamed_call_refused_by_the_gateway_is_retried_then_streams_once` (two 502s at `urlopen`, then the stream: waits (5, 15), `retried_calls` 2, every delta once), `::test_a_stream_that_dies_after_a_delta_is_not_replayed` (a body that resets after one frame raises `ConnectionResetError`, one open, no wait), `::test_an_ollama_stream_is_costed_from_its_done_frame` (12 in / 8 out land on `spent`), `::test_an_openai_stream_asks_for_usage_and_is_costed_from_the_usage_chunk` (`stream_options.include_usage` sent; 40/9/4 reasoning/$0.0021 folded), `::test_a_streamed_metered_call_is_stopped_by_the_run_cap`, `::test_a_stream_cut_before_its_final_frame_still_counts_as_a_call`. The four pre-existing streaming tests now stub `_open`, not `_stream_lines`, so the real decoder and fold run. Live smoke: a local HTTP server answering 503 twice then streaming NDJSON — `[retry]` lines printed, reply assembled once, `1 api call(s), 21 input tok, 4 out, 2 retried`.
+**Spec:** AGT-27 (both `chat` paths through `_open`; no replay after a delta) and NFR-27 (the streamed fold and cap) amended in place.
+**Shape of the change:** `OllamaClient._open` is the one socket opener and carries the retry; `_request` = `_open` + `json.loads`; `_stream_lines` opens eagerly through `_open` and returns `_decoded_lines(...)`. The assemblers keep the usage-bearing final frame under `STREAM_USAGE_KEY`; `_chat_streamed` pops it, folds `_turn_cost_from_body`, runs `_check_run_cost`, and passes `reasoning_tokens` to `check_reply_is_a_turn`. `test_metered_lane._urlopen_from` now runs its handler at call time, as the real `urlopen` raises. Mistake memory: `the-retry-covered-one-of-two-transport-paths`.
+**Layers:** pure 764 passed / 1 skipped / 1 xfailed; Blender 333 passed / 3 skipped (both by exit code).
+**Commit:** _(recorded in the follow-up commit)_

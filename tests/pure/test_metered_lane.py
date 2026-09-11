@@ -42,13 +42,16 @@ METERED_WINDOW = 1_048_576
 
 def _urlopen_from(handler):
     """Turn a `(self, path, payload, timeout)` handler into a urlopen stand-in
-    so a test can drive `_request`'s retry loop at the HTTP boundary."""
-    @contextlib.contextmanager
+    so a test can drive `_open`'s retry loop at the HTTP boundary.
+
+    The handler runs when urlopen is CALLED, as the real one raises its
+    HTTPError at call time and not on entering the response — that is
+    the property the retry loop rests on (OT-35)."""
     def urlopen(request, timeout=None, context=None):
         import json as _json
 
         body = handler(None, request, None, timeout)
-        yield io.BytesIO(_json.dumps(body).encode())
+        return contextlib.closing(io.BytesIO(_json.dumps(body).encode()))
 
     return urlopen
 

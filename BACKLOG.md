@@ -132,21 +132,6 @@ machinery: the `orient:` line the writer reads is computed from `object.dimensio
 (rotation-blind) while the op that acts on it reads `matrix_world @ bound_box`; and the
 retry exists on only one of the two transport paths.
 
-### OT-35 One transport path: the stream retries and is costed
-
-**What:** `OllamaClient._request` retries a gateway's "not now" (OT-32); its streaming twin
-`_stream_lines` does not, and `_chat_streamed` returns before the cost fold and the NFR-27
-cap at `loop.py:1496-1499`. One opener carries the retry; `_stream_lines` opens eagerly
-through it so an `HTTPError` surfaces before any delta is emitted (the only safe replay
-point; a stream cut mid-body is not retried). The assemblers keep the final frame's counts
-and the streamed branch folds `_turn_cost_from_body` and runs `_check_run_cost`.
-**Why:** the addon's `stream_replies=True` lane is the one the user watches, and it is the
-one lane with no retry and a turn record that says 0 tokens.
-**Done means:** pure tests at the `urlopen` boundary — a streamed call that 502s twice then
-streams delivers every delta once with `retried_calls == 2`; a stream cut mid-body raises
-with no retry; a streamed `done` frame's counts land on `spent` — red before, green after;
-AGT-27 amended to name both `chat` paths.
-
 ### OT-37 Record roll 3, freeze HEAD, relaunch three rolls
 
 **What:** the OT-27 launch record gets roll 2 (19:53, 18/20) and roll 3 (01:47, 13/20, the

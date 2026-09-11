@@ -200,6 +200,11 @@ OPENROUTER_PINNED_PROVIDER = "gmicloud"
 # Without it a metered run's record says 0 dollars, which is a lie the
 # spend cap cannot be built on.
 OPENROUTER_USAGE_EXTENSION = {"include": True}
+# On the OpenAI wire a streamed reply carries its usage only if asked:
+# the final chunk then has `usage` and no `choices`. Without it the
+# streamed lane's turn record said 0 tokens and NFR-27's cap could not
+# see a streamed metered call at all (OT-35).
+OPENAI_STREAM_USAGE_OPTIONS = {"include_usage": True}
 # A gateway saying "not now": rate limits and server-side faults, which
 # the SAME request can pass moments later. Everything else — 400 (a
 # malformed request), 401/403 (a credential), 404 (a wrong id) — is a
@@ -937,6 +942,20 @@ def _tls_context():
 
 SSE_DATA_PREFIX = "data:"
 SSE_DONE_MARKER = "[DONE]"
+# The assembled message carries the stream's usage-bearing final frame
+# under this key until `_chat_streamed` folds it into `spent` and pops
+# it; it never reaches the conversation.
+STREAM_USAGE_KEY = "_stream_usage_body"
+
+
+def _decoded_lines(opened):
+    """Non-empty body lines of an open HTTP response, decoded, closing
+    the socket when the consumer stops."""
+    with opened as response:
+        for raw_line in response:
+            line = raw_line.decode("utf-8", "replace").strip()
+            if line:
+                yield line
 
 
 # Streaming exists for the person watching, not the model: seeing the
@@ -957,6 +976,7 @@ def _assemble_openai_stream(lines, on_delta, stop_requested) -> dict:
     finish_reason = ""
     calls_by_index: dict[int, dict] = {}
     stopped = False
+    usage_body: dict = {}
     for line in lines:
         if stop_requested is not None and stop_requested():
             stopped = True
@@ -967,6 +987,9 @@ def _assemble_openai_stream(lines, on_delta, stop_requested) -> dict:
         if data == SSE_DONE_MARKER:
             break
         frame = json.loads(data)
+        if frame.get("usage"):
+            # The `stream_options.include_usage` chunk: usage, no choices.
+            usage_body = frame
         choice = (frame.get("choices") or [{}])[0]
         if choice.get("finish_reason"):
             finish_reason = choice["finish_reason"]
@@ -996,6 +1019,7 @@ def _assemble_openai_stream(lines, on_delta, stop_requested) -> dict:
         "role": "assistant",
         "content": "".join(content),
         "tool_calls": [] if stopped else [calls_by_index[i] for i in sorted(calls_by_index)],
+        STREAM_USAGE_KEY: usage_body,
     }
     if thinking:
         message["thinking"] = "".join(thinking)
@@ -1015,6 +1039,7 @@ def _assemble_ollama_stream(lines, on_delta, stop_requested) -> dict:
     tool_calls: list[dict] = []
     stopped = False
     done_reason = ""
+    usage_body: dict = {}
     for line in lines:
         if stop_requested is not None and stop_requested():
             stopped = True
@@ -1032,12 +1057,15 @@ def _assemble_ollama_stream(lines, on_delta, stop_requested) -> dict:
         tool_calls.extend(message.get("tool_calls") or [])
         if frame.get("done"):
             done_reason = frame.get("done_reason") or ""
+            # Ollama's `done` frame carries prompt_eval_count / eval_count.
+            usage_body = frame
             break
     assembled: dict = {
         "done_reason": done_reason,
         "role": "assistant",
         "content": "".join(content),
         "tool_calls": [] if stopped else tool_calls,
+        STREAM_USAGE_KEY: usage_body,
     }
     if thinking:
         assembled["thinking"] = "".join(thinking)
@@ -1076,24 +1104,31 @@ class OllamaClient:
                 request.add_header(header, value)
         return request
 
-    def _request(self, path: str, payload: dict | None, timeout_seconds: int):
-        """One HTTP call, retried while the gateway says "not now".
+    def _open(self, path: str, payload: dict | None, timeout_seconds: int):
+        """Open one HTTP response, retried while the gateway says "not now".
+
+        THE one place a socket to a model is opened (OT-35): the one-shot
+        `_request` and the streaming `_stream_lines` both come through
+        here, so the retry and its accounting cannot exist on one path
+        and not the other — which is what happened between OT-32 and
+        OT-35, when the addon's streamed lane had no retry at all.
 
         A retry is the same request to the same endpoint and the same
         provider, `len(RETRY_BACKOFF_SECONDS)` times at most, and then
         the error is raised as it stands — there is no second path and no
         degraded answer. Retries are counted on `spent` so a lane that
         needed twenty of them is visible in the record rather than
-        merely slow.
+        merely slow. An HTTPError is raised by `urlopen` itself, before a
+        byte of body arrives, so retrying here can never replay a reply
+        a consumer has already started to read.
         """
         last_error: urllib.error.HTTPError | None = None
         for attempt, wait_seconds in enumerate((*RETRY_BACKOFF_SECONDS, None)):
             request = self._build_request(path, payload)
             try:
-                with urllib.request.urlopen(
+                return urllib.request.urlopen(
                     request, timeout=timeout_seconds, context=_tls_context()
-                ) as response:
-                    return json.loads(response.read().decode("utf-8"))
+                )
             except urllib.error.HTTPError as http_error:
                 if http_error.code not in RETRYABLE_HTTP_STATUSES or wait_seconds is None:
                     raise
@@ -1109,22 +1144,25 @@ class OllamaClient:
                 time.sleep(wait_seconds)
         raise last_error  # unreachable: the last pass re-raises
 
+    def _request(self, path: str, payload: dict | None, timeout_seconds: int):
+        """One HTTP call, whole body, as JSON."""
+        with self._open(path, payload, timeout_seconds) as response:
+            return json.loads(response.read().decode("utf-8"))
+
     def _stream_lines(self, path: str, payload: dict, timeout_seconds: int):
-        """Yield the response body line by line as it arrives.
+        """The response body line by line as it arrives.
 
         Both wire protocols stream newline-delimited frames: Ollama
         emits one JSON object per line, OpenAI-protocol servers emit
-        SSE `data: {...}` lines. The generator holds the socket open,
-        so a consumer that stops iterating (a cancel) closes it.
+        SSE `data: {...}` lines. The socket is opened EAGERLY, here, so
+        a gateway's refusal is retried by `_open` and surfaces at this
+        call before any frame is delivered; the returned generator holds
+        the socket open, so a consumer that stops iterating (a cancel)
+        closes it. A connection that dies mid-body is NOT retried: a
+        delta may already have reached the UI, and replaying would show
+        the reply twice.
         """
-        request = self._build_request(path, payload)
-        with urllib.request.urlopen(
-            request, timeout=timeout_seconds, context=_tls_context()
-        ) as response:
-            for raw_line in response:
-                line = raw_line.decode("utf-8", "replace").strip()
-                if line:
-                    yield line
+        return _decoded_lines(self._open(path, payload, timeout_seconds))
 
     def discover_context(self, timeout_seconds: int = PREFLIGHT_TIMEOUT_SECONDS) -> int:
         """Read the served model's window from the server that serves it and
@@ -1475,6 +1513,8 @@ class OllamaClient:
         streaming = on_delta is not None
         if streaming:
             payload["stream"] = True
+            if self.config.uses_openai_protocol:
+                payload["stream_options"] = dict(OPENAI_STREAM_USAGE_OPTIONS)
         try:
             if streaming:
                 return self._chat_streamed(payload, on_delta, stop_requested)
@@ -1522,11 +1562,20 @@ class OllamaClient:
             message = _assemble_openai_stream(lines, on_delta, stop_requested)
         else:
             message = _assemble_ollama_stream(lines, on_delta, stop_requested)
+        # The stream's final frame carries the usage; the same fold and
+        # the same NFR-27 cap as the one-shot branch (OT-35). A stream
+        # cut before its final frame still counts as one call with
+        # unknown tokens, never as a free one.
+        usage_body = message.pop(STREAM_USAGE_KEY, {})
+        turn_cost = _turn_cost_from_body(usage_body)
+        self.spent = self.spent.plus(turn_cost)
+        self._check_run_cost()
         # The assemblers carry the stream's own end signal (OT-22).
         check_reply_fits(message, self.config.context_tokens, self.config.endpoint)
         check_reply_is_a_turn(
             message,
             self.config.endpoint,
+            reasoning_tokens=turn_cost.reasoning_tokens,
             finish_reason=message.get("finish_reason") or message.get("done_reason") or "",
         )
         return message

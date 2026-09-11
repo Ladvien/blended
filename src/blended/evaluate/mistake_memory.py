@@ -3215,6 +3215,50 @@ MISTAKES: tuple[MistakeRecord, ...] = (
         ),
         recorded_on="2026-09-11",
     ),
+    MistakeRecord(
+        identifier="the-retry-covered-one-of-two-transport-paths",
+        scope="harness_code",
+        failure=(
+            "OT-32 added the bounded gateway retry to OllamaClient._request "
+            "and its three tests drove _request. The streaming twin "
+            "_stream_lines — the only path the addon's stream_replies=True "
+            "lane uses — had no retry, and _chat_streamed returned before "
+            "the cost fold and the NFR-27 cap, so every streamed call's "
+            "turn record said 0 tokens and a streamed metered run could "
+            "never hit its cap. Found 2026-09-11 mapping the retry for the "
+            "bench lane; no roll was affected because no script driver "
+            "streams."
+        ),
+        cause=(
+            "Two openers of one socket. _request and _stream_lines each "
+            "called urlopen themselves, so a rule added to one did not "
+            "exist on the other, and the test that pinned the rule pinned "
+            "it on the path it was written for. The spec row (AGT-27) "
+            "named _request, so the gap did not even violate it as "
+            "written."
+        ),
+        fix=(
+            "One opener, OllamaClient._open, carries the retry; _request "
+            "reads the whole body through it and _stream_lines opens "
+            "EAGERLY through it, so an HTTPError surfaces before any frame "
+            "is delivered (the only point a replay is safe) and a stream "
+            "that dies after a delta is raised as it stands. The assemblers "
+            "keep the usage-bearing final frame; _chat_streamed folds it "
+            "and runs the cap exactly as the one-shot branch does. The "
+            "OpenAI wire is asked for its usage chunk "
+            "(stream_options.include_usage)."
+        ),
+        guarded_by=(
+            "tests/pure/test_streaming.py::"
+            "test_a_streamed_call_refused_by_the_gateway_is_retried_then_streams_once, "
+            "::test_a_stream_that_dies_after_a_delta_is_not_replayed, "
+            "::test_an_ollama_stream_is_costed_from_its_done_frame, "
+            "::test_a_streamed_metered_call_is_stopped_by_the_run_cap; the "
+            "streaming tests stub _open, not _stream_lines, so the real "
+            "decoder and fold run"
+        ),
+        recorded_on="2026-09-11",
+    ),
 )
 
 
