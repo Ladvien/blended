@@ -648,3 +648,13 @@ one-sided fall beyond `REGRESSION_SIGMA` paired standard errors.
   and `vision` events), `cd_pca`, precision/recall, turns, seconds, retries, cost.
 
 **Outcome.** *(pending — launched per the launch record below)*
+
+**Launch record (appended, not edited).** 2026-09-11 15:09 CDT: `outputs/bench/logs/ot38_cloud_chain.sh`
+started from the freeze `/Users/ladvien/blended-worktrees/1cf2cf0` (commit `1cf2cf0`,
+`main` after OT-38); it waits for the third text-only set's `CLOUD ALL DONE` line before
+its first roll so the two sets never share the cloud lane, then runs three rolls
+`blended-deepseek-v4-pro-disclosed-image-roll{1,2,3}` with
+`REFERENCE_IMAGES=/Users/ladvien/3dcodebench/benchmark/categories` (32 instances' views
+rendered 14:16–14:33 CDT, all four each; progress in `ot38_chain.log`). One dev instance
+(`Pot_seed0`, model dir `blended-image-smoke`, not a roll) ran with views beforehand and
+closed OK_AGENT_DONE in 504.5 s with the `reference` and `vision` events in its transcript.
