@@ -8,15 +8,30 @@ is that the calls ARE the script: every `run_python` chunk whose Python
 ran, and every op-tool call that ran, emitted in order, is the program
 the benchmark re-bakes.
 
-Which calls count is a correctness question. A call whose Python raised
-(`stage_reached == "execute"`, or no stage at all: refused, unknown,
-never dispatched) is excluded — including it guarantees a re-bake
-failure and understates the harness. A call whose Python ran and only
-the analyzer gate objected (`locate`, `gate`, `export`) is INCLUDED,
-because that gate is this harness's standard, not 3DCodeBench's, and
-the geometry exists either way. Measured 2026-09-10: the bridge that
-read only `run_python` chunks dropped 34 op calls on Bottle and 37 on
-Pillar from what the bench re-baked.
+Which calls count is a correctness question, and the answer is not "did
+it succeed" but "what did the live scene end up holding". A call whose
+Python ran and only the analyzer gate objected (`locate`, `gate`,
+`export`) is INCLUDED, because that gate is this harness's standard, not
+3DCodeBench's, and the geometry exists either way. Measured 2026-09-10:
+the bridge that read only `run_python` chunks dropped 34 op calls on
+Bottle and 37 on Pillar from what the bench re-baked.
+
+A call that RAISED is included too when it changed the scene before it
+raised (OT-31). Measured 2026-09-10 on OT-27's cloud roll 1: Spoon's
+first chunk built the handle and then died on
+`TypeError: create_uvsphere: keyword "diameter" is invalid`; the very
+next `list_scene` reported `Spoon: 956 tris`, and every later call in
+the recorded conversation was written against that object. Dropping the
+chunk made the bake die with `UnknownObject: no object named 'Spoon'` —
+the replay could not reproduce the run it was replaying. Such a call is
+emitted inside a `try` that reports the same failure, because the chunk
+is deterministic: re-running it in a fresh scene stops at the same
+point, leaving the same partial geometry. A call that raised and changed
+NOTHING stays out; including it would only guarantee a re-bake failure.
+
+`changed_scene` is ground truth from `bpy.data`, taken by the recorder
+either side of the dispatch, never inferred from the outcome — a gate
+that shares a derivation with the thing it gates cannot fail.
 
 An op call is emitted as `_op(name, {validated arguments})`, bound at
 bake time through the same `bind_arguments` the loop used, so a
@@ -33,6 +48,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass
+from textwrap import indent
 
 from blended.stages import STAGE_DONE, STAGE_EXPORT, STAGE_GATE, STAGE_LOCATE
 
@@ -51,10 +67,20 @@ class RecordedCall:
     # given for run_python — `ToolOutcome.validated_arguments`.
     arguments: dict
     stage_reached: str
+    # Did `bpy.data` differ either side of this call? Measured by the
+    # recorder, not read off the outcome (OT-31). Defaults False so a
+    # caller that cannot observe the scene keeps the old rule exactly.
+    changed_scene: bool = False
 
 
 def call_executed(call: RecordedCall) -> bool:
+    """Its Python ran to the end, whatever the gate then said."""
     return call.stage_reached in EXECUTED_STAGES
+
+
+def include_call(call: RecordedCall) -> bool:
+    """What the bake must replay: everything that left the scene changed."""
+    return call_executed(call) or call.changed_scene
 
 
 def emits_geometry(tool_name: str) -> bool:
@@ -102,17 +128,29 @@ def standalone_script(
 ) -> StandaloneScript:
     """The program the benchmark re-bakes, from the recorded call sequence."""
     geometry_calls = [call for call in calls if emits_geometry(call.tool_name)]
-    included = [call for call in geometry_calls if call_executed(call)]
+    included = [call for call in geometry_calls if include_call(call)]
     parts = [prelude_text]
     op_call_count = 0
     for index, call in enumerate(included, start=1):
         if call.tool_name == HATCH_TOOL_NAME:
-            parts.append(f"\n# --- chunk {index} ---\n{call.arguments['source']}\n")
+            body = call.arguments["source"]
+            label = f"chunk {index}"
         else:
             op_call_count += 1
+            body = f"{OP_HELPER_NAME}({call.tool_name!r}, {call.arguments!r})"
+            label = f"op {index}: {call.tool_name}"
+        if call_executed(call):
+            parts.append(f"\n# --- {label} ---\n{body}\n")
+        else:
+            # It raised in the run after changing the scene, so the
+            # replay must make the same change and meet the same error.
             parts.append(
-                f"\n# --- op {index}: {call.tool_name} ---\n"
-                f"{OP_HELPER_NAME}({call.tool_name!r}, {call.arguments!r})\n"
+                f"\n# --- {label} (raised in the run after changing the "
+                f"scene; reproduced) ---\n"
+                f"try:\n{indent(body, '    ')}\n"
+                f"except Exception as _error:\n"
+                f"    print({f'[bridge] {label} raised as it did in the run: '!r} "
+                f"+ repr(_error))\n"
             )
     if included:
         parts.append(epilogue_text)

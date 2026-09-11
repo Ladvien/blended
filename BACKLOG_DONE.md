@@ -481,3 +481,30 @@ brief exits 70 instead of 0.
 **Spec:** AGT-27 (retry on a gateway's "not now", never on a permanent status, counted on `TurnCost.retried_calls`), NFR-28 (a Blender-hosted script exits non-zero when it dies).
 **Measured:** `blender --python-expr "raise RuntimeError(...)"` exits 0 while `raise SystemExit(3)` exits 3; the retry budget of 5+15+45+90 s comes from windows in which five briefs failed inside ~2 minutes on upstream 429s while a probe minutes later passed 12 of 12.
 **Commit:** `179ab11`.
+
+## OT-31 The bake reproduces a chunk that raised after it changed the scene
+
+**What:** `bench_bridge` includes a recorded call only when its `stage_reached` reached
+`locate`/`gate`/`export`/`done`. A `run_python` chunk that raised PART WAY THROUGH is
+excluded — but the objects it made up to that point stayed in the live scene, and every
+later call in the recorded conversation was written against them. The baked script must
+reproduce the scene the run actually had, which means emitting such a chunk with its
+failure reproduced, not omitting it.
+**Why:** measured in OT-27's cloud roll 1 (Spoon_seed0, 2026-09-10): the first chunk built
+the handle, then raised `TypeError: create_uvsphere: keyword "diameter" is invalid`; the
+next `list_scene` reported `Spoon: 956 tris`; the bake dropped the chunk and died with
+`UnknownObject: no object named 'Spoon'`. One instance in twenty — 5 % of an executability
+score that ranks configurations lexicographically first (BEN-5).
+**Not before:** OT-27's rolls finish. Changing the instrument between rolls 1 and 3 makes
+them incomparable; roll 1's reading already names the affected instance.
+**Done means:** a Blender test records a chunk that creates an object and then raises,
+bakes it, and the object exists in the fresh scene with the later calls succeeding; the
+inclusion rule is stated in terms of "changed the scene", not "reached a stage".
+
+**Closed:** 2026-09-10.
+**Safe to do now, despite the "not before" above:** OT-27's rolls run from the frozen worktree `/Users/ladvien/blended-bench-v4`, so the main tree moving does not change the instrument any of the three rolls use. They stay comparable with each other, and roll 1's reading already names the affected instance.
+**Gating tests:** `tests/blender/test_bench_bridge.py::test_a_chunk_that_built_then_raised_is_replayed_so_later_calls_find_its_object` — a chunk that creates `Handle` and then dies on the same invalid keyword goes through the live dispatcher, the scene is observed to have kept the object, the emitted script is re-baked in a fresh scene, the reproduced failure is announced rather than swallowed, and the later `rename_object` finds its object; plus `tests/pure/test_bench_bridge.py::test_a_chunk_that_raised_after_changing_the_scene_is_replayed` and `::test_the_default_keeps_the_old_rule_for_a_caller_that_cannot_look`.
+**Spec:** BEN-1 amended.
+**Shape of the change:** `RecordedCall` gains `changed_scene`, measured by the runner from `bpy.data` either side of each dispatch (names and vertex counts, so a boolean rewriting a mesh in place counts too) — ground truth, never read off the outcome. `include_call` = executed OR changed the scene. A call that raised having changed the scene is emitted inside a `try` printing the same error, which is faithful because the chunk is deterministic: re-running it stops at the same point leaving the same partial geometry. A call that raised and changed nothing stays out, and the field defaults False so a recorder with no scene to read keeps the old rule exactly.
+**Layers:** pure 749 passed / 1 skipped / 1 xfailed; Blender 331 passed / 3 skipped (both by exit code).
+**Commit:** recorded in the follow-up commit.

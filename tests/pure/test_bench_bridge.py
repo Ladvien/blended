@@ -63,3 +63,45 @@ def test_a_record_of_chunks_only_keeps_the_chunk_format():
 def test_nothing_ran_means_no_epilogue():
     script = standalone_script([RecordedCall("add_box", {"name": "A"}, STAGE_EXECUTE)], PRELUDE, EPILOGUE)
     assert script.text == PRELUDE and script.included_count == 0 and script.excluded_count == 1
+
+
+def test_a_chunk_that_raised_after_changing_the_scene_is_replayed():
+    """OT-31, measured on OT-27's cloud roll 1 (Spoon_seed0): the first
+    chunk built the handle and then died on `TypeError: create_uvsphere:
+    keyword "diameter" is invalid`; the next `list_scene` reported
+    `Spoon: 956 tris`, and every later call was written against it.
+    Dropping the chunk made the bake die with `UnknownObject: no object
+    named 'Spoon'` — the replay could not reproduce the run."""
+    from blended.evaluate.bench_bridge import (
+        RecordedCall,
+        include_call,
+        standalone_script,
+    )
+
+    raised_but_built = RecordedCall("run_python", {"source": "make_handle()\nboom()"}, "execute", changed_scene=True)
+    raised_and_built_nothing = RecordedCall("run_python", {"source": "boom()"}, "execute", changed_scene=False)
+    ran_clean = RecordedCall("boolean_difference", {"target_name": "Spoon", "cutter_name": "Bowl"}, "gate")
+
+    assert include_call(raised_but_built) and include_call(ran_clean)
+    assert not include_call(raised_and_built_nothing)  # replaying it only guarantees a failure
+
+    script = standalone_script([raised_but_built, raised_and_built_nothing, ran_clean], "# prelude\n", "# epilogue\n")
+
+    assert script.included_count == 2 and script.excluded_count == 1
+    assert "raised in the run after changing the scene; reproduced" in script.text
+    # The chunk's own source is indented into the try, and the failure is
+    # met the same way it was met live rather than swallowed in silence.
+    assert "try:\n    make_handle()\n    boom()\n" in script.text
+    assert "except Exception as _error:" in script.text
+    assert "raised as it did in the run" in script.text
+    # A clean call is emitted exactly as before: no try, no change.
+    assert "\n# --- op 2: boolean_difference ---\n_op('boolean_difference'" in script.text
+
+
+def test_the_default_keeps_the_old_rule_for_a_caller_that_cannot_look():
+    """`changed_scene` is ground truth from `bpy.data`; a recorder with no
+    scene to read must not silently promote failures into the bake."""
+    from blended.evaluate.bench_bridge import RecordedCall, include_call
+
+    assert not include_call(RecordedCall("run_python", {"source": "x"}, "execute"))
+    assert not include_call(RecordedCall("run_python", {"source": "x"}, ""))

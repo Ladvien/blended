@@ -201,7 +201,23 @@ def main(argv) -> int:
     # Python reached — the fact the inclusion rule reads.
     recorded: list[RecordedCall] = []
 
+    def scene_signature():
+        """Ground truth from `bpy.data`, not from the outcome: what the
+        scene holds, including objects never linked. A name alone is not
+        enough — a boolean rewrites a mesh in place — so the vertex count
+        rides along (OT-31)."""
+        return tuple(
+            sorted(
+                (
+                    obj.name,
+                    len(obj.data.vertices) if getattr(obj.data, "vertices", None) is not None else -1,
+                )
+                for obj in bpy.data.objects
+            )
+        )
+
     def recording_dispatch(tool_name, arguments_dict, output_directory):
+        before = scene_signature()
         outcome = dispatch_here(tool_name, arguments_dict, output_directory)
         recorded.append(
             RecordedCall(
@@ -212,6 +228,10 @@ def main(argv) -> int:
                     else arguments_dict
                 ),
                 stage_reached=outcome.stage_reached,
+                # A call that raised PART WAY still changed the scene the
+                # rest of the conversation was written against, and the
+                # bake has to reproduce that (OT-31).
+                changed_scene=scene_signature() != before,
             )
         )
         return outcome
