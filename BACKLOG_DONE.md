@@ -576,4 +576,4 @@ AGT-27 amended to name both `chat` paths.
 **Spec:** AGT-27 (both `chat` paths through `_open`; no replay after a delta) and NFR-27 (the streamed fold and cap) amended in place.
 **Shape of the change:** `OllamaClient._open` is the one socket opener and carries the retry; `_request` = `_open` + `json.loads`; `_stream_lines` opens eagerly through `_open` and returns `_decoded_lines(...)`. The assemblers keep the usage-bearing final frame under `STREAM_USAGE_KEY`; `_chat_streamed` pops it, folds `_turn_cost_from_body`, runs `_check_run_cost`, and passes `reasoning_tokens` to `check_reply_is_a_turn`. `test_metered_lane._urlopen_from` now runs its handler at call time, as the real `urlopen` raises. Mistake memory: `the-retry-covered-one-of-two-transport-paths`.
 **Layers:** pure 764 passed / 1 skipped / 1 xfailed; Blender 333 passed / 3 skipped (both by exit code).
-**Commit:** _(recorded in the follow-up commit)_
+**Commit:** `b39a74e`.
