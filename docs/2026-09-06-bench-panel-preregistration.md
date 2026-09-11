@@ -452,4 +452,10 @@ it ranks nothing.
 
 **Outcome.** *(pending — launched per the launch record below; ≈ 3 h per roll)*
 
-**Launch record (appended, not edited).**
+**Launch record (appended, not edited).** 2026-09-11 07:39:59 CDT: three cloud rolls
+launched from the freeze `/Users/ladvien/blended-worktrees/bd81028` (commit `bd81028`,
+`main` after OT-34, OT-36 and the OT-37 guard), chain `outputs/bench/logs/ot37_cloud_chain.sh`,
+progress in `ot37_chain.log`; the chain log's first line records the frozen commit. Both
+writer and eye answered a probe through the daemon one minute before launch. The old
+`blended-bench-v4` worktree and the `incumbent-ot27` branch were removed beforehand (user
+decision); `scripts/freeze_worktree.sh --list` shows this freeze alone.
