@@ -513,8 +513,17 @@ lost to a transport error that was not retried `len(RETRY_BACKOFF_SECONDS)` time
 A loss that IS retried that many times and still fails is the gateway's and voids the
 set; a loss with fewer retries than that is ours and a finding.
 
-**Outcome.** *(pending — launched per the launch record below; ≈ 2 h per roll measured
-on the second set)*
+**Outcome.** **Void under §P8a.** Roll 1 closed 15:48:18 CDT at **14/20**, F@0.05 0.4773 on
+the fourteen (recorded, not ranked; `cd_pca` 0.0234). The six losses (Pillar 15:20, then
+Plate, Rug, Sink, Spoon, Tap) are one cause and it is the gateway's: `HTTP 429` from
+`ollama.com` through the daemon, body "usage credits auto reload monthly max reached" —
+the account's cloud credits ran out mid-roll. The retry did its job (45 retried calls in
+the roll; each lost instance was retried the full `len(RETRY_BACKOFF_SECONDS)` times and
+then reported), so H3''' holds and H1'''/H2''' are **not measured**. Roll 2 was stopped
+at its first instance (no script written; re-runnable) and the OT-38 chain, queued behind
+this set, was stopped before it started. Both freezes stay (`b26d6cf`, `1cf2cf0`); the
+next launch is a fourth text-only set and the image set, from the same freezes, in new
+model directories, once credits are restored (user action at ollama.com/settings).
 
 **Launch record (appended, not edited).** 2026-09-11 13:48:48 CDT: three cloud rolls
 launched from the freeze `/Users/ladvien/blended-worktrees/b26d6cf` (commit `b26d6cf`,
@@ -647,7 +656,9 @@ one-sided fall beyond `REGRESSION_SIGMA` paired standard errors.
 - Recorded, not ranked: the eye's reference description per instance (the `reference`
   and `vision` events), `cd_pca`, precision/recall, turns, seconds, retries, cost.
 
-**Outcome.** *(pending — launched per the launch record below)*
+**Outcome.** *(not started — the chain was stopped 15:55 CDT before its first roll: the
+cloud lane ran out of credits during the third text-only set; relaunch from the same
+freeze in new model directories when credits are restored)*
 
 **Launch record (appended, not edited).** 2026-09-11 15:09 CDT: `outputs/bench/logs/ot38_cloud_chain.sh`
 started from the freeze `/Users/ladvien/blended-worktrees/1cf2cf0` (commit `1cf2cf0`,
