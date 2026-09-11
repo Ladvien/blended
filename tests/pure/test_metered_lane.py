@@ -343,6 +343,63 @@ def test_a_window_that_never_lifts_fails_loudly(monkeypatch):
     assert sum(RETRY_BACKOFF_SECONDS) == 155  # the measured budget
 
 
+# --- the transport saying "not now" is the same case (OT-37, roll 2) ---
+
+
+def test_a_socket_timeout_on_open_is_retried_then_succeeds(monkeypatch):
+    """Measured 2026-09-11: four of twenty first calls in one bench roll
+    died with a raw `TimeoutError: timed out` from `_read_status` —
+    no status line in 300 s on a lane that generates a worst legal
+    reply in ~85 s — and were raised with zero retries because the
+    retry caught HTTPError alone. The roll finished 16/20; the set was
+    void. A stalled connection is "not now" exactly as a 503 is."""
+    waits = []
+    monkeypatch.setattr("blended.agent.loop.time.sleep", lambda s: waits.append(s))
+    attempts = {"n": 0}
+
+    def stalls_twice(self, path, payload, timeout_seconds):
+        attempts["n"] += 1
+        if attempts["n"] <= 2:
+            raise TimeoutError("timed out")
+        return {"choices": [{"message": {"role": "assistant", "content": "pong"}}], "usage": {"prompt_tokens": 5, "completion_tokens": 1}}
+
+    monkeypatch.setattr(OllamaClient, "_build_request", lambda self, path, payload: path)
+    monkeypatch.setattr("blended.agent.loop.urllib.request.urlopen", _urlopen_from(stalls_twice))
+    client = OllamaClient(_metered_config(context_length=METERED_WINDOW))
+
+    body = client._request("/v1/chat/completions", {"model": "m"}, 60)
+
+    assert body["choices"][0]["message"]["content"] == "pong"
+    assert waits == list(RETRY_BACKOFF_SECONDS[:2])
+    assert client.spent.retried_calls == 2  # costed, like every retry
+
+
+def test_a_connection_that_never_answers_fails_loudly(monkeypatch):
+    """The same bound as a window that never lifts: one attempt per
+    backoff step plus the first, then the error as it stands — a
+    `URLError` here, the shape urlopen gives a refused connection."""
+    import urllib.error
+
+    waits = []
+    monkeypatch.setattr("blended.agent.loop.time.sleep", lambda s: waits.append(s))
+    calls = {"n": 0}
+
+    def refused(self, path, payload, timeout_seconds):
+        calls["n"] += 1
+        raise urllib.error.URLError(ConnectionRefusedError(61, "Connection refused"))
+
+    monkeypatch.setattr(OllamaClient, "_build_request", lambda self, path, payload: path)
+    monkeypatch.setattr("blended.agent.loop.urllib.request.urlopen", _urlopen_from(refused))
+    client = OllamaClient(_metered_config(context_length=METERED_WINDOW))
+
+    with pytest.raises(urllib.error.URLError):
+        client._request("/v1/chat/completions", {"model": "m"}, 60)
+
+    assert calls["n"] == len(RETRY_BACKOFF_SECONDS) + 1
+    assert waits == list(RETRY_BACKOFF_SECONDS)
+    assert client.spent.retried_calls == len(RETRY_BACKOFF_SECONDS)
+
+
 def test_the_completion_reservation_comes_from_the_provider_bounded(monkeypatch):
     """Measured 2026-09-10: the 16,384 default — set for bmb's 27B, where
     4,096 starved it — cut a uv_crate turn on this model, which spends

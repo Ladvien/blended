@@ -82,9 +82,16 @@ REQUEST_TIMEOUT_SECONDS = 300
 # well-formed tool call. Against the 300 s cloud ceiling that turn
 # died mid-generation with `TimeoutError: timed out` (measured twice,
 # 2026-09-03), so `make converge-local` could never reach its first
-# tool call. Cloud writers answer the same turn in well under 60 s and
-# keep the tight ceiling, so a dead cloud endpoint is still reported
-# rather than waited on.
+# tool call. Cloud writers keep the tight ceiling. Measured 2026-09-11
+# on `deepseek-v4-pro:cloud` through the local daemon: a thinking
+# reply of 7,328 completion tokens (22.5k characters of thinking)
+# returned whole in 37.9 s, ~193 tok/s, so the worst legal reply —
+# the 16,384-token reserve — generates in ~85 s, 3.5x inside 300 s.
+# The same day four first calls in one bench roll sat 300 s without a
+# status line and died; that is a stalled connection, not a slow
+# reply, and it is the retry's job (`RETRYABLE_TRANSPORT_ERRORS`),
+# not the ceiling's. A dead cloud endpoint is still reported rather
+# than waited on: at most 5 x 300 s + 155 s of backoff per call.
 # Derived, not guessed (OT-22). One full-prefix request on bmb's
 # qwen3.8-27b, measured 2026-09-10: cold prefill 142.9 s for 16,997
 # prompt tokens (119 tok/s) and generation at 10.5 tok/s (711 tokens in
@@ -210,6 +217,18 @@ OPENAI_STREAM_USAGE_OPTIONS = {"include_usage": True}
 # malformed request), 401/403 (a credential), 404 (a wrong id) — is a
 # fact about the call and repeating it only wastes time.
 RETRYABLE_HTTP_STATUSES = frozenset({408, 429, 500, 502, 503, 504})
+# The transport saying "not now": the socket timed out waiting for the
+# status line, the connection was refused or reset, the name did not
+# resolve. Raised by `urlopen` itself before a byte of body, exactly
+# like a retryable status, so the SAME request can pass moments later.
+# Measured 2026-09-11 (OT-37, roll 2): four of twenty first calls on
+# `deepseek-v4-pro:cloud` through the local daemon died with a raw
+# `TimeoutError: timed out` from `http.client._read_status` — the
+# 300 s read ceiling, on a lane whose worst legal reply generates in
+# ~85 s (below) — and were raised with zero retries, because this
+# tuple did not exist and the retry caught `HTTPError` alone. The
+# roll finished 16/20 and the set was void.
+RETRYABLE_TRANSPORT_ERRORS = (urllib.error.URLError, TimeoutError, ConnectionError)
 # Waits between attempts, in seconds. NOT a fallback: the same request
 # goes to the same endpoint and the same provider, a bounded number of
 # times, and then fails loudly.
@@ -1122,7 +1141,7 @@ class OllamaClient:
         byte of body arrives, so retrying here can never replay a reply
         a consumer has already started to read.
         """
-        last_error: urllib.error.HTTPError | None = None
+        last_error: Exception | None = None
         for attempt, wait_seconds in enumerate((*RETRY_BACKOFF_SECONDS, None)):
             request = self._build_request(path, payload)
             try:
@@ -1130,18 +1149,27 @@ class OllamaClient:
                     request, timeout=timeout_seconds, context=_tls_context()
                 )
             except urllib.error.HTTPError as http_error:
+                # HTTPError is a URLError: it must be sorted by status
+                # BEFORE the transport clause below can see it.
                 if http_error.code not in RETRYABLE_HTTP_STATUSES or wait_seconds is None:
                     raise
                 last_error = http_error
                 detail = http_error.read().decode("utf-8", "replace")[:160]
-                print(
-                    f"[retry] HTTP {http_error.code} from {self.config.endpoint}"
-                    f"{path}; attempt {attempt + 1} of "
-                    f"{len(RETRY_BACKOFF_SECONDS)}, waiting {wait_seconds}s. {detail}",
-                    flush=True,
-                )
-                self.spent = self.spent.plus(TurnCost(retried_calls=1))
-                time.sleep(wait_seconds)
+                what = f"HTTP {http_error.code}"
+            except RETRYABLE_TRANSPORT_ERRORS as transport_error:
+                if wait_seconds is None:
+                    raise
+                last_error = transport_error
+                detail = str(transport_error)[:160]
+                what = type(transport_error).__name__
+            print(
+                f"[retry] {what} from {self.config.endpoint}{path}; "
+                f"attempt {attempt + 1} of {len(RETRY_BACKOFF_SECONDS)}, "
+                f"waiting {wait_seconds}s. {detail}",
+                flush=True,
+            )
+            self.spent = self.spent.plus(TurnCost(retried_calls=1))
+            time.sleep(wait_seconds)
         raise last_error  # unreachable: the last pass re-raises
 
     def _request(self, path: str, payload: dict | None, timeout_seconds: int):

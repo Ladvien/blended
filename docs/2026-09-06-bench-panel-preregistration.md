@@ -459,3 +459,59 @@ progress in `ot37_chain.log`; the chain log's first line records the frozen comm
 writer and eye answered a probe through the daemon one minute before launch. The old
 `blended-bench-v4` worktree and the `incumbent-ot27` branch were removed beforehand (user
 decision); `scripts/freeze_worktree.sh --list` shows this freeze alone.
+
+2026-09-11 09:35:07 CDT: roll 1 scored, **20/20**, F@0.05 0.4614 (precision 0.5032, recall
+0.4804, `cd_pca` 0.0252). 11:22:36 CDT: roll 2 scored, **16/20**, F@0.05 0.4815 on the
+sixteen. The four losses — AquariumTank (347.6 s), Nautilus (302.3 s), Spoon (301.2 s),
+Tap (303.1 s) — are one mechanism, read from each `.blender_stdout.txt`: the writer's
+first call died in `urllib` with `TimeoutError: timed out`, the 300 s cloud read ceiling
+(`REQUEST_TIMEOUT_SECONDS`), on a one-shot (non-streamed) request; the frozen tree's
+retry catches `HTTPError` only, so a socket timeout is raised as it stands with zero
+retries. That is ours, not the gateway's: the ceiling's own comment says cloud writers
+answer "in well under 60 s", and four first calls in one roll did not. 13:30:53 CDT:
+roll 3 scored, **20/20**, F@0.05 0.4440 (precision 0.4985, recall 0.4615, `cd_pca` 0.0253).
+
+**Outcome of this set: void under §P8a** — roll 2 is below 20/20 by name, so the panel
+refuses it and the set cannot rank. H1'' and H2'' are **not measured**. Recorded, not
+ranked: the two 20/20 rolls read 0.4614 and 0.4440 against the incumbent's 0.4528
+(SD 0.0200), both inside its band. The finding under H1'' is the retry's scope, fixed on
+`main` after this record and carried by the next freeze; the third set is pre-registered
+below as "Disclosed-surface rolls, third set".
+
+## Disclosed-surface rolls, third set — 2026-09-11 (OT-37, after the transport fix)
+
+Written BEFORE the set is launched and AFTER the second set was read (void: roll 2
+16/20, four socket timeouts with zero retries). Only the outcome line here is filled
+afterwards, from `scripts/bench_panel.py`, never by hand.
+
+**Candidate.** The harness at `main` after the second set's finding, frozen by
+`scripts/freeze_worktree.sh HEAD` into `~/blended-worktrees/<commit>`; the commit is named
+in the launch record below. Beyond the second set's candidate it carries exactly one
+change to what a roll runs: the one socket opener's bounded retry now covers the
+transport saying "not now" (`RETRYABLE_TRANSPORT_ERRORS`: a read timeout, a refused or
+reset connection, an unresolved name) with the same `RETRY_BACKOFF_SECONDS` and the same
+`retried_calls` accounting. The 300 s cloud ceiling is unchanged: measured the same day,
+a 7,328-token thinking reply returned whole in 37.9 s (~193 tok/s), so the worst legal
+reply (16,384 tokens) generates in ~85 s; the second set's losses were stalled
+connections, which is the retry's case. Everything else is the second set's candidate.
+
+**Incumbent, writer, eye, instance set, rolls, ranking rule, target, regression.** As the
+second set: group `deepseek-v10` (F@0.05 mean 0.4528, SD 0.0200, executability 120/120),
+`deepseek-v4-pro:cloud` and `kimi-k2.7-code:cloud` through the local daemon, per-instance
+timeout 1500 s, the frozen 20-instance holdout, three rolls in new directories
+`blended-deepseek-v4-pro-disclosed3-roll{1,2,3}`, `scripts/bench_chain.sh` from the
+freeze, executability 20/20 on every roll then F@0.05 mean over the three rolls, higher
+is better, target 0.5207, regression a one-sided fall beyond `REGRESSION_SIGMA` paired
+standard errors. `cd_pca` reported, never ranked.
+
+**Hypotheses, stated before the roll.** H1''' and H2''' are H1'' and H2'' restated
+unchanged: 60/60 against 120/120, and F@0.05 not below the incumbent by more than 2σ.
+One addition, from the second set's two rankable rolls (0.4614, 0.4440): H3''' the
+retried calls are visible in the record — every `[retry] TimeoutError` line in a
+`.blender_stdout.txt` corresponds to a `retried_calls` increment, and no instance is
+lost to a transport error that was not retried `len(RETRY_BACKOFF_SECONDS)` times.
+A loss that IS retried that many times and still fails is the gateway's and voids the
+set; a loss with fewer retries than that is ours and a finding.
+
+**Outcome.** *(pending — launched per the launch record below; ≈ 2 h per roll measured
+on the second set)*
