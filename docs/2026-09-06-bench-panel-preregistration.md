@@ -256,8 +256,10 @@ regression = a one-sided move beyond `REGRESSION_SIGMA` (2.0) on the paired SE.
 - Recorded, not ranked: `search_ops` calls per instance; the local lane's per-request
   wall time (the 2,000 s ceiling is a measured derivation and a hit on it is a finding).
 
-**Outcome.** *(pending — launched 2026-09-10; the cloud chain is ≈ 3 h per roll, the
-local chain was ≈ 8 h per sweep on the whole set)*
+**Outcome.** Not measured (filled 2026-09-11 from the panel): H1' 50/60, rolls 18, 18 and
+13 of 20; under §P8a no roll ranks, so H2' has no reading. The launch record's 01:47 entry
+carries the mechanism (a frozen tree that predated the gateway retry) and the
+"Outcome (first set)" line the numbers. Re-run as the second set below.
 
 **Launch record (appended, not edited).** 15:23 CDT: both chains launched from
 `/Users/ladvien/blended-bench-v2` (`89583ce`). 15:26: the cloud chain's first two
@@ -313,6 +315,34 @@ instrument between rolls 1 and 3 would make them incomparable. The other failure
 (Pillar_seed0, `ERR_MODEL_CALL`) was a transient connection reset on the Ollama cloud
 lane. So roll 1's honest reading is 18/20 executable with 1 instance attributable to the
 bridge and 1 to the network, and the outcome line below must say so when it is filled.
+
+19:53: **cloud roll 2 complete and scored** — 18/20 the same way: `Tap_seed0` baked to no
+GLB with the runner reporting `OK_AGENT_DONE` (the OT-31 bridge defect again, a chunk that
+built then raised), and `AquariumTank_seed0` died `ERR_MODEL_CALL` on an HTTP 502 from the
+Ollama cloud lane. `cd_pca` 0.02886 over n=18. Roll 3 follows.
+
+2026-09-11 01:47: **cloud roll 3 complete, 13/20, and the set is void.** Seven instances —
+Nautilus, Pillar, Plate, Rug, Sink, Spoon, Tap — died `ERR_MODEL_CALL`, every one
+`HTTP 502 from http://localhost:11434` with the daemon's own body
+`Post "https://ollama.com:443/api/chat": read tcp ... connection reset by peer`; zero
+`[retry]` lines in any of the seven transcripts; five of the seven died on their first
+call; the failures span 20:52–23:24 CDT. Nautilus died late, after its shell had passed
+the gate and taken materials, mid-way through a final render loop. `cd_pca` 0.02754 over
+n=13. **Mechanism, from the git graph and not from a guess:** this set ran from
+`/Users/ladvien/blended-bench-v4` at `c6e4bfc`, and the bounded gateway retry
+(`RETRYABLE_HTTP_STATUSES`, `RETRY_BACKOFF_SECONDS`, OT-32) landed in `179ab11`, after it.
+The plan written on the 10th said the retry "already flows through `OllamaClient`" for
+the bench lane; on `main` it does, and the frozen tree never had it. So the whole set
+measured a missing fix. Under §P8a (executability 20/20 on every roll) rolls of 18, 18 and
+13 rank nothing; **H1' and H2' are not measured**, and this section's outcome line is
+written as such. The instrument is now guarded: `scripts/bench_chain.sh` refuses any
+worktree that is not a freeze named by its commit (OT-37), and the set is re-run under
+the "second set" pre-registration below, on F@0.05 as the OT-33 section registered.
+
+**Outcome (first set).** Not measured: no roll reached 20/20 (18, 18, 13 — two bridge
+losses now fixed by OT-31, nine gateway losses on a tree that predated the retry). The
+first-set numbers, for the record and never for ranking: `cd_pca` 0.0270 / 0.0289 / 0.0275,
+F@0.05 0.4066 / 0.4465 / 0.4001, all below the incumbent's 0.4528.
 
 ---
 

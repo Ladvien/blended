@@ -3176,6 +3176,45 @@ MISTAKES: tuple[MistakeRecord, ...] = (
         ),
         recorded_on="2026-09-11",
     ),
+    MistakeRecord(
+        identifier="a-frozen-tree-predates-the-fix-it-was-meant-to-carry",
+        scope="process",
+        failure=(
+            "OT-27 cloud roll 3 (2026-09-10 19:53 to 01:47): 13/20 "
+            "executable, 7 instances ERR_MODEL_CALL, every one HTTP 502 "
+            "from ollama.com through the local daemon ('connection reset by "
+            "peer'), 0 retry lines in any transcript, 5 of the 7 dead on "
+            "the first call, spread over 20:52-23:24. Rolls 1 and 2 had "
+            "each lost one instance the same way. The plan that launched "
+            "the roll said the gateway retry 'already flows through "
+            "OllamaClient'."
+        ),
+        cause=(
+            "The roll ran from the hand-made worktree blended-bench-v4 at "
+            "c6e4bfc; the bounded retry (RETRYABLE_HTTP_STATUSES, "
+            "RETRY_BACKOFF_SECONDS) landed in 179ab11, AFTER that commit. "
+            "Nothing in the launch named the commit the roll carried, so "
+            "'the fix is in the tree' was asserted from memory of main, not "
+            "read from the freeze. A worktree named after its purpose "
+            "(-v4) cannot answer 'which fixes does it have'; one named after "
+            "its commit can."
+        ),
+        fix=(
+            "scripts/bench_chain.sh refuses any WORKTREE outside "
+            "$FREEZE_ROOT (where scripts/freeze_worktree.sh names every "
+            "freeze by its commit) before it touches the bench, and writes "
+            "the frozen commit as the first line of chain_<MODEL_DIR>.log. "
+            "The blended-bench-v4 worktree and the incumbent-ot27 branch "
+            "were removed; the next set runs from a freeze of HEAD after "
+            "OT-34 and OT-36."
+        ),
+        guarded_by=(
+            "tests/pure/test_bench_chain_guard.py::"
+            "test_a_worktree_outside_the_freeze_root_is_refused_before_anything_runs, "
+            "::test_a_real_freeze_logs_its_commit_first"
+        ),
+        recorded_on="2026-09-11",
+    ),
 )
 
 

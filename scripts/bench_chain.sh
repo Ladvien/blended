@@ -30,10 +30,31 @@ set -u
 : ${OUT:=/Users/ladvien/blended/outputs/bench}
 : ${TIMEOUT:=1500}
 : ${TOOLS:=$WORKTREE}   # the tree whose bake/diagnose scripts run (an incumbent tree predates them)
+: ${FREEZE_ROOT:=$HOME/blended-worktrees}
+
+# The roll runs from a FREEZE NAMED BY ITS COMMIT, or not at all (OT-37).
+# Measured 2026-09-11: OT-27's roll 3 ran from a hand-made worktree at
+# c6e4bfc and lost 7 of 20 instances to HTTP 502 with zero retries — the
+# bounded retry had landed in 179ab11, after the freeze, and the plan
+# that launched the roll assumed it was in the tree. A freeze under
+# $FREEZE_ROOT carries its commit in its path (scripts/freeze_worktree.sh),
+# so the question "which fixes did this roll carry" is answered by `ls`;
+# the commit is also written as the first line of the chain log.
+case "$WORKTREE" in
+  "$FREEZE_ROOT"/*) ;;
+  *)
+    echo "bench_chain: WORKTREE=$WORKTREE is not a freeze under $FREEZE_ROOT;" \
+         "make one with scripts/freeze_worktree.sh <commit> so the roll's commit is in its path" >&2
+    exit 2
+    ;;
+esac
+FROZEN_COMMIT=$(git -C "$WORKTREE" rev-parse HEAD 2>/dev/null) || {
+  echo "bench_chain: $WORKTREE is not a git checkout" >&2; exit 2; }
 L=$OUT/logs; mkdir -p $L
 RESULTS=$BENCH_ROOT/results/text_to_3D_agent
 say() { echo "[chain] $MODEL_DIR $1 $(date)" >> $L/chain_$MODEL_DIR.log; }
 
+say "frozen commit $FROZEN_COMMIT at $WORKTREE"
 say "sweep start"
 EYE_ARGS=(); [ -n "$EYE" ] && EYE_ARGS=(--vision-model "$EYE")
 $WORKTREE/.venv/bin/python $WORKTREE/scripts/sweep_3dcode.py --bench-root $BENCH_ROOT \
