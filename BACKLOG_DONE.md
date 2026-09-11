@@ -398,3 +398,86 @@ mean cache-read delta -0.050 over 5 paired brief(s); fell on 5; mean writes/call
 The **Done means** as written ("the fraction did not fall") is NOT met: it fell on all five briefs. The mechanism is the ratio, not the order: the numerator is the static prefix, and OT-25 cut that prefix by ~5,300 tokens per call while each turn's new content (tool results, `search_ops` pages) stayed, so a smaller share of a smaller call is cached even though every call is cheaper (planter: 24,933 → 17,833 tokens per call). The number a volatile prefix would inflate — cache WRITES per call — moved −104 on average (rose on three briefs by 48–447 tokens, the extra `search_ops` result text; fell on two by 527–715). Recorded as the wrong number and the right one; the criterion for any future reorder is writes per call, and the fraction is reported per run as the item asked.
 **Layers:** recorded in the closing commit message (both by exit code).
 **Commit:** `1016942`.
+
+## OT-28 The metered lane tells the truth about itself
+
+**What:** on a lane that charges money per call the harness MUST read the served window
+from the provider (`GET /v1/models`) at `check_connection` and pin it, MUST ask for and
+record the price of every call (`usage.cost`), and MUST stop a run that passes a cap
+derived from a measured run. An id the catalogue does not list is refused by name.
+**Why:** `context_tokens` returned `None` on this lane, so AGT-23's preflight reported
+"not checked" and skipped; `cost_usd` stayed 0, so a metered run's record claimed it was
+free. NFR-27's ban on a paid lane can only become a cap if the cap is enforced in code.
+**Amends:** AGT-23 (the OpenRouter half), NFR-27 (rewritten with the cap), §5.4.
+**Done means:** `tests/pure/test_metered_lane.py` covers the discovered window, the refused
+id, the price off the usage object, the cap and the lanes that are never capped;
+`scripts/provider_smoke.py --only openrouter` passes text and image on the model.
+
+**Closed:** 2026-09-10.
+**Gating tests:** `tests/pure/test_metered_lane.py` (13: the window and the completion reservation from the pinned provider's endpoint; a provider that does not serve the id refused with those that do; the price off `usage.cost` and zero where none is reported; the cache split and the thinking share; the run cap; the lanes never capped; the retry loop). Live: `scripts/provider_smoke.py --only openrouter` 2/2 (text and image, so one model is writer and eye).
+**Spec:** NFR-27 rewritten with the cap and the reason the prohibition failed; AGT-23 the OpenRouter half; AGT-25 (an empty reply is a dropped turn); AGT-26 (the assistant's tool calls travel with their results); AGT-27 (retry); NFR-28 (a crash is not a success); the lanes row and §5.4.
+**Measured:** context 1,048,575 discovered from the pinned provider's endpoint; a 36-in/17-out call cost $0.0000312; caching runs 92–95 % once the history is well formed; `MAXIMUM_RUN_COST_USD` $1.00 from the heaviest measured run at the reachable price.
+**What it cost to find the provider — the wrong answers are the lesson:** unrouted, OpenRouter sent two of five briefs to Novita (504 then HTTP 400). `DeepSeek` (the display name) filters every endpoint out, because `provider.order` matches the routing slug. `deepseek` (the vendor's own endpoint, cheapest at $0.15/$0.60, 99.99 % uptime) is excluded by this account's guardrail. Of the seven left, `fireworks`, `novita` and `parasail` all answered "Provider returned error" on a model published that day. `gmicloud` carries the full window at 99.97 % uptime, at $0.30/$1.20 — twice the catalogue's headline, which is why the first cap was derived from a price the lane cannot reach.
+**Layers:** pure 747 passed / 1 skipped / 1 xfailed; Blender 330 passed / 3 skipped (both by exit code).
+**Commits:** `06c59e2`, `cf7bcf0`, `e46ad1a`, `8e0984e`, `179ab11`, `74d990b`.
+
+## OT-29 The iteration loop runs on the metered lane
+
+**What:** run the five briefs no-hatch at v14 on `deepseek/deepseek-v4.1-flash` as writer
+and its own eye, from a frozen worktree, and record per brief: form gate, refinement gate,
+API calls, `search_ops` calls, hatch calls, tokens and dollars. Compare against iterations
+87–92 (the same briefs, same surface, Claude Code lane). `RECOMMENDED_MODELS` gains the
+lane only if the briefs pass, with the measured numbers behind the recommendation.
+**Why:** this is the loop the user asked to iterate on; until it is measured on this lane
+the lane is a hypothesis.
+**Open question this run answers:** whether `max_completion_tokens` (16,384, derived for
+bmb's 27B) starves a reasoning model on a 1M-context lane — the exact failure that killed
+the local arm. A turn cut at the ceiling is already a loud error (AGT-23), so the run
+either shows the number is fine or names the turn that hit it. **Do not raise it on faith.**
+**Done means:** the per-brief table is in the spec's measured-state section with cost and
+gate outcome per lane; a brief that fails on this lane is named with its failure.
+**Closed:** 2026-09-10 — measured, and the recommendation does NOT change.
+**Gating run:** the five briefs no-hatch at v14 on `deepseek/deepseek-v4.1-flash` as writer and its own eye, from a frozen worktree at `74d990b` (iterations 118–122).
+
+| brief | form gate | api calls | tool calls | `search_ops` | cached | reasoning / output | cost |
+|---|---|---|---|---|---|---|---|
+| planter_box | PASS | 15 | 17 | 0 | 94 % | 7,328 / 10,454 | $0.0163 |
+| three_leg_stool | **FAIL** | 10 | 25 | 9 | 95 % | 12,621 / 14,564 | $0.0198 |
+| uv_crate | PASS | 14 | 22 | 8 | 93 % | 37,504 / 39,668 | $0.0516 |
+| ribbed_column | **FAIL** | 12 | 24 | 14 | 92 % | 13,573 / 15,813 | $0.0231 |
+| crate_with_lid | PASS | 14 | 24 | 2 | 94 % | 4,694 / 8,241 | $0.0133 |
+
+**3 of 5 form-gate passes for $0.124.** The same five briefs on `claude-code:sonnet`
+(iterations 87–92, same surface, same revision, hatch withheld) were **5 of 5 for $2.75**
+— 22x the price. Four of the five metered runs hit the 24-call turn budget; the two
+failures are also the two that searched hardest (9 and 14 `search_ops` calls against 0–2
+on the passes), so the model flails rather than stops when it cannot find an op.
+
+**The open question this run was to answer — does the 16,384-token reservation starve a reasoning model? — is answered YES, by a cut turn.** uv_crate died on `ReplyTruncated` at the old ceiling; with the reservation taken from the provider (65,536) the same brief passes and spends 37,504 reasoning tokens in one run. The number was not raised on faith: it was raised after a turn was measured being cut.
+**The recommendation:** `RECOMMENDED_MODELS` is unchanged. The lane is mechanically sound and 22x cheaper, but this writer passes 3 of 5 where the default passes 5 of 5, and OT-29's own rule was that the default changes only if the briefs pass. The lane is worth using for cheap iteration on harness mechanics — which is exactly what it did today — and not yet for gating.
+**What the lane found, none of it in the tool surface:** four harness defects, each of which had been latent on every lane the harness has ever used — the assistant's tool calls never reached the model (AGT-26), an empty reply was read as an answer (AGT-25), a crash exited 0 (NFR-28), and a transient gateway killed whole runs (AGT-27). That is the return on the item.
+**Record gap:** iterations 93–117 were run on the broken transport from worktrees since removed; only 118–122 are in `_evaluate/iterations.jsonl`. The failures are recorded in the commits above, not in the log.
+**Layers:** pure 747 passed / 1 skipped / 1 xfailed; Blender 330 passed / 3 skipped (both by exit code).
+**Commit:** `74d990b`; closing commit recorded in the follow-up commit.
+
+## OT-32 The lane survives a gateway, and a crash is not a success
+
+**What:** two defects found by running the five briefs on the metered lane, neither in the
+tool surface. (1) Blender exits 0 on an uncaught Python exception, so a converge run that
+died mid-way reported success to every caller that gates on the exit status. (2) A
+gateway's transient "not now" killed whole runs.
+**Why:** measured 2026-09-10. Iteration 109's visual gate raised `EmptyFrame` after the
+build and export and `make converge` returned 0; three metered briefs died on HTTP 429 and
+returned 0 as well, so one chain recorded four successes it never had — while the repo's
+closing rule gates commits on exactly such exit codes. Separately, five briefs in a row
+failed inside ~2 minutes on upstream 429s while a probe minutes later passed 12 of 12.
+**Done means:** `tests/pure/test_script_exit.py` (a crash exits 70, a deliberate exit
+passes through, an interrupt is 130, and every Blender-hosted entry point is guarded) and
+the three retry tests in `tests/pure/test_metered_lane.py`; a converge run given a bad
+brief exits 70 instead of 0.
+
+**Closed:** 2026-09-10 with OT-28 and OT-29.
+**Gating tests:** `tests/pure/test_script_exit.py` (6: a crash exits 70, a deliberate `SystemExit` keeps its own code, an interrupt is 130, every Blender-hosted entry point is guarded) and the three retry tests in `tests/pure/test_metered_lane.py`. Live: `make converge` with a bad brief exits 70 where it returned 0.
+**Spec:** AGT-27 (retry on a gateway's "not now", never on a permanent status, counted on `TurnCost.retried_calls`), NFR-28 (a Blender-hosted script exits non-zero when it dies).
+**Measured:** `blender --python-expr "raise RuntimeError(...)"` exits 0 while `raise SystemExit(3)` exits 3; the retry budget of 5+15+45+90 s comes from windows in which five briefs failed inside ~2 minutes on upstream 429s while a probe minutes later passed 12 of 12.
+**Commit:** `179ab11`.

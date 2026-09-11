@@ -108,52 +108,6 @@ catalogue: tools, structured outputs, text **and** image input (its own eye), a 
 context, $0.15/M prompt and $0.60/M completion — the same chain for ~$0.35. The lane exists
 in the harness already; what it could not do was say how wide it is or what it cost.
 
-### OT-28 The metered lane tells the truth about itself
-
-**What:** on a lane that charges money per call the harness MUST read the served window
-from the provider (`GET /v1/models`) at `check_connection` and pin it, MUST ask for and
-record the price of every call (`usage.cost`), and MUST stop a run that passes a cap
-derived from a measured run. An id the catalogue does not list is refused by name.
-**Why:** `context_tokens` returned `None` on this lane, so AGT-23's preflight reported
-"not checked" and skipped; `cost_usd` stayed 0, so a metered run's record claimed it was
-free. NFR-27's ban on a paid lane can only become a cap if the cap is enforced in code.
-**Amends:** AGT-23 (the OpenRouter half), NFR-27 (rewritten with the cap), §5.4.
-**Done means:** `tests/pure/test_metered_lane.py` covers the discovered window, the refused
-id, the price off the usage object, the cap and the lanes that are never capped;
-`scripts/provider_smoke.py --only openrouter` passes text and image on the model.
-
-### OT-29 The iteration loop runs on the metered lane
-
-**What:** run the five briefs no-hatch at v14 on `deepseek/deepseek-v4.1-flash` as writer
-and its own eye, from a frozen worktree, and record per brief: form gate, refinement gate,
-API calls, `search_ops` calls, hatch calls, tokens and dollars. Compare against iterations
-87–92 (the same briefs, same surface, Claude Code lane). `RECOMMENDED_MODELS` gains the
-lane only if the briefs pass, with the measured numbers behind the recommendation.
-**Why:** this is the loop the user asked to iterate on; until it is measured on this lane
-the lane is a hypothesis.
-**Open question this run answers:** whether `max_completion_tokens` (16,384, derived for
-bmb's 27B) starves a reasoning model on a 1M-context lane — the exact failure that killed
-the local arm. A turn cut at the ceiling is already a loud error (AGT-23), so the run
-either shows the number is fine or names the turn that hit it. **Do not raise it on faith.**
-**Done means:** the per-brief table is in the spec's measured-state section with cost and
-gate outcome per lane; a brief that fails on this lane is named with its failure.
-
-### OT-32 The lane survives a gateway, and a crash is not a success
-
-**What:** two defects found by running the five briefs on the metered lane, neither in the
-tool surface. (1) Blender exits 0 on an uncaught Python exception, so a converge run that
-died mid-way reported success to every caller that gates on the exit status. (2) A
-gateway's transient "not now" killed whole runs.
-**Why:** measured 2026-09-10. Iteration 109's visual gate raised `EmptyFrame` after the
-build and export and `make converge` returned 0; three metered briefs died on HTTP 429 and
-returned 0 as well, so one chain recorded four successes it never had — while the repo's
-closing rule gates commits on exactly such exit codes. Separately, five briefs in a row
-failed inside ~2 minutes on upstream 429s while a probe minutes later passed 12 of 12.
-**Done means:** `tests/pure/test_script_exit.py` (a crash exits 70, a deliberate exit
-passes through, an interrupt is 130, and every Blender-hosted entry point is guarded) and
-the three retry tests in `tests/pure/test_metered_lane.py`; a converge run given a bad
-brief exits 70 instead of 0.
-
 ### OT-31 The bake reproduces a chunk that raised after it changed the scene
 
 **What:** `bench_bridge` includes a recorded call only when its `stage_reached` reached
@@ -172,7 +126,6 @@ them incomparable; roll 1's reading already names the affected instance.
 **Done means:** a Blender test records a chunk that creates an object and then raises,
 bakes it, and the object exists in the fresh scene with the later calls succeeding; the
 inclusion rule is stated in terms of "changed the scene", not "reached a stage".
-
 ### OT-30 Paired bench rolls on the metered writer (gated)
 
 **What:** three paired holdout rolls, disclosed tree against the incumbent tree, writer and
