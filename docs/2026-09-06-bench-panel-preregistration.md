@@ -523,3 +523,62 @@ progress in `ot37b_chain.log`; the chain log's first line records the frozen com
 writer and eye answered a one-word probe through the daemon one minute before launch.
 The second set's freeze `bd81028` is left in place until its diagnose files are no
 longer needed (`scripts/freeze_worktree.sh --prune` removes idle ones).
+
+## Proportion headroom under F@0.05 — 2026-09-11 (measured; nothing rolled)
+
+Not a roll and not a candidate: three read-only measurements over existing GLBs and one
+text-only probe, made before deciding what to build next. Every number below is
+reproducible from the scripts named; none was chosen after reading a result.
+
+**1. The oracle.** `scripts/bench_proportion_headroom.py` over the six incumbent rolls and
+disclosed2 rolls 1 and 3 (160 instance rolls of the frozen holdout): F@0.05 as scored
+**0.4531**; after an oracle per-axis rescale of the generated cloud onto the reference's
+extents — per axis in the PCA-ALIGNED frame (BEN-6c's fix; Nautilus no longer becomes a
+cube), 1–99th percentile extents, re-normalised and re-aligned — **0.7017**, headroom
+**+0.2486**. Under `cd_pca` the same oracle was worth 0.0099 of 0.0273; F@0.05 counts whole
+a miss that Chamfer averages. The miss is per-instance BIAS on the middle and thin axes
+(the largest axis is right everywhere): Jar 2x too wide in all eight rolls, DoorCasing 8x
+too thin, Pillar 3x too fat, Plate 3x too flat. Top headroom: Jar +0.81, FoodBox +0.74,
+DoorCasing +0.60, CabinetDoorIkea +0.48, Pillar +0.29, AquariumTank +0.28; Tap, Nautilus,
+Crab ≈ 0. The `shape_error_decompose.py` report's "closed question" section is amended in
+place with this falsification.
+
+**2. Floating parts.** 0 of 160 generated assets has a component whose bounding box
+touches no other (132 have several components, all touching). 3DCodeBench's Finding 1
+(DOI 10.48550/arXiv.2606.01057) — floating and disconnected parts as the bottleneck once
+code compiles — is not this harness's failure; the per-object component budget and the pair
+gate absorb it. A relational-assembly surface (aDSL, DOI 10.48550/arXiv.2608.17975;
+ShapeAssembly, DOI 10.1145/3414685.3417812) would target a failure we do not have, and is
+not built (user decision 2026-09-11).
+
+**3. A text-free rule.** The dev-median own-frame prior (L:M:S = 1 : 0.683 : 0.331 over 145
+dev references) applied to the generated clouds of three holdout rolls the way the oracle
+is: F@0.05 **0.4623 → 0.2536**, −0.2086. Destructive on this axis as on `cd_pca`: proportion
+priors stay a closed question.
+
+**4. Can the writer READ what it does not BUILD?** `scripts/bench_proportion_probe.py`, one
+text-only call per DEV-sweep instance (12; the holdout is never probed), three runs, asking
+`deepseek-v4-pro:cloud` for L:M:S with the prompt words that justify them, against the
+built assets of `blended-deepseek-v4-pro-dev-iter3` (`bench_proportion_headroom.py` on the
+dev sweep: F 0.2725 → 0.4673 under the oracle, +0.1947, 0 floating). Mean |log2 error|:
+
+| axis | stated (3-run mean; runs 0.434/0.361/0.423 and 0.748/0.621/0.681) | built |
+|---|---|---|
+| middle | 0.406 | 0.455 |
+| smallest | 0.683 | 0.675 |
+
+The writer's stated proportions are as wrong as its built ones. Per instance the picture
+is bimodal: on Pot, FruitCoconutgreen, CeilingClassicLamp, DeskLamp, Book, Oven and
+Wineglass the statement is better than the build by 0.1–0.45 (an intent→built gap a
+contract could close); on Auger, KitchenIsland, Lid, SingleCabinet and TableCoral the
+statement is WORSE than the build (Auger: stated 0.59/1.60, built 0.06/0.12), so a gate
+that holds the build to the statement would damage what the writer gets right by feel.
+Some of the headroom is description-to-reference mismatch no text-only writer can reach:
+Lid's description says "flat disc", its reference is 0.475 tall relative to its width.
+
+**Consequence.** The proportion contract as planned on 2026-09-11 (declare extents, refuse
+"done" on a mismatch) is measured as a wash on the thin axis and +0.05 log2 on the middle
+axis with per-instance harm; it is NOT pre-registered for a roll and NOT built on this
+evidence. The oracle's +0.25 stands as an upper bound whose reachable part, from text
+alone, this probe puts near the noise. What remains open is where the proportion
+knowledge could come from if not from the writer's reading of the text.

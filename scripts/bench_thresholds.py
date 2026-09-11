@@ -94,3 +94,32 @@ MINIMUM_INSTANCES_FOR_RANKING = 20
 TARGET_RELATIVE_IMPROVEMENT = 0.15
 # One-sided, on the ranking metric's paired standard error.
 REGRESSION_SIGMA = 2.0
+
+# --- Proportion headroom under F@0.05 (2026-09-11) -------------------------
+#
+# How much of the ranking metric a PERFECT proportion stage could buy: the
+# generated cloud is rescaled per axis, in the PCA-aligned frame cd_pca
+# and F@0.05 are measured in, onto the reference's extents, then
+# re-normalised and re-aligned and F@0.05 read again. An upper bound (it
+# knows the reference), not a claim about any writer. Measured over 160
+# instance rolls of the frozen holdout (six incumbent rolls plus
+# disclosed2 rolls 1 and 3): 0.4531 -> 0.7017, +0.2486, against a
+# proportion headroom of 0.0099 under cd_pca. The two instruments
+# disagree because F@0.05 counts surface within 0.05 of the unit sphere
+# and a 2x-wide jar puts none of its wall there, while Chamfer averages
+# the miss. The per-instance error is a BIAS — the same instance is
+# wrong the same way in all eight rolls — on the middle and thin axes;
+# the largest axis is right everywhere.
+# Extents are read at these percentiles, not the min/max: one stray
+# vertex on a 8192-point sample would otherwise set an axis.
+PROPORTION_EXTENT_PERCENTILES = (1.0, 99.0)
+# Two components touch when their bounding boxes overlap within this
+# fraction of the object's largest extent; a component touching nothing
+# is floating. Measured the same day: 0 of 160 generated assets had one,
+# so 3DCodeBench's floating-parts bottleneck (DOI 10.48550/arXiv.2606.01057,
+# Finding 1) is not this harness's — the per-object component budget and
+# the pair gate absorb it upstream.
+COMPONENT_TOUCH_TOLERANCE_FRACTION = 1e-3
+# References are Infinigen exports with up to ~40k components; above this
+# count the pairwise touch test is skipped and the count alone reported.
+PAIRWISE_COMPONENT_LIMIT = 3000

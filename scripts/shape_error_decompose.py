@@ -296,18 +296,31 @@ def render_report(rows: list[dict], model_dir: str, instances_file: str,
          f"unchanged orientation = {reachable:.4f}; any target below this "
          f"is unreachable by shape work alone"),
         "",
-        "## Proportion priors are a closed question",
+        "## Proportion PRIORS are a closed question under cd_pca; "
+        "proportion itself is not, under F@0.05",
         "",
         (f"A brief-adjective aspect prior fitted on the 145-instance dev "
          f"split scores {ASPECT_PRIOR_BRIEF_ADJECTIVE:.4f} mean cd_pca on "
          f"this holdout and the dev-median prior (no adjectives) "
          f"{ASPECT_PRIOR_DEV_MEDIAN:.4f}, both far worse than the "
          f"{WRITER_MEASURED_CD_PCA:.4f} the writer already achieves "
-         f"unaided: its generated aspect distribution already matches the "
-         f"reference distribution (bias ~ 0, variance large), so a global "
-         f"proportion rule has nothing to correct. Only the per-instance "
-         f"oracle above — unavailable to any writer — buys the "
-         f"{headroom:.4f} of proportion headroom."),
+         f"unaided, so a GLOBAL proportion rule has nothing to correct, "
+         f"and under cd_pca the per-instance oracle buys only "
+         f"{headroom:.4f}."),
+        "",
+        ("Falsified in part on 2026-09-11, when the ranking axis was "
+         "F@0.05 (OT-36): `scripts/bench_proportion_headroom.py` measured "
+         "the same per-instance oracle — per axis in the ALIGNED frame, "
+         "which is BEN-6c's fix — over 160 instance rolls of this holdout "
+         "at F 0.4531 -> 0.7017, +0.2486. Chamfer averaged a miss that a "
+         "0.05 threshold counts whole. The 'bias ~ 0' reading above was "
+         "true of the DISTRIBUTION and false of the INSTANCE: the same "
+         "instance is wrong the same way in all eight rolls (Jar 2x too "
+         "wide, DoorCasing 8x too thin, Pillar 3x too fat), on the middle "
+         "and thin axes only. A prior still cannot fix that; a per-instance "
+         "commitment the gate can measure is the open question, and the "
+         "proportion contract (docs/2026-09-06-bench-panel-preregistration.md) "
+         "is its pre-registered test."),
         "",
     ]
     return "\n".join(lines)
