@@ -3,13 +3,20 @@
 # number (OT-21): sweep -> bake -> score -> diagnose. The scorers run
 # only if the bake left every instance with its render log and GLB.
 #
-#   WORKTREE=/Users/ladvien/blended-bench MODEL_DIR=blended-deepseek-v4-pro-ops-roll1 \
+#   WORKTREE=$(scripts/freeze_worktree.sh HEAD) \
+#   MODEL_DIR=blended-deepseek-v4-pro-ops-roll1 \
 #   WRITER=deepseek-v4-pro:cloud EYE=kimi-k2.7-code:cloud \
 #   scripts/bench_chain.sh
 #
 # WORKTREE is a FROZEN checkout (git worktree) so the main tree can move
 # while a roll runs; the diagnose json lands in the main tree's
-# outputs/bench/ for bench_panel.py.
+# outputs/bench/ for bench_panel.py. Make it with
+# `scripts/freeze_worktree.sh <commit>`, which keeps one freeze per
+# commit under one parent and reuses it — six ad-hoc worktrees
+# accumulated in a single evening (2026-09-10, 839 MB) before that
+# existed. `scripts/freeze_worktree.sh --prune` removes the idle ones;
+# this script does NOT remove its own, because a roll set runs several
+# chains from the same freeze.
 # TOOLS (default WORKTREE) is the tree whose bake and diagnose scripts run:
 # an incumbent worktree from before OT-21 has no bake script, and both
 # scripts read bench result directories without importing either harness.

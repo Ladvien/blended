@@ -236,6 +236,7 @@ Routing is by model id (`src/blended/agent/loop.py:340-363`); credentials come f
 | `make calibrate-visual-gate` | `scripts/calibrate_visual_gate.py --revision` | writes the pixel-gate thresholds (`Makefile:89`) |
 | `make pin-golden-views` | `scripts/pin_golden_views.py --revision` | mints per-view golden references (`Makefile:97`) |
 | `make bench-3dcode` | `scripts/sweep_3dcode.py --bench-root --instances-file` | the external benchmark sweep (`Makefile:129-132`) |
+| `scripts/freeze_worktree.sh` | one frozen checkout per COMMIT under `~/blended-worktrees`, reused if it exists; `--list` shows each with in-use state, `--prune` removes the idle ones | a roll must not read a tree that is being edited, and the freezes must not accumulate: six appeared in one evening (839 MB, ~700 MB dead) when they were made ad hoc and never removed |
 | `scripts/bench_chain.sh` | sweep → `scripts/bake_3dcode.py` → the bench's scorers → `diagnose_3dcode.py`, from a frozen worktree | one rankable roll; the scorers run only after a complete bake (OT-21) |
 | `make chat-e2e` | `scripts/chat_e2e.py` | six interactive scenarios, hard-asserted; `ARGS="--no-hatch"` withholds `run_python` and lists missing-op evidence (OT-11) |
 | `make mine-ops` | `scripts/mine_candidate_ops.py --from-iteration` | the candidate-op report from v2 records (OT-12) |
