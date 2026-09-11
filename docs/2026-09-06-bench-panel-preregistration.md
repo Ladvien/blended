@@ -582,3 +582,26 @@ axis with per-instance harm; it is NOT pre-registered for a roll and NOT built o
 evidence. The oracle's +0.25 stands as an upper bound whose reachable part, from text
 alone, this probe puts near the noise. What remains open is where the proportion
 knowledge could come from if not from the writer's reading of the text.
+
+**5. Can an EYE read what the writer cannot?** (added 2026-09-11, after the user chose
+reference-image grounding.) The four bench turntable views of each dev-sweep instance were
+rendered from the ground-truth factory with the bench's own `core/render.py`
+(`scripts/bench_render_references.py`; white silhouettes on a transparent film, the same
+format as the scorers' candidate renders) and attached to the same ratio question
+(`bench_proportion_probe.py --images-root --model kimi-k2.7-code:cloud`), three runs.
+The writer `deepseek-v4-pro:cloud` given the same images answers HTTP 400 through the
+daemon: it is blind, so the eye-describes-the-views path is the only one.
+
+| axis | built | text-only writer (3 runs) | eye with four views (3 runs: 0.195/0.263/0.213 and 0.504/0.538/0.424) |
+|---|---|---|---|
+| middle | 0.455 | 0.406 | **0.224** |
+| smallest | 0.675 | 0.683 | **0.488** |
+
+Decision rule, written before these numbers (plan file, Phase R1): worth a roll set if
+the eye's error is below the built assets' by more than the text probe's three-run spread
+(~0.07 middle, ~0.13 smallest). Measured: −0.231 and −0.187. **Passes.** Per instance the
+eye is better or equal on eleven of twelve (Lid 1.15 → 0.24, SingleCabinet 0.38 → 0.07,
+DeskLamp 0.62 → 0.13); Auger and KitchenIsland keep a thin-axis error above 1.0 in every
+condition — silhouettes at four azimuths do not resolve a needle's thickness. The oracle's
++0.25 F@0.05 is the ceiling; how much of it survives the writer building from the eye's
+words is the pre-registered question of the image-grounded set below.
