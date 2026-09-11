@@ -39,7 +39,10 @@ def _subject(extents_m=SUBJECT_EXTENTS_M):
 
 
 def _world_extents_m(object_name):
+    """Measured independently of the op under test: corners through
+    `matrix_world`, the ground truth the op's own helper must match."""
     blender_object = bpy.data.objects[object_name]
+    bpy.context.view_layer.update()
     corners = [blender_object.matrix_world @ Vector(corner)
                for corner in blender_object.bound_box]
     return tuple(

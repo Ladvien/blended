@@ -3138,6 +3138,44 @@ MISTAKES: tuple[MistakeRecord, ...] = (
         ),
         recorded_on="2026-09-10",
     ),
+    MistakeRecord(
+        identifier="the-reading-and-the-op-measured-different-boxes",
+        scope="harness_code",
+        failure=(
+            "A 0.9 x 0.3 x 0.6 m box turned a quarter turn about X: the "
+            "gate's `orient:` line and `inspect_object` read (0.9, 0.3, "
+            "0.6), 'middle extent on z, canonical depth axis is y', while "
+            "the box occupied (0.9, 0.6, 0.3) and apply_canonical_depth_axis "
+            "composed identity. The writer was told one axis assignment and "
+            "had another applied (measured 2026-09-11, OT-34)."
+        ),
+        cause=(
+            "harness.gate_object and tools.inspect_object built the extents "
+            "from object.dimensions — the local box scaled, rotation-blind "
+            "(see object-dimensions-ignores-rotation, catalogued 2026-08-22) "
+            "— while canonical_orientation measured matrix_world @ bound_box. "
+            "Two readers of one quantity, two implementations; the trap was "
+            "already in the drift catalog and the reading fell into it "
+            "anyway because the harness comment said `dimensions` came "
+            "'from the evaluated transform', which is true of scale only."
+        ),
+        fix=(
+            "One private helper, ops/transforms._world_extents_m, is the "
+            "only place world extents are measured; the gate, "
+            "inspect_object, list_scene, world_bounds and "
+            "apply_canonical_depth_axis all read it. A reading and the op "
+            "that acts on it must come from the same numbers, or the "
+            "reading is a gate that lies."
+        ),
+        guarded_by=(
+            "tests/blender/test_harness.py::"
+            "test_the_reading_and_the_op_measure_the_same_box and "
+            "::test_inspect_object_and_list_scene_read_the_world_box (red "
+            "before the change: reported (0.9, 0.3, 0.6) for a box "
+            "occupying (0.9, 0.6, 0.3))"
+        ),
+        recorded_on="2026-09-11",
+    ),
 )
 
 

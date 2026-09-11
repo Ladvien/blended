@@ -139,12 +139,16 @@ def gate_object(blender_object, budget: MeshBudget) -> GateVerdict:
             object_type=blender_object.type,
             scene_state=unusable,
         )
-    # Read AFTER scene_state_failure, which synchronises the view layer:
-    # `dimensions` comes from the evaluated transform, so reading it
-    # earlier measures the previous frame. Carried on every verdict from
+    # The WORLD box — `matrix_world @ bound_box`, the one measurement
+    # `apply_canonical_depth_axis` will act on (OT-34). Not
+    # `object.dimensions`: that is the local box scaled and ignores
+    # rotation, so a writer who turned its object was told one axis
+    # assignment and had another applied. Carried on every verdict from
     # here on, including the gate-FAIL one — a writer whose gate just
     # failed is exactly who needs to know which axis holds which extent.
-    world_extents_m = tuple(float(extent) for extent in blender_object.dimensions)
+    from blended.ops.transforms import _world_extents_m
+
+    world_extents_m = tuple(float(extent) for extent in _world_extents_m([blender_object]))
     if blender_object.type != "MESH":
         return GateVerdict(
             object_name=blender_object.name,

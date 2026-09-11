@@ -120,6 +120,66 @@ dropped, and this is where it could be measured instead.
 
 ---
 
+## Phase 9 — A rankable roll and a reading that tells the truth (2026-09-11)
+
+**Measured 2026-09-11:** OT-27's three cloud rolls finished 18/20, 18/20 and 13/20. §P8a
+needs 20/20 on every roll, so none ranks. Roll 3's seven losses are one cause — `HTTP 502`
+from `ollama.com` through the local daemon, `connection reset by peer`, zero retries, five on
+the first call, 20:52–23:24 CDT — and the mechanism is the git graph: the frozen tree
+`blended-bench-v4` is `c6e4bfc`, the bounded retry is `179ab11`, later. The plan of
+2026-09-10 assumed the retry was in the tree; it was not. Two more facts from mapping the
+machinery: the `orient:` line the writer reads is computed from `object.dimensions`
+(rotation-blind) while the op that acts on it reads `matrix_world @ bound_box`; and the
+retry exists on only one of the two transport paths.
+
+### OT-35 One transport path: the stream retries and is costed
+
+**What:** `OllamaClient._request` retries a gateway's "not now" (OT-32); its streaming twin
+`_stream_lines` does not, and `_chat_streamed` returns before the cost fold and the NFR-27
+cap at `loop.py:1496-1499`. One opener carries the retry; `_stream_lines` opens eagerly
+through it so an `HTTPError` surfaces before any delta is emitted (the only safe replay
+point; a stream cut mid-body is not retried). The assemblers keep the final frame's counts
+and the streamed branch folds `_turn_cost_from_body` and runs `_check_run_cost`.
+**Why:** the addon's `stream_replies=True` lane is the one the user watches, and it is the
+one lane with no retry and a turn record that says 0 tokens.
+**Done means:** pure tests at the `urlopen` boundary — a streamed call that 502s twice then
+streams delivers every delta once with `retried_calls == 2`; a stream cut mid-body raises
+with no retry; a streamed `done` frame's counts land on `spent` — red before, green after;
+AGT-27 amended to name both `chat` paths.
+
+### OT-36 F-score ranks the next roll set, and a roll below 20/20 cannot rank
+
+**What:** per the OT-33 pre-registration and the user's decision of 2026-09-11, F@0.05
+becomes `RANKING_METRIC` with an explicit direction; `diagnose_3dcode.py` writes
+`fscore_005`, `precision_005`, `recall_005` per row from ONE implementation shared with
+`bench_fscore.py`; `bench_panel.py` honours the direction and refuses any group in which a
+roll executed fewer instances than it attempted (§P8a). The nine rolls on disk (six
+incumbent, three void disclosed) are re-diagnosed, asserting every re-derived `cd_pca`
+reproduces the stored value.
+**Why:** the panel cannot rank on a column it does not carry, and it currently accepts a
+19/20 roll as rankable, which the rule forbids.
+**Done means:** the panel on the nine JSONs ranks on F@0.05 and refuses the disclosed group;
+a pure test feeds a 19/20 roll and asserts the refusal; BEN-4/BEN-5 amended in place; the
+second-set pre-registration is written with the incumbent's F@0.05 mean and SD before launch.
+
+### OT-37 Record roll 3, freeze HEAD, relaunch three rolls
+
+**What:** the OT-27 launch record gets roll 2 (19:53, 18/20) and roll 3 (01:47, 13/20, the
+mechanism above) and the set is marked void under §P8a with H1'/H2' "not measured".
+`scripts/bench_chain.sh` refuses a `WORKTREE` outside `$FREEZE_ROOT` and logs the freeze's
+commit, so the commit a roll ran is in both the path and the log. The idle
+`blended-bench-v4` worktree and the `incumbent-ot27` branch are removed (user decision).
+Then `WORKTREE=$(scripts/freeze_worktree.sh HEAD)` and three cloud rolls
+`blended-deepseek-v4-pro-disclosed2-roll{1,2,3}`, writer `deepseek-v4-pro:cloud`, eye
+`kimi-k2.7-code:cloud`, via `outputs/bench/logs/ot37_cloud_chain.sh`.
+**Why:** a roll that runs from a tree missing the fix it was meant to carry measures the
+missing fix. The guard makes that impossible to do silently.
+**Done means:** a pure test runs the chain script with a `WORKTREE` outside the freeze root
+and asserts a non-zero exit; after the rolls, `bench_panel.py` ranks or refuses and the
+outcome lines of the second-set and OT-33 sections are filled from it.
+
+---
+
 ## Phase 6 — The flywheel (only after Phase 3 shows the surface is better on a local lane)
 
 ### OT-18 Dataset export

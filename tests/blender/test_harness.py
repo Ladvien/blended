@@ -182,6 +182,69 @@ link_into_scene(add_box("Oblong", 0.9, 0.3, 0.6))
     assert summary.index("gate:") < summary.index("orient:"), summary
 
 
+# A quarter turn about X swaps the y and z extents of a box.
+QUARTER_TURN_RAD = 3.141592653589793 / 2.0
+ROTATED_OBLONG_SOURCE = f"""
+import sys
+sys.path.insert(0, "src")
+from blended.ops import add_box, link_into_scene, rotate_object_euler
+
+link_into_scene(add_box("Oblong", 0.9, 0.3, 0.6))
+rotate_object_euler("Oblong", x_rad={QUARTER_TURN_RAD!r})
+"""
+
+
+def test_the_reading_and_the_op_measure_the_same_box(empty_scene, tmp_path):
+    """OT-34. A 0.9 x 0.3 x 0.6 box turned a quarter turn about X occupies
+    0.9 x 0.6 x 0.3 m of world space, and `apply_canonical_depth_axis`
+    measures it that way (`matrix_world @ bound_box`). Measured
+    2026-09-11 before the fix: the gate read `object.dimensions` — the
+    local box scaled, rotation-blind — and reported (0.9, 0.3, 0.6),
+    "middle extent on z", while the op would compose identity because
+    the middle extent already sat on y. The harness told the writer one
+    axis assignment and applied another.
+    """
+    from blended.harness import HarnessSettings, run_chunk
+    from blended.ops import canonical_depth_axis_rotation_euler_rad
+
+    result = run_chunk(
+        ROTATED_OBLONG_SOURCE,
+        object_name="Oblong",
+        settings=HarnessSettings(output_directory=tmp_path),
+    )
+    assert result.ok, result.summary()
+    assert result.world_extents_m == pytest.approx((0.9, 0.6, 0.3), abs=1e-5)
+    summary = result.summary()
+    assert "middle extent on y (canonical)" in summary, summary
+    # The rotation the op would apply to the SAME numbers is identity:
+    # reading and op agree.
+    assert canonical_depth_axis_rotation_euler_rad(*result.world_extents_m) == (
+        0.0,
+        0.0,
+        0.0,
+    )
+
+
+def test_inspect_object_and_list_scene_read_the_world_box(empty_scene, tmp_path):
+    """OT-34, the tools the writer checks its own work with."""
+    from blended.agent.tools import dispatch_tool
+    from blended.harness import HarnessSettings, run_chunk
+
+    result = run_chunk(
+        ROTATED_OBLONG_SOURCE,
+        object_name="Oblong",
+        settings=HarnessSettings(output_directory=tmp_path),
+    )
+    assert result.ok, result.summary()
+
+    inspected = dispatch_tool("inspect_object", {"object_name": "Oblong"}, tmp_path).text
+    assert "extents x 0.9000 y 0.6000 z 0.3000 m" in inspected, inspected
+    assert "middle extent on y (canonical)" in inspected, inspected
+
+    listed = dispatch_tool("list_scene", {}, tmp_path).text
+    assert "0.900 x 0.600 x 0.300 m" in listed, listed
+
+
 def _visible_box(name: str):
     """A gate-clean, linked, visible cube — the control for every case."""
     from blended.ops import add_box, link_into_scene

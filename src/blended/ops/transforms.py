@@ -14,6 +14,8 @@ catalog.
 
 from __future__ import annotations
 
+import math
+
 from blended.ops._contract import op
 from blended.ops._objects import ObjectName
 
@@ -25,6 +27,47 @@ def _refresh_dependency_graph() -> None:
     bpy.context.view_layer.update()
 
 
+AXIS_COUNT = 3
+
+
+def _world_bounds_m(blender_objects) -> tuple[list[float], list[float]]:
+    """(minimum, maximum) per world axis of the objects' JOINT bounding box.
+
+    THE one place world extents are measured (OT-34). `object.dimensions`
+    is the local bounding box scaled — it ignores rotation, so a
+    0.9 x 0.3 x 0.6 m box turned a quarter turn about X still reports
+    (0.9, 0.3, 0.6) while occupying (0.9, 0.6, 0.3) of world space. Every
+    reader that asks "which world axis holds which extent" — the gate's
+    `orient:` line, `inspect_object`, `list_scene`, `world_bounds` and
+    `apply_canonical_depth_axis` — reads this, so the reading the writer
+    sees and the rotation the op applies come from the same numbers.
+
+    Joint, not per-object, because the exporter writes the whole scene
+    into one GLB and the scorer samples that one cloud; a single-object
+    caller passes a one-element list. The depsgraph is refreshed first
+    (OPS-14) so the box is this frame's, not the previous one's.
+    """
+    import bpy
+    from mathutils import Vector
+
+    bpy.context.view_layer.update()
+    minimum = [math.inf] * AXIS_COUNT
+    maximum = [-math.inf] * AXIS_COUNT
+    for blender_object in blender_objects:
+        for corner in blender_object.bound_box:
+            world_corner = blender_object.matrix_world @ Vector(corner)
+            for axis in range(AXIS_COUNT):
+                minimum[axis] = min(minimum[axis], world_corner[axis])
+                maximum[axis] = max(maximum[axis], world_corner[axis])
+    return minimum, maximum
+
+
+def _world_extents_m(blender_objects) -> tuple[float, float, float]:
+    """Axis-aligned world extents of the objects' joint bounding box."""
+    minimum, maximum = _world_bounds_m(blender_objects)
+    return tuple(maximum[axis] - minimum[axis] for axis in range(AXIS_COUNT))
+
+
 @op(reads_only=True)
 def world_bounds(object_name: str) -> dict[str, list[float]]:
     """Read the named object's world-space bounding box: min_m, max_m, extents_m corners of its evaluated bounds.
@@ -34,20 +77,13 @@ def world_bounds(object_name: str) -> dict[str, list[float]]:
     boolean reported no overlap. The depsgraph is refreshed first
     (OPS-14) so the box is this frame's, not the previous one's.
     """
-    import bpy
-    from mathutils import Vector
-
     from blended.ops._objects import object_by_name
 
-    blender_object = object_by_name(object_name)
-    bpy.context.view_layer.update()
-    corners = [blender_object.matrix_world @ Vector(corner) for corner in blender_object.bound_box]
-    minimum = [min(corner[axis] for corner in corners) for axis in range(3)]
-    maximum = [max(corner[axis] for corner in corners) for axis in range(3)]
+    minimum, maximum = _world_bounds_m([object_by_name(object_name)])
     return {
         "min_m": minimum,
         "max_m": maximum,
-        "extents_m": [maximum[axis] - minimum[axis] for axis in range(3)],
+        "extents_m": [maximum[axis] - minimum[axis] for axis in range(AXIS_COUNT)],
     }
 
 

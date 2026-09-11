@@ -190,31 +190,6 @@ def _mesh_objects(object_name: str | None):
     return meshes
 
 
-def _world_extents_m(blender_objects) -> tuple[float, float, float]:
-    """Axis-aligned world extents of the objects' joint bounding box.
-
-    Joint, not per-object: the exporter writes the whole scene into one
-    GLB and the scorer samples that one cloud, so the joint box is exactly
-    what gets measured. A run that leaves more than one mesh has already
-    broken the task's own rule and is recorded as such by the export log's
-    `n_meshes`; refusing to orient it would only turn a scoring penalty
-    into an executability failure.
-    """
-    import bpy
-    from mathutils import Vector
-
-    bpy.context.view_layer.update()
-    minimum = [math.inf] * AXIS_COUNT
-    maximum = [-math.inf] * AXIS_COUNT
-    for blender_object in blender_objects:
-        for corner in blender_object.bound_box:
-            world_corner = blender_object.matrix_world @ Vector(corner)
-            for axis in range(AXIS_COUNT):
-                minimum[axis] = min(minimum[axis], world_corner[axis])
-                maximum[axis] = max(maximum[axis], world_corner[axis])
-    return tuple(maximum[axis] - minimum[axis] for axis in range(AXIS_COUNT))
-
-
 def apply_canonical_depth_axis(object_name: str | None = None) -> dict:
     """Rotate the scene's mesh so its middle extent lies on Blender Y.
 
@@ -241,6 +216,13 @@ def apply_canonical_depth_axis(object_name: str | None = None) -> dict:
     """
     import bpy
     from mathutils import Euler
+
+    # The same measurement the gate's `orient:` line and `inspect_object`
+    # report (OT-34): a run that leaves more than one mesh has already
+    # broken the task's own rule and is recorded by the export log's
+    # `n_meshes`; refusing to orient it would only turn a scoring penalty
+    # into an executability failure.
+    from blended.ops.transforms import _world_extents_m
 
     blender_objects = _mesh_objects(object_name)
     extents_before_m = _world_extents_m(blender_objects)

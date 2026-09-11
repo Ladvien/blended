@@ -508,3 +508,27 @@ inclusion rule is stated in terms of "changed the scene", not "reached a stage".
 **Shape of the change:** `RecordedCall` gains `changed_scene`, measured by the runner from `bpy.data` either side of each dispatch (names and vertex counts, so a boolean rewriting a mesh in place counts too) — ground truth, never read off the outcome. `include_call` = executed OR changed the scene. A call that raised having changed the scene is emitted inside a `try` printing the same error, which is faithful because the chunk is deterministic: re-running it stops at the same point leaving the same partial geometry. A call that raised and changed nothing stays out, and the field defaults False so a recorder with no scene to read keeps the old rule exactly.
 **Layers:** pure 749 passed / 1 skipped / 1 xfailed; Blender 331 passed / 3 skipped (both by exit code).
 **Commit:** `9b1be03`.
+
+## OT-34 The `orient:` reading is computed from the same world extents the op reads
+
+**What:** `harness.gate_object` (`src/blended/harness.py:147`) and `inspect_object`
+(`src/blended/agent/tools.py:582`) build the extents behind `orientation_reading` from
+`blender_object.dimensions` — the LOCAL bounding box scaled, which ignores rotation.
+`apply_canonical_depth_axis` reads `matrix_world @ bound_box`. One private helper in
+`ops/transforms.py` (the OPS-14 home of the depsgraph refresh) computes the joint world
+extents; `world_bounds`, `apply_canonical_depth_axis`, the gate, `inspect_object` and
+`list_scene` all read it. The duplicate in `canonical_orientation.py` is deleted.
+**Why:** a 0.9 × 0.3 × 0.6 box rotated a quarter turn about X reads `(0.9, 0.3, 0.6)`,
+"middle extent on z", while it occupies `(0.9, 0.6, 0.3)` and the op composes identity. The
+harness tells the writer one axis assignment and applies another; the drift catalog
+(`drift/catalog.py:282`) and mistake memory already name this trap.
+**Done means:** a Blender test rotates the box, gates it, and asserts the reported extents,
+the reading's named axis and `canonical_depth_axis_rotation_euler_rad(*extents)` agree —
+red before the change, green after; OPS-18 amended in place; both layers green.
+
+**Closed:** 2026-09-11.
+**Gating tests:** `tests/blender/test_harness.py::test_the_reading_and_the_op_measure_the_same_box` (red before the change: reported (0.9, 0.3, 0.6) for a box occupying (0.9, 0.6, 0.3); green after) and `::test_inspect_object_and_list_scene_read_the_world_box`.
+**Spec:** OPS-18 amended in place.
+**Shape of the change:** `ops/transforms._world_bounds_m` / `_world_extents_m` is the one place `matrix_world @ bound_box` is measured; `world_bounds`, `apply_canonical_depth_axis`, `harness.gate_object`, `tools.inspect_object` and `tools.list_scene` read it; the duplicate in `canonical_orientation.py` is deleted. Mistake memory: `the-reading-and-the-op-measured-different-boxes`.
+**Layers:** pure 749 passed / 1 skipped / 1 xfailed; Blender 333 passed / 3 skipped (both by exit code).
+**Commit:** _(recorded in the follow-up commit)_

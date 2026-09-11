@@ -572,14 +572,16 @@ def _dispatch_service_tool(
         if unusable:
             failures.append(unusable)
         verdict = "PASS" if not failures else "FAIL: " + "; ".join(failures)
-        # The same shared text function `HarnessResult.summary()` uses, so
-        # the tool the writer checks its own work with cannot disagree
-        # with the gate about where the extents landed. Read after
-        # scene_state_failure, which synchronises the view layer.
+        # The same shared text function `HarnessResult.summary()` uses,
+        # over the same world-box measurement the gate and
+        # `apply_canonical_depth_axis` read (OT-34), so the tool the
+        # writer checks its own work with cannot disagree with the gate
+        # about where the extents landed.
         from blended.ops.canonical_orientation import orientation_reading
+        from blended.ops.transforms import _world_extents_m
 
         reading = orientation_reading(
-            tuple(float(extent) for extent in blender_object.dimensions)
+            tuple(float(extent) for extent in _world_extents_m([blender_object]))
         )
         return done(
             f"GATE {verdict}\n{reading}\n{json.dumps(_report_to_dict(report), indent=1)}"
@@ -647,16 +649,19 @@ def _dispatch_service_tool(
         ]
         if not mesh_objects:
             return done("Scene is empty (no mesh objects).")
-        bpy.context.view_layer.update()
+        from blended.ops.transforms import _world_extents_m
+
         lines = []
         for scene_object in mesh_objects[:MAXIMUM_SCENE_OBJECTS_LISTED]:
             triangle_count = sum(
                 len(polygon.vertices) - 2 for polygon in scene_object.data.polygons
             )
-            dimensions = scene_object.dimensions
+            # World extents, not `dimensions` (OT-34): the writer reads
+            # this list to decide which axis holds which extent.
+            extent_x_m, extent_y_m, extent_z_m = _world_extents_m([scene_object])
             lines.append(
                 f"{scene_object.name}: {triangle_count} tris, "
-                f"{dimensions.x:.3f} x {dimensions.y:.3f} x {dimensions.z:.3f} m"
+                f"{extent_x_m:.3f} x {extent_y_m:.3f} x {extent_z_m:.3f} m"
             )
         if len(mesh_objects) > MAXIMUM_SCENE_OBJECTS_LISTED:
             lines.append(
