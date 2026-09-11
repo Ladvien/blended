@@ -92,6 +92,13 @@ def parse_arguments(argv):
     )
     parser.add_argument("--model", default="")
     parser.add_argument("--vision-model", default="")
+    parser.add_argument(
+        "--reference-images-root",
+        default="",
+        help="<root>/<inst>/images/Image_0{05,15,25,35}.png: the bench's image-to-3D "
+        "track. All four views must exist or the instance is refused before any "
+        "model call (blended.evaluate.bench_reference_views).",
+    )
     parser.add_argument("--max-tool-calls", type=int, default=24)
     parser.add_argument("--overwrite", action="store_true")
     return parser.parse_args(argv)
@@ -137,11 +144,29 @@ def main(argv) -> int:
         dispatch_here,
     )
     from blended.evaluate.bench_bridge import RecordedCall, prelude, standalone_script
+    from blended.capture.reference_photo import normalize_reference_photo
+    from blended.evaluate.bench_reference_views import reference_view_paths
     from blended.ops.canonical_orientation import apply_canonical_depth_axis
     from blended.version import assert_supported_blender
 
     arguments = parse_arguments(argv)
     assert_supported_blender()
+
+    # The image-to-3D track (DOI 10.48550/arXiv.2606.01057): the four
+    # reference views ride the task message as reference images and the
+    # eye reads them for the writer. Resolved BEFORE the scene, the
+    # connection or any model call, and never defaulted: an instance run
+    # without its views beside instances run with them is a different
+    # experiment scored as the same one.
+    reference_views: tuple[Path, ...] = ()
+    if arguments.reference_images_root:
+        reference_views = reference_view_paths(
+            Path(arguments.reference_images_root), arguments.instance
+        )
+    task_metadata = {
+        "task": "image_to_3d" if reference_views else "text_to_3d",
+        "reference_views": [str(path) for path in reference_views],
+    }
 
     bench_root = Path(arguments.bench_root).resolve()
     prompt_path = (
@@ -183,7 +208,7 @@ def main(argv) -> int:
             json.dumps(
                 {
                     "instance": arguments.instance,
-                    "task": "text_to_3d",
+                    **task_metadata,
                     "model": client.config.model,
                     "status": "ERR_CONNECTION",
                     "error": status.detail,
@@ -252,10 +277,16 @@ def main(argv) -> int:
         print(f"[{kind}] {preview}", flush=True)
 
     task_text = TASK_TEMPLATE.format(description=description)
+    # Re-encoded through the one reference-image path the chat UI uses
+    # (size-capped PNGs under the run's own directory), so a bench view
+    # and a user's photograph reach the writer the same way.
+    normalized_views = tuple(
+        normalize_reference_photo(view, work_directory / "_agent") for view in reference_views
+    )
     print(f"[instance] {arguments.instance}", flush=True)
     started = time.monotonic()
     try:
-        session.send(task_text, on_event=on_event)
+        session.send(task_text, on_event=on_event, reference_images=normalized_views)
     except RuntimeError as model_error:
         # The transport died mid-run (measured: an Ollama cloud 502 with
         # "no route to host"). That is an INVALID run, not a modeling
@@ -270,7 +301,7 @@ def main(argv) -> int:
             json.dumps(
                 {
                     "instance": arguments.instance,
-                    "task": "text_to_3d",
+                    **task_metadata,
                     "model": client.config.model,
                     "status": "ERR_MODEL_CALL",
                     "duration_s": duration_seconds,
@@ -305,7 +336,7 @@ def main(argv) -> int:
         json.dumps(
             {
                 "instance": arguments.instance,
-                "task": "text_to_3d",
+                **task_metadata,
                 "model": client.config.model,
                 "status": "OK_AGENT_DONE" if included else "ERR_NO_SCRIPT",
                 "duration_s": duration_seconds,

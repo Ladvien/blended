@@ -8,6 +8,13 @@
 #   WRITER=deepseek-v4-pro:cloud EYE=kimi-k2.7-code:cloud \
 #   scripts/bench_chain.sh
 #
+# REFERENCE_IMAGES=<root> runs the image-to-3D track: every instance's
+# four views <root>/<inst>/images/Image_0{05,15,25,35}.png ride the task
+# as reference images (rendered by scripts/bench_render_references.py).
+# Checked for EVERY instance before the sweep starts, because an
+# instance run without its views beside instances run with them is a
+# different experiment scored as the same one.
+#
 # WORKTREE is a FROZEN checkout (git worktree) so the main tree can move
 # while a roll runs; the diagnose json lands in the main tree's
 # outputs/bench/ for bench_panel.py. Make it with
@@ -31,6 +38,7 @@ set -u
 : ${TIMEOUT:=1500}
 : ${TOOLS:=$WORKTREE}   # the tree whose bake/diagnose scripts run (an incumbent tree predates them)
 : ${FREEZE_ROOT:=$HOME/blended-worktrees}
+: ${REFERENCE_IMAGES:=}   # the image-to-3D track's view root, or text-only when empty
 
 # The roll runs from a FREEZE NAMED BY ITS COMMIT, or not at all (OT-37).
 # Measured 2026-09-11: OT-27's roll 3 ran from a hand-made worktree at
@@ -50,15 +58,31 @@ case "$WORKTREE" in
 esac
 FROZEN_COMMIT=$(git -C "$WORKTREE" rev-parse HEAD 2>/dev/null) || {
   echo "bench_chain: $WORKTREE is not a git checkout" >&2; exit 2; }
+REF_ARGS=()
+if [ -n "$REFERENCE_IMAGES" ]; then
+  MISSING_VIEWS=""
+  for INSTANCE in $(cat "$INSTANCES"); do
+    for VIEW in Image_005.png Image_015.png Image_025.png Image_035.png; do
+      [ -f "$REFERENCE_IMAGES/$INSTANCE/images/$VIEW" ] || MISSING_VIEWS="$MISSING_VIEWS $INSTANCE/images/$VIEW"
+    done
+  done
+  if [ -n "$MISSING_VIEWS" ]; then
+    echo "bench_chain: REFERENCE_IMAGES=$REFERENCE_IMAGES lacks reference views:$MISSING_VIEWS;" \
+         "render them with scripts/bench_render_references.py before the roll" >&2
+    exit 2
+  fi
+  REF_ARGS=(--reference-images-root "$REFERENCE_IMAGES")
+fi
 L=$OUT/logs; mkdir -p $L
 RESULTS=$BENCH_ROOT/results/text_to_3D_agent
 say() { echo "[chain] $MODEL_DIR $1 $(date)" >> $L/chain_$MODEL_DIR.log; }
 
 say "frozen commit $FROZEN_COMMIT at $WORKTREE"
+[ -n "$REFERENCE_IMAGES" ] && say "image-to-3D track: reference views from $REFERENCE_IMAGES"
 say "sweep start"
 EYE_ARGS=(); [ -n "$EYE" ] && EYE_ARGS=(--vision-model "$EYE")
 $WORKTREE/.venv/bin/python $WORKTREE/scripts/sweep_3dcode.py --bench-root $BENCH_ROOT \
-  --instances-file $INSTANCES --model "$WRITER" "${EYE_ARGS[@]}" --timeout $TIMEOUT \
+  --instances-file $INSTANCES --model "$WRITER" "${EYE_ARGS[@]}" "${REF_ARGS[@]}" --timeout $TIMEOUT \
   --model-dir $MODEL_DIR > $L/${MODEL_DIR}_sweep.log 2>&1
 say "sweep exit $?"
 

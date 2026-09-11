@@ -37,6 +37,8 @@ def parse_arguments(argv):
     parser.add_argument("--model-dir", default="blended-deepseek-v4-pro")
     parser.add_argument("--model", default="")
     parser.add_argument("--vision-model", default="")
+    parser.add_argument("--reference-images-root", default="",
+                        help="passed through to the runner: the image-to-3D track")
     parser.add_argument("--prompt-variant", choices=("description", "instruction"),
                         default="description")
     parser.add_argument("--max-tool-calls", type=int, default=24)
@@ -79,6 +81,8 @@ def instance_command(arguments, instance: str) -> list[str]:
         command += ["--model", arguments.model]
     if arguments.vision_model:
         command += ["--vision-model", arguments.vision_model]
+    if arguments.reference_images_root:
+        command += ["--reference-images-root", arguments.reference_images_root]
     if arguments.overwrite:
         command += ["--overwrite"]
     return command

@@ -47,10 +47,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from bench_proportion_headroom import N_POINTS, SEED, extents_at_percentiles  # noqa: E402
 from bench_surface_metrics import pca_frame  # noqa: E402
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+from blended.evaluate.bench_reference_views import REFERENCE_VIEW_FILENAMES  # noqa: E402
+
 DEFAULT_ENDPOINT = "http://localhost:11434"
 DEFAULT_MODEL = "deepseek-v4-pro:cloud"
-# The bench's four turntable views, in the order they are rendered.
-REFERENCE_VIEW_FILENAMES = ("Image_005.png", "Image_015.png", "Image_025.png", "Image_035.png")
 # A text-only answer is short; this is the same read ceiling the loop
 # gives the cloud lane (loop.REQUEST_TIMEOUT_SECONDS), stated here so the
 # probe cannot silently wait longer than a real turn may.

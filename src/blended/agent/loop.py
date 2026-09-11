@@ -563,9 +563,16 @@ REFERENCE_IMAGE_HEADER = "what the reference photo shows"
 # What the writer is told the attached pixels ARE. Without this a photo
 # arrives looking exactly like the harness's own render, and the writer
 # reads it as feedback on a scene it has not built yet.
+# Two kinds of reference reach this path and the wording covers both:
+# the user's photograph, and a bench instance's four turntable views
+# (3DCodeBench's image-to-3D track, DOI 10.48550/arXiv.2606.01057; the
+# views are the instance's OWN, never a stand-in — RESP,
+# DOI 10.48550/arXiv.2604.11082, measures an irrelevant reference as
+# worse than none).
 REFERENCE_PHOTO_LEAD_IN = (
-    "Reference photo of the object to build — the user's own picture of a "
-    "real object, not a render of the scene:"
+    "Reference image(s) of the object to build — pictures of the target "
+    "object itself (a photograph, or reference views of it), not renders "
+    "of your scene:"
 )
 # What the eye is asked when the picture is the user's, not ours. The
 # render prompt above asks "does it read as the intended thing?", which

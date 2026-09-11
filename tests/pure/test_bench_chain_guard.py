@@ -103,6 +103,45 @@ def test_a_real_freeze_logs_its_commit_first(tmp_path):
     assert f"frozen commit {commit} at {freeze}" in first_line
 
 
+def test_a_reference_root_missing_a_view_is_refused_before_the_sweep(tmp_path):
+    """The image-to-3D track needs every instance's four views. Measured
+    2026-09-11: an eye given them reads proportions at 0.224/0.488 log2
+    error against 0.455/0.675 built from text, so a roll where one
+    instance silently ran text-only would mix two experiments in one
+    number. Refused before the sweep, and the missing file is named."""
+    freeze_root = tmp_path / "freezes"
+    freeze = freeze_root / "abc1234"
+    freeze.mkdir(parents=True)
+    subprocess.run(["git", "init", "-q", str(freeze)], check=True)
+    subprocess.run(
+        ["git", "-C", str(freeze), "-c", "user.email=t@t", "-c", "user.name=t",
+         "commit", "-q", "--allow-empty", "-m", "frozen"],
+        check=True,
+    )
+    instances = tmp_path / "instances.txt"
+    instances.write_text("Jar_seed0\n")
+    views = tmp_path / "categories" / "Jar_seed0" / "images"
+    views.mkdir(parents=True)
+    for name in ("Image_005.png", "Image_015.png", "Image_025.png"):
+        (views / name).write_bytes(b"png")  # Image_035.png is absent
+    out = tmp_path / "out"
+    environment = {
+        **os.environ, **REQUIRED_ENVIRONMENT,
+        "WORKTREE": str(freeze), "FREEZE_ROOT": str(freeze_root), "OUT": str(out),
+        "BENCH_ROOT": str(out / "no-bench-here"),
+        "INSTANCES": str(instances),
+        "REFERENCE_IMAGES": str(tmp_path / "categories"),
+    }
+    completed = subprocess.run(
+        ["zsh", str(CHAIN_SCRIPT)], env=environment,
+        capture_output=True, text=True, timeout=60, check=False,
+    )
+    assert completed.returncode == REFUSED_EXIT_CODE, completed.stderr
+    assert "Jar_seed0/images/Image_035.png" in completed.stderr
+    assert "bench_render_references" in completed.stderr
+    assert not out.exists()  # before the log directory, before the sweep
+
+
 @pytest.mark.parametrize("missing", ["WORKTREE", "MODEL_DIR", "WRITER"])
 def test_a_missing_required_variable_is_refused(tmp_path, missing):
     environment = {

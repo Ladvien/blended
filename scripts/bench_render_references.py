@@ -26,9 +26,13 @@ import subprocess
 import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+from blended.evaluate.bench_reference_views import (  # noqa: E402 — ONE definition of the views
+    REFERENCE_IMAGES_SUBDIR,
+    REFERENCE_VIEW_FILENAMES,
+)
+
 DEFAULT_BLENDER = "/Applications/Blender.app/Contents/MacOS/Blender"
-REFERENCE_IMAGE_SUBDIR = Path("benchmark") / "categories"
-REFERENCE_VIEW_FILENAMES = ("Image_005.png", "Image_015.png", "Image_025.png", "Image_035.png")
 
 
 def parse_arguments(argv):
@@ -41,7 +45,7 @@ def parse_arguments(argv):
 
 
 def images_directory(bench_root: Path, instance: str) -> Path:
-    return bench_root / REFERENCE_IMAGE_SUBDIR / instance / "images"
+    return bench_root / REFERENCE_IMAGES_SUBDIR / instance / "images"
 
 
 def is_rendered(directory: Path) -> bool:

@@ -605,3 +605,46 @@ DeskLamp 0.62 → 0.13); Auger and KitchenIsland keep a thin-axis error above 1.
 condition — silhouettes at four azimuths do not resolve a needle's thickness. The oracle's
 +0.25 F@0.05 is the ceiling; how much of it survives the writer building from the eye's
 words is the pre-registered question of the image-grounded set below.
+
+## Disclosed surface with reference views — 2026-09-11 (OT-38)
+
+Written BEFORE the set is launched and AFTER the eye probe (section 5 above) was read.
+Only the outcome line is filled afterwards, from `scripts/bench_panel.py`, never by hand.
+
+**Candidate.** The disclosed ops surface exactly as the third text-only set runs it, plus
+ONE added input: the instance's four bench reference views (azimuths 45/135/225/315°,
+rendered from the ground-truth factory by `scripts/bench_render_references.py` with the
+bench's own `core/render.py`) ride the task message as reference images; the eye
+`kimi-k2.7-code:cloud` reads them under `REFERENCE_PHOTO_READ_PROMPT` and the blind writer
+`deepseek-v4-pro:cloud` gets its words (`run_3dcode_instance.py --reference-images-root`,
+`bench_chain.sh REFERENCE_IMAGES=`). This is 3DCodeBench's image-to-3D track
+(DOI 10.48550/arXiv.2606.01057) run through this harness. Frozen by
+`scripts/freeze_worktree.sh HEAD`; the commit is named in the launch record.
+
+**Incumbent for the grounding question.** The third text-only set, group `disclosed3`
+(three rolls, launched 13:48 CDT from `b26d6cf`): the same surface, writer, eye, instance
+set and per-instance timeout, one input fewer. `deepseek-v10` stays on the panel as the
+`run_python`-only anchor and ranks nothing here.
+
+**Writer and eye, instance set, rolls, ranking rule.** As above; the frozen 20-instance
+holdout; three rolls in `blended-deepseek-v4-pro-disclosed-image-roll{1,2,3}`;
+executability 20/20 on every roll, then F@0.05 mean over three rolls, higher is better.
+Target: `TARGET_RELATIVE_IMPROVEMENT` (15 %) above `disclosed3`'s mean. Regression: a
+one-sided fall beyond `REGRESSION_SIGMA` paired standard errors.
+
+**Hypotheses, stated before the roll.**
+- H_R0 (executability): 60/60. A loss whose transcript shows fewer than
+  `len(RETRY_BACKOFF_SECONDS)` retries is ours and a finding; one retried that many times
+  is the gateway's and voids the set.
+- H_R1 (proportions): the built assets' mean |log2 error| on the middle and thin axes
+  (`scripts/bench_proportion_headroom.py`) falls below `disclosed3`'s by more than
+  `disclosed3`'s between-roll SD on each axis. The eye's reading in the probe was
+  0.224/0.488 against 0.455/0.675 built from text; how much survives the writer building
+  from words is what this measures.
+- H_R2 (F@0.05): reaches the target. The oracle ceiling is +0.25; the target is +15 %.
+  Not reaching it while H_R1 holds means the eye's words are not reaching the geometry —
+  a finding about the writer, not the views.
+- Recorded, not ranked: the eye's reference description per instance (the `reference`
+  and `vision` events), `cd_pca`, precision/recall, turns, seconds, retries, cost.
+
+**Outcome.** *(pending — launched per the launch record below)*

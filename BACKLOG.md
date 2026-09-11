@@ -150,6 +150,35 @@ outcome lines of the second-set and OT-33 sections are filled from it.
 
 ---
 
+## Phase 10 — Proportion is where F@0.05 is lost, and the text does not hold it (2026-09-11)
+
+**Measured 2026-09-11** (`docs/2026-09-06-bench-panel-preregistration.md`, "Proportion headroom
+under F@0.05"): an oracle per-axis rescale lifts holdout F@0.05 from 0.4531 to 0.7017 over
+160 instance rolls; 0 of 160 generated assets has a floating part (3DCodeBench's Finding 1 is
+not ours); a text-free prior is destructive (−0.21); the writer's STATED ratios from the text
+are as wrong as its BUILT ones (0.406/0.683 vs 0.455/0.675 log2 error, middle/thin), so the
+proportion contract was not built; an EYE given the bench's four reference views states them
+at 0.224/0.488. The knowledge is in the views, not the text.
+
+### OT-38 Reference-image grounding: the bench's image-to-3D track
+
+**What:** `scripts/bench_render_references.py` renders each instance's four turntable views
+with the bench's own renderer; `run_3dcode_instance.py --reference-images-root` hands them
+to `AgentSession.send(reference_images=)` where the eye reads them for the blind writer;
+`bench_chain.sh REFERENCE_IMAGES=<root>` refuses a roll missing any instance's views before
+the sweep. One definition of the views: `blended.evaluate.bench_reference_views`.
+**Why:** RESP (`10.48550/arXiv.2604.11082`): a relevant reference lifts recall by +0.30–0.49;
+the eye probe above says the same of proportions on this bench. The writer itself answers
+HTTP 400 to images through the daemon, so the eye-describes-the-views path is the only one.
+**Done means:** the pure tests for the view definition and the chain's refusal are green;
+one dev instance run with views shows the `reference` event and the eye's words in its
+transcript; the pre-registered set "Disclosed surface with reference views" (three rolls,
+20/20 each, against `disclosed3` as the text-only arm of the same surface) fills its outcome
+line from `bench_panel.py`; close or falsify in place.
+**Not built, and why (measured):** the proportion contract (declare extents, refuse "done"
+on a mismatch) — the text probe found nothing for it to hold the writer to; relational
+assembly ops — zero floating parts in 160 rolls.
+
 ## Phase 6 — The flywheel (only after Phase 3 shows the surface is better on a local lane)
 
 ### OT-18 Dataset export
@@ -203,6 +232,7 @@ flowchart LR
   OT23 --> OT24 --> OT25 --> OT27
   OT25 --> OT26
   OT27 --> OT18
+  OT37 --> OT38
 ```
 
 ## Closing rule
