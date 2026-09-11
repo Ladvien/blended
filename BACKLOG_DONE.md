@@ -531,4 +531,4 @@ red before the change, green after; OPS-18 amended in place; both layers green.
 **Spec:** OPS-18 amended in place.
 **Shape of the change:** `ops/transforms._world_bounds_m` / `_world_extents_m` is the one place `matrix_world @ bound_box` is measured; `world_bounds`, `apply_canonical_depth_axis`, `harness.gate_object`, `tools.inspect_object` and `tools.list_scene` read it; the duplicate in `canonical_orientation.py` is deleted. Mistake memory: `the-reading-and-the-op-measured-different-boxes`.
 **Layers:** pure 749 passed / 1 skipped / 1 xfailed; Blender 333 passed / 3 skipped (both by exit code).
-**Commit:** _(recorded in the follow-up commit)_
+**Commit:** `57562c6`.
