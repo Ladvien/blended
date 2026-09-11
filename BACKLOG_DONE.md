@@ -507,4 +507,4 @@ inclusion rule is stated in terms of "changed the scene", not "reached a stage".
 **Spec:** BEN-1 amended.
 **Shape of the change:** `RecordedCall` gains `changed_scene`, measured by the runner from `bpy.data` either side of each dispatch (names and vertex counts, so a boolean rewriting a mesh in place counts too) — ground truth, never read off the outcome. `include_call` = executed OR changed the scene. A call that raised having changed the scene is emitted inside a `try` printing the same error, which is faithful because the chunk is deterministic: re-running it stops at the same point leaving the same partial geometry. A call that raised and changed nothing stays out, and the field defaults False so a recorder with no scene to read keeps the old rule exactly.
 **Layers:** pure 749 passed / 1 skipped / 1 xfailed; Blender 331 passed / 3 skipped (both by exit code).
-**Commit:** recorded in the follow-up commit.
+**Commit:** `9b1be03`.
