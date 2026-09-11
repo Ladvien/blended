@@ -313,3 +313,47 @@ instrument between rolls 1 and 3 would make them incomparable. The other failure
 (Pillar_seed0, `ERR_MODEL_CALL`) was a transient connection reset on the Ollama cloud
 lane. So roll 1's honest reading is 18/20 executable with 1 instance attributable to the
 bridge and 1 to the network, and the outcome line below must say so when it is filled.
+
+---
+
+## F-score pre-registration — 2026-09-10 (OT-33)
+
+Written AFTER rolls 1 and 2 were scored on `cd_pca` and BEFORE any roll is ranked on
+F-score, which is the only order that keeps this honest.
+
+**Why.** Tatarchenko, Richter, Ranftl, Li, Koltun & Brox, "What Do Single-View 3D
+Reconstruction Networks Learn?", CVPR 2019 (DOI 10.1109/cvpr.2019.00352) show that Chamfer
+distance and IoU are dominated by category-level priors — retrieval baselines are
+statistically indistinguishable from reconstruction under them — and recommend F-score.
+Three of this repo's own measurements fit that thesis: the proportion oracle is worth only
+0.0043 of 0.0270; the orientation term sits at the holdout's documented floor; and the two
+metrics rank our own rolls differently (below).
+
+**Measured, on rolls already in hand.** 18 instances each, the scorer's own sampling
+(8,192 points, seed 0), orientation quotiented out the same way `diagnose_3dcode.py` does.
+
+| roll | mean cd_pca (lower better) | mean F@0.05 (higher better) |
+|---|---|---|
+| disclosed-roll1 | **0.0270** | 0.4060 |
+| disclosed-roll2 | 0.0289 | **0.4454** |
+
+**The two metrics disagree about which roll is better.** Mean absolute rank shift between
+them across roll 1's instances is 2.78 places of 18; `CabinetDoorIkea` moves 8 places better
+under F-score and `Nautilus` 6, while `Bottle`, `FoodBox` and `DoorCasing` each move 5 worse.
+
+**What is therefore registered, before any roll is ranked on it.** F-score at
+τ = 0.05 of the unit-sphere radius, with precision and recall reported separately, becomes
+the ranking axis **for the next roll set only** (OT-30 onward). Rolls 1–3 stay ranked on
+`cd_pca` as originally pre-registered. Thresholds 0.01, 0.02, 0.05 and 0.10 were fixed in
+`scripts/bench_fscore.py` before any of them was read, and τ = 0.05 was named primary in the
+same commit; re-choosing it later would be selection on the test set.
+
+**Reference audit, recorded as a limit on every number in this document.** All 19 baked
+references are **not watertight**, while the harness gates its own output on manifold
+geometry — the candidate is held to a standard the ground truth does not meet. Seven are
+thin in their own frame (`Mirror` 0.006, `Rug` 0.007, `LeafBananaTree` 0.04, `Leaf` 0.047,
+`Spoon` 0.051, `Nautilus` 0.074, `CabinetDoorIkea` 0.099) and several are very low-poly
+(`Leaf` 31 faces, `FoodBox` 44, `Mirror` 108, `Rug` 508, `DoorCasing` 604). `Nautilus` is
+posed off-axis and its proportion-oracle number is therefore invalid (see BEN-6c).
+
+**Outcome.** *(pending — to be filled from the first roll set ranked on F-score)*
