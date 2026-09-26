@@ -56,9 +56,11 @@ from blmcp.tools_helpers.connection import send_code
 from tests.mcp_client import MCPClient
 
 # Fixed ports for the test servers (background and foreground).
-_PORT_BACKGROUND = 9876
-_PORT_FOREGROUND = 9877
-_PORT_INTERACTIVE = 9878
+# Kept off the add-on's default (9876) so a user's running Blender is never
+# the one under test.
+_PORT_BACKGROUND = 9886
+_PORT_FOREGROUND = 9887
+_PORT_INTERACTIVE = 9888
 
 # Scale all timeouts (e.g. `GLOBAL_TIMEOUT_SCALE=2` doubles every limit).
 _TIMEOUT_SCALE = float(os.environ.get("GLOBAL_TIMEOUT_SCALE", "1"))
@@ -139,6 +141,36 @@ def _run_blender(args: list[str], env: dict[str, str]) -> None:
         )
 
 
+_CONFIG_MARKER = "BLMCP_USER_CONFIG="
+
+
+def _assert_blender_config_isolated(blender_bin: str, env: dict[str, str], tmpdir: str) -> None:
+    """
+    Raise unless Blender's user config directory resolves inside *tmpdir*.
+
+    Runs before anything is installed or saved: a test that writes
+    preferences must never reach the real user's ``userpref.blend``.
+    """
+    result = subprocess.run(
+        [
+            blender_bin, "--background", "--factory-startup", "--python-expr",
+            "import bpy; print({!r} + bpy.utils.user_resource('CONFIG'))".format(_CONFIG_MARKER),
+        ],
+        capture_output=True,
+        env=env,
+    )
+    lines = result.stdout.decode("utf-8", errors="replace").splitlines()
+    config_dirs = [line[len(_CONFIG_MARKER):] for line in lines if line.startswith(_CONFIG_MARKER)]
+    if len(config_dirs) != 1:
+        raise RuntimeError("Blender did not report its user config directory: {!r}".format(lines))
+    real_tmpdir = os.path.realpath(tmpdir)
+    if not os.path.realpath(config_dirs[0]).startswith(real_tmpdir + os.sep):
+        raise RuntimeError(
+            "Blender's user config {:s} is outside the test directory {:s}: "
+            "saving preferences would overwrite the real user's.".format(config_dirs[0], real_tmpdir)
+        )
+
+
 def _drain_stdout(proc: "subprocess.Popen[bytes]") -> list[str]:
     """
     Read *proc* stdout in a daemon thread, collecting lines.
@@ -216,6 +248,18 @@ def _stop_headless_display(proc: "subprocess.Popen[bytes]") -> None:
         os.remove(ini_path)
 
 
+def _assert_port_free(port: int) -> None:
+    """
+    Raise if something already listens on *port*: ``_wait_for_port`` would
+    accept that listener and the tests would drive the wrong Blender.
+    """
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        if sock.connect_ex(("localhost", port)) == 0:
+            raise RuntimeError(
+                "Port {:d} is already in use (another Blender with the MCP add-on?)".format(port)
+            )
+
+
 def _wait_for_port(
         port: int,
         timeout: int,
@@ -274,6 +318,7 @@ class _TestServerMixin:
         cls.addClassCleanup(cls._tmpdir.cleanup)
 
         env = _blender_env(tmpdir)
+        _assert_blender_config_isolated(blender_bin, env, tmpdir)
 
         # Build the extension zip.
         addon_src = os.path.join(_REPO_DIR, "addon", "blender_mcp_addon")
@@ -344,6 +389,7 @@ class _TestServerMixin:
                 "--command", "blender_mcp", "--port", str(cls._port),
             ])
 
+        _assert_port_free(cls._port)
         cls._blender_proc = subprocess.Popen(
             blender_args,
             stdout=subprocess.PIPE,

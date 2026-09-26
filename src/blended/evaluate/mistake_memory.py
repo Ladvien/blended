@@ -3259,6 +3259,71 @@ MISTAKES: tuple[MistakeRecord, ...] = (
         ),
         recorded_on="2026-09-11",
     ),
+    MistakeRecord(
+        identifier="home-does-not-isolate-blender-config-on-macos",
+        scope="harness_code",
+        failure=(
+            "make test-mcp-blender (the vendored blender_mcp live test) "
+            "rewrote the REAL ~/Library/Application Support/Blender/5.2/"
+            "config/userpref.blend at 16:33:16 on 2026-09-26: the enabled "
+            "add-ons fell from 11 to 9 (mpfb, right_mouse_navigation and "
+            "rigify gone, the test's mcp added) and use_online_access went "
+            "True -> False, so the GUI add-on refused to open port 9876 "
+            "('Online access must be enabled'). No .blend1, Time Machine or "
+            "APFS snapshot existed; only the recorded add-on set and online "
+            "access could be restored, other preferences were lost."
+        ),
+        cause=(
+            "The test isolated Blender with HOME=tmpdir only. On macOS "
+            "Blender resolves its user resources without $HOME "
+            "(user_resource('CONFIG') stayed ~/Library/... with HOME=/tmp/x), "
+            "and the test's '--factory-startup --command extension "
+            "install-file --enable' saves preferences: factory defaults "
+            "landed on the user's file. Upstream runs these tests on Linux, "
+            "where HOME does redirect the config."
+        ),
+        fix=(
+            "_blender_env also sets BLENDER_USER_RESOURCES=<tmpdir>/"
+            "blender_user_resources (measured: config and extensions then "
+            "resolve under it). A rerun left the real userpref.blend "
+            "byte-identical (sha dab75cd1b0dbb4f0 before and after)."
+        ),
+        guarded_by=(
+            "blender_mcp/tests/test_blender_mcp_with_blender.py::"
+            "_assert_blender_config_isolated, run first in setUpClass: "
+            "raises unless Blender's user_resource('CONFIG') resolves inside "
+            "the test tmpdir (proven to raise with a HOME-only env)"
+        ),
+        recorded_on="2026-09-26",
+    ),
+    MistakeRecord(
+        identifier="live-mcp-test-drove-the-users-blender",
+        scope="harness_code",
+        failure=(
+            "make test-mcp-blender with the GUI Blender open: 8 failures + "
+            "1 error of 39 (screenshot/jump tools 'expected to fail in "
+            "non-interactive mode' succeeded; deferred-response test got no "
+            "'status'). The suite had run against the GUI instance, and its "
+            "setUp read_homefile reset that session's scene."
+        ),
+        cause=(
+            "TestBackgroundServer's fixed port was 9876, the add-on's "
+            "default, which the auto-started GUI add-on already held. The "
+            "test Blender could not bind it, and _wait_for_port accepted the "
+            "GUI's listener as the test server."
+        ),
+        fix=(
+            "Test ports moved to 9886-9888, off the add-on default; "
+            "_assert_port_free raises before launching a test Blender when "
+            "its port is taken. Rerun beside the GUI on 9876: 39/39 OK."
+        ),
+        guarded_by=(
+            "blender_mcp/tests/test_blender_mcp_with_blender.py::"
+            "_assert_port_free, called in setUpClass immediately before the "
+            "test Blender is launched"
+        ),
+        recorded_on="2026-09-26",
+    ),
 )
 
 
