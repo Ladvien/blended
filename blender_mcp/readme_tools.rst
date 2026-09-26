@@ -10,12 +10,6 @@ The tools exposed by the MCP server.
 
 .. BEGIN TOOL LISTING
 
-``execute_blender_code``
-   Execute Python code in the connected Blender instance.
-
-``execute_blender_code_for_cli``
-   Execute Python code in a background Blender process.
-
 ``get_blendfile_summary_datablocks``
    Return a summary of the blend file: data-block counts, active workspace,
    and render engine.

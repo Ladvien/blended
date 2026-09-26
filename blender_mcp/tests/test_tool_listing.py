@@ -13,11 +13,15 @@ import os
 import sys
 import unittest
 
+from blended.agent.tools import TOOL_SCHEMAS
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
 # Root of the repository.
 _REPO_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+# The tools blended serves beside the upstream ones.
+_BLENDED_TOOL_NAMES = frozenset(schema["function"]["name"] for schema in TOOL_SCHEMAS)
 
 # Complete expected tool listing.
 # When a tool is added, changed, or removed this must be updated.
@@ -25,55 +29,6 @@ _REPO_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 # BEGIN: EXPECTED_TOOLS
 EXPECTED_TOOLS = [
-    {
-        "name": "execute_blender_code",
-        "description": "\n"
-        "Execute Python code in the connected Blender instance.\n"
-        "\n"
-        "The code runs in Blender's Python environment with full access to ``bpy``.\n"
-        "To return data, assign a JSON-serialisable dict to a variable named ``result``.\n"
-        "Deferred completion via ``check_is_finished`` is only supported by the\n"
-        "interactive addon server, and is rejected in background mode.\n",
-        "inputSchema": {
-            "properties": {
-                "code": {
-                    "title": "Code",
-                    "type": "string"
-                }
-            },
-            "required": [
-                "code"
-            ],
-            "title": "execute_blender_codeArguments",
-            "type": "object"
-        }
-    },
-    {
-        "name": "execute_blender_code_for_cli",
-        "description": "\n"
-        "Execute Python code in a background Blender process.\n"
-        "\n"
-        "Opens *blend_file* with ``blender --background`` and runs *code*.\n"
-        "Assign a dict to ``result`` to return data.\n",
-        "inputSchema": {
-            "properties": {
-                "blend_file": {
-                    "title": "Blend File",
-                    "type": "string"
-                },
-                "code": {
-                    "title": "Code",
-                    "type": "string"
-                }
-            },
-            "required": [
-                "blend_file",
-                "code"
-            ],
-            "title": "execute_blender_code_for_cliArguments",
-            "type": "object"
-        }
-    },
     {
         "name": "get_blendfile_summary_datablocks",
         "description": "\n"
@@ -672,6 +627,8 @@ def _list_tools() -> list[dict[str, object]]:
             async with ClientSession(read, write) as session:
                 await session.initialize()
                 result = await session.list_tools()
+                # blended's surface is pinned by TOOL_SCHEMAS_FINGERPRINT;
+                # this snapshot pins the upstream tools only.
                 return [
                     {
                         "name": t.name,
@@ -679,6 +636,7 @@ def _list_tools() -> list[dict[str, object]]:
                         "inputSchema": t.inputSchema,
                     }
                     for t in result.tools
+                    if t.name not in _BLENDED_TOOL_NAMES
                 ]
 
     return asyncio.run(_run())

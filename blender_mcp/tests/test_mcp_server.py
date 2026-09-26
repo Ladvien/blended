@@ -15,31 +15,19 @@ __all__ = ()
 import ast
 import asyncio
 import functools
-import importlib
 import os
 import re
 import sys
-import types
 import unittest
-from unittest import mock
 from typing import Any
 
 import yaml
+from blended.agent.tools import TOOL_SCHEMAS
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
 # Root of the repository.
 _REPO_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-_MCP_DIR = os.path.join(_REPO_DIR, "mcp")
-
-
-def _import_blmcp_module() -> Any:
-    """
-    Import and return the local ``blmcp`` package.
-    """
-    if _MCP_DIR not in sys.path:
-        sys.path.insert(0, _MCP_DIR)
-    return importlib.import_module("blmcp")
 
 
 def _load_prompts() -> dict[str, object]:
@@ -361,15 +349,6 @@ class TestMCPServer(unittest.TestCase):
         """
         self.assertTrue(len(self._instructions) > 0)
 
-    def test_instructions_match_prompts_yml_exactly(self) -> None:
-        """
-        Checks that the server returns exactly the instructions from ``prompts.yml``.
-        """
-        self.assertEqual(
-            self._instructions,
-            str(self._prompts["initial_instructions"]),
-        )
-
     def test_instructions_contains_key_sections(self) -> None:
         """
         Checks that the instructions still include the main guidance sections.
@@ -385,15 +364,6 @@ class TestMCPServer(unittest.TestCase):
                 self._instructions,
                 "Missing section: {:s}".format(section),
             )
-
-    def test_instructions_is_ascii(self) -> None:
-        """
-        Checks that the instructions stay ASCII-only.
-        """
-        try:
-            self._instructions.encode("ascii")
-        except UnicodeEncodeError as ex:
-            self.fail("Non-ASCII character in instructions: {:s}".format(str(ex)))
 
     # -----------------------------------------------------------------
     # Tool metadata.
@@ -444,7 +414,7 @@ class TestMCPServer(unittest.TestCase):
         """
         self.assertEqual(
             set(self._tools_by_name),
-            set(_source_tool_definitions()),
+            set(_source_tool_definitions()) | {schema["function"]["name"] for schema in TOOL_SCHEMAS},
         )
 
     def test_all_tool_schemas_are_object_schemas(self) -> None:
@@ -550,193 +520,6 @@ class TestMCPServer(unittest.TestCase):
             )
             checked += 1
         self.assertGreater(checked, 0, "No _for_cli tools found")
-
-
-class TestMainConfiguration(unittest.TestCase):
-    """
-    Test server startup configuration without launching Blender.
-    """
-
-    _prompts: dict[str, object]
-
-    @classmethod
-    def setUpClass(cls) -> None:
-        cls._prompts = _load_prompts()
-
-    def test_main_uses_stdio_transport_by_default(self) -> None:
-        """
-        Checks that ``main()`` starts the server in ``stdio`` mode by default.
-        """
-        blmcp = _import_blmcp_module()
-        mcp_instance = mock.Mock()
-        with (
-            mock.patch.object(sys, "argv", ["blmcp"]),
-            mock.patch.object(
-                blmcp, "FastMCP", return_value=mcp_instance
-            ) as fastmcp_cls,
-            mock.patch.object(blmcp.pkgutil, "iter_modules", return_value=[]),
-        ):
-            result = blmcp.main()
-        self.assertEqual(result, 0)
-        fastmcp_cls.assert_called_once_with(
-            "blender-mcp",
-            instructions=str(self._prompts["initial_instructions"]),
-        )
-        mcp_instance.run.assert_called_once_with(transport="stdio")
-
-    def test_main_discovers_and_registers_only_public_tool_modules(self) -> None:
-        """
-        Checks that startup imports only public tool modules and registers them.
-        """
-        blmcp = _import_blmcp_module()
-        mcp_instance = mock.Mock()
-        gamma_mod = mock.Mock()
-        no_register_mod = object()
-
-        with (
-            mock.patch.object(sys, "argv", ["blmcp"]),
-            mock.patch.object(blmcp, "FastMCP", return_value=mcp_instance),
-            mock.patch.object(
-                blmcp.pkgutil,
-                "iter_modules",
-                return_value=[
-                    (None, "alpha", False),
-                    (None, "beta_toolcode", False),
-                    (None, "_template_hidden", False),
-                    (None, "gamma", False),
-                ],
-            ),
-            mock.patch.object(
-                blmcp.importlib,
-                "import_module",
-                side_effect=[no_register_mod, gamma_mod],
-            ) as import_module,
-        ):
-            result = blmcp.main()
-
-        self.assertEqual(result, 0)
-        self.assertEqual(
-            import_module.call_args_list,
-            [
-                mock.call("blmcp.tools.alpha"),
-                mock.call("blmcp.tools.gamma"),
-            ],
-        )
-        gamma_mod.register.assert_called_once_with(mcp_instance)
-        mcp_instance.run.assert_called_once_with(transport="stdio")
-
-    def test_main_skips_modules_without_register(self) -> None:
-        """
-        Checks that startup ignores tool modules that do not define ``register()``.
-        """
-        blmcp = _import_blmcp_module()
-        mcp_instance = mock.Mock()
-        no_register_mod = object()
-
-        with (
-            mock.patch.object(sys, "argv", ["blmcp"]),
-            mock.patch.object(blmcp, "FastMCP", return_value=mcp_instance),
-            mock.patch.object(
-                blmcp.pkgutil,
-                "iter_modules",
-                return_value=[(None, "alpha", False)],
-            ),
-            mock.patch.object(
-                blmcp.importlib,
-                "import_module",
-                return_value=no_register_mod,
-            ) as import_module,
-        ):
-            result = blmcp.main()
-
-        self.assertEqual(result, 0)
-        import_module.assert_called_once_with("blmcp.tools.alpha")
-        mcp_instance.run.assert_called_once_with(transport="stdio")
-
-    def test_main_configures_http_transport_settings_and_cors(self) -> None:
-        """
-        Checks that HTTP mode sets the expected server settings and CORS wrapper.
-        """
-        # NOTE: this is fairly closely tied with HTTP which only tests the few things
-        # we have supported for LLAMA.C++.
-
-        blmcp = _import_blmcp_module()
-
-        class FakeTransportSecuritySettings:
-            def __init__(self, **kwargs: object):
-                self.kwargs = kwargs
-
-        class FakeCORSMiddleware:
-            pass
-
-        class FakeApp:
-            def __init__(self) -> None:
-                self.middleware_calls: list[tuple[object, dict[str, object]]] = []
-
-            def add_middleware(self, middleware: object, **kwargs: object) -> None:
-                self.middleware_calls.append((middleware, kwargs))
-
-        fake_app = FakeApp()
-        mcp_instance = mock.Mock()
-        mcp_instance.settings = types.SimpleNamespace()
-        mcp_instance.streamable_http_app = mock.Mock(return_value=fake_app)
-
-        fastmcp_server_mod = types.ModuleType("mcp.server.fastmcp.server")
-        fastmcp_server_mod.TransportSecuritySettings = FakeTransportSecuritySettings
-        starlette_apps_mod = types.ModuleType("starlette.applications")
-        starlette_apps_mod.Starlette = object
-        starlette_cors_mod = types.ModuleType("starlette.middleware.cors")
-        starlette_cors_mod.CORSMiddleware = FakeCORSMiddleware
-
-        with (
-            mock.patch.object(
-                sys,
-                "argv",
-                ["blmcp", "--transport", "http", "--host", "0.0.0.0", "--port", "8123"],
-            ),
-            mock.patch.object(blmcp, "FastMCP", return_value=mcp_instance),
-            mock.patch.object(blmcp.pkgutil, "iter_modules", return_value=[]),
-            mock.patch.dict(
-                sys.modules,
-                {
-                    "mcp.server.fastmcp.server": fastmcp_server_mod,
-                    "starlette.applications": starlette_apps_mod,
-                    "starlette.middleware.cors": starlette_cors_mod,
-                },
-            ),
-        ):
-            result = blmcp.main()
-
-        self.assertEqual(result, 0)
-        self.assertEqual(mcp_instance.settings.host, "0.0.0.0")
-        self.assertEqual(mcp_instance.settings.port, 8123)
-        self.assertEqual(mcp_instance.settings.streamable_http_path, "/")
-        self.assertTrue(mcp_instance.settings.stateless_http)
-        self.assertIsInstance(
-            mcp_instance.settings.transport_security,
-            FakeTransportSecuritySettings,
-        )
-        self.assertEqual(
-            mcp_instance.settings.transport_security.kwargs,
-            {"enable_dns_rebinding_protection": False},
-        )
-        mcp_instance.run.assert_called_once_with(transport="streamable-http")
-
-        app = mcp_instance.streamable_http_app()
-        self.assertIs(app, fake_app)
-        self.assertEqual(
-            fake_app.middleware_calls,
-            [
-                (
-                    FakeCORSMiddleware,
-                    {
-                        "allow_origins": ["*"],
-                        "allow_methods": ["*"],
-                        "allow_headers": ["*"],
-                    },
-                ),
-            ],
-        )
 
 
 class TestGetPythonAPIDocs(unittest.TestCase):

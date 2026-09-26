@@ -713,7 +713,7 @@ class TestChatClient(unittest.TestCase):
         self.assertIn("Cube", stdout_text, "Expected 'Cube' in output.\n" + self._last_output_info)
         # Verify a tool was actually called (not just answered from training data).
         self.assertTrue(
-            "get_object_detail_summary" in stdout_text or "execute_blender_code" in stdout_text,
+            "get_object_detail_summary" in stdout_text or "run_python" in stdout_text,
             "Expected a tool call in output.\n" + self._last_output_info,
         )
 
@@ -734,7 +734,7 @@ class TestChatClient(unittest.TestCase):
         self.assertTrue(
             "get_object_detail_summary" in stdout_text
             or "get_objects_summary" in stdout_text
-            or "execute_blender_code" in stdout_text,
+            or "run_python" in stdout_text,
             "Expected a tool call in output.\n" + self._last_output_info,
         )
 
@@ -750,7 +750,7 @@ class TestChatClient(unittest.TestCase):
             "Rotate the default Cube by 45 degrees on the X axis.", provider,
         )
         self.assertIn(
-            "execute_blender_code", stdout_text,
+            "run_python", stdout_text,
             "Expected a code execution tool call.\n" + self._last_output_info,
         )
 

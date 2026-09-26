@@ -21,10 +21,10 @@ initial_instructions: |
 
   # Executing Code
 
-  The `execute_blender_code` tool runs Python code via `bpy` in the connected Blender instance.
+  The `run_python` tool runs Python code via `bpy` in the connected Blender instance; it requires a `reason` naming what the facade ops lack.
 
-  The `execute_blender_code` tool is a last resort, if there are other tools that provide
-  the functionality you need, use those instead.
+  The `run_python` tool is a last resort: find a facade op with `search_ops` first, and if there
+  are other tools that provide the functionality you need, use those instead.
 
   Prefer operators (`bpy.ops`) for standard actions (adding primitives, applying modifiers,
   setting origins) - they handle defaults and context. Use the data API (`bpy.data`) for
@@ -45,7 +45,7 @@ initial_instructions: |
   In edit mode, access mesh geometry through the bmesh API, not the regular mesh data API.
   Flush bmesh changes back to the mesh - forgetting this silently loses all edits.
 
-  Return structured data (dicts, lists) from executed code, not print output.
+  Print the values you need to read back: `run_python` returns captured stdout (tail-bounded).
 
   # Scene & Data Structure
 

@@ -19,7 +19,8 @@ import os
 import pkgutil
 
 import yaml
-from mcp.server.fastmcp import FastMCP  # pylint: disable=import-error,no-name-in-module
+
+from blmcp.tools_helpers.blended_bridge import BlendedFastMCP, blended_instructions
 
 # NOTE(@ideasman42): this was written to support LLAMA-C++'s Web UI,
 # which is one of the nicer ways to run this locally.
@@ -57,7 +58,7 @@ def main() -> int:
     with open(os.path.join(data_dir, "prompts.yml"), encoding="utf-8") as fh:
         prompts = yaml.safe_load(fh)
 
-    mcp = FastMCP("blender-mcp", instructions=str(prompts["initial_instructions"]))
+    mcp = BlendedFastMCP("blender-mcp", instructions=blended_instructions(str(prompts["initial_instructions"])))
 
     # Auto-discover and register all tools (they are never un-registered).
     import blmcp.tools as tools_pkg

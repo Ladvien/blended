@@ -224,6 +224,9 @@ def _register_stubs() -> None:
             "code-block",
             "danger",
             "deprecated",
+            # Collapsible block in the Blender 5.2 API docs
+            # (e.g. `.. details:: Special Methods`); body holds definitions.
+            "details",
             "error",
             "hint",
             "important",

@@ -51,6 +51,8 @@ _REPO_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _REPO_DIR not in sys.path:
     sys.path.insert(0, _REPO_DIR)
 
+from blended.agent.plan import MISSING_PLAN_REFUSAL
+from blmcp.tools_helpers.connection import send_code
 from tests.mcp_client import MCPClient
 
 # Fixed ports for the test servers (background and foreground).
@@ -359,13 +361,11 @@ class _TestServerMixin:
 
         # Save a blend file for CLI tools.
         cls._blend_path = os.path.join(tmpdir, "test.blend")
-        cls._client.call_tool("execute_blender_code", {
-            "code": (
+        cls._execute_code((
                 "import bpy\n"
                 "bpy.ops.wm.save_as_mainfile(filepath={!r})\n"
                 "result = {{'saved': True}}\n"
-            ).format(cls._blend_path),
-        })
+            ).format(cls._blend_path))
 
     @classmethod
     def _cleanup_blender(cls) -> None:
@@ -415,6 +415,20 @@ class _TestServerMixin:
         )
         return result.get("content", [])
 
+    @classmethod
+    def _execute_code(cls, code: str) -> dict[str, object]:
+        """
+        Run *code* in Blender over the add-on socket and return its result.
+
+        When the response has ``"status": "ok"`` the ``"result"`` value is
+        returned directly. Error responses are returned as-is.
+        """
+        os.environ["BLENDER_MCP_PORT"] = str(cls._port)
+        response = send_code(code, strict_json=False)
+        if response.get("status") == "ok":
+            return response.get("result", response)  # type: ignore[return-value]
+        return response
+
     def _test_tool(
         self,
         name: str,
@@ -444,22 +458,32 @@ class _TestServerMixin:
 
     def setUp(self) -> None:
         """Reload the default scene so each test starts from a clean state."""
-        self._client.call_tool("execute_blender_code", {
-            "code": (
+        self._execute_code((
                 "import bpy\n"
                 "bpy.ops.wm.read_homefile(use_empty=False)\n"
                 "result = {'reset': True}\n"
-            ),
-        })
+            ))
+
+    # -----------------------------------------------------------------
+    # blended tools.
+
+    def test_blended_tools_dispatch_through_blender(self) -> None:
+        """
+        The plan gate refuses a scene-changing tool, then the declared plan
+        lets blended's ops build, link and measure a box inside Blender.
+        """
+        box = {"name": "Crate", "width_m": 0.5, "depth_m": 0.5, "height_m": 0.5}
+        content = self._call_tool_expect_error("add_box", box)
+        self.assertEqual(content[0]["text"], MISSING_PLAN_REFUSAL)
+
+        self._call_tool("declare_plan", {"steps": ["Add a box", "Measure it"]})
+        self._call_tool("add_box", box)
+        self._call_tool("link_into_scene", {"object_name": "Crate"})
+        content = self._call_tool("world_bounds", {"object_name": "Crate"})
+        self.assertIn("0.5", content[0]["text"])
 
     # -----------------------------------------------------------------
     # Interactive tools.
-
-    def test_execute_blender_code(self) -> None:
-        data = self._test_tool("execute_blender_code", {
-            "code": "result = {'value': 1 + 1}",
-        })
-        self.assertEqual(data["value"], 2)
 
     def test_get_blendfile_summary_datablocks(self) -> None:
         data = self._test_tool("get_blendfile_summary_datablocks")
@@ -573,13 +597,6 @@ class _TestServerMixin:
 
     # -----------------------------------------------------------------
     # CLI tools.
-
-    def test_execute_blender_code_for_cli(self) -> None:
-        data = self._test_tool("execute_blender_code_for_cli", {
-            "blend_file": self._blend_path,
-            "code": "result = {'version': 1}",
-        })
-        self.assertEqual(data["version"], 1)
 
     def test_get_blendfile_summary_datablocks_for_cli(self) -> None:
         data = self._test_tool("get_blendfile_summary_datablocks_for_cli", {
@@ -746,8 +763,7 @@ class _TestServerMixin:
         """
         Ask Blender to verify that *filepath* is a valid PNG file.
         """
-        data = self._test_tool("execute_blender_code", {
-            "code": (
+        data = self._execute_code((
                 "import os\n"
                 "with open({!r}, 'rb') as fh:\n"
                 "    header = fh.read(8)\n"
@@ -755,8 +771,7 @@ class _TestServerMixin:
                 "    'size': os.path.getsize({!r}),\n"
                 "    'png_magic': header == b'\\x89PNG\\r\\n\\x1a\\n',\n"
                 "}}\n"
-            ).format(filepath, filepath),
-        })
+            ).format(filepath, filepath))
         self.assertGreater(data["size"], 0)
         self.assertTrue(data["png_magic"])
 
@@ -767,9 +782,7 @@ class _TestServerMixin:
             bpy.context.scene.render.engine = 'CYCLES'
             bpy.context.scene.cycles.device = 'CPU'
             result = {'engine': 'CYCLES'}  # noqa: F841
-        self._test_tool("execute_blender_code", {
-            "code": _python_fn_body_as_string(code),
-        })
+        self._execute_code(_python_fn_body_as_string(code))
 
     def test_render_thumbnail_to_path(self) -> None:
         self._set_cycles_cpu()
@@ -810,9 +823,7 @@ class _TestServerMixin:
                     return None
                 return {'deferred': True, 'value': 42}
             result = {}  # noqa: F841
-        data = self._test_tool("execute_blender_code", {
-            "code": _python_fn_body_as_string(deferred_code),
-        })
+        data = self._execute_code(_python_fn_body_as_string(deferred_code))
         self.assertTrue(data["deferred"])
         self.assertEqual(data["value"], 42)
 
@@ -825,9 +836,7 @@ class _TestServerMixin:
             def check_is_finished():  # noqa: F841 (read by the exec namespace)
                 return {'deferred': True, 'value': 42}
             result = {}  # noqa: F841
-        data = self._test_tool("execute_blender_code", {
-            "code": _python_fn_body_as_string(deferred_code),
-        })
+        data = self._execute_code(_python_fn_body_as_string(deferred_code))
         self.assertEqual(data["status"], "error")
         self.assertIn(
             "Deferred responses via `check_is_finished` are only supported by the interactive addon server",
@@ -878,9 +887,7 @@ class _TestServerMixin:
             bpy.ops.mesh.primitive_plane_add(size=20, location=(2.5, 2.5, -0.5))
             result = {'objects': len(bpy.data.objects)}  # noqa: F841
 
-        self._test_tool("execute_blender_code", {
-            "code": _python_fn_body_as_string(_setup_render_scene),
-        })
+        self._execute_code(_python_fn_body_as_string(_setup_render_scene))
 
         data = self._test_tool("render_viewport_to_path", {
             "output_path": "deferred_render.png",
@@ -898,9 +905,7 @@ class _TestServerMixin:
             def check_is_finished():  # noqa: F841
                 raise RuntimeError('checker failed')
             result = {}  # noqa: F841
-        data = self._test_tool("execute_blender_code", {
-            "code": _python_fn_body_as_string(deferred_error_code),
-        })
+        data = self._execute_code(_python_fn_body_as_string(deferred_error_code))
         self.assertEqual(data["status"], "error")
         self.assertIn("checker failed", data["message"])
 
@@ -948,17 +953,13 @@ class _TestServerMixin:
     # Error handling.
 
     def test_execute_blender_code_error(self) -> None:
-        data = self._test_tool("execute_blender_code", {
-            "code": "raise ValueError('test error')",
-        })
+        data = self._execute_code("raise ValueError('test error')")
         self.assertEqual(data["status"], "error")
         self.assertIn("ValueError", data["message"])
 
     def test_execute_blender_code_blocked_operator(self) -> None:
         """Verify that the sandbox blocks actions which may exit Blender or lose our connection."""
-        data = self._test_tool("execute_blender_code", {
-            "code": "import bpy; bpy.ops.wm.read_factory_settings()",
-        })
+        data = self._execute_code("import bpy; bpy.ops.wm.read_factory_settings()")
         self.assertEqual(data["status"], "error")
         self.assertIn(
             "RuntimeError: Operator 'bpy.ops.wm.read_factory_settings()' is not allowed "
@@ -970,9 +971,7 @@ class _TestServerMixin:
 
     def test_execute_blender_code_blocked_sys_exit(self) -> None:
         """Verify that the sandbox blocks sys.exit()."""
-        data = self._test_tool("execute_blender_code", {
-            "code": "import sys; sys.exit(1)",
-        })
+        data = self._execute_code("import sys; sys.exit(1)")
         self.assertEqual(data["status"], "error")
         self.assertIn(
             "RuntimeError: sys.exit() is not allowed in LLM-generated code",
@@ -985,12 +984,6 @@ class _TestServerMixin:
         data = self._test_tool("jump_to_tab_by_name", {"name": "NonExistent"})
         self.assertEqual(data["status"], "error")
         self.assertIsInstance(data["available_workspaces"], list)
-
-    def test_execute_blender_code_for_cli_error(self) -> None:
-        self._call_tool_expect_error("execute_blender_code_for_cli", {
-            "blend_file": self._blend_path,
-            "code": "raise ValueError('cli test error')",
-        })
 
     def test_jump_to_view3d_object_by_name_error(self) -> None:
         if not self._interactive:
@@ -1016,13 +1009,11 @@ class _TestServerMixin:
         if not self._interactive:
             return
         # Hide the default Cube.
-        self._test_tool("execute_blender_code", {
-            "code": (
+        self._execute_code((
                 "import bpy\n"
                 "bpy.data.objects['Cube'].hide_viewport = True\n"
                 "result = {'hidden': True}\n"
-            ),
-        })
+            ))
         # Jump to it with allow_edits enabled.
         data = self._test_tool("jump_to_view3d_object_by_name", {
             "name": "Cube", "allow_edits": True,
@@ -1030,12 +1021,10 @@ class _TestServerMixin:
         self.assertEqual(data["status"], "ok")
         self.assertEqual(data["object"], "Cube")
         # Verify the object is no longer hidden.
-        check = self._test_tool("execute_blender_code", {
-            "code": (
+        check = self._execute_code((
                 "import bpy\n"
                 "result = {'hide_viewport': bpy.data.objects['Cube'].hide_viewport}\n"
-            ),
-        })
+            ))
         self.assertFalse(check["hide_viewport"])
 
     def test_jump_to_view3d_object_data_by_name_allow_edits(self) -> None:
@@ -1045,13 +1034,11 @@ class _TestServerMixin:
         if not self._interactive:
             return
         # Hide the default Cube.
-        self._test_tool("execute_blender_code", {
-            "code": (
+        self._execute_code((
                 "import bpy\n"
                 "bpy.data.objects['Cube'].hide_viewport = True\n"
                 "result = {'hidden': True}\n"
-            ),
-        })
+            ))
         # Jump to it via data name with allow_edits enabled.
         data = self._test_tool("jump_to_view3d_object_data_by_name", {
             "name": "Cube", "allow_edits": True,
@@ -1059,12 +1046,10 @@ class _TestServerMixin:
         self.assertEqual(data["status"], "ok")
         self.assertEqual(data["data_name"], "Cube")
         # Verify the object is no longer hidden.
-        check = self._test_tool("execute_blender_code", {
-            "code": (
+        check = self._execute_code((
                 "import bpy\n"
                 "result = {'hide_viewport': bpy.data.objects['Cube'].hide_viewport}\n"
-            ),
-        })
+            ))
         self.assertFalse(check["hide_viewport"])
 
     def test_execute_blender_code_stateful(self) -> None:
@@ -1072,18 +1057,14 @@ class _TestServerMixin:
         Verify that the Blender session is stateful across tool calls.
         """
         # Create an object.
-        self._test_tool("execute_blender_code", {
-            "code": (
+        self._execute_code((
                 "import bpy\n"
                 "bpy.ops.mesh.primitive_ico_sphere_add()\n"
                 "bpy.context.active_object.name = 'TestSphere'\n"
                 "result = {'created': True}\n"
-            ),
-        })
+            ))
         # Verify it exists in a separate call.
-        data = self._test_tool("execute_blender_code", {
-            "code": "import bpy\nresult = {'found': 'TestSphere' in bpy.data.objects}\n",
-        })
+        data = self._execute_code("import bpy\nresult = {'found': 'TestSphere' in bpy.data.objects}\n")
         self.assertTrue(data["found"])
 
 
