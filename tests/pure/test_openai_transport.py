@@ -441,11 +441,9 @@ def test_the_local_eye_rides_bigs_llama_swap(monkeypatch):
     assert (
         ModelConfig.from_environment(model="qwen3-vl").endpoint == BIG_ENDPOINT
     )
-    # The describer uses the same rule, not a second copy of it. Both
-    # the class and the patch target come from the LIVE module object:
-    # tests/pure/test_devreload.py purges `blended.*` from sys.modules,
-    # so a later re-import makes this file's module-level OllamaClient a
-    # stale class — patching it would let the call reach big for real.
+    # The describer uses the same rule, not a second copy of it. The
+    # class and the patch target come from one module object, so the
+    # patched _request is the one that runs and nothing reaches big.
     from blended.agent import loop as live_loop
 
     captured: list[str] = []
@@ -472,11 +470,8 @@ def test_the_local_qwen_pair_splits_across_two_hosts(monkeypatch):
     """writer on bmb, eye on big — and each gets its OWN credential:
     bmb 401s without its key file, big's llama-swap has no apiKeys
     list and must never receive one."""
-    # Bind ONE live module object for the patch AND the construction:
-    # test_devreload.py purges `blended.*`, so a string patch target
-    # would land on a freshly imported module while this file's
-    # module-level ModelConfig still belongs to the stale one — and the
-    # real key file would answer instead of the fake.
+    # Bind ONE module object for the patch AND the construction, so the
+    # fake key file is the one the constructor reads.
     from blended.agent import loop as live_loop
 
     monkeypatch.setattr(live_loop, "_read_bmb_api_key", lambda: "a" * 64)

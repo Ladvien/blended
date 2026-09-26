@@ -1,10 +1,5 @@
 """OT-28: the metered lane tells the truth about itself.
 
-Every name is imported ONCE, at module level: `tests/pure/test_devreload.py`
-purges `blended.*` from `sys.modules`, so a re-import inside a test body
-returns a fresh class while `monkeypatch` has patched the old one, and
-the patched method is never the one that runs.
-
 A lane that charges money per call must be able to say two things the
 harness could not say before: how wide the served model's context is,
 and what a run has spent. Both are read from the provider — never

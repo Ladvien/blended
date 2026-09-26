@@ -1,5 +1,11 @@
 # Chatting with the agent inside Blender
 
+> **SUPERSEDED 2026-09-26 (MCP cutover).** The in-Blender chat panel this
+> guide sets up (`blender_addon/`, `scripts/package_addon.py`) was deleted;
+> the client is now Claude Code over the `blended` MCP server — see
+> README.md "Chat (Claude Code over MCP)". The model notes below still
+> describe the headless `AgentSession` lanes (`make chat-e2e`, the bench).
+
 ## 1. Pick a model
 
 The agent's job is: write `bpy` Python, call tools, read measured gate

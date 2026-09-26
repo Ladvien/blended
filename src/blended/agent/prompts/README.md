@@ -89,6 +89,3 @@ what it measured.
 - **Undefined variables raise.** A prompt with a silently blank section
   still runs — the agent just never learns the thing that section
   existed to tell it.
-- **These files ship in the addon zip.** Blender has no pip, so
-  `scripts/package_addon.py` vendors both the templates and jinja2.
-  Guarded by `tests/pure/test_addon_packaging.py`.

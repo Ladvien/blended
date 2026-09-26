@@ -7,12 +7,13 @@ construction. These tests are what replaces it.
 """
 
 import hashlib
-import importlib
 from pathlib import Path
 
 import pytest
 
-from blended.agent import prompt_templates, prompt_versions
+from blended import manifest
+from blended.agent import prompt_templates, prompt_versions, system_prompt
+from blended.drift import catalog
 
 # The identity of the revision the convergence loop signed off, read from
 # the artifact the pin itself writes (`scripts/pin_revision.py`) rather
@@ -46,22 +47,6 @@ WRITER_QUALIFICATION_PATH = (
     / "_evaluate"
     / "writer_qualification_iterations.jsonl"
 )
-
-
-def _live(module_name: str):
-    """The module object the code under test will actually resolve.
-
-    `tests/pure/test_devreload.py` calls `purge_library_modules()`,
-    which drops every `blended.*` entry from `sys.modules`. A
-    module-scope `import blended.drift.catalog` binding therefore
-    survives as a DEAD object after that test runs: patching it lands
-    on a module nobody imports again, while the deferred
-    `from blended.drift.catalog import DRIFT_ENTRIES` inside
-    `build_manifest` re-imports a fresh one. Measured: the drift test
-    passed alone and failed in the full suite for exactly that reason.
-    Resolve at call time so the patch and the reader agree.
-    """
-    return importlib.import_module(module_name)
 
 
 def _briefs_swept_clean_by(writer_model: str) -> set[str]:
@@ -138,7 +123,7 @@ def test_the_assembled_prompt_has_not_drifted():
         f"`assembled_prompt_fingerprint()`'s own output, never by hand"
     )
     recorded = PINNED_ASSEMBLED_FINGERPRINT_PATH.read_text(encoding="utf-8").strip()
-    current = _live("blended.agent.system_prompt").assembled_prompt_fingerprint()
+    current = system_prompt.assembled_prompt_fingerprint()
     assert current == recorded, (
         f"the prompt the model reads changed: {recorded} -> {current}. The "
         f"working-agreement identity does not cover the conventions, the "
@@ -158,11 +143,6 @@ def test_the_assembled_fingerprint_covers_the_drift_catalog(monkeypatch):
     reaches the manifest because `build_manifest` imports
     `DRIFT_ENTRIES` inside the function, not at module scope.
     """
-    catalog = _live("blended.drift.catalog")
-    system_prompt = _live("blended.agent.system_prompt")
-    versions = _live("blended.agent.prompt_versions")
-    manifest = _live("blended.manifest")
-
     extra = catalog.DriftEntry(
         symbol="bpy.types.Synthetic.only_in_this_test",
         changed_in="9.9",
@@ -171,7 +151,7 @@ def test_the_assembled_fingerprint_covers_the_drift_catalog(monkeypatch):
         source="[measured] test_the_assembled_fingerprint_covers_the_drift_catalog",
     )
     before_assembled = system_prompt.assembled_prompt_fingerprint()
-    before_identity = versions.get_revision(versions.PINNED_PROMPT_REVISION).identity
+    before_identity = prompt_versions.get_revision(prompt_versions.PINNED_PROMPT_REVISION).identity
 
     monkeypatch.setattr(
         catalog, "DRIFT_ENTRIES", catalog.DRIFT_ENTRIES + (extra,)
@@ -186,7 +166,7 @@ def test_the_assembled_fingerprint_covers_the_drift_catalog(monkeypatch):
     )
 
     after_assembled = system_prompt.assembled_prompt_fingerprint()
-    after_identity = versions.get_revision(versions.PINNED_PROMPT_REVISION).identity
+    after_identity = prompt_versions.get_revision(prompt_versions.PINNED_PROMPT_REVISION).identity
     assert after_assembled != before_assembled, (
         "a new drift row did not move the assembled fingerprint, so the "
         "fingerprint does not cover the manifest it claims to cover"

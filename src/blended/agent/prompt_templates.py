@@ -13,11 +13,10 @@ it. Jinja's delimiters (`{{ }}`, `{% %}`, `{# #}`) appear nowhere in the
 bodies — asserted in tests, so the day one does the collision is a red
 test, not a mangled prompt.
 
-BLENDER: jinja2 is not in Blender's bundled Python and Blender has no
-pip, so `scripts/package_addon.py` vendors it into the addon zip
-alongside this package. The driver scripts get it from the venv. Both
-lanes import it the same way; there is no fallback renderer, because a
-second rendering path is a second prompt.
+BLENDER: jinja2 is not in Blender's bundled Python; a lane that runs
+blended inside Blender puts the venv's site-packages on sys.path (the
+bench prelude, the MCP bridge tool-code). There is no fallback renderer,
+because a second rendering path is a second prompt.
 """
 
 from __future__ import annotations

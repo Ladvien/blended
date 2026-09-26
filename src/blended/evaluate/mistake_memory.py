@@ -751,6 +751,7 @@ MISTAKES: tuple[MistakeRecord, ...] = (
             "imports fine and then cannot find its own text."
         ),
         guarded_by=(
+            "RETIRED 2026-09: guarded code deleted in the MCP cutover (tests/pure/test_addon_packaging.py). Was: "
             "tests/pure/test_addon_packaging.py (5 assertions: the "
             "library, every registered template, each vendored "
             "dependency, and no __pycache__). Verified end to end by "
@@ -1194,6 +1195,7 @@ MISTAKES: tuple[MistakeRecord, ...] = (
             "and developer_mode already owns that behaviour explicitly."
         ),
         guarded_by=(
+            "RETIRED 2026-09: guarded code deleted in the MCP cutover (tests/blender/test_addon_registration.py). Was: "
             "tests/blender/test_addon_registration.py::"
             "test_a_library_that_changed_on_disk_refuses_the_turn, plus the "
             "matching-library, developer-mode and empty-baseline cases. "
@@ -1379,6 +1381,7 @@ MISTAKES: tuple[MistakeRecord, ...] = (
             "sources kept ahead, and the packaged lane is untouched."
         ),
         guarded_by=(
+            "RETIRED 2026-09: guarded code deleted in the MCP cutover (tests/blender/test_addon_registration.py). Was: "
             "tests/blender/test_addon_registration.py::"
             "test_developer_mode_resolves_jinja2_from_the_repo_venv, "
             "plus the non-developer repository lane in "
@@ -1518,6 +1521,7 @@ MISTAKES: tuple[MistakeRecord, ...] = (
             "enum."
         ),
         guarded_by=(
+            "RETIRED 2026-09: guarded code deleted in the MCP cutover (tests/blender/test_addon_registration.py). Was: "
             "tests/blender/test_addon_registration.py::"
             "test_no_dropdown_row_carries_an_empty_identifier and "
             "test_the_eye_can_be_switched_off_and_that_means_no_eye"
@@ -1739,6 +1743,7 @@ MISTAKES: tuple[MistakeRecord, ...] = (
             "any test whose body ends in an assignment is a defect."
         ),
         guarded_by=(
+            "RETIRED 2026-09: guarded code deleted in the MCP cutover (tests/blender/test_addon_draw.py). Was: "
             "tests/blender/test_addon_draw.py::"
             "test_copy_buttons_address_the_transcript_not_the_visible_slice"
         ),
@@ -1769,6 +1774,7 @@ MISTAKES: tuple[MistakeRecord, ...] = (
             "comparison per tick."
         ),
         guarded_by=(
+            "RETIRED 2026-09: guarded code deleted in the MCP cutover (tests/blender/test_addon_registration.py). Was: "
             "tests/blender/test_addon_registration.py::"
             "test_an_idle_session_does_not_ask_for_a_redraw"
         ),
@@ -1801,6 +1807,7 @@ MISTAKES: tuple[MistakeRecord, ...] = (
             "skipif — a cache test proves caching, not correctness."
         ),
         guarded_by=(
+            "RETIRED 2026-09: guarded code deleted in the MCP cutover (tests/blender/test_render_previews.py). Was: "
             "tests/blender/test_render_previews.py::"
             "test_icon_for_returns_an_integer_id_not_the_preview_struct "
             "(type, background) and "
@@ -1844,6 +1851,7 @@ MISTAKES: tuple[MistakeRecord, ...] = (
             "column differs by 577,780 px (so the diff was sensitive)."
         ),
         guarded_by=(
+            "RETIRED 2026-09: guarded code deleted in the MCP cutover (tests/blender/test_addon_draw.py, tests/blender/test_chat_panel_heuristics.py). Was: "
             "tests/blender/test_addon_draw.py::"
             "test_the_working_surface_holds_the_prompt_and_no_reply_text "
             "(no reply text on the pinned surface at all) and "
@@ -1875,6 +1883,7 @@ MISTAKES: tuple[MistakeRecord, ...] = (
             "_SessionState that the panel reads must be added there too."
         ),
         guarded_by=(
+            "RETIRED 2026-09: guarded code deleted in the MCP cutover (tests/blender/test_addon_registration.py). Was: "
             "tests/blender/test_addon_registration.py::"
             "test_hot_reload_swaps_the_loaded_module_and_keeps_the_session"
         ),
@@ -1908,6 +1917,7 @@ MISTAKES: tuple[MistakeRecord, ...] = (
             "report the failure."
         ),
         guarded_by=(
+            "RETIRED 2026-09: guarded code deleted in the MCP cutover (src/blended/ui/, tests/blender/test_workspace.py). Was: "
             "src/blended/ui/workspace.py::arrange_workspace has no loop "
             "and returns False when the split refuses; "
             "tests/blender/test_workspace.py asserts the background "
@@ -1945,6 +1955,7 @@ MISTAKES: tuple[MistakeRecord, ...] = (
             "untouched."
         ),
         guarded_by=(
+            "RETIRED 2026-09: guarded code deleted in the MCP cutover (src/blended/ui/, tests/blender/test_workspace.py). Was: "
             "src/blended/ui/workspace.py::arrange_workspace (pointer "
             "diff + `return False` when the split creates nothing); "
             "tests/blender/test_workspace.py asserts idempotence and the "
@@ -2301,6 +2312,7 @@ MISTAKES: tuple[MistakeRecord, ...] = (
             "replaced it with a draw-order guarantee."
         ),
         guarded_by=(
+            "RETIRED 2026-09: guarded code deleted in the MCP cutover (tests/blender/test_chat_panel_heuristics.py, tests/blender/test_workspace.py). Was: "
             "tests/blender/test_chat_panel_heuristics.py::"
             "test_the_composer_is_the_first_thing_the_surface_draws and "
             "tests/blender/test_chat_panel_heuristics.py::workspace "
@@ -2357,6 +2369,7 @@ MISTAKES: tuple[MistakeRecord, ...] = (
             "differed by 13.2 percent, so the diff was sensitive."
         ),
         guarded_by=(
+            "RETIRED 2026-09: guarded code deleted in the MCP cutover (tests/blender/test_addon_draw.py, tests/blender/test_chat_panel_heuristics.py). Was: "
             "tests/blender/test_chat_panel_heuristics.py::"
             "test_the_composer_is_the_first_thing_the_surface_draws "
             "(the prompt box is at draw index 0 across empty, short, "
@@ -2393,6 +2406,7 @@ MISTAKES: tuple[MistakeRecord, ...] = (
             "own preference floor is 0.5."
         ),
         guarded_by=(
+            "RETIRED 2026-09: guarded code deleted in the MCP cutover (tests/pure/test_transcript_layout.py). Was: "
             "tests/pure/test_transcript_layout.py::"
             "test_an_uninitialised_ui_scale_is_read_as_one"
         ),
@@ -2428,6 +2442,7 @@ MISTAKES: tuple[MistakeRecord, ...] = (
             "alert row instead of silently leaving the viewport blank."
         ),
         guarded_by=(
+            "RETIRED 2026-09: guarded code deleted in the MCP cutover (tests/blender/test_transcript_overlay.py). Was: "
             "tests/blender/test_transcript_overlay.py::"
             "test_a_library_reload_never_orphans_the_overlay "
             "(asserts the pre-reload module's _HANDLER is None AND the "
@@ -2460,6 +2475,7 @@ MISTAKES: tuple[MistakeRecord, ...] = (
             "through the same function — one source of truth."
         ),
         guarded_by=(
+            "RETIRED 2026-09: guarded code deleted in the MCP cutover (tests/blender/test_transcript_overlay.py, tests/pure/test_transcript_layout.py). Was: "
             "tests/blender/test_transcript_overlay.py::"
             "test_the_code_band_contrasts_with_the_themed_bubble "
             "(against the REAL theme, because that is the value that "
@@ -2501,6 +2517,7 @@ MISTAKES: tuple[MistakeRecord, ...] = (
             "said is dropped at a small window size."
         ),
         guarded_by=(
+            "RETIRED 2026-09: guarded code deleted in the MCP cutover (tests/pure/test_transcript_layout.py). Was: "
             "tests/pure/test_transcript_layout.py::"
             "test_a_streaming_reply_is_capped_to_what_the_column_can_show "
             "(the cursor row is last AND the bubble fits the column), "
@@ -2574,6 +2591,7 @@ MISTAKES: tuple[MistakeRecord, ...] = (
             "which is what prompt-history recall already does."
         ),
         guarded_by=(
+            "RETIRED 2026-09: guarded code deleted in the MCP cutover (tests/blender/test_chat_panel_heuristics.py). Was: "
             "Partly procedural, and deliberately so: the auto-send "
             "cannot fire headlessly (_on_prompt_confirmed returns early "
             "when context.preferences.addons[__name__] raises KeyError, "
@@ -2796,7 +2814,7 @@ MISTAKES: tuple[MistakeRecord, ...] = (
             "as 'the drift catalog does not reach the prompt', which is "
             "the opposite lesson."
         ),
-        guarded_by="tests/pure/test_prompt_templates.py::test_the_assembled_fingerprint_covers_the_drift_catalog, which asserts the synthetic row reached build_manifest before comparing fingerprints, and is green in file order, after test_devreload, and in the full suite",
+        guarded_by="RETIRED 2026-09: guarded code deleted in the MCP cutover (src/blended/devreload.py, tests/pure/test_devreload.py). Was: " "tests/pure/test_prompt_templates.py::test_the_assembled_fingerprint_covers_the_drift_catalog, which asserts the synthetic row reached build_manifest before comparing fingerprints, and is green in file order, after test_devreload, and in the full suite",
         recorded_on="2026-09-06",
     ),
     MistakeRecord(
@@ -3061,6 +3079,7 @@ MISTAKES: tuple[MistakeRecord, ...] = (
             "identity."
         ),
         guarded_by=(
+            "RETIRED 2026-09: guarded code deleted in the MCP cutover (src/blended/devreload.py, tests/pure/test_devreload.py). Was: "
             "tests/pure/test_tool_schemas.py::"
             "test_the_three_unlinked_constructors_are_the_only_ungated_object_returners "
             "and ::test_the_description_is_the_summary_and_the_return, which "
@@ -3249,6 +3268,7 @@ MISTAKES: tuple[MistakeRecord, ...] = (
             "(stream_options.include_usage)."
         ),
         guarded_by=(
+            "RETIRED 2026-09: guarded code deleted in the MCP cutover (tests/pure/test_streaming.py). Was: "
             "tests/pure/test_streaming.py::"
             "test_a_streamed_call_refused_by_the_gateway_is_retried_then_streams_once, "
             "::test_a_stream_that_dies_after_a_delta_is_not_replayed, "

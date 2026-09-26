@@ -48,6 +48,26 @@ tests/blender/   requires `import bpy` (pip wheel or Blender's Python)
 docs/            roadmap + research
 ```
 
+## Chat (Claude Code over MCP)
+
+The agent is Claude Code driving Blender through the `blended` MCP
+server: Blender Lab's `blender_mcp` (GPL-3.0-or-later, vendored as a git
+subtree at `blender_mcp/`) extended to serve blended's full tool surface
+(`TOOL_SCHEMAS`) through `dispatch_tool`, with the plan gate and a
+schema-2 `logs/mcp-*.jsonl` per session.
+
+```sh
+make install-mcp-addon         # once: build + install the `mcp` extension,
+                               # allow online access (its socket needs it)
+open -a Blender                # the add-on listens on localhost:9876
+claude                         # in this directory; .mcp.json registers
+                               # .venv/bin/blender-mcp as server `blended`
+```
+
+The add-on executes any code sent to localhost:9876. blended is imported
+once per Blender session from `src/`: after changing `src/blended`,
+restart Blender.
+
 ## Run
 
 ```sh
@@ -55,7 +75,10 @@ make test-pure                 # any machine
 make test-blender-app          # build → analyze → render, inside the
                                # installed Blender 5.2 (its own Python
                                # 3.13, bundled numpy, no pip)
-make test                      # both layers; this is the gate
+make test-mcp                  # the MCP server's unit layer (no Blender)
+make test-mcp-blender          # MCP client -> server -> real background
+                               # Blender -> blended's dispatch_tool
+make test                      # pure + Blender app + MCP unit; the gate
 make test-repro ARGS="--builder barrel"
                                # build twice in two fresh Blenders under
                                # different PYTHONHASHSEED; identical

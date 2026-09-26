@@ -6,10 +6,10 @@ PY ?= .venv/bin/python
 BLENDER ?= /Applications/Blender.app/Contents/MacOS/Blender
 
 
-# Both layers: the pure suite in the dev venv, the Blender suite inside
-# the installed Blender (the environment the addon ships into). A bare
-# `pytest tests/blender` with no bpy wheel collects nothing and exits 5,
-# which is not a pass.
+# Three layers: the pure suite in the dev venv, the Blender suite inside
+# the installed Blender (the environment blended runs in over MCP), and
+# the MCP server's unit layer. A bare `pytest tests/blender` with no bpy
+# wheel collects nothing and exits 5, which is not a pass.
 test: test-pure test-blender-app test-mcp
 
 # Pure-Python layer: must pass on any machine, no Blender required.
@@ -21,8 +21,8 @@ test-pure:
 test-blender:
 	$(PY) -m pytest tests/blender -q
 
-# Blender layer inside the INSTALLED Blender — the environment the
-# addon actually ships into (bundled numpy, no Pillow, no pip).
+# Blender layer inside the INSTALLED Blender — the environment blended's
+# code runs in over MCP (bundled numpy, no Pillow, no pip).
 test-blender-app:
 	$(BLENDER) --background --factory-startup \
 		--python scripts/run_tests_in_blender.py -- $(ARGS)

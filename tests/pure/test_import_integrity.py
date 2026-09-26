@@ -2,7 +2,7 @@
 test-pure`` and only detonates minutes into the app tier — the exact
 class that hid 37 failures and 36 errors behind a deferred suite in the
 old repo's reorg.  This test parses every ``.py`` under ``src/blended``,
-``tests``, ``scripts``, and ``blender_addon`` with ``ast`` (no execution,
+``tests``, ``scripts``, and ``blender_mcp/mcp/blmcp`` with ``ast`` (no execution,
 so no bpy needed) and asserts that every import rooted at ``blended``
 resolves to a module or package that exists on disk, and that every
 ``from <blended package> import <name>`` names a submodule or a name
@@ -29,21 +29,20 @@ import os
 from pathlib import Path
 
 # The probe must have found work to do. Measured 2026-09-06: 708
-# blended-rooted imports across 190 Python files (including
-# ``blender_addon/``); 200 is the floor, so a tree prune that erases
-# them turns this gate red instead of green.
+# blended-rooted imports across 190 Python files; measured 2026-09-26
+# after the chat-client deletion (blender_addon/ out, the MCP bridge in):
+# 1002. 200 is the floor, so a tree prune that erases them turns this
+# gate red instead of green.
 MINIMUM_IMPORTS_CHECKED = 200
 
 _REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 _SRC_ROOT = _REPOSITORY_ROOT / "src"
 
-# Directories to walk for Python sources. ``blender_addon/`` is included
-# because its ``blended``-rooted imports are deferred inside functions,
-# ``execute``/``draw`` bodies, and even ``except Exception:`` handlers
-# that must never raise — so a stale import there degrades the panel to
-# a blank draw with no traceback, a strictly worse version of the
-# failure this module exists to catch.
-_SCAN_DIRS = ("src/blended", "tests", "scripts", "blender_addon")
+# Directories to walk for Python sources. ``blender_mcp/mcp/blmcp/`` is
+# included because the MCP bridge tool-code imports ``blended`` deferred,
+# inside ``main()``, in Blender's process: a stale import there surfaces
+# only as a traceback string returned over the socket at call time.
+_SCAN_DIRS = ("src/blended", "tests", "scripts", "blender_mcp/mcp/blmcp")
 
 # Files whose names start with these prefixes are skipped (macOS
 # resource-fork artefacts, etc.).
