@@ -4,6 +4,7 @@ version = "0.1.0"
 description = "A Blender-based harness for agentic modeling of game assets."
 requires-python = ">=3.11"
 dependencies = [
+    "blender-mcp",
     "jinja2>=3.1.6",
 ]
 
@@ -69,3 +70,11 @@ extend-immutable-calls = [
 # addon's imports are necessarily below it. Same structural constraint,
 # not untidiness.
 "blender_addon/__init__.py" = ["E402"]
+
+[tool.uv.workspace]
+members = [
+    "blender_mcp/mcp",
+]
+
+[tool.uv.sources]
+blender-mcp = { workspace = true, editable = true }

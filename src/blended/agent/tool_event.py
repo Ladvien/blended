@@ -19,6 +19,9 @@ from __future__ import annotations
 import json
 from dataclasses import asdict, dataclass, field
 
+from blended.agent.outcome import ToolOutcome
+from blended.agent.plan import plan_step_or_none
+
 # The event kind on the (kind, text) channel. The text is the JSON below.
 TOOL_EVENT_KIND = "tool_event"
 TOOL_EVENT_SCHEMA_VERSION = 2
@@ -67,3 +70,51 @@ def decode_tool_event(text: str) -> ToolEvent:
     payload["gates"] = tuple(payload["gates"])
     payload["images"] = tuple(payload["images"])
     return ToolEvent(**payload)
+
+
+def refused_tool_event(
+    tool_name: str,
+    arguments: dict,
+    refusal: str,
+    offered_tools_fingerprint: str,
+) -> ToolEvent:
+    """The record of a call refused before dispatch (disabled tool,
+    missing plan): nothing ran, so no stage and no wall time."""
+    return ToolEvent(
+        tool_name=tool_name,
+        arguments=arguments,
+        ok=False,
+        stage_reached="",
+        wall_time_s=0.0,
+        plan_step=plan_step_or_none(arguments),
+        refusal=refusal,
+        offered_tools_fingerprint=offered_tools_fingerprint,
+    )
+
+
+def dispatched_tool_event(
+    tool_name: str,
+    arguments: dict,
+    outcome: ToolOutcome,
+    wall_time_s: float,
+    offered_tools_fingerprint: str,
+) -> ToolEvent:
+    """The record of a dispatched call: the arguments as validated when
+    the tool bound them, else as given."""
+    return ToolEvent(
+        tool_name=tool_name,
+        arguments=(
+            outcome.validated_arguments
+            if outcome.validated_arguments is not None
+            else arguments
+        ),
+        ok=outcome.ok,
+        stage_reached=outcome.stage_reached,
+        wall_time_s=wall_time_s,
+        plan_step=plan_step_or_none(arguments),
+        gates=outcome.gates,
+        images=tuple(str(path) for path in outcome.images),
+        hatch_reason=outcome.hatch_reason,
+        source_sha256=outcome.source_sha256,
+        offered_tools_fingerprint=offered_tools_fingerprint,
+    )

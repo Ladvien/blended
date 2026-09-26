@@ -52,7 +52,12 @@ from blended.agent.plan import (
     plan_step_of,
 )
 from blended.agent.tool_disclosure import offered_fingerprint
-from blended.agent.tool_event import TOOL_EVENT_KIND, ToolEvent, encode_tool_event
+from blended.agent.tool_event import (
+    TOOL_EVENT_KIND,
+    dispatched_tool_event,
+    encode_tool_event,
+    refused_tool_event,
+)
 from blended.stages import STAGE_DONE
 
 LOCAL_ENDPOINT = "http://localhost:11434"
@@ -2023,15 +2028,6 @@ def _tokens_since(start: TurnCost, now: TurnCost) -> int:
     )
 
 
-def _plan_step_or_none(arguments: dict) -> int | None:
-    """The call's plan_step for the record; a malformed one is None here
-    and reported by `plan_step_of` where the loop reads it."""
-    try:
-        return plan_step_of(arguments)
-    except ValueError:
-        return None
-
-
 def dispatch_here(
     tool_name: str, arguments: dict, output_directory: Path
 ) -> ToolOutcome:
@@ -2234,15 +2230,11 @@ class AgentSession:
                     emit(
                         TOOL_EVENT_KIND,
                         encode_tool_event(
-                            ToolEvent(
-                                tool_name=tool_name,
-                                arguments=arguments,
-                                ok=False,
-                                stage_reached="",
-                                wall_time_s=0.0,
-                                plan_step=_plan_step_or_none(arguments),
-                                refusal=refusal,
-                                offered_tools_fingerprint=offered_fingerprint_text,
+                            refused_tool_event(
+                                tool_name,
+                                arguments,
+                                refusal,
+                                offered_fingerprint_text,
                             )
                         ),
                     )
@@ -2270,15 +2262,11 @@ class AgentSession:
                     emit(
                         TOOL_EVENT_KIND,
                         encode_tool_event(
-                            ToolEvent(
-                                tool_name=tool_name,
-                                arguments=arguments,
-                                ok=False,
-                                stage_reached="",
-                                wall_time_s=0.0,
-                                plan_step=_plan_step_or_none(arguments),
-                                refusal=MISSING_PLAN_REFUSAL,
-                                offered_tools_fingerprint=offered_fingerprint_text,
+                            refused_tool_event(
+                                tool_name,
+                                arguments,
+                                MISSING_PLAN_REFUSAL,
+                                offered_fingerprint_text,
                             )
                         ),
                     )
@@ -2313,22 +2301,12 @@ class AgentSession:
                 emit(
                     TOOL_EVENT_KIND,
                     encode_tool_event(
-                        ToolEvent(
-                            tool_name=tool_name,
-                            arguments=(
-                                outcome.validated_arguments
-                                if outcome.validated_arguments is not None
-                                else arguments
-                            ),
-                            ok=outcome.ok,
-                            stage_reached=outcome.stage_reached,
-                            wall_time_s=wall_time_s,
-                            plan_step=_plan_step_or_none(arguments),
-                            gates=outcome.gates,
-                            images=tuple(str(path) for path in image_paths),
-                            hatch_reason=outcome.hatch_reason,
-                            source_sha256=outcome.source_sha256,
-                            offered_tools_fingerprint=offered_fingerprint_text,
+                        dispatched_tool_event(
+                            tool_name,
+                            arguments,
+                            outcome,
+                            wall_time_s,
+                            offered_fingerprint_text,
                         )
                     ),
                 )

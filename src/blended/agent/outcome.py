@@ -39,3 +39,37 @@ class ToolOutcome:
     # inputs (OT-8, OT-12). Every hatch call is a vote for a new op.
     hatch_reason: str = ""
     source_sha256: str = ""
+
+
+def outcome_to_json(outcome: ToolOutcome) -> dict:
+    """The JSON wire form of an outcome: exactly the dataclass fields,
+    paths and tuples as lists. The MCP bridge carries an outcome from
+    Blender's process to the server's with it."""
+    return {
+        "text": outcome.text,
+        "images": [str(path) for path in outcome.images],
+        "ok": outcome.ok,
+        "stage_reached": outcome.stage_reached,
+        "validated_arguments": outcome.validated_arguments,
+        "gates": list(outcome.gates),
+        "intermediates_created": list(outcome.intermediates_created),
+        "intermediates_resolved": list(outcome.intermediates_resolved),
+        "hatch_reason": outcome.hatch_reason,
+        "source_sha256": outcome.source_sha256,
+    }
+
+
+def outcome_from_json(payload: dict) -> ToolOutcome:
+    """Inverse of `outcome_to_json`; a missing key raises KeyError."""
+    return ToolOutcome(
+        text=payload["text"],
+        images=tuple(Path(path) for path in payload["images"]),
+        ok=payload["ok"],
+        stage_reached=payload["stage_reached"],
+        validated_arguments=payload["validated_arguments"],
+        gates=tuple(payload["gates"]),
+        intermediates_created=tuple(payload["intermediates_created"]),
+        intermediates_resolved=tuple(payload["intermediates_resolved"]),
+        hatch_reason=payload["hatch_reason"],
+        source_sha256=payload["source_sha256"],
+    )

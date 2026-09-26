@@ -201,6 +201,15 @@ def plan_step_of(arguments: dict) -> int | None:
     return value
 
 
+def plan_step_or_none(arguments: dict) -> int | None:
+    """The call's plan_step for the record; a malformed one is None here
+    and reported by `plan_step_of` where the loop reads it."""
+    try:
+        return plan_step_of(arguments)
+    except ValueError:
+        return None
+
+
 def plan_required_for(tool_name: str) -> bool:
     """True when ``tool_name`` changes the scene and requires a plan."""
     return tool_name in PLAN_REQUIRED_TOOLS
