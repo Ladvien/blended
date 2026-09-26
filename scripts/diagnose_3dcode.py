@@ -378,8 +378,13 @@ def main(argv) -> int:
         "",
         f"- instances with meta: {len(turns)}/{len(instances)}",
         f"- tool-call cap(s) seen: {sorted(caps) or '—'}",
+        # A model dir with no `.agent_meta.json` at all is legitimate:
+        # the raw-bpy arms of the fine-tune decision experiment write a
+        # script and nothing else. An empty list is reported as such,
+        # never divided by.
         f"- turns: mean "
-        f"{sum(turns) / len(turns):.1f}, max {max(turns) if turns else '—'}"
+        f"{sum(turns) / len(turns):.1f}" if turns else "- turns: — (no meta)",
+        f"- max turns: {max(turns) if turns else '—'}"
         f", turns>=20: {sum(1 for t in turns if t >= 20)}",
         f"- excluded chunks: "
         f"{sum(r['n_chunks_excluded'] or 0 for r in rows)} total",

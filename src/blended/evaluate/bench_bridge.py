@@ -115,6 +115,36 @@ def prelude(venv_site_packages: str, repository_src: str) -> str:
     )
 
 
+def canonical_orientation_epilogue() -> str:
+    """The deterministic orientation step appended to the emitted script.
+
+    The benchmark's `chamfer_with_yaw` quotients out rotation about glTF
+    Z only, so exactly one degree of freedom is penalised in full: which
+    Blender axis lands on the depth axis (Blender Y). Measured over 145
+    dev references, putting the MIDDLE extent there costs 0.0311 mean
+    cd_yawmin against 0.0632 for the unconstrained choice this harness
+    made through iter2 (`scripts/orientation_policy_sim.py`).
+
+    It is an epilogue, not a prompt sentence, because the writer cannot
+    verify it: the eye is measured at 0.20-0.40 sensitivity, in line with
+    reported false-negative rates for imperfect visual verifiers
+    (DOI 10.48550/arXiv.2606.15693), while raising a loop's deterministic
+    verification ratio is the change BlenderGym measures as a consistent
+    win (DOI 10.48550/arXiv.2504.01786). The iter2 alternative — a
+    measured one-shot nudge in the tool result — fired 0/20 and is gone.
+
+    Appended verbatim to the collected chunks, so the re-baked script
+    ends in the same scene the live session ended in.
+    """
+    return (
+        "\n# --- canonical orientation (harness epilogue) ---\n"
+        "from blended.ops.canonical_orientation import "
+        "apply_canonical_depth_axis\n"
+        "\n"
+        'print("canonical orientation:", apply_canonical_depth_axis())\n'
+    )
+
+
 @dataclass(frozen=True)
 class StandaloneScript:
     text: str

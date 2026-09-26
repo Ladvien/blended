@@ -90,6 +90,12 @@ def parse_arguments(argv):
                         help="Markdown report path (default "
                              "outputs/bench/shape_error_decompose_"
                              "<model-dir>.md)")
+    parser.add_argument("--json", default="",
+                        help="Also write the per-instance rows as JSON, the "
+                             "way diagnose_3dcode.py --json does. The "
+                             "fine-tune decision experiment's Phase A reads "
+                             "cd_pca_aspect_oracle per instance to separate "
+                             "G1 from G2, and Markdown is not a data path.")
     return parser.parse_args(argv)
 
 
@@ -359,6 +365,18 @@ def main(argv) -> int:
     out_path.write_text(render_report(rows, arguments.model_dir,
                                       arguments.instances_file, checked))
     print(f"wrote {out_path}")
+    if arguments.json:
+        json_path = Path(arguments.json)
+        json_path.parent.mkdir(parents=True, exist_ok=True)
+        json_path.write_text(json.dumps({
+            "model_dir": arguments.model_dir,
+            "instances_file": arguments.instances_file,
+            "n_points": DECOMPOSE_N_POINTS,
+            "seed": DECOMPOSE_SEED,
+            "parity_checked": checked,
+            "per_instance": rows,
+        }, indent=2) + "\n")
+        print(f"wrote {json_path}")
     print(f"mean cd_pca {mean_of(rows, 'cd_pca'):.4f}  "
           f"mean Δ_orient {mean_of(rows, 'delta_orient'):.4f}  "
           f"mean oracle {mean_of(rows, 'cd_pca_aspect_oracle'):.4f}")

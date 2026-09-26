@@ -48,32 +48,10 @@ sys.path.insert(0, str(REPOSITORY_ROOT / "src"))
 sys.path.insert(0, str(REPOSITORY_ROOT))
 os.chdir(REPOSITORY_ROOT)
 
-# The task text wrapped around the benchmark's own prompt. It adds only
-# what the benchmark's scorers require and this harness's system prompt
-# does not already say: one mesh at the origin, no camera/light/render,
-# and — the load-bearing one — that geometry built outside a run_python
-# chunk will not exist when the emitted script is re-executed.
-TASK_TEMPLATE = """\
-Build this object as a single mesh in the current empty scene:
-
-{description}
-
-Rules for this task:
-- Exactly ONE final mesh object may remain in the scene when you finish. Delete every
-  helper, duplicate and temporary object.
-- Place it at the world origin. No ground plane, no backdrop, no extra props.
-- Build real parametric geometry - loops, modifiers, bmesh ops. Do not stack a few
-  primitives and stop.
-- Do not add cameras or lights. Do not render to disk from your Python. Do not call
-  sys.exit or bpy.ops.wm.quit_blender.
-- Every piece of geometry must be created inside `run_python` chunks. Those chunks are
-  collected verbatim into a standalone script that is re-executed from an empty scene to
-  score this run, so anything built outside a chunk will not exist when it is re-run.
-Placement: the scored mesh is compared in world space against a reference mesh,
-and neither is reoriented. Align the object's principal axes with the world axes:
-- Up is +Z. Legs, stems and stand-offs point straight down; tops and caps are
-  horizontal. No tilt, no roll, no spin to an arbitrary angle.
-"""
+# The task text is `blended.evaluate.bench_task_prompt.OPS_TASK_TEMPLATE`:
+# one definition, so the raw-bpy arms of the fine-tune decision
+# experiment send a text that differs from this one in exactly the
+# `run_python` bullet and nothing else.
 
 PROMPT_FILENAMES = {
     "description": "prompt_description.txt",
@@ -104,36 +82,6 @@ def parse_arguments(argv):
     return parser.parse_args(argv)
 
 
-def canonical_orientation_epilogue() -> str:
-    """The deterministic orientation step appended to the emitted script.
-
-    The benchmark's `chamfer_with_yaw` quotients out rotation about glTF
-    Z only, so exactly one degree of freedom is penalised in full: which
-    Blender axis lands on the depth axis (Blender Y). Measured over 145
-    dev references, putting the MIDDLE extent there costs 0.0311 mean
-    cd_yawmin against 0.0632 for the unconstrained choice this harness
-    made through iter2 (`scripts/orientation_policy_sim.py`).
-
-    It is an epilogue, not a prompt sentence, because the writer cannot
-    verify it: the eye is measured at 0.20-0.40 sensitivity, in line with
-    reported false-negative rates for imperfect visual verifiers
-    (DOI 10.48550/arXiv.2606.15693), while raising a loop's deterministic
-    verification ratio is the change BlenderGym measures as a consistent
-    win (DOI 10.48550/arXiv.2504.01786). The iter2 alternative — a
-    measured one-shot nudge in the tool result — fired 0/20 and is gone.
-
-    Appended verbatim to the collected chunks, so the re-baked script
-    ends in the same scene the live session ended in.
-    """
-    return (
-        "\n# --- canonical orientation (harness epilogue) ---\n"
-        "from blended.ops.canonical_orientation import "
-        "apply_canonical_depth_axis\n"
-        "\n"
-        'print("canonical orientation:", apply_canonical_depth_axis())\n'
-    )
-
-
 def main(argv) -> int:
     import bpy
 
@@ -143,7 +91,13 @@ def main(argv) -> int:
         OllamaClient,
         dispatch_here,
     )
-    from blended.evaluate.bench_bridge import RecordedCall, prelude, standalone_script
+    from blended.evaluate.bench_bridge import (
+        RecordedCall,
+        canonical_orientation_epilogue,
+        prelude,
+        standalone_script,
+    )
+    from blended.evaluate.bench_task_prompt import OPS_TASK_TEMPLATE
     from blended.capture.reference_photo import normalize_reference_photo
     from blended.evaluate.bench_reference_views import reference_view_paths
     from blended.ops.canonical_orientation import apply_canonical_depth_axis
@@ -276,7 +230,7 @@ def main(argv) -> int:
         preview = text if len(text) <= 400 else text[:400] + " ..."
         print(f"[{kind}] {preview}", flush=True)
 
-    task_text = TASK_TEMPLATE.format(description=description)
+    task_text = OPS_TASK_TEMPLATE.format(description=description)
     # Re-encoded through the one reference-image path the chat UI uses
     # (size-capped PNGs under the run's own directory), so a bench view
     # and a user's photograph reach the writer the same way.

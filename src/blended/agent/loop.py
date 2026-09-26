@@ -74,6 +74,20 @@ BMB_ENDPOINT = "http://192.168.1.233:9292"
 # is why the local WRITER stays on bmb — a 22 GiB qwen3.8-27b on big
 # would evict the eye on every alternation.
 BIG_ENDPOINT = "http://192.168.1.110:8081"
+# A llama-server running on THIS machine (Apple Silicon, Metal), used by
+# the fine-tune decision experiment for its two 7.6B checkpoints. It
+# exists because big's 24 GB card was fully committed to a live
+# home-still conversion run (olmocr vLLM 13.5 GiB + hs-distill-server
+# 2.9 GiB + an Ollama child 6.7 GiB, measured 2026-09-19) and
+# llama-swap's strict swap made a single request wait 8 minutes while
+# the two workloads evicted each other. Same weights, same quant, same
+# prompts, no contention. OpenAI protocol, no auth.
+LOCAL_LLAMA_SERVER_ENDPOINT = "http://127.0.0.1:8091"
+# The name the constrained-envelope schema is sent under on an
+# OpenAI-protocol lane. llama.cpp requires `json_schema.name`; nothing
+# reads it back, so it exists only to say in a server log which contract
+# was enforced.
+CONSTRAINED_ENVELOPE_NAME = "blended_harness_turn"
 REQUEST_TIMEOUT_SECONDS = 300
 # A local llama-swap lane gets a longer ceiling than the cloud lanes.
 # Not a guess: bmb's qwen3.8-27b (Q8_XL, --reasoning-format deepseek)
@@ -117,6 +131,13 @@ CONTEXT_TOKENS_BY_MODEL = {
     "hermes-4-14b": 32_768,
     "gemma-4-26b-a4b": 32_768,
     "glm-ocr": 32_768,
+    # Served F16 on big for the fine-tune decision experiment
+    # (docs/research/2026-09-19-finetune-decision-experiment.md), with
+    # `-c 16384` in their wrapper scripts: the op-format arm's prompt is
+    # the harness system prompt plus 56 tool schemas plus the task,
+    # ~13.5k tokens measured, so a smaller window would refuse it.
+    "qwen2.5-coder-7b-instruct": 16_384,
+    "blenderllm": 16_384,
 }
 # The CLI lane's models: Anthropic's documented 200k context for the
 # Claude models the CLI serves (docs.anthropic.com, model overview).
@@ -492,15 +513,25 @@ BMB_MODEL_IDS = (
 # on this machine: mac_air's daemon reports zero models, so routing
 # qwen3-vl to LOCAL_ENDPOINT 404s with "model not found".
 BIG_MODEL_IDS = ("qwen3-vl",)
+# The fine-tune decision experiment's two 7.6B checkpoints. Served by a
+# llama-server on THIS machine (see LOCAL_LLAMA_SERVER_ENDPOINT) because
+# big's card was fully committed to another workload; the weights are
+# the same GGUFs that host holds.
+LOCAL_LLAMA_SERVER_MODEL_IDS = ("qwen2.5-coder-7b-instruct", "blenderllm")
 # Every endpoint that speaks OpenAI /v1/chat/completions instead of
-# Ollama /api/chat: the two LAN llama-swaps and OpenRouter. The cloud
-# and the local daemon are Ollama.
+# Ollama /api/chat: the two LAN llama-swaps, the local llama-server and
+# OpenRouter. The cloud and the local daemon are Ollama.
 LLAMA_SWAP_ENDPOINTS = (BMB_ENDPOINT, BIG_ENDPOINT)
-OPENAI_PROTOCOL_ENDPOINTS = (*LLAMA_SWAP_ENDPOINTS, OPENROUTER_ENDPOINT)
+OPENAI_PROTOCOL_ENDPOINTS = (
+    *LLAMA_SWAP_ENDPOINTS,
+    LOCAL_LLAMA_SERVER_ENDPOINT,
+    OPENROUTER_ENDPOINT,
+)
 # Every endpoint that serves ONLY its own model ids, so an eye with no
-# server of its own cannot inherit it: the two llama-swaps, OpenRouter,
-# and the Claude Code CLI. The local daemon is the fallback because it
-# is the one endpoint that serves whatever it is signed in for.
+# server of its own cannot inherit it: the two llama-swaps, the local
+# llama-server, OpenRouter, and the Claude Code CLI. The local daemon is
+# the fallback because it is the one endpoint that serves whatever it is
+# signed in for.
 MODEL_IMPLIED_ENDPOINTS = (*OPENAI_PROTOCOL_ENDPOINTS, CLAUDE_CODE_ENDPOINT)
 
 
@@ -521,6 +552,8 @@ def _implied_endpoint(model: str) -> str:
         return BMB_ENDPOINT
     if model in BIG_MODEL_IDS:
         return BIG_ENDPOINT
+    if model in LOCAL_LLAMA_SERVER_MODEL_IDS:
+        return LOCAL_LLAMA_SERVER_ENDPOINT
     if _is_openrouter_model(model):
         return OPENROUTER_ENDPOINT
     return LOCAL_ENDPOINT
@@ -529,18 +562,19 @@ def _implied_endpoint(model: str) -> str:
 def _implied_api_key(model: str, environment_key: str) -> str:
     """The credential `model`'s own server wants.
 
-    bmb's llama-swap 401s without its key file; big's llama-swap has no
-    apiKeys list and must never be handed a cloud key; OpenRouter takes
-    its own key file; the Claude Code CLI owns its own auth and this
-    harness never handles its token; everything else rides the Ollama
-    lanes, where the env key (or a signed-in daemon) is the credential.
+    bmb's llama-swap 401s without its key file; big's llama-swap and the
+    local llama-server have no apiKeys list and must never be handed a
+    cloud key; OpenRouter takes its own key file; the Claude Code CLI
+    owns its own auth and this harness never handles its token;
+    everything else rides the Ollama lanes, where the env key (or a
+    signed-in daemon) is the credential.
     Used by BOTH writer and eye resolution so the eye cannot inherit a
     credential for a server it is not talking to.
     """
     endpoint = _implied_endpoint(model)
     if endpoint == BMB_ENDPOINT:
         return _read_bmb_api_key()
-    if endpoint in (BIG_ENDPOINT, CLAUDE_CODE_ENDPOINT):
+    if endpoint in (BIG_ENDPOINT, LOCAL_LLAMA_SERVER_ENDPOINT, CLAUDE_CODE_ENDPOINT):
         return ""
     if endpoint == OPENROUTER_ENDPOINT:
         return _read_openrouter_api_key()
@@ -631,6 +665,15 @@ class ModelConfig:
     vision_model: str = RECOMMENDED_MODELS["eye"][0]
     endpoint: str = LOCAL_ENDPOINT
     temperature: float = 0.3  # low: this is engineering, not brainstorming
+    # The sampler seed, when the lane has one. None means "do not send
+    # it", which is what every run that is not a controlled experiment
+    # wants: llama-server and the Ollama daemon both default to a
+    # random seed, and pinning one silently would make two runs of the
+    # same prompt look more reproducible than the lane is. A lane with
+    # no seed at all (the Claude Code CLI takes neither temperature nor
+    # seed) ignores it, and a caller that needs the distinction records
+    # what it actually sent.
+    seed: int | None = None
     # The Ollama lane's window, sent as `num_ctx` and used by the
     # preflight (OT-22). None until `OllamaClient.discover_context` reads
     # it from the daemon's /api/show (`<family>.context_length`): a fixed
@@ -756,6 +799,20 @@ class ModelConfig:
     def uses_claude_code(self) -> bool:
         """True when this config's turns run through the headless CLI."""
         return self.endpoint == CLAUDE_CODE_ENDPOINT
+
+    @property
+    def constrains_tool_calls(self) -> bool:
+        """True when this lane's tool calls ride a JSON-schema envelope.
+
+        The local llama-server lane, for the reason spelled out in
+        `_chat_payload`: its served 7.6B checkpoints answer with a
+        `<function_call>` tag that llama.cpp's parser does not accept,
+        so `tool_calls` never arrives on the wire. Constraining the
+        whole reply to the harness's own envelope schema is what the
+        Claude Code lane already does, and it is the harness's one
+        answer for a transport with no usable tool-call field.
+        """
+        return self.endpoint == LOCAL_LLAMA_SERVER_ENDPOINT
 
     @property
     def request_timeout_seconds(self) -> int:
@@ -931,10 +988,18 @@ def _to_openai_tools(tools: list[dict]) -> list[dict]:
     ]
 
 
-def _assistant_message_from_openai(body: dict) -> dict:
+def _assistant_message_from_openai(body: dict, constrained: bool = False) -> dict:
     """OpenAI chat-completions body -> the assistant message dict the
     loop already consumes, ids preserved for the tool-result round
-    trip."""
+    trip.
+
+    `constrained` says the reply is the harness's envelope, forced by a
+    JSON schema (see `ModelConfig.constrains_tool_calls`): the tool
+    calls are then INSIDE `content`, as schema-valid JSON, and are
+    decoded by the same function the Claude Code lane uses. A reply that
+    does not parse is left alone so the caller records the raw text and
+    the turn counts as a malformed answer rather than an empty one.
+    """
     choice = (body.get("choices") or [{}])[0]
     message = choice.get("message") or {}
     tool_calls = []
@@ -949,6 +1014,21 @@ def _assistant_message_from_openai(body: dict) -> dict:
                 },
             }
         )
+    if constrained and not tool_calls:
+        import json as json_module
+
+        from blended.agent.claude_code import assistant_message_from_envelope
+
+        try:
+            envelope = json_module.loads(message.get("content") or "")
+        except (TypeError, ValueError):
+            envelope = None
+        if isinstance(envelope, dict):
+            decoded = assistant_message_from_envelope(envelope)
+            reasoning = message.get("reasoning_content") or message.get("reasoning")
+            if reasoning:
+                decoded["thinking"] = reasoning
+            return decoded
     normalized = {
         "role": message.get("role", "assistant"),
         "content": message.get("content") or "",
@@ -1334,6 +1414,12 @@ class OllamaClient:
                 "max_tokens": self.config.max_completion_tokens,
                 "stream": False,
             }
+            # llama-server honours this deterministically; a controlled
+            # experiment therefore gets the same completion back for the
+            # same (prompt, seed, temperature). Sent only when set, so
+            # an ordinary run keeps the server's random default.
+            if self.config.seed is not None:
+                payload["seed"] = self.config.seed
             if self.config.is_openrouter:
                 # Ask for the price of the call: only this lane charges
                 # one, and only it answers this field.
@@ -1345,7 +1431,31 @@ class OllamaClient:
                     "order": [self.config.openrouter_provider],
                     "allow_fallbacks": False,
                 }
-            if tools:
+            if tools and self.config.constrains_tool_calls:
+                # A lane whose SERVED MODEL will not emit the wire's
+                # tool-call tag gets the same treatment the Claude Code
+                # lane gets: the tool call is CONSTRAINED by a JSON
+                # schema built from the harness's own tools, not parsed
+                # out of prose. Measured 2026-09-19 on
+                # Qwen2.5-Coder-7B-Instruct at temperature 0, on two
+                # independent llama.cpp builds (big's cuda-ece963 and a
+                # macOS Metal b10964): with `tools` on the wire and
+                # --jinja, the model answers `<function_call>{...}` while
+                # llama.cpp's parser expects `<tool_call>`, so
+                # `tool_calls` comes back null and the op arm would
+                # measure a tag convention instead of a model.
+                # `tool_choice: "required"` did not constrain it either.
+                from blended.agent.claude_code import envelope_schema
+
+                payload["response_format"] = {
+                    "type": "json_schema",
+                    "json_schema": {
+                        "name": CONSTRAINED_ENVELOPE_NAME,
+                        "strict": True,
+                        "schema": envelope_schema(tools),
+                    },
+                }
+            elif tools:
                 payload["tools"] = _to_openai_tools(tools)
             return payload
         if self.config.context_length is None:
@@ -1369,6 +1479,12 @@ class OllamaClient:
                 # planning turn there. The daemon's own default is
                 # unbounded within num_ctx, and a reply cut at num_ctx is
                 # still an error (check_reply_fits).
+                # See the OpenAI branch: only when the caller pinned one.
+                **(
+                    {"seed": self.config.seed}
+                    if self.config.seed is not None
+                    else {}
+                ),
             },
         }
         if tools:
@@ -1596,7 +1712,9 @@ class OllamaClient:
         # OT-22: a cut reply is an error, never a result.
         check_reply_fits(body, self.config.context_tokens, self.config.endpoint)
         if self.config.uses_openai_protocol:
-            message = _assistant_message_from_openai(body)
+            message = _assistant_message_from_openai(
+                body, constrained=self.config.constrains_tool_calls
+            )
             finish_reason = ((body.get("choices") or [{}])[0]).get("finish_reason") or ""
         else:
             message = body.get("message", {})

@@ -29,6 +29,169 @@
 
 ---
 
+## Phase 12 — Proportion first: the top of the order (2026-09-21)
+
+**Why this phase leads.** G2 — right kind, wrong proportions or placement — is 97 of 111
+archived residual failures (`docs/research/2026-09-19-finetune-decision/REPORT.md`, Phase A).
+The oracle per-axis rescale lifts holdout F@0.05 0.4531 → 0.7017 and dev 0.2725 → 0.4673
+(`docs/2026-09-06-bench-panel-preregistration.md`, "Proportion headroom under F@0.05"): the
+built shape is mostly right and its extents are wrong. The writer invents world-typical
+dimensions (`disclosed2-roll1/Bottle_seed0`: "a typical bottle … total height ~0.25m").
+Text cannot supply the ratios (stated 0.406/0.683 against built 0.455/0.675 mean |log2
+error|), a text-free prior is destructive (−0.21), and the reference views can (the eye
+read them at 0.224/0.488). This phase is worked BEFORE every open item in Phases 3 and 6–11;
+Phase 11's attack order stands behind it.
+
+**Not gated on ISSUES M1–M3:** those defects are in the local llama-server lane, and every
+roll here runs on the cloud lane. **Gated on credits** for OT-46, OT-47 and OT-49: the
+cloud lane ran out on 2026-09-11 and stopped OT-38 before its first roll.
+
+### OT-44 Silhouette-fit simulation (offline, zero model calls)
+
+**What:** `scripts/bench_silhouette_fit.py`. For each dev instance with built assets
+(`blended-deepseek-v4-pro-dev-iter3`, 12 instances) and rendered reference views, search
+per-axis scale factors on the built mesh that maximise mean alpha-mask IoU over the four
+reference views, rendering each candidate with `core/render.py`'s camera function
+(azimuths 45/135/225/315°, `cam_r = 1.8·extent`, `cam_h = 0.6·extent`, 50 mm, 512 px,
+transparent film) recomputed from the CANDIDATE's own extent. Score the rescaled mesh with
+the bench's F@0.05. Three arms on the same 12 instances: **oracle** (the true reference
+extents — `bench_proportion_headroom.py`'s rescale, the ceiling), **eye rescale** (the eye
+probe's stated ratios, `bench_proportion_probe.py --images-root`), **silhouette fit**. Two
+fit variants: unconstrained, and constrained (X and Y tied when the built mesh is
+rotationally symmetric about Z within a named tolerance; correction bounded to a named
+band).
+**Why:** The oracle is a per-axis rescale, so its ceiling is reachable by any method that
+recovers that rescale from legal inputs. The four views are the image track's input and
+are rendered by the bench's own code, so camera parity is exact. This measures how much of
+the ceiling the recovery captures before any credits are spent.
+**PARTLY MEASURED — 2026-09-21, in a numpy re-implementation of `core/render.py`'s camera,
+not yet in Blender:** all four azimuths are
+diagonals, so for an axis-aligned object the silhouette's bounding-box width is (X+Y)/√2 in
+every view, and bounding-box matching cannot separate X from Y. The split appears only in
+the outline — where the top face's near and far corners land, mirrored between 45° and
+135°. Fit on full-mask IoU, never on bounding boxes. Also: the longest axis spans a few
+hundred pixels, so ratios below roughly 1–2% of it sit near the pixel floor (Auger and
+KitchenIsland are the expected casualties). The measurement removes this banner or
+falsifies the claim in place.
+Measured on an axis-aligned box (Z = 1.2, perspective, 50 mm, 512 px): footprints 1.0×0.3 and
+0.65×0.65 — the same X+Y — differ by 3 px in silhouette bounding-box width (317 against 314)
+in every view, while full-mask IoU between them is 0.811; swapping X and Y gives IoU 0.682;
+a 0.05-step grid search over X and Y on full-mask IoU recovered the true footprint exactly
+(IoU 1.0, next best 0.968). Still unmeasured: the same test through `core/render.py` in
+Blender (the camera-parity gate below), and bias when the built SHAPE differs from the
+reference — a same-shape box cannot show the fit trading shape error for scale error, and
+silhouettes constrain only the visual hull (Laurentini, DOI 10.1109/34.273735).
+**Camera-parity gate first:** render one instance's ground-truth mesh through the fit's
+renderer and assert mean IoU against its stored reference views at or above a named
+tolerance. If this fails, nothing downstream is interpretable.
+**Pre-register** in a stdlib-only thresholds module BEFORE the first fit is scored: the
+fraction of the dev oracle's gain the fit must capture; the per-instance harm margin and
+the number of instances allowed past it; the scale search bounds and step; the symmetry
+tolerance and correction band. One confirmation on the holdout afterwards (BEN-8); the
+holdout tunes nothing.
+**Home-still (consulted 2026-09-21 through `paper_search`; distill search still down):**
+fitting a few shape parameters to silhouettes by render-and-compare is established — Soft
+Rasterizer (DOI 10.1109/iccv.2019.00780) and primitive-parameter fitting from images (Lu et
+al., DOI 10.1109/icra48891.2023.10161066). No LLM-for-CAD paper found uses it: that
+literature feeds VLM judgments back instead (CADCodeVerify, DOI 10.48550/arXiv.2410.05340,
+a 7.3% point-cloud-distance reduction). The method has precedent; the size of its gain in
+this setting has none, so OT-44's simulation is the only evidence there will be.
+**Done means:** the camera-parity gate is a Blender-tier test and green; a regenerated
+report carries the three arms' F@0.05 on dev, per-instance deltas, the pre-registered
+verdict and the one holdout confirmation; the PROPOSED banner above is removed or the claim
+falsified in place.
+
+### OT-45 Record the prompt identity in every roll
+
+**What:** `.agent_meta.json` gains the working agreement's `PromptRevision.identity` and
+the assembled-prompt fingerprint. `run_3dcode_instance.py` gains `--prompt-revision`,
+passed straight to `build_system_prompt` (one path; the default stays the active
+revision). `bench_chain.sh` logs it.
+**Why:** Read 2026-09-21: `disclosed2-roll1/Bottle_seed0/.agent_meta.json` records writer,
+eye and model but no prompt identity, so which text a roll ran is inferred from code, not
+read from the record — the same class of blindness that made the published hatch share an
+instrument reading (`phaseA/hatch_mechanism.md`). OT-37's rule, that the commit a roll ran
+is in both the path and the log, extends to the prompt.
+**Done means:** a pure test runs the meta writer and asserts both fields are present and
+equal to `get_revision(n).identity` for the requested revision; an unknown revision raises
+before any model call.
+
+### OT-46 Verify, and if needed complete, `disclosed3`
+
+**What:** Count scored 20/20 rolls in group `disclosed3`. The hatch-mechanism table lists
+only `disclosed3-roll1` (20 attempts, 15 instrumented), and the OT-38 pre-registration
+records the cloud lane running out of credits during that set. If fewer than three rolls
+rank under §P8a, run the missing rolls from the SAME freeze (`b26d6cf`) into new model
+directories.
+**Why:** `disclosed3` is OT-38's registered incumbent. Without three rankable rolls OT-38's
+outcome line cannot be filled.
+**Gated on:** credits and the user's word.
+**Done means:** `bench_panel.py` lists three rankable `disclosed3` rolls, or this item
+records why the group cannot be completed and OT-38's pre-registration gets an appended
+launch-record note — never an edit.
+
+### OT-47 Image-track rolls: OT-38 as registered, plus the fit
+
+**What:** Launch OT-38's pre-registered set unchanged (views → eye → blind writer). If and
+only if OT-44 cleared its bar, append a NEW pre-registration (never an edit to OT-38's)
+with two further image-track arms on the same freeze, writer, eye and holdout: **image +
+fit** — OT-38's configuration with the fitted scale applied as a pure-`bpy` epilogue to
+the baked script, the way `canonical_orientation_epilogue()` is — and **fit only** — the
+views go to the fit and not to the eye or the writer. Three rolls each, 20/20.
+**Why:** OT-38 tests whether better information makes the writer build better; the fit
+corrects whatever it built. They stack, and "fit only" measures how much of the gain
+needs the writer at all.
+**Cross-track caution:** "fit only" consumes the views, so it is an image-track
+configuration. Its gap over `disclosed3` (text track) is reported, never ranked as a
+text-track result.
+**Gated on:** OT-44's verdict (for the two fit arms only), OT-45, OT-46, credits and the
+user's word.
+**Done means:** OT-38's outcome line filled from `bench_panel.py`; the new
+pre-registration's outcome lines filled the same way, with instance-clustered intervals
+beside every mean; each epilogue's scale literals traceable per instance to the fit's log.
+
+### OT-48 Reference comparison as an inspection tool (the product path)
+
+**What:** A service tool `compare_to_reference_views` returning, for the current scene,
+per-view mask IoU and the fitted per-axis scale factors as MEASUREMENTS; the writer
+decides. Inside the correction band the fit may be applied; beyond it the delta is a gate
+failure the writer rebuilds against.
+**Why:** A post-hoc per-axis rescale turns round features into ellipses — invisible to
+F@0.05, a regression for a game asset. Inspection, not construction, is where published
+agentic CAD systems spend their tool budget (CAD-Assistant, ICCV 2025, DOI
+10.1109/iccv51701.2025.00684 — its tools are a sketch parameterizer, renderers and a 2D
+cross-section generator). A user's own reference image arrives without the bench's calibrated cameras,
+so the product version must degrade to what a single uncalibrated view supports.
+**Gated on:** OT-47 showing the fit pays on the bench.
+**Done means:** `(unverified)` — no acceptance test until scheduled.
+
+### OT-49 Test the pinned prompt's contradictions
+
+**What:** Paired disclosed-surface rolls at the pinned v10 against v12 (the
+`run_python`-first opener fixed) and v14 (the "listed below / do not search" contradiction
+fixed), selected through OT-45's flag and instrumented with OT-43's per-attempt metrics.
+**Why (PROPOSED — read from the code 2026-09-21, not measured):**
+`ACTIVE_PROMPT_REVISION` is 10. v10 opens "You build game assets in Blender by writing
+small Python chunks and running them through `run_python`" and says every operation is
+"listed below … do not search for it" — but OT-24 removed that list from the rendered
+prompt, and OT-25 made 41 of 48 ops reachable only through `search_ops`. v12–v14 fix all
+three sentences and have never reached a bench roll (v12's own outcome: "Still a
+candidate: the frozen-20 paired rolls"). This may be the entry mechanism OT-41 is looking
+for; `claude-code:sonnet` ignoring the same prose single-shot (A1, 92.7% ops) would make
+it writer-dependent. The literature is consistent with this and does not test this exact
+case: system-message following fails through constraint violation and multi-turn
+instability (SysBench, DOI 10.48550/arXiv.2408.10943), and models differ in how they
+resolve conflicting instructions (IHEval, DOI 10.18653/v1/2025.naacl-long.425). **Not an
+accuracy item:** archived failing attempts use ops MORE than
+passing ones (70.4% against 90.4% hatch share), so this is ordered after the proportion
+work.
+**Gated on:** OT-45, credits and the user's word.
+**Done means:** the first-geometry-call split per revision with instance-clustered
+intervals; OT-41 updated with the mechanism named or the hypothesis falsified in place;
+the v12 and v14 `outcome` fields in `prompt_versions.py` filled from the rolls.
+
+---
+
 ## Phase 1 — Prerequisites (the vocabulary has to be one thing before it can be a surface)
 
 All Phase 1 items (OT-1, OT-2, OT-3) are closed — see `BACKLOG_DONE.md`.
@@ -179,6 +342,118 @@ line from `bench_panel.py`; close or falsify in place.
 on a mismatch) — the text probe found nothing for it to hold the writer to; relational
 assembly ops — zero floating parts in 160 rolls.
 
+## Phase 11 — What the fine-tune decision left open (2026-09-19)
+
+**Measured** (`docs/research/2026-09-19-finetune-decision/REPORT.md`): §3 rule 1 fired —
+`F_geom` 98.2% of 111 archived failures, `F_syntax` 1.8% — so no fine-tune. Phase C makes it
+independent of the deltas: 302 execution-verified pairs over only **32 distinct
+instructions** against the 1–3k a first SFT run needs. Five things the run could not settle,
+in the order they should be attacked. **Behind Phase 12 (2026-09-21), which is worked
+first.**
+
+### OT-39 Enlarge the ranked instance set
+
+**What:** Rank on `bench_sets/instances_dev_all.txt` (145 instances) rather than the
+20-instance holdout, or on a frozen enlargement of it, and re-derive the panel's SE.
+**Why:** Every cross-arm shape comparison in the fine-tune report except Δ_tune sits inside
+its own interval: instance-clustered 95% half-widths on a ~45% pass rate are ±17–19 pp, so
+A1 (42.5% [25.8, 59.2]), A4 (45.0% [25.7, 64.3]) and A5 (48.8% [29.8, 67.7]) are mutually
+indistinguishable. Four draws per instance do not fix this — they are correlated, and the
+effective N is the instance count.
+**Done means:** a ranked roll on ≥ 100 instances with its clustered interval reported beside
+the mean, and `scripts/bench_thresholds.MINIMUM_INSTANCES_FOR_RANKING` re-derived from it or
+deliberately left where it is with the measurement quoted.
+
+### OT-43 Op format against raw in full agentic mode, with abandonment instrumented
+
+**What:** Run the production writer twice on the enlarged instance set from OT-39, full
+agentic mode, identical except for the answer format: an op-facade arm against a raw-bpy
+arm. **Primary output is per-turn abandonment instrumentation**, not the pass rate: for
+every attempt, the type of the FIRST geometry-emitting call, the per-turn op-versus-chunk
+split, the dispatched-minus-baked drop rate on each path, and the offered-tools fingerprint
+the turn carried. `scripts/finetune_hatch_mechanism.py` already computes every one of those
+from `.agent_transcript.txt` plus the baked script, so the analysis is written; the roll
+only has to produce the artifacts. **Secondary arm:** the same op format with the
+`run_python` chunk bullet REMOVED (`blended.evaluate.bench_task_prompt.CHUNK_RULE`), which
+tests whether the mandate is what puts a chunk first. One model, no new weights.
+**Why:** The cheap precondition ran first and shrank this item (`phaseA/hatch_mechanism.md`,
+2026-09-19). Measured there: the archive's op path is MORE reliable than A1's (7.0% of
+dispatched scene-op calls never reach the bake, against A1's 26.3%), 93.8% of instrumented
+attempts make a chunk their FIRST geometry call, 96 of 144 chunk-using attempts never call
+a scene-changing op at all, and of the 16 that do see an op fail, 11 had already switched.
+So the facade is not driven out by its own errors — it is never entered, and an arm that
+only reports pass rates cannot tell those apart. What remains unexplained is the gap
+between regimes: single-shot A1 chose ops for 92.7% of its geometry calls and baked 91.1%
+with all 56 schemas offered, disclosed multi-turn rolls bake 14.0–23.9%, and the
+pre-disclosure rolls cannot be read at all.
+**Done means:** paired rolls on the OT-39 set for both formats with the instrumentation
+above reported per attempt; `cd_pca` pass with its instance-clustered interval, tokens and
+wall clock per passing asset beside it; an explicit verdict on whether the facade pays for
+its prompt cost; and, for the secondary arm, the first-geometry-call split with and without
+the chunk mandate.
+
+### OT-40 Cost per passing asset, frontier raw arm against a single-shot specialist
+
+**What:** Measure tokens, wall clock and dollars per PASSING asset for the frontier model on
+the RAW answer format — A5's configuration — in full agentic mode, against a single-shot
+specialist plus a cheap deterministic verifier.
+**Why:** This is the argument the fine-tune experiment was not built to test and the one the
+choice actually turns on. The comparator is **A5, not A1**: same task, same raw format, no
+schema overhead on either side. Measured single-shot: A4 (BlenderLLM, 7B) spent **1,652
+tokens and 124 s per passing asset** against A5's **9,488 tokens and 90 s** — a **5.7×**
+token advantage, and A5 is FASTER per passing asset despite A4's four-way queue
+contamination, while also holding the higher point-estimate pass rate (48.8% against 45.0%).
+Scoring the specialist against A1 instead inflates that ratio several-fold on tokens A1
+spends re-sending 56 tool schemas every call, which is the op format's cost, not the model's.
+"Do not fine-tune" and "do not use a small specialist" are different conclusions and only the
+first is supported — a released checkpoint needs no training. Wall clock in the report is
+contaminated by four-way GPU queueing, so latency has to be re-measured single-stream.
+**OT-43 runs first**: it is the cheaper experiment and it may remove the op format from
+consideration entirely.
+**Done means:** a paired table of tokens / wall clock / dollars per passing asset for both
+configurations on the OT-39 instance set, latency measured with one request in flight, and
+the verifier's own cost counted on the specialist's side.
+
+### OT-41 Why multi-turn attempts never enter the facade
+
+**What:** Explain the entry behaviour — why an agentic turn reaches for `run_python` before
+it reaches for an op — and fix whichever cause it is.
+**Why (restated on measurement, 2026-09-19 — `phaseA/hatch_mechanism.md`):** the previously
+quoted 95.1% was partly an instrument reading. Counted off the BAKED script instead of
+`.agent_meta.json`, and restricted to rolls whose bridge could record an op call at all,
+passing attempts are **90.4%** hatch (321 chunks against 34 scene-changing ops, 17 of 72
+attempts using any op) and failing attempts **70.4%**. The old number counted the 14 reader
+ops as geometry-emitting, numbered chunks with a counter that advances on op calls, and
+averaged in 82 of 154 passing attempts from rolls whose script CANNOT hold an op call
+(measured: `ops-roll1/Tap_seed0` dispatched 13 scene-changing ops, every one `ok`, and baked
+none). Two hypotheses are now dead: op-failure feedback (the archive's op path is more
+reliable than A1's, and abandonment precedes failure) and "the ops were never offered a
+path" as a complete story (A1 carries the same chunk mandate and still bakes 91.1% ops).
+What survives: the offered set (every disclosed roll bakes 14.0–23.9% ops, fingerprint
+`t:6b6093efb569`) and whatever the multi-turn loop itself rewards. Settle it BEFORE the
+candidate-op miner (OT-12/OT-13) proposes more ops, or the miner grows a surface nothing
+enters.
+**Done means:** the entry mechanism named with evidence from OT-43's instrumentation, and a
+change that moves the first-geometry-call split in an agentic roll, measured before and
+after.
+
+### OT-42 Do not re-run the facade arm as specified
+
+**What:** Either drop the facade-versus-raw arm or reconfigure the bench so facade ops are
+genuinely the geometry path before running it again.
+**Why:** A2 − A3 measured nothing about the facade. Both arms floored (A2 reached a scorable
+script on 1.2% of completions, A3 executed 2.5%), so Δ_facade = −2.5 pp is two completions
+wide with an arbitrary sign, and the spec's §9 stop condition missed it because that
+condition reads SCHEMA CONFORMANCE (A2: 73.8%, above the 20% bar) rather than the funnel
+stage that mattered. Worse, the construct was wrong: the op arms' task text still mandates
+`run_python` chunks, so A2 was writing bpy inside a tool-call envelope, which makes A2 − A3
+bpy against bpy-plus-an-envelope. Spec Q2 — how much the facade closes — is **unanswered**.
+**Done means:** either this item is closed as dropped with the reason recorded, or OT-41's
+fix lands first and a facade arm runs where ops are the only geometry path.
+**Superseded in part by OT-43:** if OT-43 removes the chunk mandate and bakes op calls as the
+geometry path, that IS the reconfiguration this item asks for, and all that remains here is
+the decision to drop the arm or run it against that configuration.
+
 ## Phase 6 — The flywheel (only after Phase 3 shows the surface is better on a local lane)
 
 ### OT-18 Dataset export
@@ -233,6 +508,21 @@ flowchart LR
   OT25 --> OT26
   OT27 --> OT18
   OT37 --> OT38
+  OT39 --> OT43
+  OT43 --> OT40
+  OT43 --> OT41
+  OT43 --> OT42
+  OT43 --> OT12
+  OT41 --> OT12
+  OT41 --> OT42
+  OT44 --> OT47
+  OT45 --> OT47
+  OT46 --> OT47
+  OT47 --> OT38
+  OT47 --> OT48
+  OT45 --> OT49
+  OT49 --> OT41
+  OT49 --> OT43
 ```
 
 ## Closing rule

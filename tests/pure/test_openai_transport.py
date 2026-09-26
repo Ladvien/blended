@@ -240,6 +240,38 @@ def test_ollama_endpoint_keeps_the_ollama_wire_shape(monkeypatch):
     assert "options" in payload  # Ollama options stay on the Ollama wire
 
 
+def test_a_pinned_seed_reaches_both_wires_and_an_unset_one_is_not_sent():
+    """A controlled experiment needs the seed ON THE WIRE; an ordinary run
+    must keep the server's random default.
+
+    Sending `seed: null` would pin llama-server to seed 0 on some builds
+    and make every ordinary turn silently deterministic, so "unset" has
+    to mean absent, not null. Both lanes carry it in their own place:
+    top level on the OpenAI wire, inside `options` on the Ollama one."""
+    openai_lane = OllamaClient(
+        ModelConfig.from_environment(model="qwen2.5-coder-7b-instruct", seed=7)
+    )
+    payload = openai_lane._chat_payload([{"role": "user", "content": "hi"}])
+    assert payload["seed"] == 7
+
+    ollama_lane = OllamaClient(
+        ModelConfig.from_environment(
+            model="deepseek-v4-pro:cloud", seed=7, context_length=8_192
+        )
+    )
+    assert ollama_lane._chat_payload([{"role": "user", "content": "hi"}])["options"]["seed"] == 7
+
+    unset_openai = OllamaClient(
+        ModelConfig.from_environment(model="qwen2.5-coder-7b-instruct")
+    )
+    assert "seed" not in unset_openai._chat_payload([{"role": "user", "content": "hi"}])
+    unset_ollama = OllamaClient(
+        ModelConfig.from_environment(model="deepseek-v4-pro:cloud", context_length=8_192)
+    )
+    options = unset_ollama._chat_payload([{"role": "user", "content": "hi"}])["options"]
+    assert "seed" not in options
+
+
 def test_the_default_endpoint_does_not_override_the_model_pin():
     """The addon always passes preferences.endpoint, and every fresh
     install and saved preference holds the default localhost value.
