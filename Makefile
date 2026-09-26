@@ -1,6 +1,7 @@
 .PHONY: test test-pure test-blender test-blender-app converge converge-local \
 	replay calibrate-eye calibrate-visual-gate pin-golden-views converge-auto \
-	pin bench-3dcode chat-e2e photo-to-model provider-smoke test-repro
+	pin bench-3dcode chat-e2e photo-to-model provider-smoke test-repro \
+	test-mcp test-mcp-blender install-mcp-addon
 PY ?= .venv/bin/python
 BLENDER ?= /Applications/Blender.app/Contents/MacOS/Blender
 
@@ -9,7 +10,7 @@ BLENDER ?= /Applications/Blender.app/Contents/MacOS/Blender
 # the installed Blender (the environment the addon ships into). A bare
 # `pytest tests/blender` with no bpy wheel collects nothing and exits 5,
 # which is not a pass.
-test: test-pure test-blender-app
+test: test-pure test-blender-app test-mcp
 
 # Pure-Python layer: must pass on any machine, no Blender required.
 test-pure:
@@ -25,6 +26,34 @@ test-blender:
 test-blender-app:
 	$(BLENDER) --background --factory-startup \
 		--python scripts/run_tests_in_blender.py -- $(ARGS)
+
+# The MCP server's unit layer (blender_mcp/ subtree + blended bridge):
+# no Blender required.
+test-mcp:
+	$(PY) blender_mcp/tests/test_mcp_server.py && \
+		$(PY) blender_mcp/tests/test_tool_listing.py && \
+		$(PY) blender_mcp/tests/test_blended_bridge.py && \
+		$(PY) blender_mcp/tests/test_rst_parse.py && \
+		$(PY) blender_mcp/tests/test_rst_search.py
+
+# The MCP server against a real background Blender: client -> server ->
+# socket -> add-on main-thread exec -> blended's dispatch_tool. Only the
+# background class runs: foreground and interactive need Weston (Linux).
+test-mcp-blender:
+	BLENDER_BIN=$(BLENDER) BLENDER_MCP=$(CURDIR)/.venv/bin/blender-mcp \
+		$(PY) blender_mcp/tests/test_blender_mcp_with_blender.py TestBackgroundServer
+
+# Build the MCP add-on (extension id `mcp`) from the subtree, install it
+# into the user's Blender, and allow online access (the add-on's socket
+# server requires it).
+MCP_ADDON_ZIP ?= outputs/mcp_addon/mcp.zip
+install-mcp-addon:
+	mkdir -p outputs/mcp_addon
+	$(BLENDER) --factory-startup --command extension build \
+		--source-dir blender_mcp/addon/blender_mcp_addon --output-filepath $(MCP_ADDON_ZIP)
+	$(BLENDER) --command extension install-file -r user_default -e $(MCP_ADDON_ZIP)
+	$(BLENDER) --background --python-expr \
+		"import bpy; bpy.context.preferences.system.use_online_access = True; bpy.ops.wm.save_userpref()"
 
 # Build twice in two fresh Blenders under different PYTHONHASHSEED and
 # require identical semantic digests. Slow: two full Blender launches,
