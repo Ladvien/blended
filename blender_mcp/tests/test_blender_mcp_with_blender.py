@@ -105,12 +105,17 @@ def _blender_env(tmpdir: str) -> dict[str, str]:
     """
     Return an environment dict for Blender sub-processes.
 
-    Sets ``HOME`` to *tmpdir* so that Blender reads and writes its
-    configuration there instead of touching the real user directory.
+    Sets ``HOME`` and ``BLENDER_USER_RESOURCES`` to *tmpdir* so that Blender
+    reads and writes its configuration and extensions there instead of
+    touching the real user directory. ``HOME`` alone is not enough on macOS:
+    Blender resolves ``~/Library/Application Support/Blender`` without it, so
+    a ``--factory-startup ... install-file --enable`` here once saved factory
+    preferences over the user's real ``userpref.blend``.
     Disables ASAN leak checking so debug builds exit cleanly.
     """
     env = os.environ.copy()
     env["HOME"] = tmpdir
+    env["BLENDER_USER_RESOURCES"] = os.path.join(tmpdir, "blender_user_resources")
     env["ASAN_OPTIONS"] = ":".join(filter(None, [
         env.get("ASAN_OPTIONS", ""),
         "alloc_dealloc_mismatch=0",
