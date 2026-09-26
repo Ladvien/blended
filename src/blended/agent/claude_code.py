@@ -155,7 +155,6 @@ _EVENT_CONTENT_BLOCK_DELTA = "content_block_delta"
 # Opens every Anthropic call, so counting these counts the calls one
 # harness turn really makes.
 _EVENT_MESSAGE_START = "message_start"
-_DELTA_TEXT = "text_delta"
 _DELTA_THINKING = "thinking_delta"
 _BLOCK_TEXT = "text"
 _BLOCK_THINKING = "thinking"
@@ -163,10 +162,6 @@ _RESULT_SUCCESS = "success"
 _RATE_LIMIT_ALLOWED = "allowed"
 _FIVE_HOUR_WINDOW = "five_hour"
 _SEVEN_DAY_WINDOW = "seven_day"
-
-# Delta kinds the harness's `on_delta(kind, text)` contract accepts.
-DELTA_KIND_CONTENT = "content"
-DELTA_KIND_THINKING = "thinking"
 
 
 def resolve_binary(configured_path: str = "") -> Path:
@@ -381,9 +376,8 @@ def assistant_message_from_envelope(envelope: dict, thinking: str = "") -> dict:
     """Structured output -> the assistant dict the agent loop consumes.
 
     Ids are minted here because this lane has no server-side call ids,
-    and `AgentSession._cancel_turn` matches results to calls by id — a
-    per-turn counter would collide across turns and silently drop a
-    cancelled tool's result.
+    and the loop matches results to calls by id — a per-turn counter
+    would collide across turns and silently drop a tool's result.
     """
     tool_calls = []
     for call in envelope.get(ENVELOPE_TOOL_CALLS_KEY) or []:
@@ -628,13 +622,7 @@ class ClaudeCodeTransport:
             arguments += ["--effort", self.effort]
         return arguments
 
-    def chat(
-        self,
-        messages: list[dict],
-        tools: list[dict] | None = None,
-        on_delta=None,
-        stop_requested=None,
-    ) -> dict:
+    def chat(self, messages: list[dict], tools: list[dict] | None = None) -> dict:
         """One turn. Returns the assistant dict the agent loop consumes."""
         system_prompt, frame = render_call(messages)
         arguments = self.command(system_prompt, tools)
@@ -664,7 +652,7 @@ class ClaudeCodeTransport:
         watchdog.start()
         started = time.monotonic()
         try:
-            assembled = self._consume(process, tools, on_delta, stop_requested)
+            assembled = self._consume(process, tools)
         finally:
             watchdog.cancel()
             writer.join(timeout=1)
@@ -676,8 +664,6 @@ class ClaudeCodeTransport:
                 f"Claude Code did not answer within {self.timeout_seconds} s "
                 f"(model {self.model}). {stderr_text[:300]}"
             )
-        if assembled.cancelled:
-            return assembled.partial_message()
         if assembled.result is None:
             raise RuntimeError(
                 f"Claude Code exited {return_code} with no result frame "
@@ -686,7 +672,7 @@ class ClaudeCodeTransport:
             )
         return self._message_from_result(assembled, tools)
 
-    def _consume(self, process, tools, on_delta, stop_requested) -> _Assembled:
+    def _consume(self, process, tools) -> _Assembled:
         assembled = _Assembled()
         for raw_line in process.stdout:
             line = raw_line.strip()
@@ -697,16 +683,12 @@ class ClaudeCodeTransport:
             if kind == _FRAME_RATE_LIMIT:
                 self.last_rate_limit = parse_rate_limit(frame)
             elif kind == _FRAME_STREAM_EVENT:
-                _absorb_stream_event(frame.get("event") or {}, assembled, on_delta)
+                _absorb_stream_event(frame.get("event") or {}, assembled)
             elif kind == _FRAME_ASSISTANT:
                 _absorb_assistant(frame.get("message") or {}, assembled)
             elif kind == _FRAME_RESULT:
                 assembled.result = frame
                 self.last_turn_cost = parse_turn_cost(frame, assembled.api_calls)
-            if stop_requested is not None and stop_requested():
-                assembled.cancelled = True
-                process.kill()
-                break
         return assembled
 
     def _message_from_result(self, assembled: _Assembled, tools) -> dict:
@@ -795,26 +777,12 @@ class ClaudeCodeTransport:
 class _Assembled:
     """What one invocation's frames add up to."""
 
-    content: list[str] = field(default_factory=list)
     thinking: list[str] = field(default_factory=list)
     result: dict | None = None
-    cancelled: bool = False
     # One per Anthropic call. A harness turn is NOT one call: the CLI
     # runs the model again to conform the answer to `--json-schema`,
     # measured at 2-3 calls per turn on 2026-09-06.
     api_calls: int = 0
-
-    def partial_message(self) -> dict:
-        """What arrived before the user's Stop landed."""
-        message = {
-            "role": "assistant",
-            "content": "".join(self.content).strip(),
-            "tool_calls": [],
-        }
-        thinking = "".join(self.thinking).strip()
-        if thinking:
-            message["thinking"] = thinking
-        return message
 
 
 def _write_frame(process, frame: dict) -> None:
@@ -823,33 +791,24 @@ def _write_frame(process, frame: dict) -> None:
         process.stdin.write(json.dumps(frame) + "\n")
         process.stdin.close()
     except (BrokenPipeError, ValueError):
-        # The child died or was killed (cancel, watchdog); the reader
-        # side reports it.
+        # The child died or was killed (watchdog); the reader side
+        # reports it.
         pass
 
 
-def _absorb_stream_event(event: dict, assembled: _Assembled, on_delta) -> None:
+def _absorb_stream_event(event: dict, assembled: _Assembled) -> None:
     if event.get("type") == _EVENT_MESSAGE_START:
         assembled.api_calls += 1
         return
     if event.get("type") != _EVENT_CONTENT_BLOCK_DELTA:
         return
     delta = event.get("delta") or {}
-    delta_type = delta.get("type")
-    if delta_type == _DELTA_TEXT:
-        text = delta.get("text") or ""
-        assembled.content.append(text)
-        if on_delta is not None and text:
-            on_delta(DELTA_KIND_CONTENT, text)
-    elif delta_type == _DELTA_THINKING:
-        text = delta.get(_BLOCK_THINKING) or ""
-        assembled.thinking.append(text)
-        if on_delta is not None and text:
-            on_delta(DELTA_KIND_THINKING, text)
-    # input_json_delta is the structured envelope arriving token by
-    # token on a StructuredOutput tool_use block. It is deliberately
-    # dropped: half a JSON object is not something to show a user, and
-    # the parsed envelope arrives whole in the result frame.
+    if delta.get("type") == _DELTA_THINKING:
+        assembled.thinking.append(delta.get(_BLOCK_THINKING) or "")
+    # Text arrives whole in the result frame; input_json_delta is the
+    # structured envelope arriving token by token on a StructuredOutput
+    # tool_use block, and the parsed envelope arrives whole in the
+    # result frame too.
 
 
 def _absorb_assistant(message: dict, assembled: _Assembled) -> None:

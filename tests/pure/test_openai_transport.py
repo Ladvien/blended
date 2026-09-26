@@ -305,10 +305,9 @@ def test_gpt_oss_20b_is_a_bmb_model():
 
 
 def test_the_bmb_key_file_feeds_bmb_models_only(monkeypatch):
-    """A bmb model with no api_key reads the key file — the mechanism
-    that makes Finder-launched Blender work without pasting. Non-bmb
-    models must NEVER read it (the Ollama env key is the wrong
-    credential for llama-swap and vice versa)."""
+    """A bmb model with no api_key reads the key file. Non-bmb models
+    must NEVER read it (the Ollama env key is the wrong credential for
+    llama-swap and vice versa)."""
     from blended.agent.loop import _read_bmb_api_key
 
     captured: list[dict] = []

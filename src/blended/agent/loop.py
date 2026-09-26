@@ -17,7 +17,6 @@ from __future__ import annotations
 import base64
 import io
 import json
-import threading
 import time
 import urllib.error
 import urllib.request
@@ -155,9 +154,6 @@ CLAUDE_CODE_CONTEXT_TOKENS = 200_000
 # of REQUEST_TIMEOUT_SECONDS, so a genuinely dead endpoint is reported
 # rather than waited on.
 PREFLIGHT_TIMEOUT_SECONDS = 90
-# What a stopped turn says, to the user and to the model's history.
-CANCELLED_ANSWER = "Stopped at your request. The scene is as the last tool call left it."
-CANCELLED_TOOL_RESULT = "Not executed: the user stopped this turn."
 
 API_KEY_ENVIRONMENT_VARIABLE = "OLLAMA_API_KEY"
 HOST_ENVIRONMENT_VARIABLE = "OLLAMA_HOST"
@@ -170,9 +166,9 @@ BMB_API_KEY_FILE = Path.home() / ".blended" / "bmb_api_key"
 def _read_bmb_api_key() -> str:
     """The bmb llama-swap key, or "" when the file is absent.
 
-    Absent is fine — the addon preference or a manually created file
-    can supply it. An unreadable or malformed file FAILS LOUDLY (raises)
-    rather than silently sending an empty key and 401ing.
+    Absent is fine for a config that carries its own key. An unreadable
+    or malformed file FAILS LOUDLY (raises) rather than silently sending
+    an empty key and 401ing.
     """
     if not BMB_API_KEY_FILE.exists():
         return ""
@@ -234,11 +230,6 @@ OPENROUTER_PINNED_PROVIDER = "gmicloud"
 # Without it a metered run's record says 0 dollars, which is a lie the
 # spend cap cannot be built on.
 OPENROUTER_USAGE_EXTENSION = {"include": True}
-# On the OpenAI wire a streamed reply carries its usage only if asked:
-# the final chunk then has `usage` and no `choices`. Without it the
-# streamed lane's turn record said 0 tokens and NFR-27's cap could not
-# see a streamed metered call at all (OT-35).
-OPENAI_STREAM_USAGE_OPTIONS = {"include_usage": True}
 # A gateway saying "not now": rate limits and server-side faults, which
 # the SAME request can pass moments later. Everything else — 400 (a
 # malformed request), 401/403 (a credential), 404 (a wrong id) — is a
@@ -1066,138 +1057,6 @@ def _tls_context():
     return ssl.create_default_context()
 
 
-SSE_DATA_PREFIX = "data:"
-SSE_DONE_MARKER = "[DONE]"
-# The assembled message carries the stream's usage-bearing final frame
-# under this key until `_chat_streamed` folds it into `spent` and pops
-# it; it never reaches the conversation.
-STREAM_USAGE_KEY = "_stream_usage_body"
-
-
-def _decoded_lines(opened):
-    """Non-empty body lines of an open HTTP response, decoded, closing
-    the socket when the consumer stops."""
-    with opened as response:
-        for raw_line in response:
-            line = raw_line.decode("utf-8", "replace").strip()
-            if line:
-                yield line
-
-
-# Streaming exists for the person watching, not the model: seeing the
-# reply and the thinking arrive is how the UI "makes clear why the
-# system did what it did" (Amershi et al., G11, DOI
-# 10.1145/3290605.3300233) during turns that take minutes.
-def _assemble_openai_stream(lines, on_delta, stop_requested) -> dict:
-    """Fold OpenAI SSE deltas into the assistant dict the loop consumes.
-
-    Tool calls stream as fragments keyed by `index`: the first fragment
-    carries id and name, later ones append to `arguments`. They are
-    accumulated by index and only handed over once the stream ends —
-    a half-received argument string is not a call. On a stop, calls
-    still being received are dropped for the same reason.
-    """
-    content: list[str] = []
-    thinking: list[str] = []
-    finish_reason = ""
-    calls_by_index: dict[int, dict] = {}
-    stopped = False
-    usage_body: dict = {}
-    for line in lines:
-        if stop_requested is not None and stop_requested():
-            stopped = True
-            break
-        if not line.startswith(SSE_DATA_PREFIX):
-            continue
-        data = line[len(SSE_DATA_PREFIX) :].strip()
-        if data == SSE_DONE_MARKER:
-            break
-        frame = json.loads(data)
-        if frame.get("usage"):
-            # The `stream_options.include_usage` chunk: usage, no choices.
-            usage_body = frame
-        choice = (frame.get("choices") or [{}])[0]
-        if choice.get("finish_reason"):
-            finish_reason = choice["finish_reason"]
-        delta = choice.get("delta") or {}
-        text = delta.get("content")
-        if text:
-            content.append(text)
-            on_delta("content", text)
-        reasoning = delta.get("reasoning_content") or delta.get("reasoning")
-        if reasoning:
-            thinking.append(reasoning)
-            on_delta("thinking", reasoning)
-        for fragment in delta.get("tool_calls") or []:
-            index = fragment.get("index", 0)
-            call = calls_by_index.setdefault(
-                index, {"id": "", "function": {"name": "", "arguments": ""}}
-            )
-            if fragment.get("id"):
-                call["id"] = fragment["id"]
-            function = fragment.get("function") or {}
-            if function.get("name"):
-                call["function"]["name"] += function["name"]
-            if function.get("arguments"):
-                call["function"]["arguments"] += function["arguments"]
-    message: dict = {
-        "finish_reason": finish_reason,
-        "role": "assistant",
-        "content": "".join(content),
-        "tool_calls": [] if stopped else [calls_by_index[i] for i in sorted(calls_by_index)],
-        STREAM_USAGE_KEY: usage_body,
-    }
-    if thinking:
-        message["thinking"] = "".join(thinking)
-    return message
-
-
-def _assemble_ollama_stream(lines, on_delta, stop_requested) -> dict:
-    """Fold Ollama NDJSON frames into the assistant dict.
-
-    Ollama streams content and thinking as fragments and delivers each
-    tool call whole inside one frame, so calls are appended as they
-    arrive and dropped on a stop only if the stream was cut before
-    `done`.
-    """
-    content: list[str] = []
-    thinking: list[str] = []
-    tool_calls: list[dict] = []
-    stopped = False
-    done_reason = ""
-    usage_body: dict = {}
-    for line in lines:
-        if stop_requested is not None and stop_requested():
-            stopped = True
-            break
-        frame = json.loads(line)
-        message = frame.get("message") or {}
-        text = message.get("content")
-        if text:
-            content.append(text)
-            on_delta("content", text)
-        reasoning = message.get("thinking")
-        if reasoning:
-            thinking.append(reasoning)
-            on_delta("thinking", reasoning)
-        tool_calls.extend(message.get("tool_calls") or [])
-        if frame.get("done"):
-            done_reason = frame.get("done_reason") or ""
-            # Ollama's `done` frame carries prompt_eval_count / eval_count.
-            usage_body = frame
-            break
-    assembled: dict = {
-        "done_reason": done_reason,
-        "role": "assistant",
-        "content": "".join(content),
-        "tool_calls": [] if stopped else tool_calls,
-        STREAM_USAGE_KEY: usage_body,
-    }
-    if thinking:
-        assembled["thinking"] = "".join(thinking)
-    return assembled
-
-
 class OllamaClient:
     """Minimal chat client with tool-calling and image attachment.
 
@@ -1233,11 +1092,9 @@ class OllamaClient:
     def _open(self, path: str, payload: dict | None, timeout_seconds: int):
         """Open one HTTP response, retried while the gateway says "not now".
 
-        THE one place a socket to a model is opened (OT-35): the one-shot
-        `_request` and the streaming `_stream_lines` both come through
-        here, so the retry and its accounting cannot exist on one path
-        and not the other — which is what happened between OT-32 and
-        OT-35, when the addon's streamed lane had no retry at all.
+        THE one place a socket to a model is opened (OT-35): every call
+        comes through here, so the retry and its accounting cannot exist
+        on one path and not another.
 
         A retry is the same request to the same endpoint and the same
         provider, `len(RETRY_BACKOFF_SECONDS)` times at most, and then
@@ -1290,21 +1147,6 @@ class OllamaClient:
         """One HTTP call, whole body, as JSON."""
         with self._open(path, payload, timeout_seconds) as response:
             return json.loads(response.read().decode("utf-8"))
-
-    def _stream_lines(self, path: str, payload: dict, timeout_seconds: int):
-        """The response body line by line as it arrives.
-
-        Both wire protocols stream newline-delimited frames: Ollama
-        emits one JSON object per line, OpenAI-protocol servers emit
-        SSE `data: {...}` lines. The socket is opened EAGERLY, here, so
-        a gateway's refusal is retried by `_open` and surfaces at this
-        call before any frame is delivered; the returned generator holds
-        the socket open, so a consumer that stops iterating (a cancel)
-        closes it. A connection that dies mid-body is NOT retried: a
-        delta may already have reached the UI, and replaying would show
-        the reply twice.
-        """
-        return _decoded_lines(self._open(path, payload, timeout_seconds))
 
     def discover_context(self, timeout_seconds: int = PREFLIGHT_TIMEOUT_SECONDS) -> int:
         """Read the served model's window from the server that serves it and
@@ -1632,9 +1474,8 @@ class OllamaClient:
                 hint = (
                     " bmb's llama-swap requires its API key (it 401s "
                     "without one, verified live 2026-08-23). The key lives "
-                    "on bmb at ~/llm/.api-key — paste it into the addon's "
-                    "API key preference. Finder-launched Blender does not "
-                    "inherit your shell environment."
+                    f"on bmb at ~/llm/.api-key — copy it into "
+                    f"{BMB_API_KEY_FILE}."
                 )
             elif BIG_ENDPOINT in self.config.endpoint:
                 hint = (
@@ -1653,11 +1494,8 @@ class OllamaClient:
             else:
                 hint = (
                     f" No {API_KEY_ENVIRONMENT_VARIABLE} visible to this "
-                    f"process — on macOS, Blender launched from Finder does "
-                    f"not inherit your shell environment. Either run "
-                    f"`ollama signin` so the local daemon handles auth, "
-                    f"launch Blender from a terminal, or paste the key into "
-                    f"the addon preferences."
+                    f"process. Either run `ollama signin` so the local "
+                    f"daemon handles auth, or export the key."
                 )
         return ConnectionStatus(False, self.config.endpoint, "; ".join(failures) + hint)
 
@@ -1665,37 +1503,18 @@ class OllamaClient:
         self,
         messages: list[dict],
         tools: list[dict] | None = None,
-        on_delta: Callable[[str, str], None] | None = None,
-        stop_requested: Callable[[], bool] | None = None,
     ) -> dict:
-        """One chat completion. Returns the assistant message dict.
-
-        With `on_delta(kind, text)` the reply is STREAMED: each content
-        or thinking fragment is delivered as it arrives (kind in
-        {"content", "thinking"}) and the same assistant dict is
-        assembled from the fragments. `stop_requested()` is polled per
-        frame; when it turns true the socket is closed and whatever
-        arrived so far is returned — which is how a user's Stop lands
-        mid-generation instead of after it.
-        """
+        """One chat completion. Returns the assistant message dict."""
         if self.config.uses_claude_code:
             # A subprocess, not a socket: the transport owns the frame
-            # protocol, the schema-constrained tool calls, and the same
-            # on_delta / stop_requested contract.
+            # protocol and the schema-constrained tool calls.
             transport = self._claude_code_transport()
-            message = transport.chat(messages, tools, on_delta, stop_requested)
+            message = transport.chat(messages, tools)
             if transport.last_turn_cost is not None:
                 self.spent = self.spent.plus(transport.last_turn_cost)
             return message
         payload = self._chat_payload(messages, tools)
-        streaming = on_delta is not None
-        if streaming:
-            payload["stream"] = True
-            if self.config.uses_openai_protocol:
-                payload["stream_options"] = dict(OPENAI_STREAM_USAGE_OPTIONS)
         try:
-            if streaming:
-                return self._chat_streamed(payload, on_delta, stop_requested)
             body = self._request(
                 self._chat_path(), payload, self.config.request_timeout_seconds
             )
@@ -1731,32 +1550,6 @@ class OllamaClient:
             self.config.endpoint,
             reasoning_tokens=_turn_cost_from_body(body).reasoning_tokens,
             finish_reason=finish_reason,
-        )
-        return message
-
-    def _chat_streamed(self, payload: dict, on_delta, stop_requested) -> dict:
-        lines = self._stream_lines(
-            self._chat_path(), payload, self.config.request_timeout_seconds
-        )
-        if self.config.uses_openai_protocol:
-            message = _assemble_openai_stream(lines, on_delta, stop_requested)
-        else:
-            message = _assemble_ollama_stream(lines, on_delta, stop_requested)
-        # The stream's final frame carries the usage; the same fold and
-        # the same NFR-27 cap as the one-shot branch (OT-35). A stream
-        # cut before its final frame still counts as one call with
-        # unknown tokens, never as a free one.
-        usage_body = message.pop(STREAM_USAGE_KEY, {})
-        turn_cost = _turn_cost_from_body(usage_body)
-        self.spent = self.spent.plus(turn_cost)
-        self._check_run_cost()
-        # The assemblers carry the stream's own end signal (OT-22).
-        check_reply_fits(message, self.config.context_tokens, self.config.endpoint)
-        check_reply_is_a_turn(
-            message,
-            self.config.endpoint,
-            reasoning_tokens=turn_cost.reasoning_tokens,
-            finish_reason=message.get("finish_reason") or message.get("done_reason") or "",
         )
         return message
 
@@ -2058,25 +1851,12 @@ class AgentSession:
     # INSTANCE, so `self.dispatch(...)` calls it unbound — no phantom
     # `self` argument. Frontends override it; nothing patches it.
     dispatch: ToolDispatch = dispatch_here
-    # Set from ANY thread (the UI) to stop the turn at the next seam:
-    # before the next model call, per streamed frame, and before each
-    # tool call. Efficient dismissal and correction are guidelines G8/G9
-    # of Amershi et al., Guidelines for Human-AI Interaction
-    # (DOI 10.1145/3290605.3300233); streaming (below) is G11, make
-    # clear why the system did what it did — while it is doing it.
-    cancel_requested: threading.Event = field(default_factory=threading.Event)
-    # Stream model replies as `content_delta` / `thinking_delta` events.
-    # Off by default so scripted clients and batch drivers keep the
-    # one-shot `chat(messages, tools)` contract; the live UI turns it on.
-    stream_replies: bool = False
     # Require a declared plan before any scene-changing tool this turn.
     # Off by default so scripted clients and the 3DCodeBench batch
-    # driver keep their current contract; the live UI and the chat E2E
-    # gate turn it on. A plan belongs to one turn and is reset in send().
+    # driver keep their current contract; the chat E2E gate turns it on
+    # (the MCP server enforces the same gate itself). A plan belongs to
+    # one turn and is reset in send().
     require_plan: bool = False
-
-    def cancel(self) -> None:
-        self.cancel_requested.set()
 
     def __post_init__(self) -> None:
         if not self.messages:
@@ -2099,11 +1879,9 @@ class AgentSession:
         stay in the history for every later refinement turn and are
         never re-sent.
 
-        `on_event(kind, text)` is called for streaming UI updates with
+        `on_event(kind, text)` is called for UI and log updates with
         kind in {"thinking", "tool", "result", "answer", "vision",
-        "plan", "step", "render", "reference"} plus, when
-        `stream_replies` is on, {"content_delta", "thinking_delta"}
-        fragments that precede the whole "thinking"/"answer" event.
+        "plan", "step", "render", "reference"}.
         Returns the assistant's final text.
         """
 
@@ -2136,7 +1914,6 @@ class AgentSession:
                 emit("vision", description)
         self.messages.append(user_message)
 
-        self.cancel_requested.clear()
         executed_tool_call_count = 0
         # Per-turn plan state. A plan belongs to one turn: declared at
         # the start, advanced through its steps, discarded at the end.
@@ -2167,18 +1944,8 @@ class AgentSession:
             if not report.checked and not preflight_reported:
                 preflight_reported = True
                 emit("preflight", f"context not checked: {report.reason}")
-            if self.stream_replies:
-                assistant_message = self.client.chat(
-                    self.messages,
-                    offered_tools,
-                    on_delta=lambda kind, text: emit(f"{kind}_delta", text),
-                    stop_requested=self.cancel_requested.is_set,
-                )
-            else:
-                assistant_message = self.client.chat(self.messages, offered_tools)
+            assistant_message = self.client.chat(self.messages, offered_tools)
             self.messages.append(assistant_message)
-            if self.cancel_requested.is_set():
-                return self._cancel_turn(assistant_message, emit)
 
             thinking_text = assistant_message.get("thinking")
             if thinking_text:
@@ -2220,8 +1987,6 @@ class AgentSession:
                     if isinstance(raw_arguments, str)
                     else raw_arguments
                 )
-                if self.cancel_requested.is_set():
-                    return self._cancel_turn(assistant_message, emit)
                 if tool_name in self.disabled_tools:
                     refusal = DISABLED_TOOL_REFUSAL.format(tool_name=tool_name)
                     emit("tool", f"{tool_name}({json.dumps(arguments)})")
@@ -2434,14 +2199,6 @@ class AgentSession:
                     "tool_call_id": tool_call.get("id", ""),
                 }
             )
-
-    def _cancel_turn(self, assistant_message: dict, emit) -> str:
-        """Close the turn consistently after a cancel: every pending call
-        gets a result, and the model is told, in the history it will
-        read next turn, that the user stopped it."""
-        self._answer_pending_tool_calls(assistant_message, CANCELLED_TOOL_RESULT)
-        emit("answer", CANCELLED_ANSWER)
-        return CANCELLED_ANSWER
 
     def _stop_at_gate_cap(
         self, assistant_message: dict, object_name: str, count: int, outcome, emit
