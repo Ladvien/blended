@@ -10,6 +10,7 @@ All tools send code to the add-on to run.
 """
 
 __all__ = (
+    "argument_parser",
     "main",
 )
 
@@ -31,13 +32,24 @@ _USE_HTTP_SUPPORT = True
 _TRANSPORTS = ("stdio", *(("http",) if _USE_HTTP_SUPPORT else ()))
 
 
-def main() -> int:
+def argument_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="MCP server for Blender.")
     parser.add_argument(
         "--transport", "-t",
         choices=_TRANSPORTS,
         default="stdio",
         help="Transport protocol (default: stdio).",
+    )
+    parser.add_argument(
+        "--exit-on-source-change",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help=(
+            "Exit when src/blended or blmcp changes while idle, so a stdio client that "
+            "reconnects re-lists fresh tools. Off by default: Claude Code and Claude "
+            "Desktop do not restart a server that exits. omp opts in (.omp/mcp.json). "
+            "Needs --transport stdio."
+        ),
     )
     if _USE_HTTP_SUPPORT:
         parser.add_argument(
@@ -51,7 +63,15 @@ def main() -> int:
             default=8000,
             help="Port to bind to for HTTP transports (default: 8000).",
         )
+    return parser
+
+
+def main() -> int:
+    parser = argument_parser()
     args = parser.parse_args()
+    # Only a client-spawned stdio server gets restarted after it exits.
+    if args.exit_on_source_change and args.transport != "stdio":
+        parser.error("--exit-on-source-change needs --transport stdio: nothing restarts an HTTP server that exits")
 
     # Load prompts.
     data_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
@@ -59,6 +79,10 @@ def main() -> int:
         prompts = yaml.safe_load(fh)
 
     mcp = BlendedFastMCP("blender-mcp", instructions=blended_instructions(str(prompts["initial_instructions"])))
+    # Exit once src/blended or blmcp changes while idle; a reconnecting client
+    # restarts the server, which then lists the current tools and instructions.
+    if args.exit_on_source_change:
+        mcp.exit_on_source_change()
 
     # Auto-discover and register all tools (they are never un-registered).
     import blmcp.tools as tools_pkg

@@ -17,24 +17,45 @@ mines. Renders come back as MCP image content.
 The add-on execs whatever reaches its localhost socket: the exec-over-
 localhost threat model of MCP is discussed in DOI 10.48550/arXiv.2503.23278.
 Agentic Blender code generation: LL3M, DOI 10.48550/arXiv.2508.08228.
+
+Freshness: every call carries ``source_fingerprint()`` so Blender purges
+and re-imports ``blended`` after a source edit, and
+``BlendedFastMCP.exit_on_source_change`` ends an idle server whose own
+code went stale; the MCP client restarts it and re-lists the tools.
 """
 
 __all__ = (
     "BLENDED_TOOLS",
     "BLENDED_TOOL_NAMES",
+    "BLMCP_ROOT",
+    "SOURCE_CHANGED_EXIT_CODE",
+    "SOURCE_POLL_INTERVAL_S",
+    "SOURCE_RESPONSE_DRAIN_S",
+    "SOURCE_ROOTS",
+    "SOURCE_SETTLE_S",
+    "SOURCE_SKIPPED_DIRECTORY_NAMES",
+    "SOURCE_SKIPPED_PATHS",
+    "SOURCE_SUFFIXES",
     "BlendedFastMCP",
     "BlendedSession",
     "blended_instructions",
+    "source_fingerprint",
 )
 
 import base64
+import hashlib
 import json
+import math
+import os
+import sys
 import sysconfig
+import threading
 import time
+import traceback
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, NoReturn
 
 import anyio
 import blended
@@ -63,6 +84,32 @@ from blmcp.tools_helpers.connection import send_code
 REPOSITORY_SRC = Path(blended.__file__).resolve().parent.parent
 REPOSITORY_ROOT = REPOSITORY_SRC.parent
 VENV_SITE_PACKAGES = sysconfig.get_paths()["purelib"]
+BLMCP_ROOT = Path(__file__).resolve().parent.parent
+
+# What a "source change" is: files the server or Blender reads as code or
+# data. The bundled API/manual docs are 27 MB of static reference, skipped
+# so a fingerprint stays cheap enough to compute on every call.
+SOURCE_SUFFIXES = frozenset({".py", ".j2", ".yml", ".yaml", ".toml", ".json"})
+SOURCE_SKIPPED_DIRECTORY_NAMES = frozenset({"__pycache__"})
+SOURCE_SKIPPED_PATHS = (BLMCP_ROOT / "data" / "api", BLMCP_ROOT / "data" / "manual")
+SOURCE_ROOTS = (REPOSITORY_SRC / "blended", BLMCP_ROOT)
+_FINGERPRINT_HEX_CHARACTERS = 16
+
+# The source watcher: poll period, how long a change must hold still before
+# the server exits (a git checkout rewrites many files), how long after the
+# last tool call returned, and the exit code. call_tool returns before the
+# SDK serializes and writes the response: decrement-to-flush measured 0.6 ms
+# at 256 KB and 19-21 ms at 4 MB over the SDK's stdio transport to a fast
+# reader (2026-10-02), and an exit inside that gap dropped the result of a
+# call that had already run (5 of 5 at a 1 ms lead). The drain wait is two
+# orders of magnitude above the slowest measured write.
+SOURCE_POLL_INTERVAL_S = 1.0
+SOURCE_SETTLE_S = 2.0
+SOURCE_RESPONSE_DRAIN_S = 2.0
+SOURCE_CHANGED_EXIT_CODE = 0
+_WATCHER_FAILED_EXIT_CODE = 1
+_WATCHER_THREAD_NAME = "blended-source-watcher"
+
 
 _TOOL_CALL = toolcode_wrap_with_calling_convention(toolcode_load_from_filepath(__file__))
 
@@ -87,6 +134,48 @@ _RAISED_IN_BLENDER_PREFIX = "Tool raised in Blender:\n"
 def blended_instructions(upstream_instructions: str) -> str:
     """blended's working agreement, then upstream's instructions."""
     return build_system_prompt() + "\n\n" + upstream_instructions
+
+
+def source_fingerprint(
+    roots: tuple[Path, ...] = SOURCE_ROOTS,
+    skipped_paths: tuple[Path, ...] = SOURCE_SKIPPED_PATHS,
+) -> str:
+    """
+    A short hash of every source file's path, mtime and size under ``roots``.
+
+    Equal fingerprints mean no watched file was added, removed or rewritten.
+    A missing root raises ``FileNotFoundError``: a fingerprint of nothing
+    would never change and would silently stop the freshness guarantee. A
+    listed name with nothing to stat is not a source file at that instant
+    and is left out: one removed between the listing and the stat (a git
+    checkout, the ``.!PID!name.py`` temp file of macOS ``sed -i``), or a
+    dangling symlink such as Emacs's ``.#name.py`` lock. The change it is
+    part of still shows, and the watcher's settle absorbs the churn.
+    """
+    skipped = frozenset(path.resolve() for path in skipped_paths)
+    entries: list[tuple[str, int, int]] = []
+    for root in roots:
+        if not root.is_dir():
+            raise FileNotFoundError("Source root is not a directory: {:s}".format(str(root)))
+        for directory, directory_names, file_names in os.walk(root):
+            directory_path = Path(directory)
+            directory_names[:] = [
+                name for name in directory_names
+                if name not in SOURCE_SKIPPED_DIRECTORY_NAMES
+                and (directory_path / name).resolve() not in skipped
+            ]
+            for name in file_names:
+                file_path = directory_path / name
+                if file_path.suffix not in SOURCE_SUFFIXES:
+                    continue
+                try:
+                    stat = file_path.stat()
+                except FileNotFoundError:
+                    continue
+                relative = (Path(root.name) / file_path.relative_to(root)).as_posix()
+                entries.append((relative, stat.st_mtime_ns, stat.st_size))
+    entries.sort()
+    return hashlib.sha256(repr(entries).encode("utf-8")).hexdigest()[:_FINGERPRINT_HEX_CHARACTERS]
 
 
 def _docstring_as_python_313(docstring: str) -> str:
@@ -164,6 +253,7 @@ class BlendedSession:
                 str(output_directory),
                 str(REPOSITORY_SRC),
                 VENV_SITE_PACKAGES,
+                source_fingerprint(),
             ),
         )
         started = time.perf_counter()
@@ -214,6 +304,11 @@ class BlendedFastMCP(FastMCP):  # type: ignore[misc]
             default_log_directory(REPOSITORY_ROOT),
             REPOSITORY_ROOT / "outputs" / "mcp",
         )
+        # Calls inside call_tool, and when the last one returned (-inf until
+        # one has); both read and written under _in_flight_lock.
+        self._in_flight = 0
+        self._last_call_returned_s = -math.inf
+        self._in_flight_lock = threading.Lock()
 
     def add_tool(self, fn: Any, *args: Any, description: str | None = None, **kwargs: Any) -> None:
         if description is None and fn.__doc__:
@@ -228,6 +323,86 @@ class BlendedFastMCP(FastMCP):  # type: ignore[misc]
         return [*upstream, *BLENDED_TOOLS]
 
     async def call_tool(self, name: str, arguments: dict[str, Any]) -> Any:
-        if name in BLENDED_TOOL_NAMES:
-            return await self._blended.call(name, arguments)
-        return await super().call_tool(name, arguments)
+        with self._in_flight_lock:
+            self._in_flight += 1
+        try:
+            if name in BLENDED_TOOL_NAMES:
+                return await self._blended.call(name, arguments)
+            return await super().call_tool(name, arguments)
+        finally:
+            with self._in_flight_lock:
+                self._in_flight -= 1
+                self._last_call_returned_s = time.monotonic()
+
+    def exit_on_source_change(self) -> None:
+        """
+        Exit the process once the watched sources changed and then held
+        still for ``SOURCE_SETTLE_S``, so the MCP client restarts a server
+        that lists the current tools and instructions. A change that lands
+        while the server waits restarts the settle clock, so the exit does
+        not land in the middle of a rewrite.
+
+        The exit happens under the in-flight lock, with no tool call in
+        flight and the last one returned at least
+        ``SOURCE_RESPONSE_DRAIN_S`` ago: ``call_tool`` returns before the
+        SDK writes the response, so "nothing in flight" alone could drop the
+        result of a call Blender already ran. A request read in the instant
+        of the exit, before it reaches ``call_tool``, is lost undispatched:
+        Blender never ran it, and the client sees the connection close.
+        """
+        baseline = source_fingerprint()
+        threading.Thread(
+            target=self._watch_sources_or_exit,
+            args=(baseline,),
+            name=_WATCHER_THREAD_NAME,
+            daemon=True,
+        ).start()
+
+    def _watch_sources_or_exit(self, baseline: str) -> None:
+        try:
+            self._watch_sources(baseline)
+        except BaseException:  # pylint: disable=broad-exception-caught
+            # The watcher can no longer see edits, so freshness is off: say
+            # why, then end the process once idle, even when stderr is what
+            # broke.
+            try:
+                traceback.print_exc(file=sys.stderr)
+                sys.stderr.flush()
+            finally:
+                self._exit_once_idle(_WATCHER_FAILED_EXIT_CODE)
+
+    def _watch_sources(self, baseline: str) -> None:
+        """Poll the fingerprint until a change from ``baseline`` has settled and the server is idle."""
+        latest = baseline
+        latest_since_s = time.monotonic()
+        announced = baseline
+        while True:
+            time.sleep(SOURCE_POLL_INTERVAL_S)
+            current = source_fingerprint()
+            if current != latest:
+                latest = current
+                latest_since_s = time.monotonic()
+                continue
+            if current == baseline or time.monotonic() - latest_since_s < SOURCE_SETTLE_S:
+                continue
+            if current != announced:
+                announced = current
+                print(
+                    "blender-mcp: sources changed ({:s} -> {:s}); exiting once idle "
+                    "so the client restarts a fresh build".format(baseline, current),
+                    file=sys.stderr,
+                    flush=True,
+                )
+            self._exit_if_idle(SOURCE_CHANGED_EXIT_CODE)
+
+    def _exit_once_idle(self, exit_code: int) -> NoReturn:
+        while True:
+            self._exit_if_idle(exit_code)
+            time.sleep(SOURCE_POLL_INTERVAL_S)
+
+    def _exit_if_idle(self, exit_code: int) -> None:
+        """``os._exit`` under the in-flight lock, so no call starts meanwhile, once idle and drained."""
+        with self._in_flight_lock:
+            drained_s = time.monotonic() - self._last_call_returned_s
+            if self._in_flight == 0 and drained_s >= SOURCE_RESPONSE_DRAIN_S:
+                os._exit(exit_code)

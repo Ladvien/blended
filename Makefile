@@ -43,17 +43,25 @@ test-mcp-blender:
 	BLENDER_BIN=$(BLENDER) BLENDER_MCP=$(CURDIR)/.venv/bin/blender-mcp \
 		$(PY) blender_mcp/tests/test_blender_mcp_with_blender.py TestBackgroundServer
 
-# Build the MCP add-on (extension id `mcp`) from the subtree, install it
-# into the user's Blender, and allow online access (the add-on's socket
-# server requires it).
-MCP_ADDON_ZIP ?= outputs/mcp_addon/mcp.zip
+# Link the MCP add-on (extension id `mcp`) from the subtree into the
+# user's Blender, enable it, and allow online access (the add-on's socket
+# server requires it). A symlink, not an installed copy, so the repo is
+# what Blender loads; add-on edits still need a Blender restart (reloading
+# add-on classes in a live Blender has crashed it). userpref.blend, when
+# one exists, is snapshotted first: saving prefs is not reversible
+# otherwise (mistake home-does-not-isolate-blender-config-on-macos). A
+# Blender that never saved prefs has neither it nor extensions/user_default
+# yet. The gate is Blender's exit status: --python-exit-code turns the
+# refused enable or the failed check into a non-zero exit.
+USERPREF ?= $(HOME)/Library/Application Support/Blender/5.2/config/userpref.blend
+MCP_EXTENSION_DIR ?= $(HOME)/Library/Application Support/Blender/5.2/extensions/user_default/mcp
 install-mcp-addon:
-	mkdir -p outputs/mcp_addon
-	$(BLENDER) --factory-startup --command extension build \
-		--source-dir blender_mcp/addon/blender_mcp_addon --output-filepath $(MCP_ADDON_ZIP)
-	$(BLENDER) --command extension install-file -r user_default -e $(MCP_ADDON_ZIP)
-	$(BLENDER) --background --python-expr \
-		"import bpy; bpy.context.preferences.system.use_online_access = True; bpy.ops.wm.save_userpref()"
+	test ! -e "$(USERPREF)" || cp "$(USERPREF)" "$(USERPREF).bak-$$(date +%Y%m%d%H%M%S)"
+	mkdir -p "$$(dirname "$(MCP_EXTENSION_DIR)")"
+	rm -rf "$(MCP_EXTENSION_DIR)"
+	ln -s "$(CURDIR)/blender_mcp/addon/blender_mcp_addon" "$(MCP_EXTENSION_DIR)"
+	$(BLENDER) --background --python-exit-code 1 --python-expr \
+		"import bpy, addon_utils; bpy.ops.preferences.addon_enable(module='bl_ext.user_default.mcp'); bpy.context.preferences.system.use_online_access = True; bpy.ops.wm.save_userpref(); check = addon_utils.check('bl_ext.user_default.mcp'); print('MCP_CHECK', check); assert check == (True, True), 'mcp add-on not loaded and enabled: {}'.format(check)"
 
 # Build twice in two fresh Blenders under different PYTHONHASHSEED and
 # require identical semantic digests. Slow: two full Blender launches,
