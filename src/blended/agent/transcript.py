@@ -67,9 +67,21 @@ class ChatTranscript:
         if not self.session_name:
             stamp = datetime.now().strftime("%Y-%m-%d-%H%M%S")
             self.session_name = f"chat-{stamp}"
-        self._event_index = 0
+        self._event_index = self._last_recorded_index()
         self._write_markdown_header()
         self.record("session", f"started; routing: {self.routing or 'unknown'}")
+
+    def _last_recorded_index(self) -> int:
+        """Where a reopened session's numbering left off (0 for a new one):
+        an index repeated after a reopen would make two events one key."""
+        if not self.jsonl_path.exists():
+            return 0
+        last_index = 0
+        with self.jsonl_path.open(encoding="utf-8") as jsonl_file:
+            for line in jsonl_file:
+                if line.strip():
+                    last_index = json.loads(line)["index"]
+        return last_index
 
     @property
     def jsonl_path(self) -> Path:

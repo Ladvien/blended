@@ -59,6 +59,16 @@ def test_append_survives_reopening_the_same_session(tmp_path):
     assert "one" in texts and "two" in texts
 
 
+def test_reopening_continues_the_event_numbering(tmp_path):
+    first = ChatTranscript(tmp_path, session_name="s6")
+    first.record("user", "one")
+    second = ChatTranscript(tmp_path, session_name="s6")
+    second.record("user", "two")
+
+    indices = [event["index"] for event in second.read_events()]
+    assert indices == list(range(1, len(indices) + 1))
+
+
 def test_default_log_directory_prefers_the_repository(tmp_path):
     assert default_log_directory(tmp_path) == tmp_path / "logs"
     fallback = default_log_directory(None)

@@ -23,6 +23,7 @@ import subprocess
 import sys
 import tempfile
 import textwrap
+import time
 import types
 import unittest
 from pathlib import Path
@@ -261,7 +262,8 @@ class TestSourceWatcher(unittest.TestCase):
 
     def setUp(self) -> None:
         self._server = blended_bridge.BlendedFastMCP("watcher-probe", instructions="probe")
-        self._server._blended = types.SimpleNamespace(call=self._blended_call)
+        self._handoffs: list[int] = []
+        self._server._blended = types.SimpleNamespace(call=self._blended_call, write_handoff=self._write_handoff)
         self._tool_name = sorted(blended_bridge.BLENDED_TOOL_NAMES)[0]
         self._now_s = 0.0
         self._timeline: list[tuple[float, str]] = []
@@ -313,7 +315,13 @@ class TestSourceWatcher(unittest.TestCase):
                 self._running[index] = call
         self._now_s = end_s
 
+    def _write_handoff(self, parent_pid: int) -> None:
+        self._handoffs.append(parent_pid)
+
     def _exit(self, exit_code: int) -> None:
+        # Every exit first leaves the session to the client's next server.
+        if self._handoffs != [self._server._parent_pid]:
+            raise AssertionError("exit without exactly one handoff: {!r}".format(self._handoffs))
         raise _Exited(exit_code)
 
     def _watch(self) -> tuple[int, float] | None:
@@ -375,6 +383,101 @@ class TestSourceWatcher(unittest.TestCase):
         self.assertEqual(exited.exception.exit_code, blended_bridge._WATCHER_FAILED_EXIT_CODE)
         self.assertGreaterEqual(self._now_s - call_returned_s, blended_bridge.SOURCE_RESPONSE_DRAIN_S)
         self.assertIn("RuntimeError: probe", self._stderr.getvalue())
+
+
+class TestHandoff(unittest.TestCase):
+    """
+    A watcher restart keeps the declared plan and the session log: the
+    exiting server writes a handoff keyed by its client's pid, and the
+    client's next server consumes it.
+    """
+
+    # pylint: disable=protected-access
+
+    _CLIENT_PID = 4242
+    _OTHER_CLIENT_PID = 4343
+    _BOX = {"name": "Crate", "width_m": 0.5, "depth_m": 0.5, "height_m": 0.5}
+
+    def setUp(self) -> None:
+        self._directory = tempfile.TemporaryDirectory()
+        self.addCleanup(self._directory.cleanup)
+        root = Path(self._directory.name)
+        self._log_directory = root / "logs"
+        self._output_root = root / "outputs"
+        patcher = mock.patch.object(blended_bridge, "send_code", self._send_code)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    @staticmethod
+    def _send_code(_code: str, _strict_json: bool) -> dict[str, object]:
+        return _ok_response(ToolOutcome("ok"))
+
+    def _resume(self, parent_pid: int, now_s: float | None = None) -> blended_bridge.BlendedSession:
+        return blended_bridge.BlendedSession.resume(self._log_directory, self._output_root, parent_pid, now_s)
+
+    def _declared_session_handed_off(self) -> blended_bridge.BlendedSession:
+        session = self._resume(self._CLIENT_PID)
+        asyncio.run(session.call("declare_plan", {"steps": ["Add a box"]}))
+        session.write_handoff(self._CLIENT_PID)
+        return session
+
+    def test_next_server_keeps_the_plan_and_the_log(self) -> None:
+        before = self._declared_session_handed_off()
+        after = self._resume(self._CLIENT_PID)
+        self.assertTrue(after.plan_declared)
+        self.assertEqual(after.session_name, before.session_name)
+        self.assertFalse(blended_bridge.handoff_path(self._log_directory, self._CLIENT_PID).exists())
+
+        result = asyncio.run(after.call("add_box", self._BOX))
+        self.assertFalse(result.isError)
+        (jsonl_path,) = self._log_directory.glob("mcp-*.jsonl")
+        rows = [json.loads(line) for line in jsonl_path.read_text(encoding="utf-8").splitlines()]
+        indices = [row["index"] for row in rows]
+        self.assertEqual(indices, list(range(1, len(indices) + 1)))
+        self.assertIn(
+            "resumed after a source-change restart; plan declared: True",
+            [row["text"] for row in rows if row["kind"] == "session"],
+        )
+
+    def test_another_clients_server_starts_fresh_and_leaves_the_handoff(self) -> None:
+        self._declared_session_handed_off()
+        other = self._resume(self._OTHER_CLIENT_PID)
+        self.assertFalse(other.plan_declared)
+        self.assertIsNone(other.session_name)
+        self.assertTrue(blended_bridge.handoff_path(self._log_directory, self._CLIENT_PID).exists())
+
+    def test_expired_handoff_is_discarded_loudly(self) -> None:
+        self._declared_session_handed_off()
+        stderr = io.StringIO()
+        with mock.patch.object(blended_bridge, "sys", types.SimpleNamespace(stderr=stderr)):
+            later_s = time.time() + blended_bridge.HANDOFF_MAX_AGE_S * 2
+            after = self._resume(self._CLIENT_PID, now_s=later_s)
+        self.assertFalse(after.plan_declared)
+        self.assertIn("discarded a handoff", stderr.getvalue())
+        self.assertFalse(blended_bridge.handoff_path(self._log_directory, self._CLIENT_PID).exists())
+
+    def test_malformed_handoff_is_refused_loudly(self) -> None:
+        path = blended_bridge.handoff_path(self._log_directory, self._CLIENT_PID)
+        self._log_directory.mkdir(parents=True)
+        path.write_text(json.dumps({"plan_declared": "yes", "session_name": None, "written_at_s": time.time()}),
+                        encoding="utf-8")
+        stderr = io.StringIO()
+        with mock.patch.object(blended_bridge, "sys", types.SimpleNamespace(stderr=stderr)):
+            after = self._resume(self._CLIENT_PID)
+        self.assertFalse(after.plan_declared)
+        self.assertIn("refused a malformed handoff", stderr.getvalue())
+        self.assertFalse(path.exists())
+
+    def test_a_failed_handoff_write_still_exits(self) -> None:
+        server = blended_bridge.BlendedFastMCP("handoff-probe", instructions="probe")
+        server._blended = types.SimpleNamespace(write_handoff=mock.Mock(side_effect=OSError("disk full")))
+        stderr = io.StringIO()
+        exits: list[int] = []
+        with mock.patch.object(blended_bridge, "sys", types.SimpleNamespace(stderr=stderr)), \
+                mock.patch.object(blended_bridge, "os", types.SimpleNamespace(_exit=exits.append)):
+            server._exit_if_idle(blended_bridge.SOURCE_CHANGED_EXIT_CODE)
+        self.assertEqual(exits, [blended_bridge.SOURCE_CHANGED_EXIT_CODE])
+        self.assertIn("disk full", stderr.getvalue())
 
 
 class TestToolcodeReimport(unittest.TestCase):

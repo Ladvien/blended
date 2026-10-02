@@ -29,6 +29,7 @@ __all__ = (
     "BLENDED_TOOL_NAMES",
     "BLMCP_ROOT",
     "CLAUDE_CODE_INSTRUCTIONS_LIMIT_CHARACTERS",
+    "HANDOFF_MAX_AGE_S",
     "MCP_INSTRUCTIONS_HEAD",
     "MCP_INSTRUCTIONS_HEAD_CONDENSES_REVISION",
     "SOURCE_CHANGED_EXIT_CODE",
@@ -43,6 +44,7 @@ __all__ = (
     "BlendedFastMCP",
     "BlendedSession",
     "blended_instructions",
+    "handoff_path",
     "source_fingerprint",
 )
 
@@ -114,6 +116,18 @@ SOURCE_CHANGED_EXIT_CODE = 0
 _WATCHER_FAILED_EXIT_CODE = 1
 _WATCHER_THREAD_NAME = "blended-source-watcher"
 
+# A watcher exit hands the declared plan and the session log to the server
+# the client starts next, through a file keyed by the client's pid (the
+# parent of both servers). omp restarted the server within 10 s (README,
+# measured 2026-09-27). A handoff older than HANDOFF_MAX_AGE_S belongs to no
+# restart and is discarded, loudly, so a later client that reuses the pid
+# cannot inherit a plan it never declared.
+HANDOFF_MAX_AGE_S = 60.0
+_HANDOFF_NAME_FORMAT = "mcp-handoff-{:d}.json"
+_HANDOFF_PLAN_KEY = "plan_declared"
+_HANDOFF_SESSION_KEY = "session_name"
+_HANDOFF_WRITTEN_AT_KEY = "written_at_s"
+_RESUMED_EVENT_FORMAT = "resumed after a source-change restart; plan declared: {}"
 
 _TOOL_CALL = toolcode_wrap_with_calling_convention(toolcode_load_from_filepath(__file__))
 
@@ -255,28 +269,98 @@ def _image_content(path: Path) -> types.ImageContent:
     )
 
 
+def handoff_path(log_directory: Path, parent_pid: int) -> Path:
+    """Where a watcher exit leaves its session for the client's next server."""
+    return log_directory / _HANDOFF_NAME_FORMAT.format(parent_pid)
+
+
 @dataclass
 class BlendedSession:
     """
-    The plan gate and the transcript for one server process (one MCP
-    client session over stdio). A declared plan holds until the next
-    ``declare_plan``.
+    The plan gate and the transcript for one MCP client session over stdio.
+    A declared plan holds until the next ``declare_plan``, across a watcher
+    restart too (``write_handoff``, ``resume``).
     """
 
     log_directory: Path
     output_root: Path
     plan_declared: bool = False
+    # A resumed session's log and output directory; None until the first call
+    # of a new session names them.
+    session_name: str | None = None
     _transcript: ChatTranscript | None = field(default=None, init=False, repr=False)
     _output_directory: Path | None = field(default=None, init=False, repr=False)
+
+    @classmethod
+    def resume(
+        cls, log_directory: Path, output_root: Path, parent_pid: int, now_s: float | None = None,
+    ) -> "BlendedSession":
+        """
+        The session a watcher exit handed to this client's next server, or a
+        new one. The handoff is consumed either way; a malformed or expired
+        one is refused on stderr.
+        """
+        path = handoff_path(log_directory, parent_pid)
+        if not path.exists():
+            return cls(log_directory, output_root)
+        text = path.read_text(encoding="utf-8")
+        path.unlink()
+        try:
+            handoff = json.loads(text)
+            plan_declared = handoff[_HANDOFF_PLAN_KEY]
+            session_name = handoff[_HANDOFF_SESSION_KEY]
+            written_at_s = handoff[_HANDOFF_WRITTEN_AT_KEY]
+            if not (
+                isinstance(plan_declared, bool)
+                and (session_name is None or isinstance(session_name, str))
+                and isinstance(written_at_s, (int, float))
+            ):
+                raise ValueError("unexpected field types: {!r}".format(handoff))
+        except (ValueError, KeyError, TypeError) as error:
+            print(
+                "blender-mcp: refused a malformed handoff {:s} ({:s}); starting a new session".format(
+                    str(path), str(error)),
+                file=sys.stderr,
+                flush=True,
+            )
+            return cls(log_directory, output_root)
+        age_s = (time.time() if now_s is None else now_s) - written_at_s
+        if not 0.0 <= age_s <= HANDOFF_MAX_AGE_S:
+            print(
+                "blender-mcp: discarded a handoff {:.0f} s old (limit {:.0f} s); starting a new session".format(
+                    age_s, HANDOFF_MAX_AGE_S),
+                file=sys.stderr,
+                flush=True,
+            )
+            return cls(log_directory, output_root)
+        return cls(log_directory, output_root, plan_declared=plan_declared, session_name=session_name)
+
+    def write_handoff(self, parent_pid: int) -> Path:
+        """Leave the plan and the session log to this client's next server."""
+        self.log_directory.mkdir(parents=True, exist_ok=True)
+        path = handoff_path(self.log_directory, parent_pid)
+        path.write_text(
+            json.dumps({
+                _HANDOFF_PLAN_KEY: self.plan_declared,
+                _HANDOFF_SESSION_KEY: self.session_name,
+                _HANDOFF_WRITTEN_AT_KEY: time.time(),
+            }),
+            encoding="utf-8",
+        )
+        return path
 
     def _open(self) -> tuple[ChatTranscript, Path]:
         # Created on the first call, so a server that serves no blended
         # call leaves no empty log.
         if self._transcript is None or self._output_directory is None:
-            session_name = datetime.now().strftime(_SESSION_NAME_FORMAT)
-            self._transcript = ChatTranscript(self.log_directory, session_name=session_name, routing=_ROUTING)
-            self._output_directory = (self.output_root / session_name).resolve()
+            resumed = self.session_name is not None
+            if self.session_name is None:
+                self.session_name = datetime.now().strftime(_SESSION_NAME_FORMAT)
+            self._transcript = ChatTranscript(self.log_directory, session_name=self.session_name, routing=_ROUTING)
+            self._output_directory = (self.output_root / self.session_name).resolve()
             self._output_directory.mkdir(parents=True, exist_ok=True)
+            if resumed:
+                self._transcript.record("session", _RESUMED_EVENT_FORMAT.format(self.plan_declared))
         return self._transcript, self._output_directory
 
     async def call(self, tool_name: str, arguments: dict[str, Any] | None) -> types.CallToolResult:
@@ -352,9 +436,12 @@ class BlendedFastMCP(FastMCP):  # type: ignore[misc]
 
     def __init__(self, name: str, instructions: str) -> None:
         super().__init__(name, instructions=instructions)
-        self._blended = BlendedSession(
+        # The client that spawned this server; it spawns the next one too.
+        self._parent_pid = os.getppid()
+        self._blended = BlendedSession.resume(
             default_log_directory(REPOSITORY_ROOT),
             REPOSITORY_ROOT / "outputs" / "mcp",
+            self._parent_pid,
         )
         # Calls inside call_tool, and when the last one returned (-inf until
         # one has); both read and written under _in_flight_lock.
@@ -457,4 +544,17 @@ class BlendedFastMCP(FastMCP):  # type: ignore[misc]
         with self._in_flight_lock:
             drained_s = time.monotonic() - self._last_call_returned_s
             if self._in_flight == 0 and drained_s >= SOURCE_RESPONSE_DRAIN_S:
+                self._hand_off()
                 os._exit(exit_code)
+
+    def _hand_off(self) -> None:
+        """
+        Write the handoff for the client's next server. A failure is printed
+        and the exit goes ahead: a server kept alive on stale code is worse
+        than one whose successor asks for the plan again.
+        """
+        try:
+            self._blended.write_handoff(self._parent_pid)
+        except Exception:  # pylint: disable=broad-exception-caught
+            traceback.print_exc(file=sys.stderr)
+            sys.stderr.flush()

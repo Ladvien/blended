@@ -52,6 +52,7 @@ if _REPO_DIR not in sys.path:
     sys.path.insert(0, _REPO_DIR)
 
 from blended.agent.plan import MISSING_PLAN_REFUSAL
+from blmcp.tools_helpers.blended_bridge import SOURCE_ROOTS
 from blmcp.tools_helpers.connection import send_code
 from tests.mcp_client import MCPClient
 
@@ -70,6 +71,11 @@ _TIMEOUT_STARTUP = int(int(os.environ.get("BLENDER_MCP_TIMEOUT", "10")) * _TIMEO
 
 # Maximum time to wait for a local process to respond or exit (seconds).
 _TIMEOUT_LOCAL_PROC = int(10 * _TIMEOUT_SCALE)
+# A watcher exit takes settle (2 s) + one poll (1 s) once the edit lands,
+# and the drain (2 s) has passed by then; this leaves a wide margin.
+_TIMEOUT_WATCHER_EXIT_S = int(30 * _TIMEOUT_SCALE)
+# How far a simulated source edit moves a file's mtime: one second.
+_SOURCE_EDIT_NS = 10**9
 
 # Tool coverage tracking.
 _all_tools: set[str] = set()
@@ -405,7 +411,9 @@ class _TestServerMixin:
         mcp_env["BLENDER_MCP_PORT"] = str(cls._port)
         mcp_env["BLENDER_PATH"] = blender_bin
 
-        cls._client = MCPClient(shlex.split(blender_mcp), env=mcp_env)
+        cls._mcp_command = shlex.split(blender_mcp)
+        cls._mcp_env = mcp_env
+        cls._client = MCPClient(cls._mcp_command, env=mcp_env)
         cls.addClassCleanup(cls._client.close)
         cls._client.initialize()
         _all_tools.update(cls._client.list_tools())
@@ -543,6 +551,33 @@ class _TestServerMixin:
         self.assertEqual(added[0]["text"].splitlines()[-1], expected_after_add)
         self.assertEqual(linked[0]["text"].splitlines()[-1], expected_after_link)
         self.assertNotIn("viewport:", content[0]["text"])
+
+    def test_a_watcher_restart_keeps_the_declared_plan(self) -> None:
+        """
+        A server started with --exit-on-source-change exits after a source
+        edit, and its replacement, spawned by the same client process, still
+        honours the plan declared before the restart.
+        """
+        # pylint: disable=protected-access
+        first = MCPClient([*self._mcp_command, "--exit-on-source-change"], env=self._mcp_env)
+        self.addCleanup(first.close)
+        first.initialize()
+        self.assertFalse(first.call_tool("declare_plan", {"steps": ["Add a box"]}).get("isError", False))
+
+        # A newer mtime on a watched file is a source change; restored after.
+        watched = SOURCE_ROOTS[0] / "viewport_follow.py"
+        original = watched.stat()
+        self.addCleanup(os.utime, watched, ns=(original.st_atime_ns, original.st_mtime_ns))
+        os.utime(watched, ns=(original.st_atime_ns, original.st_mtime_ns + _SOURCE_EDIT_NS))
+        self.assertEqual(first._proc.wait(timeout=_TIMEOUT_WATCHER_EXIT_S), 0)
+
+        second = MCPClient(self._mcp_command, env=self._mcp_env)
+        self.addCleanup(second.close)
+        second.initialize()
+        box = {"name": "HandoffCrate", "width_m": 0.5, "depth_m": 0.5, "height_m": 0.5}
+        result = second.call_tool("add_box", box)
+        self.assertFalse(result.get("isError", False), result.get("content"))
+        self.assertNotEqual(result["content"][0]["text"], MISSING_PLAN_REFUSAL)
 
     # -----------------------------------------------------------------
     # Interactive tools.
