@@ -528,10 +528,21 @@ class _TestServerMixin:
         self.assertEqual(content[0]["text"], MISSING_PLAN_REFUSAL)
 
         self._call_tool("declare_plan", {"steps": ["Add a box", "Measure it"]})
-        self._call_tool("add_box", box)
-        self._call_tool("link_into_scene", {"object_name": "Crate"})
+        added = self._call_tool("add_box", box)
+        linked = self._call_tool("link_into_scene", {"object_name": "Crate"})
         content = self._call_tool("world_bounds", {"object_name": "Crate"})
         self.assertIn("0.5", content[0]["text"])
+
+        # Scene-changing calls end with what the viewport did; a reader
+        # (world_bounds) does not frame anything.
+        if self._background:
+            expected_after_add = expected_after_link = "viewport: not framed: background Blender has no viewport"
+        else:
+            expected_after_add = "viewport: unchanged: nothing this call touched is in the scene yet"
+            expected_after_link = "viewport: framed Crate in 1 3D viewport(s)"
+        self.assertEqual(added[0]["text"].splitlines()[-1], expected_after_add)
+        self.assertEqual(linked[0]["text"].splitlines()[-1], expected_after_link)
+        self.assertNotIn("viewport:", content[0]["text"])
 
     # -----------------------------------------------------------------
     # Interactive tools.

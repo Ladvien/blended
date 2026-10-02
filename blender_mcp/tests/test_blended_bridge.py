@@ -402,6 +402,14 @@ class TestToolcodeReimport(unittest.TestCase):
             "def outcome_to_json(outcome):\n    return {'text': outcome}\n", encoding="utf-8",
         )
         (agent / "tools.py").write_text(self._tools_text(value), encoding="utf-8")
+        # The probe tool reads only, so the toolcode never frames for it.
+        (agent / "plan.py").write_text(
+            "def plan_required_for(tool_name):\n    return False\n", encoding="utf-8",
+        )
+        (src / "blended" / "viewport_follow.py").write_text(
+            "def follow_viewport(outcome):\n    raise AssertionError('framed a read-only probe')\n",
+            encoding="utf-8",
+        )
         return src
 
     def _step(self, src: Path, fingerprint: str, write: dict[str, str] | None = None) -> dict[str, object]:

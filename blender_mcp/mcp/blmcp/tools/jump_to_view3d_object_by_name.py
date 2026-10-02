@@ -35,6 +35,10 @@ def register(mcp: FastMCP) -> None:
         """
         Move the 3D viewport to focus on an object by *name*.
 
+        blended's scene-changing tools frame the objects they touched on
+        their own. Call this to show the user a different part, or one a
+        `run_python` chunk changed without naming it.
+
         If *allow_edits* is True the object may be un-hidden and its
         collections enabled to make it visible.
         """

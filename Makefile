@@ -1,7 +1,7 @@
 .PHONY: test test-pure test-blender test-blender-app converge converge-local \
 	replay calibrate-eye calibrate-visual-gate pin-golden-views converge-auto \
 	pin bench-3dcode chat-e2e photo-to-model provider-smoke test-repro \
-	test-mcp test-mcp-blender install-mcp-addon
+	test-mcp test-mcp-blender install-mcp-addon test-viewport-gui
 PY ?= .venv/bin/python
 BLENDER ?= /Applications/Blender.app/Contents/MacOS/Blender
 
@@ -42,6 +42,16 @@ test-mcp:
 test-mcp-blender:
 	BLENDER_BIN=$(BLENDER) BLENDER_MCP=$(CURDIR)/.venv/bin/blender-mcp \
 		$(PY) blender_mcp/tests/test_blender_mcp_with_blender.py TestBackgroundServer
+
+# The MCP bridge's viewport framing against Blender's own projection. It
+# needs a window, so it launches a GUI Blender (a window opens for a few
+# seconds) with factory settings and throwaway user resources, never the
+# real ones. The verdict is Blender's exit code.
+test-viewport-gui:
+	scratch=$$(mktemp -d) && \
+		HOME="$$scratch" BLENDER_USER_RESOURCES="$$scratch/blender_user_resources" \
+		$(BLENDER) --factory-startup --python tests/gui/check_viewport_follow.py; \
+		status=$$?; rm -rf "$$scratch"; exit $$status
 
 # Link the MCP add-on (extension id `mcp`) from the subtree into the
 # user's Blender, enable it, and allow online access (the add-on's socket

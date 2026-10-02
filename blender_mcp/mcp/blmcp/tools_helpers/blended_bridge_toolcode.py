@@ -21,6 +21,10 @@ the same whole-second mtime, so a same-size edit in the second of the
 last compile re-imported the old code (measured in Blender 5.2: a scripted
 edit, call, revert, call ran the stale body 20 of 20 times at a 0 s gap).
 
+After a scene-changing call (``plan_required_for``), the objects it
+touched are framed in every 3D viewport, and the outcome's text gains a
+``viewport:`` line (``blended.viewport_follow``).
+
 The purge is safe because ``src/blended`` registers no bpy classes,
 timers, handlers or draw handlers (grep for ``bpy.app.handlers``,
 ``bpy.app.timers``, ``register_class`` and ``draw_handler_add`` in
@@ -108,11 +112,19 @@ def main(params: Params) -> Result:
     # pylint: disable-next=import-outside-toplevel
     from blended.agent.outcome import outcome_to_json
     # pylint: disable-next=import-outside-toplevel
+    from blended.agent.plan import plan_required_for
+    # pylint: disable-next=import-outside-toplevel
     from blended.agent.tools import dispatch_tool
+    # pylint: disable-next=import-outside-toplevel
+    from blended.viewport_follow import follow_viewport
 
     outcome = dispatch_tool(
         params.tool_name,
         json.loads(params.arguments_json),
         Path(params.output_directory),
     )
+    # The user watches this Blender: a scene-changing call leaves what it
+    # touched framed, and says so on a `viewport:` line.
+    if plan_required_for(params.tool_name):
+        outcome = follow_viewport(outcome)
     return Result("ok", outcome_to_json(outcome))

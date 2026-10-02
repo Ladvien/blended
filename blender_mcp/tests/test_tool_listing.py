@@ -400,6 +400,10 @@ EXPECTED_TOOLS = [
         "description": "\n"
         "Move the 3D viewport to focus on an object by *name*.\n"
         "\n"
+        "blended's scene-changing tools frame the objects they touched on\n"
+        "their own. Call this to show the user a different part, or one a\n"
+        "`run_python` chunk changed without naming it.\n"
+        "\n"
         "If *allow_edits* is True the object may be un-hidden and its\n"
         "collections enabled to make it visible.\n",
         "inputSchema": {
