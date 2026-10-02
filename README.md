@@ -57,16 +57,61 @@ subtree at `blender_mcp/`) extended to serve blended's full tool surface
 schema-2 `logs/mcp-*.jsonl` per session.
 
 ```sh
-make install-mcp-addon         # once: build + install the `mcp` extension,
-                               # allow online access (its socket needs it)
+make install-mcp-addon         # once: symlink the `mcp` extension into Blender,
+                               # enable it, allow online access (its socket needs it)
 open -a Blender                # the add-on listens on localhost:9876
 claude                         # in this directory; .mcp.json registers
                                # .venv/bin/blender-mcp as server `blended`
 ```
 
-The add-on executes any code sent to localhost:9876. blended is imported
-once per Blender session from `src/`: after changing `src/blended`,
-restart Blender.
+The add-on executes any code sent to localhost:9876.
+
+**What the agent is told.** Claude Code delivers only the first 2,048
+characters of an MCP server's instructions (measured: blended sends about
+23,000). So the instructions open with a must-read head
+(`MCP_INSTRUCTIONS_HEAD`) that condenses working-agreement revision 10;
+the full text follows it. A test fails when the active revision moves,
+so the head gets reviewed along with it.
+
+**The user's view.** After every scene-changing blended call, the server
+frames the objects that call touched in every 3D viewport. Their result
+ends with a `viewport:` line saying what was framed, or why nothing was:
+background Blender, no 3D viewport, or nothing in the scene yet. An
+object made by `add_box` is framed once `link_into_scene` puts it in the
+scene. Framing moves only the view's pivot and distance. Selection, the
+active object, the mode and the view rotation stay as they were.
+`make test-viewport-gui` checks the result against Blender's own
+projection in a GUI Blender; a window opens for a few seconds.
+
+**Source edits.** Edits under `src/blended` take effect on the next call
+without restarting Blender: Blender purges and re-imports `blended` when
+the call's source fingerprint changes. What the server loaded at start
+stays until the server restarts: tools, descriptions, parameters,
+defaults, plan gating (`reads_only`), the outcome wire format, any
+`blmcp` edit, and the instructions. Until then the server lists tools,
+gates calls and parses outcomes with that start-time code while Blender
+runs the edited code.
+
+Restarting on a source edit is opt-in: `--exit-on-source-change`, stdio
+only. It is right only for a client that restarts a server that exits.
+omp does, and `.omp/mcp.json` gives it its own `blended` entry with the
+flag. Measured: omp spawned that entry, not the one in `.mcp.json`. The
+server exits once the sources have held still for 2 s, no call is in
+flight, and the last response has had 2 s to drain. Before exiting, it
+leaves the declared plan and the session-log name in
+`logs/mcp-handoff-<client pid>.json`. The client's next server consumes
+that file, keeps the plan, and appends to the same log. A handoff older
+than 60 s, or a malformed one, is refused on stderr.
+
+Claude Code (`.mcp.json`) and Claude Desktop
+(`~/Library/Application Support/Claude/claude_desktop_config.json`, entry
+`blended`) run without the watcher, because neither restarts a stdio
+server that exits. After an edit to anything loaded at start, run `/mcp`
+in Claude Code, or quit and reopen Desktop (⌘Q). Add-on edits
+(`blender_mcp/addon`) still need a Blender restart. `.omp/mcp.json` also
+disables any same-named `blender` server that omp would import from
+another tool's config (e.g. `uvx blender-mcp` in `~/.claude.json`),
+since it would talk to the same port.
 
 ## Run
 
@@ -78,6 +123,8 @@ make test-blender-app          # build → analyze → render, inside the
 make test-mcp                  # the MCP server's unit layer (no Blender)
 make test-mcp-blender          # MCP client -> server -> real background
                                # Blender -> blended's dispatch_tool
+make test-viewport-gui         # viewport framing in a GUI Blender (opens
+                               # a window for a few seconds)
 make test                      # pure + Blender app + MCP unit; the gate
 make test-repro ARGS="--builder barrel"
                                # build twice in two fresh Blenders under

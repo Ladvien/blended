@@ -596,5 +596,19 @@ class TestToolcodeReimport(unittest.TestCase):
         self.assertEqual(results[2], {"outcome": "from-a"})
 
 
+
+class TestSuitesPresent(unittest.TestCase):
+    """A splice to the end of this file once deleted two suites unnoticed."""
+
+    _SUITES = (
+        "TestBlendedBridge", "TestSourceFingerprint", "TestInstructionsHead", "TestWatcherIsOptIn",
+        "TestSourceWatcher", "TestHandoff", "TestToolcodeReimport", "TestSuitesPresent",
+    )
+
+    def test_every_suite_is_still_defined(self) -> None:
+        defined = {name for name, value in globals().items() if isinstance(value, type)
+                   and issubclass(value, unittest.TestCase)}
+        self.assertEqual(sorted(set(self._SUITES) - defined), [])
+
 if __name__ == "__main__":
     unittest.main()

@@ -1192,7 +1192,12 @@ MISTAKES: tuple[MistakeRecord, ...] = (
             "Blender (or, in developer mode, to click Reload). It does NOT "
             "silently purge and re-import: an automatic mid-session swap of "
             "the code under a running conversation is the magic-result path, "
-            "and developer_mode already owns that behaviour explicitly."
+            "and developer_mode already owns that behaviour explicitly. "
+            "REVERSED 2026-09-27 for the MCP lane by "
+            "mcp-served-stale-code-until-restart: the bridge now purges and "
+            "re-imports blended in Blender whenever the source fingerprint "
+            "changes, and the add-on and developer_mode this refusal lived "
+            "in were deleted in the MCP cutover."
         ),
         guarded_by=(
             "RETIRED 2026-09: guarded code deleted in the MCP cutover (tests/blender/test_addon_registration.py). Was: "
@@ -3343,6 +3348,181 @@ MISTAKES: tuple[MistakeRecord, ...] = (
             "test Blender is launched"
         ),
         recorded_on="2026-09-26",
+    ),
+    MistakeRecord(
+        identifier="mcp-served-stale-code-until-restart",
+        scope="harness_code",
+        failure=(
+            "Edits to src/blended or blender_mcp/mcp/blmcp were invisible "
+            "to the chat agent: the stdio MCP server kept the tool list and "
+            "instructions it read at start until a manual /mcp reconnect, "
+            "and Blender kept the blended modules it imported on the first "
+            "call until Blender quit. The mcp add-on was an installed copy, "
+            "so add-on edits also needed make install-mcp-addon."
+        ),
+        cause=(
+            "Three caches, none keyed to the source: the server process, "
+            "blended in Blender's sys.modules, and the extension directory "
+            "copy. Nothing compared what was loaded against what was on disk."
+        ),
+        fix=(
+            "blended_bridge.source_fingerprint() (path, mtime_ns, size of "
+            "every source file under src/blended and blmcp; API/manual docs "
+            "and __pycache__ skipped; 167 files, ~1.5 ms) rides on every "
+            "call's Params; the Blender side purges every blended.* module "
+            "and re-imports when it differs from the fingerprint stamped on "
+            "the imported package. BlendedFastMCP."
+            "exit_on_source_change exits the idle server once the "
+            "fingerprint changed and held still for SOURCE_SETTLE_S; omp "
+            "reconnects stdio servers on close. The add-on is now a symlink "
+            "(make install-mcp-addon fails unless addon_utils.check returns "
+            "(True, True)). "
+            "Measured 2026-09-27 against one GUI Blender session: before "
+            "the edit world_bounds returned no probe; after a docstring + "
+            "body edit a fresh client saw the new description and "
+            "'probe': true, and after the revert both were gone, three "
+            "server processes, Cube still in the scene. Inside one omp -p "
+            "session the same edit showed up in the tool description and "
+            "result with no error (two logs/mcp-*.jsonl, 16 s apart). "
+            "First probe attempt failed usefully: appending ' Freshness "
+            "probe.' pushed the summary past the 120-char op contract, and "
+            "the restarted server died with ContractViolation instead of "
+            "serving the edit. A review on 2026-10-02 found six defects in "
+            "this fix and fixed them. (1) 'Idle' meant only that call_tool "
+            "had returned, which happens before the SDK writes the response; "
+            "an exit in that gap dropped the result of a call Blender had "
+            "applied (5 of 5 at a 1 ms lead), so the exit now also waits "
+            "SOURCE_RESPONSE_DRAIN_S after the last return. (2) A file "
+            "removed between the listing and the stat (macOS sed -i temp "
+            "files: 1173 of 3663 edits) or a dangling Emacs .#name.py lock "
+            "raised FileNotFoundError, killing the server and failing calls; "
+            "it now counts as absent. (3) A change landing while the server "
+            "waited for idle did not restart the settle clock, so the exit "
+            "could land mid-rewrite. (4) The watcher also killed --transport "
+            "http servers, which nothing restarts; it was made stdio-only. "
+            "That default was still wrong: Claude Code does not restart a "
+            "stdio server either, and the review's own session lost every "
+            "blended tool 8 s after an edit. Since 2026-10-02 the watcher is "
+            "off by default for every transport; omp opts in through its "
+            "own blended entry in .omp/mcp.json (measured: omp spawned that "
+            "entry with the flag, not the one in .mcp.json). A watcher exit "
+            "now writes logs/mcp-handoff-<client pid>.json, so the client's "
+            "next server keeps the declared plan and the session log; before "
+            "that, a restart answered the next scene-changing call with 'No "
+            "plan declared'. (5) The purge ran before the stale-copy check, so "
+            "another checkout's blended was dropped silently instead of "
+            "refused. (6) CPython accepts a timestamp .pyc whose source has "
+            "the same size and whole-second mtime, so after a same-size edit "
+            "in the second of the last compile the purge re-imported the old "
+            "code (Blender 5.2, scripted edit, call, revert, call: 20 of 20 "
+            "stale at a 0 s gap); the purge now deletes this interpreter's "
+            "cached bytecode for the package first."
+        ),
+        guarded_by=(
+            "blender_mcp/tests/test_blended_bridge.py: TestToolcodeReimport "
+            "(the toolcode run as the add-on runs it, fresh exec namespace "
+            "per call and bytecode on, against fake checkouts: only a "
+            "changed fingerprint re-imports, even past a same-size rewrite "
+            "under the old mtime; another checkout's copy is refused and "
+            "left loaded); TestSourceWatcher (fake clock, calls run through "
+            "the real call_tool: a settled edit exits cleanly; the exit waits "
+            "SOURCE_RESPONSE_DRAIN_S after the last call returned; an edit "
+            "while waiting restarts the settle clock; a revert to the "
+            "baseline never exits; a broken watcher exits with the failure "
+            "code once idle); TestSourceFingerprint (a same-size rewrite "
+            "and a resize under the old mtime each change it; __pycache__, "
+            "skipped paths and a dangling symlink do not; a missing root "
+            "raises). Each failed against the logic it guards reverted "
+            "(2026-10-02). TestWatcherIsOptIn (default off; only omp's "
+            "config passes the flag); TestHandoff (resume keeps the plan "
+            "and the log's numbering; another client's pid, an expired "
+            "handoff and a malformed one start fresh; a failed write still "
+            "exits) and test_blender_mcp_with_blender.py::"
+            "test_a_watcher_restart_keeps_the_declared_plan (two real "
+            "server processes: add_box after the restart passes the gate; "
+            "it failed with the resume disabled)."
+        ),
+        recorded_on="2026-09-27",
+    ),
+    MistakeRecord(
+        identifier="mcp-instructions-past-2048-characters-never-arrive",
+        scope="harness_code",
+        failure=(
+            "The blended MCP server sends 22,896 characters of instructions; "
+            "a Claude Code agent received them cut at index 2048, mid-word "
+            "('\"Five r... [truncated]'). A rule appended anywhere after the "
+            "head, such as keeping the part being worked on in the user's "
+            "view, would have shipped and never been read."
+        ),
+        cause=(
+            "Claude Code shows an MCP client only the first 2,048 characters "
+            "of a server's instructions; blended_instructions put the "
+            "working agreement first and upstream's text after it, so "
+            "position in the string decided what an agent saw."
+        ),
+        fix=(
+            "The first fix was wrong twice. It put a 632-character rule "
+            "ahead of build_system_prompt() telling agents to call "
+            "jump_to_view3d_object_by_name after every call that creates "
+            "an object, and to stop if framing failed. (a) add_box, "
+            "add_cylinder and add_lathe return objects not yet in the "
+            "scene, and framing one raises 'not in View Layer' (Blender "
+            "5.2), so the rule would have halted agents before "
+            "link_into_scene. (b) Its 632 characters pushed 634 characters "
+            "of the working agreement out of the head, including 'measure "
+            "every number after the LAST operation' and 'every named "
+            "feature is real geometry'. Now the bridge frames whatever a "
+            "scene-changing call touched once it is in the scene "
+            "(blended.viewport_follow, a viewport: line on the result), and "
+            "MCP_INSTRUCTIONS_HEAD (1,823 characters, MCP only) condenses "
+            "working-agreement revision 10 and leads the instructions. The "
+            "scored working agreement is unchanged."
+        ),
+        guarded_by=(
+            "blender_mcp/tests/test_blended_bridge.py::TestInstructionsHead "
+            "(the head leads the instructions and fits "
+            "CLAUDE_CODE_INSTRUCTIONS_LIMIT_CHARACTERS; it condenses the "
+            "active revision; the tool it names is in the registry); "
+            "blender_mcp/tests/test_mcp_server.py::TestMCPServer::"
+            "test_instructions_lead_with_the_must_read_head on what a "
+            "running server sends; make test-viewport-gui (every corner of "
+            "a framed box projects inside the region, in perspective, "
+            "ortho and from camera view; an unlinked object is reported, "
+            "not framed; it failed 6 of 6 with the margin at 0.3); "
+            "test_blender_mcp_with_blender.py::"
+            "test_blended_tools_dispatch_through_blender (the viewport: "
+            "line through the real MCP path)"
+        ),
+        recorded_on="2026-10-02",
+    ),
+    MistakeRecord(
+        identifier="a-splice-to-end-of-file-deleted-another-agents-tests",
+        scope="process",
+        failure=(
+            "test_blended_bridge.py went from 19 tests to 13 after an edit "
+            "that meant to replace one test class: TestSourceWatcher and "
+            "TestToolcodeReimport were gone."
+        ),
+        cause=(
+            "The splice ran from the class header to the "
+            "'if __name__ == \"__main__\"' anchor, i.e. to the end of the "
+            "file. Meanwhile a concurrent /code-review --fix agent had "
+            "appended classes after that class. The file had changed on disk "
+            "since it was last read, and an end anchor of 'end of file' "
+            "takes whatever is there."
+        ),
+        fix=(
+            "Restored by replaying the review agent's 9 recorded Edit "
+            "results from its transcript onto the last full originalFile. "
+            "The rebuilt prefix matched the file on disk byte for byte, and "
+            "all 20 tests then ran. A splice now ends at the next class "
+            "header, never at the end of the file."
+        ),
+        guarded_by=(
+            "blender_mcp/tests/test_blended_bridge.py::TestSuitesPresent "
+            "(the module still defines every test class it shipped with)"
+        ),
+        recorded_on="2026-10-02",
     ),
 )
 
