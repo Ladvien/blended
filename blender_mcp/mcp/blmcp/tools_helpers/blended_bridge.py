@@ -28,6 +28,9 @@ __all__ = (
     "BLENDED_TOOLS",
     "BLENDED_TOOL_NAMES",
     "BLMCP_ROOT",
+    "CLAUDE_CODE_INSTRUCTIONS_LIMIT_CHARACTERS",
+    "MCP_INSTRUCTIONS_HEAD",
+    "MCP_INSTRUCTIONS_HEAD_CONDENSES_REVISION",
     "SOURCE_CHANGED_EXIT_CODE",
     "SOURCE_POLL_INTERVAL_S",
     "SOURCE_RESPONSE_DRAIN_S",
@@ -36,6 +39,7 @@ __all__ = (
     "SOURCE_SKIPPED_DIRECTORY_NAMES",
     "SOURCE_SKIPPED_PATHS",
     "SOURCE_SUFFIXES",
+    "VIEWPORT_FOLLOW_TOOL_NAME",
     "BlendedFastMCP",
     "BlendedSession",
     "blended_instructions",
@@ -130,10 +134,58 @@ _SESSION_NAME_FORMAT = "mcp-%Y-%m-%d-%H%M%S"
 _ROUTING = "mcp"
 _RAISED_IN_BLENDER_PREFIX = "Tool raised in Blender:\n"
 
+# Claude Code shows an MCP client only the first 2,048 characters of a
+# server's instructions (measured 2026-10-02: the text it delivered ended
+# at index 2048 of 22,896). A rule every MCP agent must follow has to sit
+# inside that head.
+CLAUDE_CODE_INSTRUCTIONS_LIMIT_CHARACTERS = 2048
+
+# MCP only: the user watches a live viewport here, unlike the headless
+# bench, so this head leads the MCP instructions and stays out of the
+# scored working agreement that build_system_prompt() renders. It condenses
+# that agreement for clients that deliver only the head; the full text
+# follows it. Models also use the start of a long context best (Lost in
+# the Middle, DOI 10.48550/arXiv.2307.03172).
+VIEWPORT_FOLLOW_TOOL_NAME = "jump_to_view3d_object_by_name"
+# The working-agreement revision MCP_INSTRUCTIONS_HEAD condenses. A test
+# fails when the active revision moves, so the head is reviewed with it.
+MCP_INSTRUCTIONS_HEAD_CONDENSES_REVISION = 10
+MCP_INSTRUCTIONS_HEAD = f"""\
+# Must-read: the rules every blended session follows
+
+The user watches this Blender's 3D viewport while you work. This head is the
+part of these instructions every client delivers; the full text follows it.
+
+1. Call `declare_plan` before any tool that changes the scene.
+2. Build with blended's op tools. `run_python` is the last resort, and its
+   `reason` must name what the ops lack.
+3. Work in the SMALLEST step that makes progress. Read the gate report after
+   every call and fix the specific measured failure.
+4. Done is three things, in order: it executed, it passed the gate, and it
+   looks right in `render_views` from several angles. Executing is not
+   passing; passing is not looking right.
+5. The gate measures structure, not intent. After the LAST operation, measure
+   every number the user gave (sizes, thicknesses, positions, counts) on the
+   finished object and print what you measured.
+6. Every feature the brief names (ribs, a drainage hole, three legs) is real
+   geometry, verified by measuring it.
+7. A part resting on a surface meets it with a flat face: measure the
+   contact, not the lowest point.
+8. Changing a passed asset: touch only what they named; everything else must
+   measure the SAME afterwards. Re-gate and re-render after every edit.
+9. When all of it holds, stop and report what you built, its measurements and
+   the gate verdict. If an operation fails twice the same way, stop and say
+   what you are stuck on. Art direction is the user's: ask, show renders.
+
+Viewport: every scene-changing blended tool frames the objects it touched in
+the user's 3D viewport and ends its result with a `viewport:` line. An object
+is framed once it is linked into the scene. To show a different part, or one a
+`run_python` chunk changed without naming it, call `{VIEWPORT_FOLLOW_TOOL_NAME}`."""
+
 
 def blended_instructions(upstream_instructions: str) -> str:
-    """blended's working agreement, then upstream's instructions."""
-    return build_system_prompt() + "\n\n" + upstream_instructions
+    """The must-read head, blended's working agreement, then upstream's instructions."""
+    return "\n\n".join((MCP_INSTRUCTIONS_HEAD, build_system_prompt(), upstream_instructions))
 
 
 def source_fingerprint(

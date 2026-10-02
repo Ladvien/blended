@@ -15,6 +15,7 @@ __all__ = ()
 
 import asyncio
 import base64
+import importlib
 import io
 import json
 import os
@@ -29,8 +30,10 @@ from unittest import mock
 
 from blended.agent.outcome import ToolOutcome, outcome_to_json
 from blended.agent.plan import MISSING_PLAN_REFUSAL
+from blended.agent.prompt_versions import get_revision
 from blmcp import argument_parser
 from blmcp.tools_helpers import blended_bridge, blended_bridge_toolcode, toolcode_format_call
+from mcp.server.fastmcp import FastMCP  # pylint: disable=import-error,no-name-in-module
 
 _BOX_ARGUMENTS = {"name": "Crate", "width_m": 0.5, "depth_m": 0.5, "height_m": 0.5}
 
@@ -173,6 +176,36 @@ class TestSourceFingerprint(unittest.TestCase):
     def test_missing_root_fails_loud(self) -> None:
         with self.assertRaises(FileNotFoundError):
             blended_bridge.source_fingerprint((Path(self._directory.name) / "absent",), ())
+
+
+class TestInstructionsHead(unittest.TestCase):
+    """The rules every MCP agent must get sit in the head every client delivers."""
+
+    def test_head_leads_the_instructions_within_claude_codes_limit(self) -> None:
+        instructions = blended_bridge.blended_instructions("upstream")
+        self.assertTrue(instructions.startswith(blended_bridge.MCP_INSTRUCTIONS_HEAD))
+        self.assertLessEqual(
+            len(blended_bridge.MCP_INSTRUCTIONS_HEAD),
+            blended_bridge.CLAUDE_CODE_INSTRUCTIONS_LIMIT_CHARACTERS,
+        )
+
+    def test_head_condenses_the_active_working_agreement(self) -> None:
+        # A new active revision fails here until someone re-reads the head.
+        self.assertEqual(
+            blended_bridge.MCP_INSTRUCTIONS_HEAD_CONDENSES_REVISION,
+            get_revision(None).revision,
+        )
+
+    def test_head_names_a_tool_the_server_registers(self) -> None:
+        # Ground truth is the registry, not the string: a renamed tool
+        # would leave the head pointing at nothing.
+        name = blended_bridge.VIEWPORT_FOLLOW_TOOL_NAME
+        server = FastMCP("viewport-follow-probe")
+        importlib.import_module(f"blmcp.tools.{name}").register(server)
+        registered = {tool.name for tool in asyncio.run(server.list_tools())}
+        self.assertIn(name, registered)
+        self.assertIn(f"`{name}`", blended_bridge.MCP_INSTRUCTIONS_HEAD)
+
 
 
 class TestWatcherIsOptIn(unittest.TestCase):

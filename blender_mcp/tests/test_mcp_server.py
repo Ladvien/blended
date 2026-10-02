@@ -23,6 +23,7 @@ from typing import Any
 
 import yaml
 from blended.agent.tools import TOOL_SCHEMAS
+from blmcp.tools_helpers.blended_bridge import CLAUDE_CODE_INSTRUCTIONS_LIMIT_CHARACTERS, MCP_INSTRUCTIONS_HEAD
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
@@ -348,6 +349,14 @@ class TestMCPServer(unittest.TestCase):
         Checks that the server returns some startup instructions.
         """
         self.assertTrue(len(self._instructions) > 0)
+
+    def test_instructions_lead_with_the_must_read_head(self) -> None:
+        """
+        Checks that a client receives the must-read head whole, inside the
+        part of the instructions that Claude Code delivers.
+        """
+        delivered = self._instructions[:CLAUDE_CODE_INSTRUCTIONS_LIMIT_CHARACTERS]
+        self.assertTrue(delivered.startswith(MCP_INSTRUCTIONS_HEAD))
 
     def test_instructions_contains_key_sections(self) -> None:
         """
