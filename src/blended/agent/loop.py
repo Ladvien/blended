@@ -28,9 +28,13 @@ from blended.agent.claude_code import (
     CLAUDE_CODE_DEFAULT_EFFORT,
     CLAUDE_CODE_ENDPOINT,
     CLAUDE_CODE_REQUEST_TIMEOUT_SECONDS,
+    ENVELOPE_MESSAGE_KEY,
+    ENVELOPE_TOOL_CALLS_KEY,
     IMAGE_PLACEHOLDER_TOKEN,
     ClaudeCodeTransport,
     TurnCost,
+    assistant_message_from_envelope,
+    envelope_schema,
     is_claude_code_model,
 )
 from blended.agent.context_preflight import (
@@ -92,6 +96,10 @@ LOCAL_LLAMA_SERVER_ENDPOINT = "http://127.0.0.1:8091"
 # reads it back, so it exists only to say in a server log which contract
 # was enforced.
 CONSTRAINED_ENVELOPE_NAME = "blended_harness_turn"
+# The two keys `envelope_schema` marks required. A constrained lane's
+# content is decoded as an envelope only when it carries both; any other
+# JSON object is the model's raw text, not the harness's envelope.
+ENVELOPE_REQUIRED_KEYS = frozenset({ENVELOPE_MESSAGE_KEY, ENVELOPE_TOOL_CALLS_KEY})
 REQUEST_TIMEOUT_SECONDS = 300
 # A local llama-swap lane gets a longer ceiling than the cloud lanes.
 # Not a guess: bmb's qwen3.8-27b (Q8_XL, --reasoning-format deepseek)
@@ -518,6 +526,10 @@ LOCAL_LLAMA_SERVER_MODEL_IDS = ("qwen2.5-coder-7b-instruct", "blenderllm")
 # Ollama /api/chat: the two LAN llama-swaps, the local llama-server and
 # OpenRouter. The cloud and the local daemon are Ollama.
 LLAMA_SWAP_ENDPOINTS = (BMB_ENDPOINT, BIG_ENDPOINT)
+# The llama.cpp servers this harness runs itself. They answer a
+# non-streamed reply in one blocking read after generation, so they need
+# the long ceiling the llama-swap lanes got (LLAMA_SWAP_REQUEST_TIMEOUT_SECONDS).
+LONG_CEILING_ENDPOINTS = (*LLAMA_SWAP_ENDPOINTS, LOCAL_LLAMA_SERVER_ENDPOINT)
 OPENAI_PROTOCOL_ENDPOINTS = (
     *LLAMA_SWAP_ENDPOINTS,
     LOCAL_LLAMA_SERVER_ENDPOINT,
@@ -767,8 +779,6 @@ class ModelConfig:
         )
 
     def with_endpoint(self, endpoint: str) -> ModelConfig:
-        from dataclasses import replace
-
         return replace(self, endpoint=endpoint)
 
     @property
@@ -808,7 +818,7 @@ class ModelConfig:
         Claude Code lane already does, and it is the harness's one
         answer for a transport with no usable tool-call field.
         """
-        return self.endpoint == LOCAL_LLAMA_SERVER_ENDPOINT
+        return LOCAL_LLAMA_SERVER_ENDPOINT in self.endpoint
 
     @property
     def request_timeout_seconds(self) -> int:
@@ -821,7 +831,7 @@ class ModelConfig:
         """
         if self.uses_claude_code:
             return CLAUDE_CODE_REQUEST_TIMEOUT_SECONDS
-        if any(host in self.endpoint for host in LLAMA_SWAP_ENDPOINTS):
+        if any(host in self.endpoint for host in LONG_CEILING_ENDPOINTS):
             return LLAMA_SWAP_REQUEST_TIMEOUT_SECONDS
         return REQUEST_TIMEOUT_SECONDS
 
@@ -992,9 +1002,11 @@ def _assistant_message_from_openai(body: dict, constrained: bool = False) -> dic
     `constrained` says the reply is the harness's envelope, forced by a
     JSON schema (see `ModelConfig.constrains_tool_calls`): the tool
     calls are then INSIDE `content`, as schema-valid JSON, and are
-    decoded by the same function the Claude Code lane uses. A reply that
-    does not parse is left alone so the caller records the raw text and
-    the turn counts as a malformed answer rather than an empty one.
+    decoded by the same function the Claude Code lane uses. Content that
+    is not that envelope (not JSON, or a JSON value without both of the
+    envelope's required keys, such as a bare tool-call object) is left
+    alone so the caller records the raw text and the turn counts as a
+    malformed answer rather than an empty one.
     """
     choice = (body.get("choices") or [{}])[0]
     message = choice.get("message") or {}
@@ -1011,15 +1023,11 @@ def _assistant_message_from_openai(body: dict, constrained: bool = False) -> dic
             }
         )
     if constrained and not tool_calls:
-        import json as json_module
-
-        from blended.agent.claude_code import assistant_message_from_envelope
-
         try:
-            envelope = json_module.loads(message.get("content") or "")
+            envelope = json.loads(message.get("content") or "")
         except (TypeError, ValueError):
             envelope = None
-        if isinstance(envelope, dict):
+        if isinstance(envelope, dict) and ENVELOPE_REQUIRED_KEYS <= envelope.keys():
             decoded = assistant_message_from_envelope(envelope)
             reasoning = message.get("reasoning_content") or message.get("reasoning")
             if reasoning:
@@ -1105,7 +1113,6 @@ class OllamaClient:
         byte of body arrives, so retrying here can never replay a reply
         a consumer has already started to read.
         """
-        last_error: Exception | None = None
         for attempt, wait_seconds in enumerate((*RETRY_BACKOFF_SECONDS, None)):
             request = self._build_request(path, payload)
             try:
@@ -1125,12 +1132,10 @@ class OllamaClient:
                         http_error.url, http_error.code, detail, http_error.hdrs,
                         io.BytesIO(detail.encode("utf-8")),
                     ) from http_error
-                last_error = http_error
                 what = f"HTTP {http_error.code}"
             except RETRYABLE_TRANSPORT_ERRORS as transport_error:
                 if wait_seconds is None:
                     raise
-                last_error = transport_error
                 detail = str(transport_error)[:160]
                 what = type(transport_error).__name__
             print(
@@ -1141,7 +1146,7 @@ class OllamaClient:
             )
             self.spent = self.spent.plus(TurnCost(retried_calls=1))
             time.sleep(wait_seconds)
-        raise last_error  # unreachable: the last pass re-raises
+        raise AssertionError("unreachable: the last attempt returns or re-raises")
 
     def _request(self, path: str, payload: dict | None, timeout_seconds: int):
         """One HTTP call, whole body, as JSON."""
@@ -1292,8 +1297,6 @@ class OllamaClient:
                 # `tool_calls` comes back null and the op arm would
                 # measure a tag convention instead of a model.
                 # `tool_choice: "required"` did not constrain it either.
-                from blended.agent.claude_code import envelope_schema
-
                 payload["response_format"] = {
                     "type": "json_schema",
                     "json_schema": {
@@ -1430,6 +1433,8 @@ class OllamaClient:
                 route = f"llama-swap on bmb ({BMB_ENDPOINT})"
             elif BIG_ENDPOINT in endpoint:
                 route = f"llama-swap on big ({BIG_ENDPOINT})"
+            elif LOCAL_LLAMA_SERVER_ENDPOINT in endpoint:
+                route = f"llama-server on this machine ({LOCAL_LLAMA_SERVER_ENDPOINT})"
             elif OPENROUTER_ENDPOINT in endpoint:
                 route = (
                     f"OpenRouter -> {self.config.openrouter_provider} "
@@ -1476,6 +1481,12 @@ class OllamaClient:
                     "without one, verified live 2026-08-23). The key lives "
                     f"on bmb at ~/llm/.api-key — copy it into "
                     f"{BMB_API_KEY_FILE}."
+                )
+            elif LOCAL_LLAMA_SERVER_ENDPOINT in self.config.endpoint:
+                hint = (
+                    f" The llama-server at {LOCAL_LLAMA_SERVER_ENDPOINT} takes "
+                    f"no API key, so a 401 here means something else is "
+                    f"listening on that port."
                 )
             elif BIG_ENDPOINT in self.config.endpoint:
                 hint = (
@@ -1536,8 +1547,10 @@ class OllamaClient:
         # OT-22: a cut reply is an error, never a result.
         check_reply_fits(body, self.config.context_tokens, self.config.endpoint)
         if self.config.uses_openai_protocol:
+            # The envelope was requested only when tools were sent
+            # (`_chat_payload`); a tool-less reply on this lane is plain text.
             message = _assistant_message_from_openai(
-                body, constrained=self.config.constrains_tool_calls
+                body, constrained=self.config.constrains_tool_calls and bool(tools)
             )
             finish_reason = ((body.get("choices") or [{}])[0]).get("finish_reason") or ""
         else:
@@ -1653,13 +1666,17 @@ class VisionDescriber:
             replace(self.client.config, vision_model=self.vision_model)
             .eye_config()
         )
-        reply = eye_client.chat([message])
-        # The eye rides its own client (its own server, its own key), so
-        # its spending would otherwise vanish from the run's record.
-        # Measured 2026-09-06: examination costs MORE than the build it
-        # judges — 10 calls per brief against the writer's 14 for five
-        # turns — so hiding it would hide the largest line item.
-        self.client.spent = self.client.spent.plus(eye_client.spent)
+        try:
+            reply = eye_client.chat([message])
+        finally:
+            # The eye rides its own client (its own server, its own key),
+            # so its spending would otherwise vanish from the run's
+            # record — including a call billed and then rejected (a cut
+            # reply), which a metered lane's cap must still see.
+            # Measured 2026-09-06: examination costs MORE than the build it
+            # judges — 10 calls per brief against the writer's 14 for five
+            # turns — so hiding it would hide the largest line item.
+            self.client.spent = self.client.spent.plus(eye_client.spent)
         return (reply.get("content") or "").strip()
 
 
@@ -1765,7 +1782,7 @@ def deliver_images(
 # this module is invisible to it. When the seam was a patch, every tool
 # call ran bpy on the worker thread and Blender segfaulted inside its
 # own draw loop with nothing in any traceback.
-ToolDispatch = Callable[[str, dict, Path], tuple[str, list[Path]]]
+ToolDispatch = Callable[[str, dict, Path], ToolOutcome]
 
 
 # OT-16: the working agreement's "stop after three honest attempts", as
@@ -1811,6 +1828,29 @@ DISABLED_TOOL_REFUSAL = (
     "{tool_name} is disabled in this session. Build with the op tools; if "
     "the vocabulary cannot express what you need, say so in your answer."
 )
+# A tool call whose `arguments` are not a JSON object. The OpenAI wire
+# hands arguments over as a JSON STRING the model wrote, so a truncated
+# or non-object string is the model's own malformed output; it is
+# answered like any refusal so the model can send the call again.
+MALFORMED_ARGUMENTS_REFUSAL = (
+    "{tool_name} was not run: its arguments were not a JSON object "
+    "({error}). You sent: {raw}. Call it again with valid JSON arguments."
+)
+MALFORMED_ARGUMENTS_ECHO_CHARACTERS = 200
+
+
+def _parse_tool_arguments(raw_arguments: object) -> dict:
+    """A call's arguments as a dict: the Ollama wire already gives one, the
+    OpenAI wire gives the JSON string the model wrote. Anything that is not
+    a JSON object raises (`json.JSONDecodeError` is a ValueError; valid JSON
+    of another type is a TypeError)."""
+    arguments = (
+        json.loads(raw_arguments) if isinstance(raw_arguments, str) else raw_arguments
+    )
+    if not isinstance(arguments, dict):
+        raise TypeError(f"arguments are {type(arguments).__name__}, not an object")
+    return arguments
+
 
 
 def _tokens_since(start: TurnCost, now: TurnCost) -> int:
@@ -1891,6 +1931,27 @@ class AgentSession:
         def emit(kind: str, text: str) -> None:
             if on_event is not None:
                 on_event(kind, text)
+
+        def refuse(tool_call: dict, tool_name: str, arguments: dict, refusal: str) -> None:
+            """Answer one call without dispatching it: the model reads the
+            refusal as the tool result and the structured record says why
+            nothing ran."""
+            emit("tool", f"{tool_name}({json.dumps(arguments)})")
+            emit("result", refusal)
+            emit(
+                TOOL_EVENT_KIND,
+                encode_tool_event(
+                    refused_tool_event(
+                        tool_name, arguments, refusal, offered_fingerprint_text
+                    )
+                ),
+            )
+            self.messages.append({
+                "role": "tool",
+                "content": refusal,
+                "tool_name": tool_name,
+                "tool_call_id": tool_call.get("id", ""),
+            })
 
         user_message: dict = {"role": "user", "content": user_text}
         if reference_images:
@@ -1982,33 +2043,32 @@ class AgentSession:
                 function_block = tool_call.get("function", {})
                 tool_name = function_block.get("name", "")
                 raw_arguments = function_block.get("arguments", {})
-                arguments = (
-                    json.loads(raw_arguments)
-                    if isinstance(raw_arguments, str)
-                    else raw_arguments
-                )
-                if tool_name in self.disabled_tools:
-                    refusal = DISABLED_TOOL_REFUSAL.format(tool_name=tool_name)
-                    emit("tool", f"{tool_name}({json.dumps(arguments)})")
+                try:
+                    arguments = _parse_tool_arguments(raw_arguments)
+                except (ValueError, TypeError) as bad_arguments:
+                    # A model's own malformed output is a tool failure it
+                    # can correct, never a crash that strands this
+                    # assistant message's calls without results.
                     executed_tool_call_count += 1
-                    emit("result", refusal)
-                    emit(
-                        TOOL_EVENT_KIND,
-                        encode_tool_event(
-                            refused_tool_event(
-                                tool_name,
-                                arguments,
-                                refusal,
-                                offered_fingerprint_text,
-                            )
+                    refuse(
+                        tool_call,
+                        tool_name,
+                        {},
+                        MALFORMED_ARGUMENTS_REFUSAL.format(
+                            tool_name=tool_name,
+                            error=bad_arguments,
+                            raw=str(raw_arguments)[:MALFORMED_ARGUMENTS_ECHO_CHARACTERS],
                         ),
                     )
-                    self.messages.append({
-                        "role": "tool",
-                        "content": refusal,
-                        "tool_name": tool_name,
-                        "tool_call_id": tool_call.get("id", ""),
-                    })
+                    continue
+                if tool_name in self.disabled_tools:
+                    executed_tool_call_count += 1
+                    refuse(
+                        tool_call,
+                        tool_name,
+                        arguments,
+                        DISABLED_TOOL_REFUSAL.format(tool_name=tool_name),
+                    )
                     continue
                 # Plan enforcement: a scene-changing tool with no plan
                 # declared this turn is refused, not dispatched. The
@@ -2021,26 +2081,8 @@ class AgentSession:
                     and plan_required_for(tool_name)
                     and turn_plan is None
                 ):
-                    emit("tool", f"{tool_name}({json.dumps(arguments)})")
                     executed_tool_call_count += 1
-                    emit("result", MISSING_PLAN_REFUSAL)
-                    emit(
-                        TOOL_EVENT_KIND,
-                        encode_tool_event(
-                            refused_tool_event(
-                                tool_name,
-                                arguments,
-                                MISSING_PLAN_REFUSAL,
-                                offered_fingerprint_text,
-                            )
-                        ),
-                    )
-                    self.messages.append({
-                        "role": "tool",
-                        "content": MISSING_PLAN_REFUSAL,
-                        "tool_name": tool_name,
-                        "tool_call_id": tool_call.get("id", ""),
-                    })
+                    refuse(tool_call, tool_name, arguments, MISSING_PLAN_REFUSAL)
                     continue
                 emit("tool", f"{tool_name}({json.dumps(arguments)})")
                 executed_tool_call_count += 1
@@ -2093,15 +2135,22 @@ class AgentSession:
                 # When the call carried a plan_step, emit a step event
                 # and advance the plan's current_step so a later plan
                 # event is consistent. An out-of-range step clamps
-                # rather than breaking the panel.
-                step_index = plan_step_of(arguments)
+                # rather than breaking the panel. A malformed plan_step
+                # is the model's, and the tool has already run: it is
+                # reported on the tool result, never raised.
+                plan_step_note = ""
+                try:
+                    step_index = plan_step_of(arguments)
+                except ValueError as bad_step:
+                    step_index = None
+                    plan_step_note = f"\n\n(plan_step ignored: {bad_step})"
                 if step_index is not None and turn_plan is not None:
                     turn_plan = turn_plan.with_step(step_index)
                     emit("step", str(step_index))
 
                 tool_message: dict = {
                     "role": "tool",
-                    "content": result_text,
+                    "content": result_text + plan_step_note,
                     "tool_name": tool_name,
                     # Carried so an OpenAI-protocol backend (llama-swap)
                     # can match the result to the assistant's call;
@@ -2201,18 +2250,26 @@ class AgentSession:
             )
 
     def _stop_at_gate_cap(
-        self, assistant_message: dict, object_name: str, count: int, outcome, emit
+        self,
+        assistant_message: dict,
+        object_name: str,
+        count: int,
+        outcome: ToolOutcome,
+        emit: Callable[[str, str], None],
     ) -> str:
         """Stop the turn at the gate-failure cap (OT-16): render the
         object so the user sees what kept failing, answer the calls the
         model had queued, and say plainly what stopped."""
+        # Close the queued calls BEFORE the render dispatch: a render that
+        # raises must not leave an assistant tool_call with no result,
+        # which an OpenAI-protocol backend rejects on every later turn.
+        self._answer_pending_tool_calls(assistant_message, GATE_CAP_TOOL_RESULT)
         sheet = self.dispatch(
             "render_views", {"object_name": object_name}, self.output_directory
         )
         for image_path in sheet.images:
             emit("render", str(image_path))
-        self._answer_pending_tool_calls(assistant_message, GATE_CAP_TOOL_RESULT)
-        last_gate = next(
+        last_gate: dict = next(
             (gate for gate in outcome.gates if gate.get("object_name") == object_name), {}
         )
         verdict = last_gate.get("scene_state") or "; ".join(last_gate.get("gate_failures", ())) or outcome.stage_reached

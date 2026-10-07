@@ -59,6 +59,7 @@ REJECTED_HUNKS_PATH = Path("_evaluate/rejected_hunks.jsonl")
 GRADIENT_TEMPLATE = "gradient"  # prompts/gradient.md.j2
 REVISE_TEMPLATE = "revise"  # prompts/revise.md.j2
 
+STRING_BLOCK_WIDTH_CHARACTERS = 60
 REGISTRY_FILENAME = "prompt_versions.py"
 PROMPTS_DIRECTORY_NAME = "prompts"
 REGISTRY_ANCHOR = "PROMPT_REVISIONS: tuple[PromptRevision, ...] = ("
@@ -205,12 +206,26 @@ def _probe_registry(package_directory: Path) -> dict:
 
 
 def _python_string_block(value: str, indent: str) -> str:
-    """A wrapped, parenthesised string literal in the registry's style."""
-    wrapped = textwrap.wrap(" ".join(value.split()), width=60) or [""]
+    """A wrapped, parenthesised string literal in the registry's style.
+
+    The literal evaluates back to the whitespace-normalised `value`:
+    chunks are joined by exactly one space, so wrapping must only break
+    where the text already had whitespace (no mid-word or after-hyphen
+    breaks, which the join would turn into a spurious space), and each
+    chunk is escaped so a quote or backslash cannot end or alter the
+    literal.
+    """
+    wrapped = textwrap.wrap(
+        " ".join(value.split()),
+        width=STRING_BLOCK_WIDTH_CHARACTERS,
+        break_long_words=False,
+        break_on_hyphens=False,
+    ) or [""]
     lines = [f"{indent}("]
     for index, chunk in enumerate(wrapped):
         suffix = "" if index == len(wrapped) - 1 else " "
-        lines.append(f'{indent}    "{chunk}{suffix}"')
+        escaped = json.dumps(chunk, ensure_ascii=False)[1:-1]
+        lines.append(f'{indent}    "{escaped}{suffix}"')
     lines.append(f"{indent})")
     return "\n".join(lines)
 
@@ -349,7 +364,11 @@ def record_outcome(revision: int, outcome: str, package_directory: Path) -> None
     )
 
     registry_path.write_text("".join(lines), encoding="utf-8")
-    problems = _probe_registry(package_directory)["problems"]
+    try:
+        problems = _probe_registry(package_directory)["problems"]
+    except RevisionRejected:
+        registry_path.write_text(original, encoding="utf-8")
+        raise
     if problems:
         registry_path.write_text(original, encoding="utf-8")
         raise RevisionRejected(

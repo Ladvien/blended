@@ -51,3 +51,4 @@ def test_array_intermediate_is_multi_component_by_design(empty_scene):
     link_into_scene(board_name)
     linear_array(board_name, count=4, offset_m=(0.2, 0.0, 0.0))
     report = analyze_object(bpy.data.objects[board_name])
+    assert report.connected_component_count == 4

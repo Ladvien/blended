@@ -125,7 +125,7 @@ def boolean_difference(
 ) -> ObjectName:
     """Subtract the named cutter from the named target; the cutter is consumed."""
     _apply_boolean(target_name, cutter_name, "DIFFERENCE", solver)
-    return target_name
+    return ObjectName(target_name)
 
 
 def boolean_union(
@@ -133,7 +133,7 @@ def boolean_union(
 ) -> ObjectName:
     """Merge the named addend into the named target as one solid; the addend is consumed."""
     _apply_boolean(target_name, addend_name, "UNION", solver)
-    return target_name
+    return ObjectName(target_name)
 
 
 def boolean_intersect(
@@ -141,4 +141,4 @@ def boolean_intersect(
 ) -> ObjectName:
     """Keep only the overlap of the two named solids; the operand is consumed."""
     _apply_boolean(target_name, operand_name, "INTERSECT", solver)
-    return target_name
+    return ObjectName(target_name)

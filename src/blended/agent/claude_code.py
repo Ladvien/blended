@@ -82,6 +82,9 @@ CLAUDE_CODE_REQUEST_TIMEOUT_SECONDS = 900
 # `claude auth status` is a local read: no request, no tokens spent, so
 # the preflight can check the account before it checks the model.
 AUTH_STATUS_TIMEOUT_SECONDS = 30
+# How long chat() waits on its stdin-writer and stderr-drain threads once
+# the child has exited; they end at the pipe's EOF, so this is a ceiling.
+PIPE_THREAD_JOIN_SECONDS = 1
 # `--effort` is passed explicitly rather than inherited from the user's
 # settings.json, so a harness run does not change behaviour when the
 # user changes their editor preference. medium: the writer reasons about
@@ -89,7 +92,7 @@ AUTH_STATUS_TIMEOUT_SECONDS = 30
 # earns back.
 CLAUDE_CODE_DEFAULT_EFFORT = "medium"
 CLAUDE_CODE_EFFORT_LEVELS = ("low", "medium", "high", "xhigh", "max")
-# cwd is irrelevant to behaviour under `--safe-mode`
+# cwd is irrelevant to behaviour under `--safe-mode` and
 # `--no-session-persistence` (no CLAUDE.md discovery, no settings, no
 # session files), and Blender's cwd is arbitrary — so pin it somewhere
 # that exists from any launch context and holds nothing of ours.
@@ -114,7 +117,7 @@ CONTINUATION_CUE = (
 # engineering: it is the transport telling the model how tool calls
 # travel on THIS wire, the same job `_to_openai_tools` does by putting
 # them in the request. The harness's own system prompt describes the
-# six tools as directly callable, because every other lane hands them
+# tools as directly callable, because every other lane hands them
 # to the model natively — and Claude Code is itself an agent harness,
 # so a model reading that prompt reaches for a native tool call.
 # Measured 2026-09-05 without this note: claude-code:sonnet answered
@@ -555,8 +558,8 @@ class ClaudeCodeTransport:
     and the replayer all read.
 
     The model gets NO tools of its own (`--tools ""`, `--safe-mode`):
-    no Bash, no Read, no CLAUDE.md, no hooks, no MCP. The harness's six
-    tools are the whole interface, exactly as on every other lane, so a
+    no Bash, no Read, no CLAUDE.md, no hooks, no MCP. The harness's tools
+    are the whole interface, exactly as on every other lane, so a
     turn cannot reach the filesystem behind the builder API.
     """
 
@@ -635,13 +638,26 @@ class ClaudeCodeTransport:
             cwd=str(self.working_directory),
             env=os.environ.copy(),
         )
+        # All three were requested as PIPE above; Popen only leaves one
+        # None when it was not.
+        assert process.stdin is not None
+        assert process.stdout is not None
+        assert process.stderr is not None
         # stdin is written from a thread: a transcript carrying renders
         # is megabytes of base64, and writing it inline would deadlock
         # against a child that is already writing its init frames.
         writer = threading.Thread(
-            target=_write_frame, args=(process, frame), daemon=True
+            target=_write_frame, args=(process.stdin, frame), daemon=True
         )
         writer.start()
+        # stderr is drained as it arrives: read only after stdout hit EOF,
+        # a child that fills the 64 KiB pipe buffer blocks on stderr while
+        # this side waits on stdout, and only the watchdog ends it.
+        stderr_chunks: list[str] = []
+        stderr_reader = threading.Thread(
+            target=_drain_stream, args=(process.stderr, stderr_chunks), daemon=True
+        )
+        stderr_reader.start()
         timed_out = threading.Event()
 
         def kill_on_deadline() -> None:
@@ -652,13 +668,19 @@ class ClaudeCodeTransport:
         watchdog.start()
         started = time.monotonic()
         try:
-            assembled = self._consume(process, tools)
+            assembled = self._consume(process.stdout, tools)
+        except BaseException:
+            # A malformed frame (or an interrupt) must not leave the CLI
+            # running for the rest of its 900 s ceiling, un-waited.
+            process.kill()
+            raise
         finally:
             watchdog.cancel()
-            writer.join(timeout=1)
-        stderr_text = (process.stderr.read() or "").strip() if process.stderr else ""
-        process.stdout.close()
-        return_code = process.wait()
+            writer.join(timeout=PIPE_THREAD_JOIN_SECONDS)
+            process.stdout.close()
+            return_code = process.wait()
+            stderr_reader.join(timeout=PIPE_THREAD_JOIN_SECONDS)
+        stderr_text = "".join(stderr_chunks).strip()
         if timed_out.is_set():
             raise RuntimeError(
                 f"Claude Code did not answer within {self.timeout_seconds} s "
@@ -672,9 +694,9 @@ class ClaudeCodeTransport:
             )
         return self._message_from_result(assembled, tools)
 
-    def _consume(self, process, tools) -> _Assembled:
+    def _consume(self, stdout, tools) -> _Assembled:
         assembled = _Assembled()
-        for raw_line in process.stdout:
+        for raw_line in stdout:
             line = raw_line.strip()
             if not line.startswith("{"):
                 continue
@@ -785,15 +807,29 @@ class _Assembled:
     api_calls: int = 0
 
 
-def _write_frame(process, frame: dict) -> None:
+def _write_frame(stdin, frame: dict) -> None:
     """Send the one user frame, then EOF so the CLI starts the turn."""
     try:
-        process.stdin.write(json.dumps(frame) + "\n")
-        process.stdin.close()
+        stdin.write(json.dumps(frame) + "\n")
     except (BrokenPipeError, ValueError):
         # The child died or was killed (watchdog); the reader side
         # reports it.
         pass
+    finally:
+        # EOF whether or not the write landed: an unclosed pipe is an fd
+        # held until garbage collection.
+        try:
+            stdin.close()
+        except (BrokenPipeError, ValueError):
+            pass
+
+
+def _drain_stream(stream, sink: list[str]) -> None:
+    """Read a pipe to EOF so the child never blocks on a full buffer."""
+    try:
+        sink.append(stream.read())
+    finally:
+        stream.close()
 
 
 def _absorb_stream_event(event: dict, assembled: _Assembled) -> None:
@@ -820,5 +856,5 @@ def _absorb_assistant(message: dict, assembled: _Assembled) -> None:
     for block in message.get("content") or []:
         if block.get("type") == _BLOCK_THINKING:
             thinking = block.get(_BLOCK_THINKING) or ""
-            if thinking and thinking not in assembled.thinking:
+            if thinking and thinking not in "".join(assembled.thinking):
                 assembled.thinking.append(thinking)

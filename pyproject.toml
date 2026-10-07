@@ -57,6 +57,7 @@ extend-immutable-calls = [
     "blended.capture.views.CaptureSettings",
     "blended.harness.HarnessSettings",
     "blended.ingest.cleanup.CleanupSettings",
+    "blended.viewport_follow.ViewportFollowConfig",
 ]
 
 [tool.ruff.lint.per-file-ignores]

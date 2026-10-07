@@ -148,7 +148,8 @@ def gate_object(blender_object, budget: MeshBudget) -> GateVerdict:
     # failed is exactly who needs to know which axis holds which extent.
     from blended.ops.transforms import _world_extents_m
 
-    world_extents_m = tuple(float(extent) for extent in _world_extents_m([blender_object]))
+    extent_x_m, extent_y_m, extent_z_m = _world_extents_m([blender_object])
+    world_extents_m = (float(extent_x_m), float(extent_y_m), float(extent_z_m))
     if blender_object.type != "MESH":
         return GateVerdict(
             object_name=blender_object.name,

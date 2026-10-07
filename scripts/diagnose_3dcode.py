@@ -143,7 +143,11 @@ def dominant_factor(delta_orient, anatomy):
     return "shape-mismatch"
 
 
-AXIS_NAMES = ("X", "Y", "Z")
+# The GLBs are glTF (Y-up): glTF X = Blender X, glTF Y = Blender Z (up),
+# glTF Z = -Blender Y (depth). The label names both frames so a "majority
+# thin axis" is never read in the wrong one.
+AXIS_NAMES = ("glTF X (Blender X)", "glTF Y (Blender Z, up)",
+              "glTF Z (Blender -Y, depth)")
 
 
 def reference_thin_axis_histogram(sc, data_root, instances):
@@ -178,7 +182,7 @@ def instance_geometry(glb_path, sc):
         return None
     try:
         mesh = trimesh.load(glb_path, force="mesh")
-    except Exception:
+    except Exception:  # noqa: BLE001 — an unloadable GLB is reported as unscoreable
         return None
     if mesh.is_empty or mesh.faces is None or len(mesh.faces) == 0:
         return None
@@ -311,9 +315,9 @@ def main(argv) -> int:
     lines = [
         f"# 3DCodeBench diagnostic — {args.model_dir}",
         "",
-        f"Replication: `{sc.__file__}` imported unmodified; "
-        f"{replicated} instance cd_yawmin values asserted equal to "
-        f"`_metrics/shape_chamfer.json`.",
+        (f"Replication: `{sc.__file__}` imported unmodified; "
+         f"{replicated} instance cd_yawmin values asserted equal to "
+         f"`_metrics/shape_chamfer.json`."),
         "",
         "## Per-instance (sorted by cd_yawmin descending)",
         "",
@@ -352,8 +356,8 @@ def main(argv) -> int:
         + (", ".join(f"{r['instance']} (Δ={r['delta_orient']:+.3f})"
                      for r in artifact_rows) or "none"),
         "",
-        f"## Reference thin-axis prior ({prior['total']} baked refs, "
-        f"{prior['thin']} thin at <{THIN_RATIO:.1f} max-extent)",
+        (f"## Reference thin-axis prior ({prior['total']} baked refs, "
+         f"{prior['thin']} thin at <{THIN_RATIO:.1f} max-extent)"),
         "",
     ]
     if prior["thin"]:
@@ -382,21 +386,21 @@ def main(argv) -> int:
         # the raw-bpy arms of the fine-tune decision experiment write a
         # script and nothing else. An empty list is reported as such,
         # never divided by.
-        f"- turns: mean "
-        f"{sum(turns) / len(turns):.1f}" if turns else "- turns: — (no meta)",
-        f"- max turns: {max(turns) if turns else '—'}"
-        f", turns>=20: {sum(1 for t in turns if t >= 20)}",
-        f"- excluded chunks: "
-        f"{sum(r['n_chunks_excluded'] or 0 for r in rows)} total",
-        f"- mean duration: "
-        f"{sum(durations) / len(durations):.1f}s" if durations
+        (f"- turns: mean "
+         f"{sum(turns) / len(turns):.1f}") if turns else "- turns: — (no meta)",
+        (f"- max turns: {max(turns) if turns else '—'}"
+         f", turns>=20: {sum(1 for t in turns if t >= 20)}"),
+        (f"- excluded chunks: "
+         f"{sum(r['n_chunks_excluded'] or 0 for r in rows)} total"),
+        (f"- mean duration: "
+         f"{sum(durations) / len(durations):.1f}s") if durations
         else "- mean duration: —",
         "",
         "## Self-test",
         "",
-        "cd_pca(S,S) < 1e-6; cd_pca(S, Ry90(S)) < 1e-6; "
-        "cd_yawmin(S, Ry90(S)) > 0.5 — all asserted before this report was "
-        "written.",
+        ("cd_pca(S,S) < 1e-6; cd_pca(S, Ry90(S)) < 1e-6; "
+         "cd_yawmin(S, Ry90(S)) > 0.5 — all asserted before this report was "
+         "written."),
     ]
 
     Path(args.out).write_text("\n".join(lines) + "\n")

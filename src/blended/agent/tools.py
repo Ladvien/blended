@@ -21,7 +21,9 @@ import hashlib
 import json
 import re
 import threading
+from collections.abc import Callable
 from pathlib import Path
+from typing import Any
 
 from blended.agent.outcome import ToolOutcome
 from blended.agent.plan import (
@@ -54,7 +56,7 @@ SOURCE_DIGEST_CHARACTERS = 12
 # The SERVICE tools: hand-written, because each is a harness capability
 # (execute, measure, render, search, list, export, plan) rather than a
 # facade op. The op tools below are generated (OT-3).
-SERVICE_TOOL_SCHEMAS = [
+SERVICE_TOOL_SCHEMAS: list[dict] = [
     {
         "type": "function",
         "function": {
@@ -324,7 +326,20 @@ TOOL_SCHEMAS = SERVICE_TOOL_SCHEMAS + OP_TOOL_SCHEMAS
 # `dispatch_tool`; an op tool name reaches its facade function through
 # `op_call.call_op`; any other name is refused at the door.
 SERVICE_TOOL_NAMES = frozenset(tool["function"]["name"] for tool in SERVICE_TOOL_SCHEMAS)
-OP_FUNCTIONS: dict[str, object] = dict(facade_ops())
+
+
+def _facade_op_functions() -> dict[str, Callable[..., Any]]:
+    """Every facade op by name; a non-callable export fails at import,
+    not at the first call the model makes."""
+    functions: dict[str, Callable[..., Any]] = {}
+    for op_name, function in facade_ops():
+        if not callable(function):
+            raise TypeError(f"facade op {op_name!r} is not callable: {function!r}")
+        functions[op_name] = function
+    return functions
+
+
+OP_FUNCTIONS = _facade_op_functions()
 # Fingerprint of that set, pinned beside the assembled-prompt fingerprint
 # and written into every iteration record (PRM-7 discipline for tools).
 TOOL_SCHEMAS_FINGERPRINT = tool_schemas_fingerprint(TOOL_SCHEMAS)
@@ -374,8 +389,10 @@ def search_ops(query: str) -> ToolOutcome:
                 in_name,
                 len(name),
                 position,
-                f"{name}: {function_block['description']}\n"
-                f"    schema: {json.dumps(function_block['parameters'], separators=(',', ':'))}",
+                (
+                    f"{name}: {function_block['description']}\n"
+                    f"    schema: {json.dumps(function_block['parameters'], separators=(',', ':'))}"
+                ),
             )
         )
     hits = [line for _, _, _, line in sorted(ranked)]
@@ -446,13 +463,19 @@ def dispatch_tool(
             key: value for key, value in arguments.items() if key != PLAN_STEP_ARGUMENT
         }
         result = call_op(tool_name, op_function, op_arguments)
+        # A call the binder rejected bound nothing: record what the
+        # model sent (plan_step stripped), not an empty dict, so the
+        # miner can see WHAT was refused.
+        validated_arguments = (
+            {name: json_returned(value) for name, value in result.bound_arguments.items()}
+            if result.bound_arguments
+            else op_arguments
+        )
         return ToolOutcome(
             text=result.summary(MAXIMUM_TRACEBACK_CHARACTERS),
             ok=result.ok,
             stage_reached=result.stage_reached,
-            validated_arguments={
-                name: json_returned(value) for name, value in result.bound_arguments.items()
-            },
+            validated_arguments=validated_arguments,
             gates=tuple(gate_verdict_json(gate) for gate in result.gates),
             intermediates_created=result.intermediates_created,
             intermediates_resolved=result.intermediates_resolved,

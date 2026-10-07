@@ -25,7 +25,6 @@ import glob
 import http.server
 import inspect
 import json
-from typing import Any, Self
 import os
 import shlex
 import signal
@@ -37,8 +36,8 @@ import textwrap
 import threading
 import time
 import unittest
-
 from collections.abc import Callable
+from typing import Any, Self
 
 # Root of the repository.
 _REPO_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -102,12 +101,17 @@ def _blender_env(tmpdir: str) -> dict[str, str]:
     """
     Return an environment dict for Blender sub-processes.
 
-    Sets ``HOME`` to *tmpdir* so that Blender reads and writes its
-    configuration there instead of touching the real user directory.
+    Sets ``HOME`` and ``BLENDER_USER_RESOURCES`` to *tmpdir* so that Blender
+    reads and writes its configuration and extensions there instead of
+    touching the real user directory. ``HOME`` alone is not enough on macOS:
+    Blender resolves ``~/Library/Application Support/Blender`` without it, so
+    a ``--factory-startup ... install-file --enable`` or ``save_userpref()``
+    would overwrite the real user's ``userpref.blend``.
     Disables ASAN leak checking so debug builds exit cleanly.
     """
     env = os.environ.copy()
     env["HOME"] = tmpdir
+    env["BLENDER_USER_RESOURCES"] = os.path.join(tmpdir, "blender_user_resources")
     env["ASAN_OPTIONS"] = ":".join(filter(None, [
         env.get("ASAN_OPTIONS", ""),
         "alloc_dealloc_mismatch=0",
@@ -120,7 +124,7 @@ def _run_blender(args: list[str], env: dict[str, str]) -> None:
     """
     Run a Blender command and raise on failure, including stderr in the message.
     """
-    result = subprocess.run(args, capture_output=True, env=env)
+    result = subprocess.run(args, capture_output=True, env=env, check=False)
     if result.returncode != 0:
         raise RuntimeError(
             "Command failed (exit {:d}):\n  {:s}\n{:s}".format(
@@ -129,6 +133,49 @@ def _run_blender(args: list[str], env: dict[str, str]) -> None:
                 result.stderr.decode("utf-8", errors="replace"),
             )
         )
+
+
+_CONFIG_MARKER = "BLMCP_USER_CONFIG="
+
+
+def _assert_blender_config_isolated(blender_bin: str, env: dict[str, str], tmpdir: str) -> None:
+    """
+    Raise unless Blender's user config directory resolves inside *tmpdir*.
+
+    Runs before anything is installed or saved: a test that writes
+    preferences must never reach the real user's ``userpref.blend``.
+    """
+    result = subprocess.run(
+        [
+            blender_bin, "--background", "--factory-startup", "--python-expr",
+            "import bpy; print({!r} + bpy.utils.user_resource('CONFIG'))".format(_CONFIG_MARKER),
+        ],
+        capture_output=True,
+        env=env,
+        check=False,
+    )
+    lines = result.stdout.decode("utf-8", errors="replace").splitlines()
+    config_dirs = [line[len(_CONFIG_MARKER):] for line in lines if line.startswith(_CONFIG_MARKER)]
+    if len(config_dirs) != 1:
+        raise RuntimeError("Blender did not report its user config directory: {!r}".format(lines))
+    real_tmpdir = os.path.realpath(tmpdir)
+    if not os.path.realpath(config_dirs[0]).startswith(real_tmpdir + os.sep):
+        raise RuntimeError(
+            "Blender's user config {:s} is outside the test directory {:s}: "
+            "saving preferences would overwrite the real user's.".format(config_dirs[0], real_tmpdir)
+        )
+
+
+def _assert_port_free(port: int) -> None:
+    """
+    Raise if something already listens on *port*: ``_wait_for_port`` would
+    accept that listener and the tests would drive the wrong Blender.
+    """
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        if sock.connect_ex(("localhost", port)) == 0:
+            raise RuntimeError(
+                "Port {:d} is already in use (another Blender with the MCP add-on?)".format(port)
+            )
 
 
 def _drain_stdout(proc: "subprocess.Popen[bytes]") -> None:
@@ -340,7 +387,7 @@ def _save_screenshot(port: int, filepath: str) -> None:
     """
     def code() -> None:
         import bpy  # pylint: disable=import-error
-        bpy.ops.screen.screenshot(filepath=filepath)  # noqa: F821
+        bpy.ops.screen.screenshot(filepath=filepath)
 
     _blender_exec_for_internal_use_only_ok_or_exception(
         port, "filepath = {!r}\n{:s}".format(
@@ -415,6 +462,7 @@ def _create_venv() -> str:
     result = subprocess.run(
         [venv_python, "-m", "pip", "install", os.path.join(_REPO_DIR, "mcp")],
         capture_output=True,
+        check=False,
     )
     if result.returncode != 0:
         raise RuntimeError(
@@ -564,6 +612,9 @@ class TestChatClient(unittest.TestCase):
         cls.addClassCleanup(cls._tmpdir.cleanup)
 
         env = _blender_env(tmpdir)
+        # Must run before anything is installed or saved (`save_userpref` below).
+        _assert_blender_config_isolated(blender_bin, env, tmpdir)
+        _assert_port_free(_PORT_BLENDER)
 
         # ----
         # Venv
@@ -822,13 +873,18 @@ class TestChatClient(unittest.TestCase):
             env=env,
         )
 
-        stdout, stderr = proc.communicate(timeout=timeout)
+        try:
+            stdout, stderr = proc.communicate(timeout=timeout)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            proc.communicate()
+            raise
         stdout_text = stdout.decode("utf-8", errors="replace")
         stderr_text = stderr.decode("utf-8", errors="replace")
         self._last_output_info = (
             "stdout:\n{:s}\nstderr:\n{:s}".format(stdout_text, stderr_text)
         )
-        print("", flush=True)
+        print(flush=True)
         print("  prompt: {:s}".format(prompt), flush=True)
         print("  response: {:s}".format(stdout_text.strip()), flush=True)
         return stdout_text, stderr_text
@@ -1006,7 +1062,6 @@ class TestChatClient(unittest.TestCase):
         # Defect: no material assigned.
         # Defect: material uses an absolute image path.
         objects_bad = ["Barrel", "Lantern", "Wagon"]
-        objects_good = ["Chimney", "Crate", "Fence"]
 
         def setup() -> None:
             """

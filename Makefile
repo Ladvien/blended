@@ -1,6 +1,6 @@
 .PHONY: test test-pure test-blender test-blender-app converge converge-local \
 	replay calibrate-eye calibrate-visual-gate pin-golden-views converge-auto \
-	pin bench-3dcode chat-e2e photo-to-model provider-smoke test-repro \
+	mine-ops pin bench-3dcode chat-e2e photo-to-model provider-smoke test-repro \
 	test-mcp test-mcp-blender install-mcp-addon test-viewport-gui
 PY ?= .venv/bin/python
 BLENDER ?= /Applications/Blender.app/Contents/MacOS/Blender
@@ -9,7 +9,7 @@ BLENDER ?= /Applications/Blender.app/Contents/MacOS/Blender
 # Three layers: the pure suite in the dev venv, the Blender suite inside
 # the installed Blender (the environment blended runs in over MCP), and
 # the MCP server's unit layer. A bare `pytest tests/blender` with no bpy
-# wheel collects nothing and exits 5, which is not a pass.
+# wheel skips every module and exits 5 (nothing ran), which is not a pass.
 test: test-pure test-blender-app test-mcp
 
 # Pure-Python layer: must pass on any machine, no Blender required.
@@ -17,7 +17,8 @@ test-pure:
 	$(PY) -m pytest tests/pure -q
 
 # Blender layer: requires `import bpy` to work (pip-installed bpy wheel,
-# or Blender's own Python). Skips cleanly if bpy is absent.
+# or Blender's own Python). With no bpy every module skips and pytest
+# exits 5 (measured), so a missing bpy fails this target loudly.
 test-blender:
 	$(PY) -m pytest tests/blender -q
 
@@ -200,7 +201,8 @@ chat-e2e:
 # Photo in, model out: the agent reads a picture of a real object and
 # builds it. The default prompt names no shape, so the picture is what
 # drove the build; the proof is the contact sheet it prints.
-#   make photo-to-model ARGS="--photo path/to/thing.jpg"
+#   make photo-to-model ARGS="--photo path/to/thing.jpg --vision-model kimi-k2.7-code:cloud"
+#     (the gate needs an eye that is not the writer; the default pair has none)
 #   make photo-to-model ARGS="--photo thing.jpg --model deepseek-v4-pro:cloud \
 #       --vision-model kimi-k2.7-code:cloud"   (text-only writer, eye reads it)
 photo-to-model:
@@ -213,4 +215,4 @@ photo-to-model:
 #   make provider-smoke ARGS="--only big"
 #   make provider-smoke ARGS="--only claude-code"
 provider-smoke:
-	.venv/bin/python scripts/provider_smoke.py $(ARGS)
+	$(PY) scripts/provider_smoke.py $(ARGS)

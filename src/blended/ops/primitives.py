@@ -110,7 +110,9 @@ def rename_object(object_name: str, new_name: str) -> ObjectName:
     blender_object.name = new_name
     if blender_object.data is not None:
         blender_object.data.name = new_name
-    return ObjectName(new_name)
+    # Blender truncates names past its length limit; report the name the
+    # object actually has, which is the one every later op must look up.
+    return ObjectName(blender_object.name)
 
 
 def remove_object_and_mesh(object_name: str) -> None:
@@ -125,10 +127,14 @@ def remove_object_and_mesh(object_name: str) -> None:
     existing_object = bpy.data.objects.get(object_name)
     if existing_object is None:
         return
-    existing_mesh = existing_object.data
+    existing_data = existing_object.data
     bpy.data.objects.remove(existing_object)
-    if existing_mesh is not None and existing_mesh.users == 0:
-        bpy.data.meshes.remove(existing_mesh)
+    # The object may be of ANY type (a constructor replaces whatever holds
+    # its name: measured, add_box over an armature raised TypeError from
+    # `bpy.data.meshes.remove(armature_data)` AFTER the armature was gone),
+    # so its orphaned data is removed type-blind.
+    if existing_data is not None and existing_data.users == 0:
+        bpy.data.batch_remove((existing_data,))
 
 
 @op(gated=False)

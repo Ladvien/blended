@@ -37,8 +37,11 @@ from pathlib import Path
 
 # glTF 2.0 binary container layout (little-endian, 12-byte header then chunks).
 GLB_MAGIC = 0x46546C67  # 'glTF'
+GLB_VERSION = 2
 GLB_HEADER_SIZE_BYTES = 12
 GLB_CHUNK_HEADER_SIZE_BYTES = 8
+GLB_CHUNK_TYPE_JSON = 0x4E4F534A  # 'JSON'
+GLB_CHUNK_TYPE_BIN = 0x004E4942  # 'BIN\0'
 
 # Round positions to this many decimals before welding. 1e-6 m = 1
 # micron: far below any prop feature, far above float32 round-trip
@@ -72,7 +75,7 @@ _COMPONENT_FORMATS = {
     5125: ("I", 4),  # UNSIGNED_INT
     5126: ("f", 4),  # FLOAT
 }
-_COMPONENT_MAXIMA = {5121: 255.0, 5123: 65535.0}
+_COMPONENT_MAXIMA = {5120: 127.0, 5121: 255.0, 5122: 32767.0, 5123: 65535.0}
 _TYPE_COMPONENT_COUNTS = {"SCALAR": 1, "VEC2": 2, "VEC3": 3, "VEC4": 4, "MAT4": 16}
 
 
@@ -156,9 +159,10 @@ class GlbAssetReport:
     @property
     def dimensions_m(self) -> tuple[float, float, float]:
         """glTF-space extents, max - min."""
-        return tuple(
-            self.maximum_corner_m[axis] - self.minimum_corner_m[axis]
-            for axis in range(3)
+        return (
+            self.maximum_corner_m[0] - self.minimum_corner_m[0],
+            self.maximum_corner_m[1] - self.minimum_corner_m[1],
+            self.maximum_corner_m[2] - self.minimum_corner_m[2],
         )
 
 
@@ -173,25 +177,60 @@ def parse_glb(path: Path) -> tuple[dict, bytes]:
     data = Path(path).read_bytes()
     if len(data) < GLB_HEADER_SIZE_BYTES:
         raise ValueError(f"parse_glb({path!r}): file is too short to be a .glb")
-    magic, _version, declared_length = struct.unpack(
+    magic, version, declared_length = struct.unpack(
         "<III", data[:GLB_HEADER_SIZE_BYTES]
     )
     if magic != GLB_MAGIC:
         raise ValueError(f"parse_glb({path!r}): not a .glb — bad magic {magic:#x}")
+    if version != GLB_VERSION:
+        raise ValueError(
+            f"parse_glb({path!r}): container version {version}, "
+            f"only {GLB_VERSION} is read here"
+        )
     if declared_length != len(data):
         raise ValueError(
             f"parse_glb({path!r}): header declares {declared_length} bytes, "
             f"file is {len(data)}"
         )
 
-    json_length = struct.unpack("<I", data[12:16])[0]
     json_start = GLB_HEADER_SIZE_BYTES + GLB_CHUNK_HEADER_SIZE_BYTES
-    gltf = json.loads(data[json_start : json_start + json_length])
+    if len(data) < json_start:
+        raise ValueError(f"parse_glb({path!r}): no JSON chunk header")
+    json_length, json_chunk_type = struct.unpack_from(
+        "<II", data, GLB_HEADER_SIZE_BYTES
+    )
+    if json_chunk_type != GLB_CHUNK_TYPE_JSON:
+        raise ValueError(
+            f"parse_glb({path!r}): first chunk type {json_chunk_type:#x} is not JSON"
+        )
+    json_end = json_start + json_length
+    if json_end > len(data):
+        raise ValueError(
+            f"parse_glb({path!r}): JSON chunk of {json_length} bytes runs past "
+            f"the end of the file"
+        )
+    gltf = json.loads(data[json_start:json_end])
 
-    binary_header = json_start + json_length
-    binary_length = struct.unpack("<I", data[binary_header : binary_header + 4])[0]
-    binary_start = binary_header + GLB_CHUNK_HEADER_SIZE_BYTES
-    return gltf, data[binary_start : binary_start + binary_length]
+    # glTF 2.0 §4.4.3: later chunks are optional and unknown types must
+    # be skipped; the BIN chunk is the one that carries accessor bytes.
+    binary = b""
+    chunk_cursor = json_end
+    while chunk_cursor < len(data):
+        if chunk_cursor + GLB_CHUNK_HEADER_SIZE_BYTES > len(data):
+            raise ValueError(f"parse_glb({path!r}): truncated chunk header")
+        chunk_length, chunk_type = struct.unpack_from("<II", data, chunk_cursor)
+        chunk_start = chunk_cursor + GLB_CHUNK_HEADER_SIZE_BYTES
+        chunk_end = chunk_start + chunk_length
+        if chunk_end > len(data):
+            raise ValueError(
+                f"parse_glb({path!r}): chunk of {chunk_length} bytes runs past "
+                f"the end of the file"
+            )
+        if chunk_type == GLB_CHUNK_TYPE_BIN:
+            binary = data[chunk_start:chunk_end]
+            break
+        chunk_cursor = chunk_end
+    return gltf, binary
 
 
 def read_accessor(gltf: dict, binary: bytes, index: int) -> list[tuple[float, ...]]:
@@ -224,7 +263,12 @@ def read_accessor(gltf: dict, binary: bytes, index: int) -> list[tuple[float, ..
     values = []
     for element in range(accessor["count"]):
         raw = struct.unpack_from(layout, binary, start + element * stride)
-        values.append(tuple(v / divisor for v in raw) if divisor else raw)
+        # glTF 2.0 §3.11: signed normalized c/MAX clamps at -1.0 (the
+        # most negative integer is one step beyond -1.0); unsigned
+        # values are never negative so the clamp is inert for them.
+        values.append(
+            tuple(max(v / divisor, -1.0) for v in raw) if divisor else raw
+        )
     return values
 
 
@@ -232,7 +276,8 @@ def _weld(positions: list) -> list:
     """Map each vertex index to a POSITION-welded index. See the module
     docstring — this is what makes a boundary-edge count mean "hole in
     the surface" rather than "UV seam"."""
-    welded, remap = {}, []
+    welded: dict[tuple[float, ...], int] = {}
+    remap: list[int] = []
     for position in positions:
         key = tuple(round(component, POSITION_WELD_DECIMALS) for component in position)
         remap.append(welded.setdefault(key, len(welded)))
@@ -307,7 +352,9 @@ def mesh_reports(gltf: dict, binary: bytes) -> dict[str, GlbMeshReport]:
                         single_influence_vertex_count += 1
                     skinned_vertex_count += 1
 
-            indices = [i[0] for i in read_accessor(gltf, binary, primitive["indices"])]
+            indices = [
+                int(i[0]) for i in read_accessor(gltf, binary, primitive["indices"])
+            ]
             remap = _weld(positions)
             for corner in range(0, len(indices), 3):
                 corner_indices = indices[corner : corner + 3]
@@ -416,20 +463,28 @@ def format_glb_report(
         f"{report.path}",
         f"  bytes ................. {report.size_bytes:,}",
         f"  triangles ............. {report.triangle_count:,}",
-        f"  boundary edges ........ {report.welded_boundary_edge_count}  "
-        f"(welded by position)",
+        (
+            f"  boundary edges ........ {report.welded_boundary_edge_count}  "
+            f"(welded by position)"
+        ),
         f"  non-manifold edges .... {report.non_manifold_edge_count}",
         f"  inverted facets ....... {report.inverted_facet_count}",
         f"  materials / images .... {report.material_count} / {report.image_count}",
         f"  root node(s) .......... {report.root_node_names}",
-        f"  extents (m) ........... "
-        f"{', '.join(f'{value:.4f}' for value in report.dimensions_m)}",
-        f"  animations ............ {len(report.animation_names)} "
-        f"{report.animation_names}",
-        f"  skin: sets/violations/neg .. "
-        f"{max((m.weight_set_count for m in report.meshes.values()), default=0)}/"
-        f"{sum(m.weight_sum_violation_count for m in report.meshes.values())}/"
-        f"{sum(m.negative_weight_vertex_count for m in report.meshes.values())}",
+        (
+            f"  extents (m) ........... "
+            f"{', '.join(f'{value:.4f}' for value in report.dimensions_m)}"
+        ),
+        (
+            f"  animations ............ {len(report.animation_names)} "
+            f"{report.animation_names}"
+        ),
+        (
+            f"  skin: sets/violations/neg .. "
+            f"{max((m.weight_set_count for m in report.meshes.values()), default=0)}/"
+            f"{sum(m.weight_sum_violation_count for m in report.meshes.values())}/"
+            f"{sum(m.negative_weight_vertex_count for m in report.meshes.values())}"
+        ),
         ]
     if baseline is not None:
         removed = sorted(set(baseline.mesh_names) - set(report.mesh_names))
@@ -460,8 +515,10 @@ def format_glb_report(
 
     lines += [
         "",
-        "  per mesh (tris / boundary / non-manifold / inverted / UV sets / "
-        "weight-sets / sum-viol / neg-wt / 1-infl):",
+        (
+            "  per mesh (tris / boundary / non-manifold / inverted / UV sets / "
+            "weight-sets / sum-viol / neg-wt / 1-infl):"
+        ),
     ]
     for name in sorted(report.meshes):
         mesh = report.meshes[name]

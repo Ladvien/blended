@@ -201,11 +201,27 @@ def run_lanes(lanes: list[str], image_base64: str) -> list[LaneCheck]:
     return checks
 
 
+KNOWN_LANES = ("openrouter", "bmb", "big", "claude-code")
+
+
+def parse_lanes(text: str) -> list[str]:
+    """The lanes named by `--only`. An unknown name is a typo, and a typo
+    that silently ran nothing would make "every lane answers" true of
+    zero lanes."""
+    lanes = [lane.strip() for lane in text.split(",") if lane.strip()]
+    unknown = [lane for lane in lanes if lane not in KNOWN_LANES]
+    if unknown or not lanes:
+        raise SystemExit(
+            f"--only names {unknown or 'no lane'}; known lanes: {', '.join(KNOWN_LANES)}"
+        )
+    return lanes
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n", 1)[0])
-    parser.add_argument("--only", default="openrouter,bmb,big,claude-code")
+    parser.add_argument("--only", default=",".join(KNOWN_LANES))
     arguments = parser.parse_args(argv)
-    lanes = [lane.strip() for lane in arguments.only.split(",") if lane.strip()]
+    lanes = parse_lanes(arguments.only)
 
     with tempfile.TemporaryDirectory() as directory:
         disc = write_red_disc_png(Path(directory) / "red_disc.png")

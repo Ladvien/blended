@@ -207,7 +207,7 @@ class TestDataFiles(unittest.TestCase):
         """
         manual_dir = os.path.join(self._data_dir, "manual")
         if not os.path.isdir(manual_dir):
-            self.skipTest("manual/ directory not present (run make update_manual)")
+            self.skipTest("manual/ directory not present (run make update_reference_manual)")
         has_rst = False
         for _dirpath, _dirnames, filenames in os.walk(manual_dir):
             if any(f.endswith(".rst") for f in filenames):
@@ -229,7 +229,7 @@ class TestDataFiles(unittest.TestCase):
         """
         manual_index = os.path.join(self._data_dir, "manual", "index.rst")
         if not os.path.isdir(os.path.dirname(manual_index)):
-            self.skipTest("manual/ directory not present (run make update_manual)")
+            self.skipTest("manual/ directory not present (run make update_reference_manual)")
         self.assertTrue(os.path.isfile(manual_index))
 
     def test_prompt_referenced_data_paths_exist(self) -> None:
@@ -245,7 +245,7 @@ class TestDataFiles(unittest.TestCase):
                 continue
             fs_path = os.path.join(self._data_dir, prompt_path.removeprefix("data/"))
             if prompt_path == "data/manual/" and not os.path.exists(fs_path):
-                self.skipTest("manual/ directory not present (run make update_manual)")
+                self.skipTest("manual/ directory not present (run make update_reference_manual)")
             self.assertTrue(
                 os.path.exists(fs_path),
                 "Prompt references missing path: {:s}".format(prompt_path),

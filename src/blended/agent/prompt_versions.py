@@ -25,7 +25,8 @@ build enforced by construction.
 Adding a revision: see `prompts/README.md`. In short — copy the previous
 template, change ONE element, state `hypothesis` BEFORE running it, fill
 `outcome` from the measurement rather than impression, and move
-ACTIVE_PROMPT_REVISION only once the measurement supports it.
+PINNED_PROMPT_REVISION (ACTIVE_PROMPT_REVISION follows it) only once
+the measurement supports it, through `make pin`.
 """
 
 from __future__ import annotations
@@ -625,9 +626,9 @@ CONVERGENCE_WRITER_MODEL = "deepseek-v4-pro:cloud"
 CONVERGENCE_VISION_MODEL = "claude-code:sonnet"
 CONVERGENCE_TOOL_CALL_BUDGET = 24
 
-# v11 is a CANDIDATE: scripts/chat_e2e.py runs it explicitly
-# (build_system_prompt(revision=11)) and records its outcome; it becomes
-# the shipped text only through `make pin`, the one human act.
+# Revisions above the pin are CANDIDATES: scripts/chat_e2e.py runs one
+# explicitly (build_system_prompt(revision=n)) and records its outcome;
+# it becomes the shipped text only through `make pin`, the one human act.
 ACTIVE_PROMPT_REVISION = PINNED_PROMPT_REVISION
 
 

@@ -2,8 +2,8 @@
 
 A rebuild that starts from residue measures the previous build. scp's
 harness learned this twice: Blender's undo stack is unreliable from
-script-driven operators, so `ui/turn_undo.py`'s GUI path is not a
-mechanism a rebuild may trust, and a wipe that is not asserted is a
+script-driven operators, so an undo-based rewind is not a mechanism a
+rebuild may trust, and a wipe that is not asserted is a
 wipe that silently left an object behind — after which every count,
 extent and digest in the run belongs to two builds at once.
 

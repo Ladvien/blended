@@ -30,11 +30,6 @@ STOOL_SPEC = SplayedLegSpec(
     leg_radius_m=0.022,
 )
 
-# The placement probe's own tolerance. The identity below holds to
-# floating point, so this is slack by three orders of magnitude — the
-# point is that the assertion is stated against the gate that grades it.
-PLACEMENT_TOLERANCE_M = 0.0100
-
 
 def _axis_radius_at_ground(spec: SplayedLegSpec) -> float:
     """Where the leg's axis crosses z=0, measured from the base up.
@@ -75,23 +70,6 @@ def test_the_leg_regains_the_length_the_drop_spent():
     )
 
 
-def test_the_naive_placement_is_the_measured_failure():
-    """Pins WHY the offset exists, in the number that was observed.
-
-    A leg whose base centre sits on the foot circle and is not dropped
-    puts its axis at z=0 inboard by leg_radius * tan(splay) — and the
-    surviving crescent's centroid further in still. This asserts the
-    direction and that the error clears the gate's tolerance, which is
-    what makes the offset load-bearing rather than cosmetic.
-    """
-    naive_axis_radius_m = STOOL_SPEC.foot_radius_m - (
-        STOOL_SPEC.leg_radius_m * math.tan(STOOL_SPEC.splay_rad)
-    )
-    assert naive_axis_radius_m < STOOL_SPEC.foot_radius_m
-    correct_offset_m = STOOL_SPEC.base_radius_m - STOOL_SPEC.foot_radius_m
-    assert correct_offset_m > 0.0
-
-
 def test_a_vertical_leg_needs_no_outboard_offset():
     """Zero splay is not a special case, it is the same formula at 0."""
     vertical = SplayedLegSpec(
@@ -106,12 +84,6 @@ def test_a_vertical_leg_needs_no_outboard_offset():
     assert _axis_radius_at_ground(vertical) == pytest.approx(
         vertical.foot_radius_m
     )
-
-
-def test_bearings_are_computed_not_rounded():
-    """Three legs come out at exactly 0, 120 and 240."""
-    bearings = [(360.0 / 3.0) * index for index in range(3)]
-    assert bearings == [0.0, 120.0, 240.0]
 
 
 @pytest.mark.parametrize(

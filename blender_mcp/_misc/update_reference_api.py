@@ -61,7 +61,7 @@ def main() -> int:
         print("Examples directory not found: {:s}".format(examples_dir))
         return 1
 
-    # Resolve relative to the repository root (one level up from `scripts/`).
+    # Resolve relative to the repository root (one level up from `_misc/`).
     repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     dst_dir = os.path.join(repo_root, "mcp", "blmcp", "data", "api")
 

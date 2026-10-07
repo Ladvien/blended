@@ -49,9 +49,10 @@ sys.path.insert(0, str(REPOSITORY_ROOT))
 os.chdir(REPOSITORY_ROOT)
 
 # The task text is `blended.evaluate.bench_task_prompt.OPS_TASK_TEMPLATE`:
-# one definition, so the raw-bpy arms of the fine-tune decision
-# experiment send a text that differs from this one in exactly the
-# `run_python` bullet and nothing else.
+# one definition. The production runner sends it as is. The fine-tune
+# decision experiment's raw-bpy arms send `RAW_TASK_TEMPLATE`, which is it
+# with `CHUNK_RULE` removed; its op arms send
+# `SINGLE_SHOT_OPS_TASK_TEMPLATE`, which is it plus `SINGLE_SHOT_RULE`.
 
 PROMPT_FILENAMES = {
     "description": "prompt_description.txt",
@@ -91,15 +92,15 @@ def main(argv) -> int:
         OllamaClient,
         dispatch_here,
     )
+    from blended.capture.reference_photo import normalize_reference_photo
     from blended.evaluate.bench_bridge import (
         RecordedCall,
         canonical_orientation_epilogue,
         prelude,
         standalone_script,
     )
-    from blended.evaluate.bench_task_prompt import OPS_TASK_TEMPLATE
-    from blended.capture.reference_photo import normalize_reference_photo
     from blended.evaluate.bench_reference_views import reference_view_paths
+    from blended.evaluate.bench_task_prompt import OPS_TASK_TEMPLATE
     from blended.ops.canonical_orientation import apply_canonical_depth_axis
     from blended.version import assert_supported_blender
 
@@ -319,4 +320,8 @@ def main(argv) -> int:
 
 
 extra_arguments = sys.argv[sys.argv.index("--") + 1 :] if "--" in sys.argv else []
-raise SystemExit(main(extra_arguments))
+# Blender exits 0 on an uncaught Python exception, so a run that
+# died would read as a success (OT-32).
+from blended.run.script_exit import run_script_main
+
+raise SystemExit(run_script_main(main, extra_arguments))

@@ -89,6 +89,8 @@ def assign_weights_by_height(
     translated meshes, not just ones sitting at the origin.
     Returns the number of vertices that received the weight.
     """
+    import bpy
+
     from blended.ops._objects import object_by_name
 
     mesh_object = object_by_name(object_name, "MESH")
@@ -98,6 +100,9 @@ def assign_weights_by_height(
             f"[{MINIMUM_WEIGHT}, {MAXIMUM_WEIGHT}]"
         )
 
+    # matrix_world is lazy (see blended.ops.transforms): a location set a
+    # moment ago is invisible to it until the view layer updates.
+    bpy.context.view_layer.update()
     matrix_world = mesh_object.matrix_world
     mesh = mesh_object.data
 

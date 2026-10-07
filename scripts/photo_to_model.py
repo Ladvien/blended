@@ -7,9 +7,11 @@
 
 The picture, not the prompt, carries the shape: the default prompt says
 only "this object", so whatever the writer builds it built from pixels.
-A vision-capable writer (the `claude-code:` default) sees the photo
-itself; a text-only writer gets the eye's reading of it. Either way the
-proof is the contact sheet this prints at the end.
+The writer never sees the photo itself: the separate eye reads it and the
+writer gets that reading (`ModelConfig.describe_routing`). The default
+config (`claude-code:sonnet` as both writer and eye) has NO separate eye,
+so a bare run exits 2: name an eye that is not the writer. The proof is
+the contact sheet this prints at the end.
 
 Runs inside `blender --background`: bpy is on the main thread, so
 `dispatch_here` — the AgentSession default — is the right dispatcher.
@@ -82,9 +84,9 @@ def parse_arguments(argv):
     parser.add_argument("--prompt", default=DEFAULT_PROMPT)
     parser.add_argument("--revision", type=int, default=DEFAULT_PROMPT_REVISION)
     parser.add_argument("--model", default="")
-    # `None` means "leave the config default"; an explicit empty string
-    # means "no separate eye — the writer looks at the photo itself",
-    # which is exactly how a vision-capable writer runs.
+    # `None` means "leave the config default". An explicit empty string
+    # or an eye equal to the writer means "no separate eye", which the
+    # reference-photo gate refuses (exit 2).
     parser.add_argument("--vision-model", default=None)
     parser.add_argument(
         "--max-tool-calls", type=int, default=MAXIMUM_TOOL_CALLS_PER_TURN

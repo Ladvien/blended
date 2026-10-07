@@ -24,7 +24,7 @@ only a gate failure with every tool call executing cleanly is `prompt`.
 Tool feedback outranks model feedback (10.48550/arXiv.2409.02977).
 
 Exit codes: 0 pin proposal, 2 preflight refusal, 3 caps exceeded,
-4 halt on a classified failure.
+4 halt (a classified failure, or a run that wrote no record).
 """
 
 import argparse
@@ -408,8 +408,8 @@ def write_pin_proposal(
         "runs": [[iteration, brief] for iteration, brief in cycle_runs],
         "examiner_identity": examiner,
         "calibration_identity": calibration_identity,
-        "writer_model": sorted(writer_models)[0] if len(writer_models) == 1 else "",
-        "vision_model": sorted(vision_models)[0] if len(vision_models) == 1 else "",
+        "writer_model": min(writer_models) if len(writer_models) == 1 else "",
+        "vision_model": min(vision_models) if len(vision_models) == 1 else "",
         "tool_call_budget": arguments.max_tool_calls,
         "tool_calls": tool_calls,
         "proposed_at": _now(),
@@ -544,7 +544,25 @@ def main(argv=None) -> int:
                 )
                 return 3
             iteration = log.next_iteration_number()
-            run_one_brief(arguments, brief_name, iteration)
+            exit_code = run_one_brief(arguments, brief_name, iteration)
+            if record_for_run(log.records(), iteration, brief_name) is None:
+                write_halt_report(
+                    "",
+                    f"iteration {iteration} {brief_name} wrote no record "
+                    f"(driver exit {exit_code}): the run died before it was "
+                    f"measured",
+                    None,
+                    None,
+                    gradient,
+                    extra=(
+                        "Classifying an OLDER record of this brief as this run "
+                        "would blame the prompt for a harness or provider "
+                        "failure. Read the driver's output above (exit 70 is "
+                        "an uncaught exception, 1 with no record is a "
+                        "refusal), fix that, and re-run."
+                    ),
+                )
+                return 4
             runs_spent += 1
 
         records = log.records()
@@ -608,9 +626,13 @@ def main(argv=None) -> int:
             )
             return 4
 
-        gradient, written_revision = adjust(
-            arguments, [record for record, _, _ in failing]
-        )
+        try:
+            gradient, written_revision = adjust(
+                arguments, [record for record, _, _ in failing]
+            )
+        except ScreeningRunWroteNoRecord as error:
+            write_halt_report("", str(error), failing[0][0], failing[0][1], "")
+            return 4
         if written_revision is None:
             write_halt_report(
                 CLASSIFICATION_PROMPT,
@@ -644,6 +666,23 @@ def main(argv=None) -> int:
         gradient,
     )
     return 3
+
+
+class ScreeningRunWroteNoRecord(RuntimeError):
+    """A screening run died before it was measured. Distinct from a run
+    that failed its gates: only a measured failure may blacklist a hunk."""
+
+
+def record_for_run(records, iteration: int, brief_name: str):
+    """The record the driver appended for exactly this run, or None."""
+    return next(
+        (
+            record
+            for record in records
+            if record.iteration == iteration and record.brief_name == brief_name
+        ),
+        None,
+    )
 
 
 def _newest_cycle(records, brief_names):
@@ -715,22 +754,20 @@ def adjust(arguments, failing_records) -> tuple[str, int | None]:
         screening_arguments.revision = revision
         iteration = log.next_iteration_number()
         run_one_brief(screening_arguments, failing_brief, iteration)
-        screened_record = next(
-            (
-                record
-                for record in log.records()
-                if record.iteration == iteration
-            ),
-            None,
-        )
-        if screened_record is None or not (
+        screened_record = record_for_run(log.records(), iteration, failing_brief)
+        if screened_record is None:
+            # Not a measured failure: a crash must not blacklist a hunk.
+            _roll_back(revision, package_directory)
+            raise ScreeningRunWroteNoRecord(
+                f"the screening run of v{revision} on {failing_brief} "
+                f"(iteration {iteration}) wrote no record; the candidate was "
+                f"rolled back and NOT recorded as rejected"
+            )
+        if not (
             screened_record.structural_gate_passed and screened_record.form_gate_passed
         ):
-            failures = (
-                tuple(screened_record.form_failures)
-                + tuple(screened_record.structural_failures)
-                if screened_record
-                else ("the screening run produced no record",)
+            failures = tuple(screened_record.form_failures) + tuple(
+                screened_record.structural_failures
             )
             prompt_search.record_rejection(
                 hunk,

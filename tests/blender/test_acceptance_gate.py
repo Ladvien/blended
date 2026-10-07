@@ -407,8 +407,6 @@ def test_stool_reference_passes_the_structural_gate(empty_scene):
 def test_legs_collapsed_to_the_axis_trips_no_central_post(empty_scene):
     """The measured historical failure (stale matrix_world): every leg
     ends up at the origin as one central post."""
-    import math
-
     from blended.evaluate import briefs
     from blended.evaluate.acceptance import evaluate_brief
     from blended.evaluate.briefs import get_brief
@@ -436,7 +434,7 @@ def test_legs_collapsed_to_the_axis_trips_no_central_post(empty_scene):
     report = evaluate_brief(brief)
     tripped = _failure_names(report, brief)
     assert "no_central_post" in tripped
-    assert {f"leg_{index}_foot_is_solid" for index in range(math.floor(3))} <= tripped
+    assert {f"leg_{index}_foot_is_solid" for index in range(briefs.STOOL_LEG_COUNT)} <= tripped
 
 
 def test_blind_recess_trips_the_clear_axis_probe(empty_scene):

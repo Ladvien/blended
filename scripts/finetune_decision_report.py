@@ -4,7 +4,7 @@
     .venv/bin/python scripts/finetune_decision_report.py \\
         --bench-root /Users/ladvien/3dcodebench
 
-Every number in the report is READ from a committed artifact, never
+Every MEASURED number in the report is READ from a committed artifact, never
 retyped: `env.json`, `phaseA/summary.md` + `phase_a_measured.json`,
 `phase_b_measured.json`, `phase_c_measured.json`, `phase_a_judge.json`,
 `outputs/finetune_decision/parity_gate.json` and
@@ -58,6 +58,7 @@ from finetune_decision_thresholds import (
     SERVED_CONTEXT_TOKENS,
     SERVED_PRECISION,
 )
+
 from blended.agent.tool_disclosure import core_ops, offered_tools
 from blended.agent.tools import SERVICE_TOOL_NAMES, TOOL_SCHEMAS
 
@@ -99,6 +100,27 @@ def ratio(numerator, denominator):
 
 def number(value, digits: int = 4) -> str:
     return "—" if value is None else f"{value:.{digits}f}"
+
+
+def bar_verdict(value, half_width, bar: float) -> str:
+    """How a delta stands against its bar, from the delta and its interval."""
+    if value is None or half_width is None:
+        return "unmeasured"
+    if value < bar:
+        return "below the bar"
+    if value - half_width < bar:
+        return "point estimate clears the bar; its interval does not"
+    if half_width == 0:
+        return "clears the bar; zero-width interval"
+    return f"clears the bar by ~{(value - bar) / half_width:.0f}x its own interval"
+
+
+def bands_overlap(first: dict, second: dict) -> bool:
+    """Do two {low, high} bands share any point? None bounds never overlap."""
+    bounds = (first.get("low"), first.get("high"), second.get("low"), second.get("high"))
+    if any(bound is None for bound in bounds):
+        return False
+    return first["low"] <= second["high"] and second["low"] <= first["high"]
 
 
 def _first_line(command_result: dict) -> str:
@@ -274,6 +296,18 @@ def main(argv) -> int:
         offered_tools(TOOL_SCHEMAS, core_ops(), SERVICE_TOOL_NAMES)
     )
     a2_funnel = measured.get("a2", {}).get("funnel", {})
+    a3_funnel = measured.get("a3", {}).get("funnel", {})
+    # Limitation 8's counts: completions coded E5 (the sweep's own wall-clock
+    # cap maps to E5; Phase B's PARSE_RESULT_CODES), read, not typed.
+    a2_timeouts = a2_funnel.get("codes", {}).get("E5", 0)
+    a3_timeouts = a3_funnel.get("codes", {}).get("E5", 0)
+    a5_executability = a5_funnel.get("executability_rate")
+    a5_execution_failure_rate = (
+        None if a5_executability is None else 1.0 - a5_executability
+    )
+    a4_half_width = a4_funnel.get("cd_pca_pass_interval", {}).get("half_width")
+    a4_half_width_pp = None if a4_half_width is None else 100.0 * a4_half_width
+    pass_bands = computed.get("pass_rate_intervals_pp") or {}
     # Δ_size's own interval, so the report can say WHY it is discounted:
     # not for width — it excludes zero — but for its subtrahend.
     delta_size_k = computed.get("delta_size_pp_k_mean")
@@ -481,7 +515,8 @@ def main(argv) -> int:
             "The Phase A denominator is the ARCHIVE, and the archive is "
             "multi-turn: every attempt in it ran through `AgentSession` with "
             "up to 24 tool calls per turn, a gate report after each one, and "
-            "the error text fed back to the writer. So 1.8% is the share of "
+            "the error text fed back to the writer. So "
+            f"{percent(shares.get('f_syntax'))} is the share of "
             "failures that are syntactic AFTER the loop has already absorbed "
             "the syntactic failures."
         ),
@@ -490,8 +525,9 @@ def main(argv) -> int:
             "The single-shot contrast is in this same report: A5 is the same "
             "class of model writing raw bpy with no feedback at all, and it "
             "fails to execute "
-            f"{percent(1.0 - (measured.get('a5', {}).get('funnel', {}).get('executability_rate') or 0.0))} "
-            "of the time. The gap between that and 1.8% IS the retry loop."
+            f"{percent(a5_execution_failure_rate)} "
+            "of the time. The gap between that and "
+            f"{percent(shares.get('f_syntax'))} IS the retry loop."
         ),
         "",
         (
@@ -585,8 +621,8 @@ def main(argv) -> int:
             f"| Δ_tune (executability A4 − A3) | "
             f"{number(computed.get('delta_tune_pp'), 1)} pp | "
             f"±{number(computed.get('delta_tune_half_width_pp'), 1)} pp | "
-            f">= {DELTA_TUNE_MINIMUM_PP} pp | clears the bar by ~15x its own "
-            f"interval |"
+            f">= {DELTA_TUNE_MINIMUM_PP} pp | "
+            f"{bar_verdict(computed.get('delta_tune_pp'), computed.get('delta_tune_half_width_pp'), DELTA_TUNE_MINIMUM_PP)} |"
         ),
         (
             f"| Δ_facade (executability A2 − A3) | "
@@ -660,10 +696,21 @@ def main(argv) -> int:
     lines += [
         "",
         (
-            "A1, A4 and A5 overlap heavily. The report therefore claims "
-            "NEITHER that the frontier model beat BlenderLLM nor that "
-            "BlenderLLM reached parity with it: on 20 instances neither claim "
-            "is available."
+            (
+                "A1, A4 and A5 overlap pairwise. The report therefore claims "
+                "NEITHER that the frontier model beat BlenderLLM nor that "
+                "BlenderLLM reached parity with it: on 20 instances neither claim "
+                "is available."
+            )
+            if all(
+                bands_overlap(pass_bands.get(left, {}), pass_bands.get(right, {}))
+                for left, right in (("a1", "a4"), ("a1", "a5"), ("a4", "a5"))
+            )
+            else (
+                "A1, A4 and A5 do NOT all overlap pairwise (table above): read "
+                "the bands, not this sentence, for which comparisons are "
+                "available."
+            )
         ),
         "",
         (
@@ -723,8 +770,8 @@ def main(argv) -> int:
             "cost. Two caveats, both load-bearing: wall clock is contaminated "
             "by four-way queueing on a single GPU and is NOT a clean "
             "per-completion latency; and A1's token count carries the harness "
-            "system prompt plus 56 tool schemas on every call, which is the "
-            "op format's cost, not the model's."
+            f"system prompt plus {harness.get('tool_schema_count')} tool schemas "
+            f"on every call, which is the op format's cost, not the model's."
         ),
         "",
         "## 4c. A1 against A5 — the facade's cost, with no measured return",
@@ -914,7 +961,8 @@ def main(argv) -> int:
         "",
         (
             f"1. **Bench size.** 20 instances x 4 draws = {COMPLETIONS_PER_ARM} "
-            f"completions per arm. One completion is 1.25 pp, so no rate "
+            f"completions per arm. One completion is "
+            f"{100.0 / COMPLETIONS_PER_ARM:.2f} pp, so no rate "
             f"difference below that is interpreted."
         ),
         (
@@ -932,7 +980,7 @@ def main(argv) -> int:
         (
             f"4. **Prompt parity is imperfect by construction.** The op arms get "
             f"the harness system prompt ({prompts['ops_system_lines']} lines) and "
-            f"56 tool schemas; the raw arms get the benchmark's own prompt "
+            f"{harness.get('tool_schema_count')} tool schemas; the raw arms get the benchmark's own prompt "
             f"({prompts['raw_system_lines']} lines). Full unified diff: "
             f"`phaseB/prompt_parity.diff` "
             f"({prompts['system_diff_lines']} diff lines, "
@@ -972,8 +1020,9 @@ def main(argv) -> int:
             "8. **Some A2/A3 completions were killed by the harness's own "
             "1500 s per-completion cap and are recorded as `E5`.** Their rows "
             "are synthesized and carry `synthesized_by`, so they can never be "
-            "mistaken for a reply a model returned: 11 of A2's 80 and 15 of "
-            "A3's 80. Mechanism, measured rather than assumed: "
+            f"mistaken for a reply a model returned: {a2_timeouts} of A2's "
+            f"{a2_funnel.get('completions')} and {a3_timeouts} of "
+            f"A3's {a3_funnel.get('completions')}. Mechanism, measured rather than assumed: "
             "`max_completion_tokens` is 16,384 and this lane decodes at "
             "11.8-12.8 tok/s, so a completion that runs to the ceiling needs "
             "~1,365 s of generation alone — and ~4x that per stream when four "
@@ -1000,15 +1049,16 @@ def main(argv) -> int:
             "A2 merely had to wrap it in tool-call JSON. A2 − A3 is therefore "
             "bpy against bpy-in-an-envelope, not facade against raw, and it "
             "also explains A2's collapse — a 7B was handed a "
-            "~17k-character system prompt, 56 schemas and a JSON envelope "
+            f"~17k-character system prompt, {harness.get('tool_schema_count')} schemas and a JSON envelope "
             "around the same task it already failed at unwrapped. Any future "
             "facade arm must change the task text so facade ops are the "
             "geometry path."
         ),
         (
             "11. **Effective sample size is ~20, not 80.** Four draws per "
-            "instance are correlated, so §4's intervals are clustered on the "
-            "20 instances and a ~45% pass rate carries roughly ±19 pp. Every "
+            f"instance are correlated, so §4's intervals are clustered on the "
+            f"20 instances and a {percent(a4_funnel.get('cd_pca_pass_rate'))} "
+            f"pass rate carries roughly ±{number(a4_half_width_pp, 0)} pp. Every "
             "cross-arm shape comparison in this report except Δ_tune sits "
             "inside its interval. The fix is more instances "
             "(`bench_sets/instances_dev_all.txt` holds 145), not more draws."

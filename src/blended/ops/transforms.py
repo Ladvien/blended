@@ -65,7 +65,10 @@ def _world_bounds_m(blender_objects) -> tuple[list[float], list[float]]:
 def _world_extents_m(blender_objects) -> tuple[float, float, float]:
     """Axis-aligned world extents of the objects' joint bounding box."""
     minimum, maximum = _world_bounds_m(blender_objects)
-    return tuple(maximum[axis] - minimum[axis] for axis in range(AXIS_COUNT))
+    extent_x_m, extent_y_m, extent_z_m = (
+        maximum[axis] - minimum[axis] for axis in range(AXIS_COUNT)
+    )
+    return (extent_x_m, extent_y_m, extent_z_m)
 
 
 @op(reads_only=True)
@@ -102,7 +105,7 @@ def apply_object_transform(object_name: str) -> ObjectName:
     _refresh_dependency_graph()
     blender_object.data.transform(blender_object.matrix_world)
     blender_object.matrix_world = Matrix.Identity(4)
-    return object_name
+    return ObjectName(object_name)
 
 
 def rotate_object_euler(
@@ -131,10 +134,14 @@ def rotate_object_euler(
     from blended.ops._objects import object_by_name
 
     blender_object = object_by_name(object_name)
+    # The Euler is built FIRST: an `order` it rejects (e.g. "AXIS_ANGLE",
+    # a valid rotation_mode but not an Euler order) must raise before the
+    # object's rotation_mode has been changed.
+    rotation = Euler((x_rad, y_rad, z_rad), order)
     blender_object.rotation_mode = order
-    blender_object.rotation_euler = Euler((x_rad, y_rad, z_rad), order)
+    blender_object.rotation_euler = rotation
     _refresh_dependency_graph()
-    return object_name
+    return ObjectName(object_name)
 
 
 def move_object_to(object_name: str, location_m: tuple[float, float, float]) -> ObjectName:
@@ -146,9 +153,18 @@ def move_object_to(object_name: str, location_m: tuple[float, float, float]) -> 
     from blended.ops._objects import object_by_name
 
     blender_object = object_by_name(object_name)
-    blender_object.location = location_m
+    if blender_object.parent is None:
+        blender_object.location = location_m
+    else:
+        # `location` is parent-relative; the op promises a WORLD location
+        # (measured: a child of an empty at z=5 moved to (0,0,0) stayed
+        # at world z=5). Only the translation of the world matrix changes.
+        _refresh_dependency_graph()
+        world_matrix = blender_object.matrix_world.copy()
+        world_matrix.translation = location_m
+        blender_object.matrix_world = world_matrix
     _refresh_dependency_graph()
-    return object_name
+    return ObjectName(object_name)
 
 
 def snap_base_to_ground(object_name: str) -> float:
@@ -189,4 +205,4 @@ def center_on_origin_xy(object_name: str) -> ObjectName:
     blender_object.location.x -= bounds_center.x
     blender_object.location.y -= bounds_center.y
     _refresh_dependency_graph()
-    return object_name
+    return ObjectName(object_name)

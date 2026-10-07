@@ -51,7 +51,7 @@ __all__ = [
 
 
 def signed_permutations():
-    """All 24 signed permutation matrices (6 axis orders x 8 sign choices)."""
+    """All 48 signed permutation matrices (6 axis orders x 8 sign choices)."""
     out = []
     for perm in ((0, 1, 2), (0, 2, 1), (1, 0, 2),
                  (1, 2, 0), (2, 0, 1), (2, 1, 0)):
@@ -77,9 +77,10 @@ def best_pca_alignment(sc, reference_points, generated_points):
     """(rotation, chamfer) of the best proper rotation mapping the
     generated cloud's PCA frame onto the reference's.
 
-    Tries every proper rotation over the 24 signed permutations and keeps
-    the one with the smallest symmetric squared Chamfer, reusing the
-    scorer's own `chamfer_squared`. The rotation is returned so F-score
+    Composes the two PCA frames with each of the 48 signed permutations,
+    keeps the 24 results that are proper rotations, and takes the one
+    with the smallest symmetric squared Chamfer, reusing the scorer's
+    own `chamfer_squared`. The rotation is returned so F-score
     can be measured on the SAME aligned cloud cd_pca was measured on:
     the two metrics then answer the same question about the same pose.
     """

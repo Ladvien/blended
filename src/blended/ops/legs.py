@@ -233,7 +233,7 @@ def trim_soles_flat(
     at z=0, which leaves nothing below the plane to remove.
     """
     from blended.ops.booleans import boolean_difference
-    from blended.ops.primitives import add_box, link_into_scene
+    from blended.ops.primitives import add_box, link_into_scene, remove_object_and_mesh
 
     if span_m <= 0.0:
         raise ImpossibleLeg(f"span_m must be positive, got {span_m}")
@@ -246,5 +246,12 @@ def trim_soles_flat(
         location_m=(0.0, 0.0, -cutter_depth_m),
     )
     link_into_scene(cutter_name)
-    boolean_difference(object_name, cutter_name)
-    return object_name
+    try:
+        boolean_difference(object_name, cutter_name)
+    finally:
+        # The boolean consumes the cutter on success (this is then a no-op).
+        # On failure it would stay linked into the scene as a stray 4*span
+        # slab (measured: BooleanNoOp left `<name>_SoleCutter` behind) and
+        # this op created it, so this op removes it.
+        remove_object_and_mesh(cutter_name)
+    return ObjectName(object_name)

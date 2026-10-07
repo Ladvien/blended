@@ -25,11 +25,21 @@ REQUIRED_ENVIRONMENT = {
     "WRITER": "no-such-writer",
 }
 REFUSED_EXIT_CODE = 2
+# Every variable bench_chain.sh reads: a developer shell that exports one
+# (REFERENCE_IMAGES, FREEZE_ROOT, ...) must not change what a test measures.
+SCRIPT_VARIABLES = (
+    "WORKTREE", "MODEL_DIR", "WRITER", "EYE", "BENCH_ROOT", "INSTANCES",
+    "OUT", "TIMEOUT", "TOOLS", "FREEZE_ROOT", "REFERENCE_IMAGES",
+)
+
+
+def _inherited_environment() -> dict:
+    return {name: value for name, value in os.environ.items() if name not in SCRIPT_VARIABLES}
 
 
 def run_chain(worktree: Path, freeze_root: Path, out: Path) -> subprocess.CompletedProcess:
     environment = {
-        **os.environ,
+        **_inherited_environment(),
         **REQUIRED_ENVIRONMENT,
         "WORKTREE": str(worktree),
         "FREEZE_ROOT": str(freeze_root),
@@ -126,7 +136,7 @@ def test_a_reference_root_missing_a_view_is_refused_before_the_sweep(tmp_path):
         (views / name).write_bytes(b"png")  # Image_035.png is absent
     out = tmp_path / "out"
     environment = {
-        **os.environ, **REQUIRED_ENVIRONMENT,
+        **_inherited_environment(), **REQUIRED_ENVIRONMENT,
         "WORKTREE": str(freeze), "FREEZE_ROOT": str(freeze_root), "OUT": str(out),
         "BENCH_ROOT": str(out / "no-bench-here"),
         "INSTANCES": str(instances),
@@ -145,7 +155,7 @@ def test_a_reference_root_missing_a_view_is_refused_before_the_sweep(tmp_path):
 @pytest.mark.parametrize("missing", ["WORKTREE", "MODEL_DIR", "WRITER"])
 def test_a_missing_required_variable_is_refused(tmp_path, missing):
     environment = {
-        **os.environ, **REQUIRED_ENVIRONMENT,
+        **_inherited_environment(), **REQUIRED_ENVIRONMENT,
         "WORKTREE": str(tmp_path), "OUT": str(tmp_path / "out"),
     }
     environment.pop(missing)

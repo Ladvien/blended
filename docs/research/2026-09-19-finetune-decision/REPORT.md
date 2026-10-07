@@ -105,7 +105,7 @@ The spec's §9 stop condition caught none of this, because it is written on SCHE
 | a4 | 45.0% | [25.7, 64.3] |
 | a5 | 48.8% | [29.8, 67.7] |
 
-A1, A4 and A5 overlap heavily. The report therefore claims NEITHER that the frontier model beat BlenderLLM nor that BlenderLLM reached parity with it: on 20 instances neither claim is available.
+A1, A4 and A5 overlap pairwise. The report therefore claims NEITHER that the frontier model beat BlenderLLM nor that BlenderLLM reached parity with it: on 20 instances neither claim is available.
 
 Δ_size is NOT discounted for width — its interval [23.3, 56.7] excludes zero. It is discounted because its subtrahend is A2.
 
@@ -155,7 +155,7 @@ The harness's stated architecture is a 48-op facade as the tool surface with `ru
 **Rule 1 fires: F_geom = 98.2% >= 60% -> DO NOT FINE-TUNE. The failures are planning failures; invest in decomposition, reference-image grounding and the multi-angle visual inspection loop instead.**
 
 - Rules 4 and 5 are VOID rather than un-fired-on-the-evidence: Δ_facade and Δ_size are both computed against A2, which passed nothing, so each subtraction measures a floored arm instead of the facade or model size. Neither rule's §3 threshold comparison changes; only what the number is allowed to mean does.
-- Δ_tune = 96.2 pp clears rule 2's 15.0 pp bar, and rule 2 STILL CANNOT FIRE, because it is conjoined with F_syntax >= 40% and F_syntax measured 1.8%. The careful statement, not the flattering one: domain SFT fixes the class a 7B fails in, and the archive does not fail in that class BECAUSE IT PAYS A RETRY LOOP TO AVOID IT. The Phase A denominator is multi-turn with error feedback; single-shot A5 — frontier model, raw bpy, no feedback — fails to execute 18.8% of the time against the archive's 1.8%. So the harness HAS a syntactic failure mode and spends tokens and turns instead of score on it. What the arm codes do show is the regime SFT buys: the untuned base's failures are E1-E7 (syntactic), the fine-tune's are G1-G2 (geometric).
+- Δ_tune = 96.2 pp clears rule 2's 15.0 pp bar, and rule 2 STILL CANNOT FIRE, because it is conjoined with F_syntax >= 40% and F_syntax measured 1.8%. The careful statement, not the flattering one: domain SFT fixes the class a 7B fails in, and the archive does not fail in that class BECAUSE IT PAYS A RETRY LOOP TO AVOID IT. The Phase A denominator is multi-turn with error feedback; single-shot A5 — frontier model, raw bpy, no feedback — fails to execute 18.8% of the time against the archive's 1.8%. So the harness HAS a syntactic failure mode and spends tokens and turns instead of score on it. What the arm codes do show is the regime SFT buys: 100.0% of the untuned base's (A3) failures are syntactic (E1, E2, E3, E4, E5, E7, O1, O2), against 97.7% of the fine-tune's (A4) that are geometric (G1, G2, G3).
 
 ## 6. Secondary agentic-mode measurement
 
@@ -167,11 +167,11 @@ Not run. The primary single-shot regime is the one the spec registers, and mixin
 |---|---|
 | (instruction, script) pairs in the bench archive | 321 |
 | ... executed | 302 |
-| ... scored | 269 |
-| ... passing at `cd_pca <= 0.0252` | 156 |
+| ... scored | 288 |
+| ... passing at `cd_pca <= 0.0252` | 165 |
 | deduplicated, execution-verified | 302 |
 | **distinct instructions** | 32 |
-| op-sequence pairs | 76 |
+| op-sequence pairs | 40 |
 
 Verdict: see `phaseC/corpus_inventory.md` — the binding number is the distinct-instruction count (32 with at least one executing script), not the pair count.
 
@@ -210,7 +210,7 @@ Verdict: see `phaseC/corpus_inventory.md` — the binding number is the distinct
 8. **Some A2/A3 completions were killed by the harness's own 1500 s per-completion cap and are recorded as `E5`.** Their rows are synthesized and carry `synthesized_by`, so they can never be mistaken for a reply a model returned: 11 of A2's 80 and 15 of A3's 80. Mechanism, measured rather than assumed: `max_completion_tokens` is 16,384 and this lane decodes at 11.8-12.8 tok/s, so a completion that runs to the ceiling needs ~1,365 s of generation alone — and ~4x that per stream when four draws share the four slots. The completions that DID finish are fast (A2 median 70 s, 200 output tokens), and re-running the killed ones at reduced concurrency still hit the cap, so this is a property of the model-plus-cap, not of queueing alone. Constrained decoding is not the cause: measured 11.81 tok/s unconstrained against 12.75 tok/s with the 56-tool envelope grammar on the same prompt.
 9. **A1/A2/A3 ran four draws concurrently against four slots; A4 ran the same way.** Latency percentiles therefore include queue time and are not a clean per-completion measurement; executability and pass rates are unaffected, since a completion either produced a script or did not.
 10. **The op arms did not test the op FACADE.** A1/A2's task text is the archive's, and it still says every piece of geometry must be created inside `run_python` chunks, because those chunks are what the bake collects. So A2 and A3 were both writing bpy; A2 merely had to wrap it in tool-call JSON. A2 − A3 is therefore bpy against bpy-in-an-envelope, not facade against raw, and it also explains A2's collapse — a 7B was handed a ~17k-character system prompt, 56 schemas and a JSON envelope around the same task it already failed at unwrapped. Any future facade arm must change the task text so facade ops are the geometry path.
-11. **Effective sample size is ~20, not 80.** Four draws per instance are correlated, so §4's intervals are clustered on the 20 instances and a ~45% pass rate carries roughly ±19 pp. Every cross-arm shape comparison in this report except Δ_tune sits inside its interval. The fix is more instances (`bench_sets/instances_dev_all.txt` holds 145), not more draws.
+11. **Effective sample size is ~20, not 80.** Four draws per instance are correlated, so §4's intervals are clustered on the 20 instances and a 45.0% pass rate carries roughly ±19 pp. Every cross-arm shape comparison in this report except Δ_tune sits inside its interval. The fix is more instances (`bench_sets/instances_dev_all.txt` holds 145), not more draws.
 
 ## 9. Traceability spot-checks
 

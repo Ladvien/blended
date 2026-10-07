@@ -20,15 +20,15 @@ import traceback
 from pathlib import Path
 
 REPOSITORY_ROOT = Path(__file__).resolve().parent.parent.parent
-sys.path.insert(0, str(sorted((REPOSITORY_ROOT / ".venv" / "lib").glob("python3.*/site-packages"))[-1]))
+sys.path.insert(0, str(max((REPOSITORY_ROOT / ".venv" / "lib").glob("python3.*/site-packages"))))
 sys.path.insert(0, str(REPOSITORY_ROOT / "src"))
 
-import bpy  # noqa: E402
-from bpy_extras.view3d_utils import location_3d_to_region_2d  # noqa: E402
-from mathutils import Vector  # noqa: E402
+import bpy
+from bpy_extras.view3d_utils import location_3d_to_region_2d
+from mathutils import Vector
 
-from blended.ops import add_box, link_into_scene  # noqa: E402
-from blended.viewport_follow import frame_in_viewports  # noqa: E402
+from blended.ops import add_box, link_into_scene
+from blended.viewport_follow import frame_in_viewports
 
 # The window has drawn at least once by then, so regions have sizes.
 FIRST_CHECK_DELAY_S = 2.0
@@ -121,7 +121,7 @@ def run_checks() -> list[str]:
 def check_and_exit():
     try:
         failures = run_checks()
-    except Exception:  # pylint: disable=broad-exception-caught
+    except Exception:  # noqa: BLE001 - any failure is a failed check; printed, exit code 1
         traceback.print_exc()
         os._exit(FAIL_EXIT_CODE)
     for failure in failures:

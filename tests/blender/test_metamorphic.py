@@ -317,14 +317,18 @@ def test_builders_satisfy_their_metamorphic_relations(builder_name):
     from blended.analyze import probe
 
     builder_class, parameters = _builders()[builder_name]
+    relations = _relations_for(builder_name, parameters)
     report = probe(
         lambda built_parameters: builder_class(built_parameters).build(),
         parameters,
-        _relations_for(builder_name, parameters),
+        relations,
     )
 
     assert report.failures() == []
     assert report.ok
+    # A relation that evaluated nothing would pass the lines above.
+    assert set(report.outcomes) == {relation.name for relation in relations}
+    assert all(report.outcomes[name] for name in report.outcomes)
 
 
 def test_a_relation_without_a_justification_is_refused():

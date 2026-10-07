@@ -89,6 +89,12 @@ git -C "$REPOSITORY" worktree add -q --detach "$TREE" "$COMMIT" || exit 2
 note "froze $COMMIT at $TREE; installing its venv"
 # Its own venv: the tree's scripts import from its own src/, and a shared
 # venv would defeat the freeze the first time a dependency moved.
-(cd "$TREE" && uv sync -q) || { note "uv sync FAILED in $TREE"; exit 2; }
+# A failed sync must not leave $TREE behind: the reuse branch above trusts
+# any directory it finds, so a venv-less tree would be handed out as frozen.
+(cd "$TREE" && uv sync -q) || {
+  git -C "$REPOSITORY" worktree remove --force "$TREE"
+  note "uv sync FAILED in $TREE; the half-built freeze was removed"
+  exit 2
+}
 note "ready"
 echo "$TREE"

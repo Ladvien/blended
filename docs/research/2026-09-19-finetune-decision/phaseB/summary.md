@@ -5,7 +5,7 @@
 **Rule 1 fires: F_geom = 98.2% >= 60% -> DO NOT FINE-TUNE. The failures are planning failures; invest in decomposition, reference-image grounding and the multi-angle visual inspection loop instead.**
 
 - Rules 4 and 5 are VOID rather than un-fired-on-the-evidence: Δ_facade and Δ_size are both computed against A2, which passed nothing, so each subtraction measures a floored arm instead of the facade or model size. Neither rule's §3 threshold comparison changes; only what the number is allowed to mean does.
-- Δ_tune = 96.2 pp clears rule 2's 15.0 pp bar, and rule 2 STILL CANNOT FIRE, because it is conjoined with F_syntax >= 40% and F_syntax measured 1.8%. The careful statement, not the flattering one: domain SFT fixes the class a 7B fails in, and the archive does not fail in that class BECAUSE IT PAYS A RETRY LOOP TO AVOID IT. The Phase A denominator is multi-turn with error feedback; single-shot A5 — frontier model, raw bpy, no feedback — fails to execute 18.8% of the time against the archive's 1.8%. So the harness HAS a syntactic failure mode and spends tokens and turns instead of score on it. What the arm codes do show is the regime SFT buys: the untuned base's failures are E1-E7 (syntactic), the fine-tune's are G1-G2 (geometric).
+- Δ_tune = 96.2 pp clears rule 2's 15.0 pp bar, and rule 2 STILL CANNOT FIRE, because it is conjoined with F_syntax >= 40% and F_syntax measured 1.8%. The careful statement, not the flattering one: domain SFT fixes the class a 7B fails in, and the archive does not fail in that class BECAUSE IT PAYS A RETRY LOOP TO AVOID IT. The Phase A denominator is multi-turn with error feedback; single-shot A5 — frontier model, raw bpy, no feedback — fails to execute 18.8% of the time against the archive's 1.8%. So the harness HAS a syntactic failure mode and spends tokens and turns instead of score on it. What the arm codes do show is the regime SFT buys: 100.0% of the untuned base's (A3) failures are syntactic (E1, E2, E3, E4, E5, E7, O1, O2), against 97.7% of the fine-tune's (A4) that are geometric (G1, G2, G3).
 
 ## Funnel, every completion of every arm
 
@@ -48,8 +48,8 @@ Rates are over all completions attempted for the arm, the spec's denominator bei
 
 - hatch rate, archived rolls (Phase A, passing attempts): 90.4%
 - hatch rate, archived rolls (Phase A, failing attempts): 70.4%
-- hatch rate, arm a1 single-shot: 9.7% (59 chunks against 551 op calls)
-- hatch rate, arm a2 single-shot: 0.0% (0 chunks against 7 op calls)
+- hatch rate, arm a1 single-shot: 8.9% (54 baked chunks against 550 baked scene-changing op calls)
+- hatch rate, arm a2 single-shot: 0.0% (0 baked chunks against 6 baked scene-changing op calls)
 
 ## Cost
 

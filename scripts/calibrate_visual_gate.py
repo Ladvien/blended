@@ -119,7 +119,6 @@ def main(argv) -> int:
     control_readings: dict[str, dict[str, dict]] = {}
     clean_readings: dict[str, dict[str, dict]] = {}
     mutation_readings: dict[str, dict[str, dict]] = {}
-    skipped_briefs: list[str] = []
 
     for brief_name in brief_names:
         golden_directory = GOLDEN_ROOT / f"{brief_name}_v{revision.revision}"
@@ -216,20 +215,19 @@ def main(argv) -> int:
         max(reading["shading_rmse"] for reading in all_clean) + RMSE_MARGIN, 4
     )
 
-    mutation_failures = 0
-    for brief_readings in mutation_readings.values():
-        for view_name in CAPTURE_VIEWS:
-            reading = brief_readings[view_name]
-            if (
-                reading["silhouette_iou"] < minimum_silhouette_iou
-                or reading["shading_rmse"] > maximum_shading_rmse
-            ):
-                mutation_failures += 1
-    if mutation_failures == 0:
-        raise SystemExit(
-            "no mutated view landed outside the derived thresholds — a gate "
-            "that cannot fail reads as evidence. Not writing calibration."
-        )
+    for brief_name, brief_readings in mutation_readings.items():
+        outside = [
+            view_name
+            for view_name in CAPTURE_VIEWS
+            if brief_readings[view_name]["silhouette_iou"] < minimum_silhouette_iou
+            or brief_readings[view_name]["shading_rmse"] > maximum_shading_rmse
+        ]
+        if not outside:
+            raise SystemExit(
+                f"{brief_name}: no mutated view landed outside the derived "
+                f"thresholds — a gate that cannot fail reads as evidence. "
+                f"Not writing calibration."
+            )
 
     payload = {
         "minimum_silhouette_iou": minimum_silhouette_iou,
@@ -243,7 +241,6 @@ def main(argv) -> int:
         "control": control_readings,
         "clean": clean_readings,
         "mutation": mutation_readings,
-        "skipped_briefs": skipped_briefs,
     }
     CALIBRATION_PATH.write_text(
         json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8"

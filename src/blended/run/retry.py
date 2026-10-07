@@ -89,6 +89,11 @@ def run_with_retries(
     """
     from blended.run.executor import run_source_in_process
 
+    if maximum_retries < 0:
+        raise ValueError(
+            f"maximum_retries must be >= 0, got {maximum_retries}: with no "
+            f"attempt there is no result to return"
+        )
     attempts: list[Attempt] = []
     current_source = initial_source
     for attempt_index in range(maximum_retries + 1):

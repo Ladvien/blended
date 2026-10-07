@@ -68,6 +68,14 @@ _ROTATION_ONTO_DEPTH_AXIS_RAD = {
 }
 
 
+def _as_extent_triple_m(
+    extents_m: tuple[float, float, float]
+) -> tuple[float, float, float]:
+    """Coerce to a float 3-tuple; a wrong-length input raises ValueError."""
+    extent_x_m, extent_y_m, extent_z_m = extents_m
+    return (float(extent_x_m), float(extent_y_m), float(extent_z_m))
+
+
 @op(reads_only=True)
 def middle_extent_m(extents_m: tuple[float, float, float]) -> float:
     """The rank-DEPTH_AXIS_EXTENT_RANK extent VALUE, not its axis.
@@ -84,7 +92,7 @@ def depth_axis_holds_middle_extent(
     extents_m: tuple[float, float, float]
 ) -> bool:
     """Does the depth axis already carry a middle-valued extent?"""
-    extents_m = tuple(float(extent) for extent in extents_m)
+    extents_m = _as_extent_triple_m(extents_m)
     largest = max(extents_m)
     if largest <= DEGENERATE_EXTENT_M:
         return False
@@ -128,7 +136,7 @@ def depth_axis_extent_rank(extents_m: tuple[float, float, float]) -> int:
     Reported, never asserted on: for a near-isotropic object the position
     is arbitrary while the VALUE invariant still holds.
     """
-    extents_m = tuple(float(extent) for extent in extents_m)
+    extents_m = _as_extent_triple_m(extents_m)
     return sum(1 for extent in extents_m
                if extent > extents_m[DEPTH_AXIS_INDEX])
 
@@ -150,7 +158,7 @@ def orientation_reading(extents_m: tuple[float, float, float]) -> str:
     middle VALUE — so the reading can never name an axis the rotation
     would not have used.
     """
-    extents_m = tuple(float(extent) for extent in extents_m)
+    extents_m = _as_extent_triple_m(extents_m)
     figures = " ".join(
         f"{AXIS_NAMES[axis]} {extents_m[axis]:.{ORIENTATION_READING_DECIMALS}f}"
         for axis in range(AXIS_COUNT)

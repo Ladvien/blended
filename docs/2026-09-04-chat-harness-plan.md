@@ -1,5 +1,7 @@
 # 2026-09-04 — In-Blender chat harness: plan
 
+> **PARTLY SUPERSEDED 2026-09-26 (MCP cutover).** The goal (the in-Blender chat as the product surface), the chat UI in the ground-truth list below, and P6 (cancel and streaming) were deleted in `184095f` and `22e1d87`; the client is Claude Code over the `blended` MCP server (README.md "Chat (Claude Code over MCP)"). The model-lane, ops, E2E and benchmark-gate parts (P1–P3, P5, §P8a, which the spec still cites) remain in the tree.
+
 Goal (goal-mode objective): the in-Blender chat is the product surface;
 the agent writes bpy through the harness; the model lanes cover
 OpenRouter, Ollama and the two llama-swaps; every gate is a script that

@@ -1,13 +1,14 @@
 """Test briefs: a prompt, and what the result must MEASURE.
 
 A convergence loop needs its acceptance criteria to be executable, not
-adjudicated. CADCodeVerify's contribution is exactly this — it recovers
-correctness by asking measurable questions of the geometry rather than
-asking a VLM whether the picture looks right — and the TikZ visual-
-verification study is the reason not to invert that order: verifiers
+adjudicated. CADCodeVerify's contribution (10.48550/arXiv.2410.05340) is
+exactly this — it recovers correctness by asking measurable questions of
+the geometry rather than asking a VLM whether the picture looks right —
+and the TikZ visual-verification study (10.48550/arXiv.2606.15693) is the
+reason not to invert that order: verifiers
 looking at renders are systematically biased toward accepting.
 
-So every brief carries three kinds of assertion, all measured:
+So every brief carries four kinds of assertion, all measured:
 
 * DIMENSIONS — bounding-box extents per axis, against a named tolerance.
 * SOLIDITY PROBES — is there material at this point, or not? This is the
@@ -477,7 +478,11 @@ class AssetBrief:
     prompt_text: str
     parts: tuple[PartSpec, ...]
     relations: tuple[
-        StackedOnSpec | SharedCentreSpec | NoInterpenetrationSpec, ...
+        StackedOnSpec
+        | SharedCentreSpec
+        | NoInterpenetrationSpec
+        | DistinctMaterialSpec,
+        ...,
     ] = ()
     refinements: tuple[RefinementStep, ...] = ()
     budget: MeshBudget = field(default_factory=MeshBudget)

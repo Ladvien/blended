@@ -117,9 +117,18 @@ def test_contact_sheet_composes_without_pillow(empty_scene, tmp_path, monkeypatc
     from blended.builders import CrateBuilder, CrateParameters
     from blended.capture import capture_contact_sheet
 
+    numpy_sheet_paths = []
+    real_compose_grid_numpy = compose_module.compose_grid_numpy
+
+    def spy_compose_grid_numpy(view_paths, output_path):
+        numpy_sheet_paths.append(output_path)
+        return real_compose_grid_numpy(view_paths, output_path)
+
     monkeypatch.setattr(compose_module, "pillow_available", lambda: False)
+    monkeypatch.setattr(compose_module, "compose_grid_numpy", spy_compose_grid_numpy)
     crate_object = CrateBuilder(CrateParameters()).build()
     sheet_path = capture_contact_sheet(crate_object, tmp_path)
+    assert numpy_sheet_paths == [sheet_path], "the Pillow-free numpy branch did not run"
     assert sheet_path.exists()
     assert sheet_path.stat().st_size > 0
 

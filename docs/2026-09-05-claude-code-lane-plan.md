@@ -1,5 +1,7 @@
 # Plan — Claude Code headless as a harness connector (writer + eye)
 
+> **PARTLY SUPERSEDED 2026-09-26 (MCP cutover).** Component 3 (the writer and eye dropdowns in `blender_addon/`), verification item 5 (the GUI pass) and fact 8's streaming path were deleted with the in-Blender chat client (`184095f`, `22e1d87`); the lane itself — `claude_code.py`, routing, `provider_smoke.py`, `tests/pure/test_claude_code_lane.py` — remains.
+
 Status: executing. Written before any code, per CLAUDE.md plan-then-execute.
 
 ## Why this lane exists

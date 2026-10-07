@@ -25,7 +25,8 @@ class ToolOutcome:
     # tool that executes nothing in the scene.
     stage_reached: str = ""
     # The arguments as VALIDATED: bound to the op signature (JSON form,
-    # plan_step stripped) for an op tool; as given for a service tool.
+    # plan_step stripped) for an op tool; as sent, plan_step stripped,
+    # when the binder rejected the call; as given for a service tool.
     validated_arguments: dict | None = None
     # One JSON gate verdict per gated object (harness.gate_verdict_json).
     gates: tuple[dict, ...] = ()

@@ -22,7 +22,7 @@ def add_bevel(
     bevel_modifier.width = width_m
     bevel_modifier.segments = segment_count
     bevel_modifier.limit_method = "NONE"
-    return object_name
+    return ObjectName(object_name)
 
 
 def apply_all_modifiers(object_name: str) -> ObjectName:
@@ -48,4 +48,4 @@ def apply_all_modifiers(object_name: str) -> ObjectName:
     blender_object.modifiers.clear()
     if previous_mesh.users == 0:
         bpy.data.meshes.remove(previous_mesh)
-    return object_name
+    return ObjectName(object_name)

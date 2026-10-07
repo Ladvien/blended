@@ -248,9 +248,11 @@ def _execute_code(
 
     namespace: dict[str, object] = {"result": {}}
     with CaptureOutput() as captured, WeakSandboxForLLM():
+        # `SystemExit` too: `exit()` / `raise SystemExit` bypass the `sys.exit` block in the sandbox
+        # and would otherwise end the server (background mode) or escape into Blender's timer.
         try:
             exec(code, namespace)
-        except Exception:  # pylint: disable=broad-exception-caught
+        except (Exception, SystemExit):  # pylint: disable=broad-exception-caught
             response: dict[str, object] = {"status": "error", "message": traceback.format_exc()}
             if captured.stdout:
                 response["stdout"] = captured.stdout
@@ -604,7 +606,7 @@ def _handle_blocking_client(conn: socket.socket) -> bool:
             exec_result = _ExecResult({"status": "error", "message": traceback.format_exc()})
         conn.sendall(_encode_response(exec_result.response))
         return True
-    except socket.timeout:
+    except TimeoutError:
         try:
             err = {"status": "error", "message": "Client timed out"}
             conn.sendall(_encode_response(err))

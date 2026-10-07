@@ -27,12 +27,15 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
-from blended.evaluate.bench_reference_views import (  # noqa: E402 — ONE definition of the views
+from blended.evaluate.bench_reference_views import (  # ONE definition of the views
     REFERENCE_IMAGES_SUBDIR,
     REFERENCE_VIEW_FILENAMES,
 )
 
 DEFAULT_BLENDER = "/Applications/Blender.app/Contents/MacOS/Blender"
+# The bench's own orchestrator (core/render.py --timeout) allows one instance
+# this long; the same bound here keeps a hung Blender from stalling the sweep.
+DEFAULT_TIMEOUT_SECONDS = 240
 
 
 def parse_arguments(argv):
@@ -41,6 +44,8 @@ def parse_arguments(argv):
     parser.add_argument("--instances-file", required=True)
     parser.add_argument("--blender", default=DEFAULT_BLENDER)
     parser.add_argument("--overwrite", action="store_true")
+    parser.add_argument("--timeout", type=int, default=DEFAULT_TIMEOUT_SECONDS,
+                        help="per-instance seconds (default %(default)s, core/render.py's own)")
     return parser.parse_args(argv)
 
 
@@ -57,18 +62,29 @@ def is_rendered(directory: Path) -> bool:
     return all((directory / name).exists() for name in REFERENCE_VIEW_FILENAMES)
 
 
-def render_instance(bench_root: Path, blender: str, instance: str) -> bool:
+def render_instance(bench_root: Path, blender: str, instance: str, timeout_seconds: int) -> bool:
     factory = bench_root / "data" / instance / f"{instance}.py"
     if not factory.exists():
         print(f"[reference] {instance}: no factory at {factory}", flush=True)
         return False
     output = images_directory(bench_root, instance)
     output.mkdir(parents=True, exist_ok=True)
+    # render.py writes the log in a `finally`, so a normal failure overwrites
+    # it; a hard crash or a kill does not, and would otherwise pass on the
+    # previous run's OK log under --overwrite.
+    (output / "render_log.json").unlink(missing_ok=True)
     command = [
         blender, "-b", "--python", str(bench_root / "core" / "render.py"), "--",
         "--blender-render", "--script", str(factory), "--output-dir", str(output),
     ]
-    completed = subprocess.run(command, cwd=bench_root, capture_output=True, text=True, check=False)
+    try:
+        completed = subprocess.run(
+            command, cwd=bench_root, capture_output=True, text=True, check=False,
+            timeout=timeout_seconds,
+        )
+    except subprocess.TimeoutExpired:
+        print(f"[reference] {instance}: FAILED (no result in {timeout_seconds}s)", flush=True)
+        return False
     if not is_rendered(output):
         tail = (completed.stdout + completed.stderr)[-600:]
         print(f"[reference] {instance}: FAILED (exit {completed.returncode})\n{tail}", flush=True)
@@ -86,7 +102,7 @@ def main(argv) -> int:
         if not arguments.overwrite and is_rendered(images_directory(bench_root, instance)):
             print(f"[reference] {instance}: already rendered", flush=True)
             continue
-        if not render_instance(bench_root, arguments.blender, instance):
+        if not render_instance(bench_root, arguments.blender, instance, arguments.timeout):
             failed.append(instance)
     if failed:
         print(f"[reference] {len(failed)} of {len(instances)} not rendered: {', '.join(failed)}", flush=True)

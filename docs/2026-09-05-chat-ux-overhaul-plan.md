@@ -1,5 +1,7 @@
 # Chat UX overhaul — plan (2026-09-05)
 
+> **SUPERSEDED 2026-09-26 (MCP cutover).** D2–D6 and the module interfaces below (`blender_addon/`, `blended.ui`, `src/blended/agent/scene_context.py`) were deleted in `184095f`; D1's plan gate survives as the `declare_plan` tool and the plan requirement (spec AGT-5), shown by the MCP client rather than by a Blender progress bar. See README.md "Chat (Claude Code over MCP)".
+
 Evidence base: `docs/2026-09-05-chat-ux-literature-review.md`. Decisions were chosen by the
 user from that review; each is recorded here with the paper that argues for it.
 

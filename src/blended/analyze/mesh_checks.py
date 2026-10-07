@@ -90,6 +90,11 @@ class MeshReport:
     def failures(self, budget: MeshBudget) -> list[str]:
         """Return human-readable failures against a budget (empty = pass)."""
         found_failures: list[str] = []
+        # An object with no faces measures clean on every other check
+        # (0 boundary, 0 non-manifold, 0 components) — measured: an empty
+        # mesh returned no failures — so "nothing was built" would pass.
+        if self.triangle_count == 0:
+            found_failures.append("no faces (empty mesh: nothing was built)")
         if self.triangle_count > budget.maximum_triangle_count:
             found_failures.append(
                 f"triangle count {self.triangle_count} exceeds budget "

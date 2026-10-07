@@ -40,7 +40,7 @@ def test_an_op_built_brief_re_bakes_from_the_standalone_script(tmp_path):
     for tool_name, arguments in PLANTER_CALLS:
         outcome = dispatch_tool(tool_name, arguments, tmp_path)
         recorded.append(RecordedCall(tool_name, outcome.validated_arguments if outcome.validated_arguments is not None else arguments, outcome.stage_reached))
-    venv = sorted((REPOSITORY_ROOT / ".venv" / "lib").glob("python3.*/site-packages"))[-1]
+    venv = max((REPOSITORY_ROOT / ".venv" / "lib").glob("python3.*/site-packages"))
     # No orientation epilogue here: the runner appends it for the bench's
     # yaw-only scorer, and it rotates the planter's height onto Y, which
     # the brief's own gate does not expect. The bridge's assembly is what
@@ -96,7 +96,7 @@ def test_a_chunk_that_built_then_raised_is_replayed_so_later_calls_find_its_obje
         RecordedCall("rename_object", {"object_name": "Handle", "new_name": "Spoon"}, "done"),
     ]
 
-    venv = sorted((REPOSITORY_ROOT / ".venv" / "lib").glob("python3.*/site-packages"))[-1]
+    venv = max((REPOSITORY_ROOT / ".venv" / "lib").glob("python3.*/site-packages"))
     script = standalone_script(recorded, prelude(str(venv), str(REPOSITORY_ROOT / "src")), "\nprint('re-baked')\n")
     assert script.included_count == 2 and script.excluded_count == 0
 

@@ -10,9 +10,10 @@ of the touched objects' world bounding sphere and sets `view_distance`
 so that sphere fits. The fit reads Blender's own projection
 (`RegionView3D.window_matrix`) instead of rebuilding it from lens and
 sensor constants. Selection, the active object, the mode and the view
-rotation are never touched: a later operator sees the state the agent
-left. The ground truth is `make test-viewport-gui`, where every corner
-of each framed bounding box must project inside the region.
+rotation are never touched (a camera-view region is switched to
+perspective so the framing can apply): a later operator sees the state
+the agent left. The ground truth is `make test-viewport-gui`, where
+every corner of each framed bounding box must project inside the region.
 """
 
 from __future__ import annotations
@@ -67,7 +68,7 @@ def follow_viewport(outcome: ToolOutcome, config: ViewportFollowConfig = Viewpor
     the agent to repeat it."""
     try:
         line = frame_in_viewports(frame_target_names(outcome), config).line
-    except Exception as error:  # pylint: disable=broad-exception-caught
+    except Exception as error:  # noqa: BLE001 — reported on the viewport line, not swallowed
         line = f"{VIEWPORT_LINE_PREFIX} FAILED to frame: {type(error).__name__}: {error}"
     return dataclasses.replace(outcome, text=f"{outcome.text}\n{line}")
 

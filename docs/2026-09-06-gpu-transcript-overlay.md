@@ -1,5 +1,7 @@
 # GPU transcript overlay — shipped (2026-09-06)
 
+> **SUPERSEDED 2026-09-26 (MCP cutover).** The overlay this doc ships (`src/blended/ui/transcript_overlay.py` and the rest of `blended.ui`, with `blender_addon/`) was deleted in `184095f`; the client now shows its own traffic (`docs/harness_design.md` row 24). This doc stays as the record of what was built and measured.
+
 Replaces the `UILayout`-drawn reply stack in the chat sidebar with a GPU-drawn transcript
 (`gpu` + `blf` + `SpaceView3D.draw_handler_add`) painted in the 3D viewport. Built,
 verified end to end, and SHIPPED ON on 2026-09-06. There is no runtime switch: the

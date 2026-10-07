@@ -1,5 +1,7 @@
 # Chat UX overhaul — literature review and decision surface (2026-09-05)
 
+> **SUPERSEDED 2026-09-26 (MCP cutover).** The in-Blender chat UI this review informed (`blender_addon/`, `blended.ui`) was deleted in `184095f`; the literature below remains a record of the evidence, not a live design input. See `docs/harness_design.md` rows 10 and 16–24 for what was retired or relocated.
+
 **Method.** 34 semantic queries against the home-still corpus (`http://192.168.1.110:7434/search`,
 bge-m3, collection `academic_papers`, 9,481 docs), then per-paper digs to pull the measured
 findings rather than the abstracts. Every DOI below was answered out of the local corpus this

@@ -17,8 +17,8 @@
 
 | Fact | Value | Source |
 |---|---|---|
-| Agent tools | 8 hand-written service tools + 42 generated op tools = 50 in `TOOL_SCHEMAS`, fingerprint `t:1fe7f62007ef` pinned (OT-3, closed) | `src/blended/agent/tools.py`, `tests/pure/test_tool_schemas.py` |
-| Construction path in the ACI | 42 generated op tools, bound, gated, plan-required; `run_python(source, reason)` is the escape hatch (OT-3–OT-7, closed) | AGT-1, AGT-3, AGT-21 |
+| Agent tools | 8 hand-written service tools + 48 generated op tools = 56 in `TOOL_SCHEMAS` (35 require a declared plan, 14 op tools are readers), fingerprint `t:fd10e7f510a8` pinned; measured 2026-10-07 (it was 42 ops, 50 tools and `t:1fe7f62007ef` when OT-3 closed; OT-13 and OT-14 added the ops) | `src/blended/agent/tools.py`, `_evaluate/golden/pinned_tool_schemas_fingerprint.txt`, `tests/pure/test_tool_schemas.py` |
+| Construction path in the ACI | 48 generated op tools, bound, gated, plan-required unless readers; `run_python(source, reason)` is the escape hatch (OT-3–OT-7, closed) | AGT-1, AGT-3, AGT-21 |
 | Ops facade completeness | whole — every public op re-exported, builders import the facade only (OT-1, closed) | `tests/pure/test_one_path_ops.py` |
 | Op signature contract | enforced — names in, names out, units on quantities, no bpy types (OT-2, closed) | `tests/pure/test_ops_signature_contract.py` |
 | Shipped builders | 3 (crate, barrel, pallet) | OPS-15 |
@@ -174,7 +174,7 @@ fixed), selected through OT-45's flag and instrumented with OT-43's per-attempt 
 `ACTIVE_PROMPT_REVISION` is 10. v10 opens "You build game assets in Blender by writing
 small Python chunks and running them through `run_python`" and says every operation is
 "listed below … do not search for it" — but OT-24 removed that list from the rendered
-prompt, and OT-25 made 41 of 48 ops reachable only through `search_ops`. v12–v14 fix all
+prompt, and OT-25 made 27 of 48 ops reachable only through `search_ops` (the 14 readers and 7 core ops stay offered). v12–v14 fix all
 three sentences and have never reached a bench roll (v12's own outcome: "Still a
 candidate: the frozen-20 paired rolls"). This may be the entry mechanism OT-41 is looking
 for; `claude-code:sonnet` ignoring the same prose single-shot (A1, 92.7% ops) would make
@@ -512,8 +512,6 @@ flowchart LR
   OT43 --> OT40
   OT43 --> OT41
   OT43 --> OT42
-  OT43 --> OT12
-  OT41 --> OT12
   OT41 --> OT42
   OT44 --> OT47
   OT45 --> OT47

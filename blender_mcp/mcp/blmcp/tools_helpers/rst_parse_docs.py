@@ -37,6 +37,7 @@ from collections.abc import (
     Iterable,
     Iterator,
 )
+from typing import Any, ClassVar
 
 import docutils  # pylint: disable=import-error
 import docutils.parsers.rst  # pylint: disable=import-error
@@ -123,7 +124,7 @@ class _DirectiveLiteralInclude(_DirectivePreserve):
     ``get_python_api_docs``) can honour ``:lines:`` slicing - the base
     class's ``option_spec = None`` drops them on the floor.
     """
-    option_spec = {
+    option_spec: ClassVar[dict[str, Any]] = {
         "lines": directives.unchanged,
         "language": directives.unchanged,
         "dedent": directives.unchanged,
@@ -695,6 +696,7 @@ def _iter_parse_doctrees(
 
     # pylint: disable-next=import-outside-toplevel
     import itertools
+
     # pylint: disable-next=import-outside-toplevel
     from concurrent.futures import ProcessPoolExecutor
     # `chunksize=1` (also the default) gives finest-grained load

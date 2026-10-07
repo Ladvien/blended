@@ -35,7 +35,7 @@ drift:
 
 Replication, not reimplementation: the metric comes from the benchmark's
 own `metrics/shape_chamfer.py`, and the rotation helpers from
-`scripts/diagnose_3dcode.py`. Sampling follows the scorer exactly — one
+`scripts/bench_surface_metrics.py`. Sampling follows the scorer exactly — one
 `default_rng(0)` shared across instances, reference cloud sampled before
 the generated one, 8192 points, both clouds unit-sphere normalised. Any
 other ordering silently changes every number.
@@ -56,7 +56,7 @@ from pathlib import Path
 import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from bench_surface_metrics import pca_frame, signed_permutations  # helpers, reused
+from bench_surface_metrics import best_pca_alignment, pca_frame  # helpers, reused
 
 DECOMPOSE_N_POINTS = 8192           # scorer parity (--n-points default)
 DECOMPOSE_SEED = 0                  # scorer parity (--seed default)
@@ -65,14 +65,6 @@ DEGENERATE_EXTENT = 1e-9            # below this an axis cannot be rescaled
 ASPECT_PRIOR_BRIEF_ADJECTIVE = 0.0567   # dev-fitted, measured 2026-09-03
 ASPECT_PRIOR_DEV_MEDIAN = 0.0511        # no adjectives, measured 2026-09-03
 WRITER_MEASURED_CD_PCA = 0.0273         # iter3 holdout, measured 2026-09-03
-
-# All 48 signed permutations, not only the 24 proper ones: the PCA frames of
-# two clouds can have opposite handedness, in which case only an IMPROPER
-# permutation composes with them into a proper rotation. Pre-filtering the
-# permutations makes every candidate rotation improper and the search empty.
-# Properness is therefore enforced on the composed rotation below, exactly as
-# `diagnose_3dcode.cd_pca` does — that parity is what keeps cd_pca comparable.
-SIGNED_PERMUTATIONS = tuple(signed_permutations())
 
 
 def parse_arguments(argv):
@@ -91,42 +83,19 @@ def parse_arguments(argv):
                              "outputs/bench/shape_error_decompose_"
                              "<model-dir>.md)")
     parser.add_argument("--json", default="",
-                        help="Also write the per-instance rows as JSON, the "
-                             "way diagnose_3dcode.py --json does. The "
-                             "fine-tune decision experiment's Phase A reads "
-                             "cd_pca_aspect_oracle per instance to separate "
-                             "G1 from G2, and Markdown is not a data path.")
+                        help="Also write the per-instance rows as JSON (the "
+                             "`per_instance` of diagnose_3dcode.py --json, without its "
+                             "`means` block; the means stay in the Markdown). "
+                             "The fine-tune decision experiment's Phase A "
+                             "reads cd_pca_aspect_oracle per instance to "
+                             "separate G1 from G2, and Markdown is not a "
+                             "data path.")
     return parser.parse_args(argv)
 
 
 def read_instances(path: Path) -> list[str]:
     return [line.strip() for line in path.read_text().splitlines()
             if line.strip()]
-
-
-def best_pca_alignment(sc, reference, generated):
-    """`cd_pca` and the rotated cloud that achieved it.
-
-    Same search as `diagnose_3dcode.cd_pca`, but it keeps the aligned cloud
-    that function discards — the cloud every downstream shape measurement
-    has to be made on.
-    """
-    reference_frame = pca_frame(reference)
-    generated_frame = pca_frame(generated)
-    best_value = np.inf
-    best_cloud = None
-    for permutation in SIGNED_PERMUTATIONS:
-        rotation = reference_frame @ permutation @ generated_frame.T
-        if np.linalg.det(rotation) <= 0.0:
-            continue
-        rotated = generated @ rotation.T
-        value = sc.chamfer_squared(reference, rotated)
-        if value < best_value:
-            best_value = value
-            best_cloud = rotated
-    if best_cloud is None:
-        raise SystemExit("no proper rotation aligned the PCA frames")
-    return float(best_value), best_cloud
 
 
 def aspect_ratios(points) -> tuple[float, float]:
@@ -190,7 +159,10 @@ def decompose(sc, data_root: Path, model_root: Path,
         generated = sc.normalize_unit_sphere(generated)
 
         cd_yawmin = float(sc.chamfer_with_yaw(reference, generated)[1])
-        cd_pca_value, aligned = best_pca_alignment(sc, reference, generated)
+        rotation, cd_pca_value = best_pca_alignment(sc, reference, generated)
+        if rotation is None:
+            raise SystemExit(f"{instance}: no proper rotation aligned the PCA frames")
+        aligned = generated @ rotation.T
 
         reference_frame = pca_frame(reference)
         reference_local = reference @ reference_frame
@@ -302,8 +274,8 @@ def render_report(rows: list[dict], model_dir: str, instances_file: str,
          f"unchanged orientation = {reachable:.4f}; any target below this "
          f"is unreachable by shape work alone"),
         "",
-        "## Proportion PRIORS are a closed question under cd_pca; "
-        "proportion itself is not, under F@0.05",
+        ("## Proportion PRIORS are a closed question under cd_pca; "
+         "proportion itself is not, under F@0.05"),
         "",
         (f"A brief-adjective aspect prior fitted on the 145-instance dev "
          f"split scores {ASPECT_PRIOR_BRIEF_ADJECTIVE:.4f} mean cd_pca on "

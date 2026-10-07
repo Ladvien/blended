@@ -44,11 +44,11 @@ from pathlib import Path
 import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from bench_proportion_headroom import N_POINTS, SEED, extents_at_percentiles  # noqa: E402
-from bench_surface_metrics import pca_frame  # noqa: E402
+from bench_proportion_headroom import N_POINTS, SEED, extents_at_percentiles
+from bench_surface_metrics import pca_frame
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
-from blended.evaluate.bench_reference_views import REFERENCE_VIEW_FILENAMES  # noqa: E402
+from blended.evaluate.bench_reference_views import REFERENCE_VIEW_FILENAMES
 
 DEFAULT_ENDPOINT = "http://localhost:11434"
 DEFAULT_MODEL = "deepseek-v4-pro:cloud"
@@ -73,7 +73,7 @@ IMAGES_LEAD_IN = (
     "45, 135, 225 and 315 degrees from the same height. Read the proportions "
     "from the pictures; the description is secondary.\n\n"
 )
-JSON_OBJECT = re.compile(r"\{.*\}", re.S)
+JSON_OBJECT = re.compile(r"\{.*\}", re.DOTALL)
 
 
 def parse_arguments(argv):
@@ -135,7 +135,16 @@ def main(argv) -> int:
     sys.path.insert(0, str(bench_root / "metrics"))
     import shape_chamfer as sc  # the scorer's sampling and normalisation
 
-    built = {row["instance"]: row for row in json.loads(Path(arguments.headroom_json).read_text())}
+    built: dict[str, dict] = {}
+    for row in json.loads(Path(arguments.headroom_json).read_text()):
+        if row["instance"] in built:
+            raise SystemExit(
+                f"{arguments.headroom_json} holds two rows for {row['instance']} "
+                f"({built[row['instance']]['model_dir']} and {row['model_dir']}): "
+                f"the BUILT side is exactly one roll, and last-row-wins would "
+                f"pick one silently"
+            )
+        built[row["instance"]] = row
     rows = []
     for instance in Path(arguments.instances_file).read_text().split():
         description = (bench_root / "data" / instance / "prompt_description.txt").read_text().strip()
@@ -179,8 +188,8 @@ def main(argv) -> int:
     lines = [
         "# Proportion probe: stated versus built, dev set",
         "",
-        f"- instances paired: {len(paired)} (model {arguments.model}, "
-        f"{'four reference views attached' if arguments.images_root else 'text only'})",
+        (f"- instances paired: {len(paired)} (model {arguments.model}, "
+         f"{'four reference views attached' if arguments.images_root else 'text only'})"),
         f"- mean |log2 error|, middle axis: stated {stated_m:.3f} vs built {built_m:.3f}",
         f"- mean |log2 error|, smallest axis: stated {stated_s:.3f} vs built {built_s:.3f}",
         "",

@@ -126,7 +126,7 @@ def test_write_revision_produces_a_healthy_registry(tmp_path):
     assert prompt_search._probe_registry(package)["latest"] == revision
     # The pin and the active revision are NOT moved by a candidate.
     registry = (package / "prompt_versions.py").read_text(encoding="utf-8")
-    assert "PINNED_PROMPT_REVISION = 10" in registry
+    assert f"PINNED_PROMPT_REVISION = {prompt_versions.PINNED_PROMPT_REVISION}" in registry
     assert "ACTIVE_PROMPT_REVISION = PINNED_PROMPT_REVISION" in registry
 
 

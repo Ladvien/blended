@@ -25,7 +25,7 @@ PINNED_IDENTITY_PATH = (
 )
 
 # The fingerprint of the prompt the model ACTUALLY reads. Its sibling
-# above covers 6,955 characters; this covers all 23,580.
+# above covers the working agreement alone; this covers the whole assembly.
 PINNED_ASSEMBLED_FINGERPRINT_PATH = (
     Path(__file__).resolve().parents[2]
     / "_evaluate"
@@ -93,12 +93,12 @@ def test_the_revision_history_is_disciplined():
     assert prompt_versions.validate_revisions() == []
 
 
+# The baseline (revision 1) has no predecessor to differ from.
 @pytest.mark.parametrize(
-    "revision", [entry.revision for entry in prompt_versions.PROMPT_REVISIONS]
+    "revision",
+    [entry.revision for entry in prompt_versions.PROMPT_REVISIONS if entry.revision > 1],
 )
 def test_each_revision_changes_exactly_one_place(revision):
-    if revision == 1:
-        pytest.skip("the baseline has no predecessor to differ from")
     hunks = prompt_versions.changed_hunks(
         prompt_versions.get_revision(revision - 1).body,
         prompt_versions.get_revision(revision).body,
@@ -245,7 +245,7 @@ def test_the_shipped_configuration_is_the_converged_configuration():
     missing = sorted(set(BRIEFS) - swept)
     assert not missing, (
         f"the shipped writer {ModelConfig().model!r} has no clean recorded "
-        f"run for {missing} in _evaluate/iterations.jsonl — a writer nobody "
+        f"run for {missing} in {WRITER_QUALIFICATION_PATH.name} — a writer nobody "
         f"ran this suite with may not be the default"
     )
     from blended.agent.system_prompt import build_system_prompt

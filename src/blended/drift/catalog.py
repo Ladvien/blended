@@ -63,7 +63,7 @@ DRIFT_ENTRIES: tuple[DriftEntry, ...] = (
     DriftEntry(
         symbol="bpy.ops.mesh.primitive_cone_add(diameter1=...)",
         changed_in="2.8+",
-        error_signature='keyword "diameter1" is invalid',
+        error_signature='keyword "diameter1" unrecognized',
         fix=(
             "Cone/cylinder primitive operators take radius1/radius2, not "
             "diameter1/diameter2. Prefer bmesh construction over bpy.ops "
@@ -309,7 +309,7 @@ DRIFT_ENTRIES: tuple[DriftEntry, ...] = (
         ),
         source="[measured] blended iterations 5 and 6, 2026-08-22",
     ),
-# The six entries below come from scp_characters. Only the first
+# The three entries below come from scp_characters. Only the first
 # is a genuine `match_traceback` matcher: Blender's own IndexError
 # reads "outdated internal index table, run ensure_lookup_table()
 # first", so that signature really appears in a traceback. The

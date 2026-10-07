@@ -91,16 +91,17 @@ def replay_record(record: dict, object_names: tuple[str, ...], on_chunk=None):
     """
     import bpy
 
-    from blended.agent.op_call import call_op
+    from blended.agent.op_call import OpCallResult, call_op
     from blended.agent.plan import PLAN_STEP_ARGUMENT
     from blended.agent.tools import OP_FUNCTIONS
-    from blended.run.executor import run_source_in_process
+    from blended.run.executor import RunResult, run_source_in_process
 
     calls = [
         (name, arguments)
         for name, arguments in calls_from(record)
         if name == "run_python" or name in OP_FUNCTIONS
     ]
+    result: RunResult | OpCallResult
     for index, (name, arguments) in enumerate(calls, 1):
         if name == "run_python":
             result = run_source_in_process(arguments["source"])
@@ -108,7 +109,10 @@ def replay_record(record: dict, object_names: tuple[str, ...], on_chunk=None):
             op_arguments = {
                 key: value for key, value in arguments.items() if key != PLAN_STEP_ARGUMENT
             }
-            result = call_op(name, OP_FUNCTIONS[name], op_arguments)
+            op_function = OP_FUNCTIONS[name]
+            if not callable(op_function):
+                raise TypeError(f"OP_FUNCTIONS[{name!r}] is not callable: {op_function!r}")
+            result = call_op(name, op_function, op_arguments)
         if on_chunk is not None:
             on_chunk(index, len(calls), result)
     bpy.context.view_layer.update()

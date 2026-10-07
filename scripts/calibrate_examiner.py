@@ -1,6 +1,6 @@
 """Calibrate the examiner: measure its defect detection on a fixture zoo.
 
-    make calibrate-eye            (full zoo: 5 defects + 5 controls)
+    make calibrate-eye            (full zoo: 4 defects + 5 controls)
     make calibrate-eye ARGS="--only missing_leg"   (one fixture, live check)
 
 Each fixture is built by REPLAYING the converged run for its brief (the

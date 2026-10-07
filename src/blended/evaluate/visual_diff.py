@@ -103,6 +103,8 @@ def compare_view_arrays(view_name, golden_array, candidate_array) -> ViewCompari
             f"{view_name}: golden {golden_shape} and candidate "
             f"{candidate_shape} differ in size"
         )
+    if golden_array.size == 0:
+        raise EmptyFrame(f"{view_name}: the golden and candidate frames have no pixels")
 
     background_rgb = _background_rgb(golden_array)
     golden_mask = _subject_mask(golden_array, background_rgb)

@@ -11,23 +11,21 @@ hatch, is listed at the end as MISSING-OP EVIDENCE for OT-12.
 Each scenario starts from an EMPTY scene and a FRESH AgentSession
 (prompt revision `--revision`, default the v12 candidate: op tools first,
 run_python as the escape hatch), sends the user's words through
-`AgentSession.send` exactly as the addon does, then measures the scene
-with the same reports `inspect_domain` gives the writer. A scenario
-passes only when every assertion holds; the script exits 0 only when
-every scenario passes. Transcripts land under outputs/chat_e2e/<stamp>/.
+`AgentSession.send`, then measures the scene with the same reports
+`inspect_domain` gives the writer. A scenario passes only when every
+assertion holds; the script exits 0 only when every scenario passes.
+Transcripts land under outputs/chat_e2e/<stamp>/.
 
 Runs inside `blender --background`: bpy is on the main thread, so
-`dispatch_here` is the right dispatcher (the addon's queue is only for
-the worker-thread UI).
+`dispatch_here` (the AgentSession default) is the right dispatcher.
 
-The writer defaults to the subscription-covered Ollama-cloud writer and
-eye; the OpenRouter lane is metered and never used here. The headless
-Claude Code lane is exercised with
-
-    make chat-e2e ARGS="--model claude-code:sonnet --vision-model ''"
-
-where the empty eye means the writer looks at its own renders. Measured
-2026-09-05 on that lane: 6/6 scenarios in 2 m 53 s, 18 tool calls.
+The writer and eye default to `ModelConfig`'s defaults, the
+subscription-covered Claude Code lane (`claude-code:sonnet`, which looks
+at its own renders); the OpenRouter lane is metered and never used here.
+Another lane is selected with `--model` / `--vision-model`; an empty
+`--vision-model ''` means the writer looks at its own renders. Measured
+2026-09-05 on the Claude Code lane: 6/6 scenarios in 2 m 53 s, 18 tool
+calls.
 """
 
 from __future__ import annotations

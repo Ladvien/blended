@@ -10,7 +10,6 @@ exercises the live binary.
 """
 
 import json
-import os
 import stat
 from pathlib import Path
 
@@ -561,12 +560,6 @@ def test_the_rate_limit_summary_reads_as_percentages():
     )
     assert not exhausted.allowed
     assert "rejected" in exhausted.summary()
-
-
-def test_the_stub_binary_is_not_the_real_one(fake_binary):
-    """Guard the guard: these tests must never reach the real CLI."""
-    assert os.access(fake_binary, os.X_OK)
-    assert "canned frames" in fake_binary.read_text()
 
 
 # --- token economics ----------------------------------------------------

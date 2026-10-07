@@ -145,8 +145,12 @@ def unwrap_uvs(
         else:
             bpy.ops.uv.cube_project(cube_size=1.0)
 
-        bpy.ops.object.mode_set(mode="OBJECT")
     finally:
+        # Also on failure: an operator that raises (e.g. an angle limit out
+        # of range) would otherwise strand the object in EDIT mode, where
+        # the select_all below has no poll and masks the original error.
+        if blender_object.mode != "OBJECT":
+            bpy.ops.object.mode_set(mode="OBJECT")
         bpy.ops.object.select_all(action="DESELECT")
         for previously_selected in previous_selection:
             previously_selected.select_set(True)
