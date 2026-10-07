@@ -55,10 +55,10 @@ def _source_tool_definitions() -> dict[str, dict[str, object]]:
     tool_defs: dict[str, dict[str, object]] = {}
     for filename in sorted(os.listdir(tools_dir)):
         if (
-            not filename.endswith(".py") or
-            filename == "__init__.py" or
-            filename.endswith("_toolcode.py") or
-            filename.startswith("_template_")
+            not filename.endswith(".py")
+            or filename == "__init__.py"
+            or filename.endswith("_toolcode.py")
+            or filename.startswith("_template_")
         ):
             continue
         path = os.path.join(tools_dir, filename)
@@ -68,9 +68,9 @@ def _source_tool_definitions() -> dict[str, dict[str, object]]:
             if not isinstance(node, ast.FunctionDef):
                 continue
             is_tool = any(
-                isinstance(deco, ast.Call) and
-                isinstance(deco.func, ast.Attribute) and
-                deco.func.attr == "tool"
+                isinstance(deco, ast.Call)
+                and isinstance(deco.func, ast.Attribute)
+                and deco.func.attr == "tool"
                 for deco in node.decorator_list
             )
             if not is_tool:
@@ -114,7 +114,10 @@ def _query_server() -> dict[str, Any]:
             args=["-m", "blmcp"],
             env=_server_env(),
         )
-        async with stdio_client(params) as (read, write), ClientSession(read, write) as session:
+        async with (
+            stdio_client(params) as (read, write),
+            ClientSession(read, write) as session,
+        ):
             init_result = await session.initialize()
             tools_result = await session.list_tools()
             return {
@@ -146,7 +149,10 @@ def _call_server_tool(name: str, arguments: dict[str, object]) -> dict[str, Any]
             args=["-m", "blmcp"],
             env=_server_env(),
         )
-        async with stdio_client(params) as (read, write), ClientSession(read, write) as session:
+        async with (
+            stdio_client(params) as (read, write),
+            ClientSession(read, write) as session,
+        ):
             await session.initialize()
             call_result = await session.call_tool(name, arguments)
             if call_result.isError:
@@ -209,7 +215,9 @@ class TestDataFiles(unittest.TestCase):
         """
         manual_dir = os.path.join(self._data_dir, "manual")
         if not os.path.isdir(manual_dir):
-            self.skipTest("manual/ directory not present (run make update_reference_manual)")
+            self.skipTest(
+                "manual/ directory not present (run make update_reference_manual)"
+            )
         has_rst = False
         for _dirpath, _dirnames, filenames in os.walk(manual_dir):
             if any(f.endswith(".rst") for f in filenames):
@@ -231,7 +239,9 @@ class TestDataFiles(unittest.TestCase):
         """
         manual_index = os.path.join(self._data_dir, "manual", "index.rst")
         if not os.path.isdir(os.path.dirname(manual_index)):
-            self.skipTest("manual/ directory not present (run make update_reference_manual)")
+            self.skipTest(
+                "manual/ directory not present (run make update_reference_manual)"
+            )
         self.assertTrue(os.path.isfile(manual_index))
 
     def test_prompt_referenced_data_paths_exist(self) -> None:
@@ -247,7 +257,9 @@ class TestDataFiles(unittest.TestCase):
                 continue
             fs_path = os.path.join(self._data_dir, prompt_path.removeprefix("data/"))
             if prompt_path == "data/manual/" and not os.path.exists(fs_path):
-                self.skipTest("manual/ directory not present (run make update_reference_manual)")
+                self.skipTest(
+                    "manual/ directory not present (run make update_reference_manual)"
+                )
             self.assertTrue(
                 os.path.exists(fs_path),
                 "Prompt references missing path: {:s}".format(prompt_path),
@@ -425,7 +437,8 @@ class TestMCPServer(unittest.TestCase):
         """
         self.assertEqual(
             set(self._tools_by_name),
-            set(_source_tool_definitions()) | {schema["function"]["name"] for schema in TOOL_SCHEMAS},
+            set(_source_tool_definitions())
+            | {schema["function"]["name"] for schema in TOOL_SCHEMAS},
         )
 
     def test_all_tool_schemas_are_object_schemas(self) -> None:
@@ -548,7 +561,8 @@ class TestGetPythonAPIDocs(unittest.TestCase):
         namespace is split into ``bpy.app``, ``bpy.context``, ``bpy.data`` etc.)
         """
         payload = _call_server_tool(
-            "get_python_api_docs", {"identifier": "bpy.app"},
+            "get_python_api_docs",
+            {"identifier": "bpy.app"},
         )
         self.assertEqual(payload["kind"], "exact")
         self.assertTrue(payload["found"])
@@ -565,7 +579,8 @@ class TestGetPythonAPIDocs(unittest.TestCase):
         out.
         """
         payload = _call_server_tool(
-            "get_python_api_docs", {"identifier": "*"},
+            "get_python_api_docs",
+            {"identifier": "*"},
         )
         self.assertEqual(payload["kind"], "namespace")
         self.assertTrue(payload["found"])
@@ -586,7 +601,8 @@ class TestGetPythonAPIDocs(unittest.TestCase):
         exists. Same shape as plain ``bpy``, but explicit.
         """
         payload = _call_server_tool(
-            "get_python_api_docs", {"identifier": "bpy.*"},
+            "get_python_api_docs",
+            {"identifier": "bpy.*"},
         )
         self.assertEqual(payload["kind"], "namespace")
         self.assertTrue(payload["found"])
@@ -606,7 +622,8 @@ class TestGetPythonAPIDocs(unittest.TestCase):
         bypass the exact-match and return the child namespace listing.
         """
         payload = _call_server_tool(
-            "get_python_api_docs", {"identifier": "bmesh.*"},
+            "get_python_api_docs",
+            {"identifier": "bmesh.*"},
         )
         self.assertEqual(payload["kind"], "namespace")
         self.assertTrue(payload["found"])
@@ -623,7 +640,8 @@ class TestGetPythonAPIDocs(unittest.TestCase):
         a ``submodules`` key.
         """
         payload = _call_server_tool(
-            "get_python_api_docs", {"identifier": "bpy"},
+            "get_python_api_docs",
+            {"identifier": "bpy"},
         )
         self.assertEqual(payload["kind"], "namespace")
         self.assertTrue(payload["found"])
@@ -637,7 +655,9 @@ class TestGetPythonAPIDocs(unittest.TestCase):
         for expected in ("bpy.app", "bpy.data", "bpy.props"):
             self.assertIn(expected, submodules)
 
-    def test_generates_suggestions_when_identifier_appears_as_component_elsewhere(self) -> None:
+    def test_generates_suggestions_when_identifier_appears_as_component_elsewhere(
+        self,
+    ) -> None:
         """
         Checks the ``suggestions`` path: ``app`` is not itself a
         documented identifier, but is a component of several paths
@@ -645,7 +665,8 @@ class TestGetPythonAPIDocs(unittest.TestCase):
         return them as suggestions with ``found: False``.
         """
         payload = _call_server_tool(
-            "get_python_api_docs", {"identifier": "app"},
+            "get_python_api_docs",
+            {"identifier": "app"},
         )
         self.assertEqual(payload["kind"], "suggestions")
         self.assertFalse(payload["found"])
@@ -666,7 +687,8 @@ class TestGetPythonAPIDocs(unittest.TestCase):
         The tool should find and return that block under ``kind: definition``.
         """
         payload = _call_server_tool(
-            "get_python_api_docs", {"identifier": "bpy.props.IntProperty"},
+            "get_python_api_docs",
+            {"identifier": "bpy.props.IntProperty"},
         )
         self.assertEqual(payload["kind"], "definition")
         self.assertTrue(payload["found"])
@@ -682,7 +704,8 @@ class TestGetPythonAPIDocs(unittest.TestCase):
         ``found: False`` and no content.
         """
         payload = _call_server_tool(
-            "get_python_api_docs", {"identifier": "this.module.doesnt.exist"},
+            "get_python_api_docs",
+            {"identifier": "this.module.doesnt.exist"},
         )
         self.assertEqual(payload["kind"], "missing")
         self.assertFalse(payload["found"])
@@ -698,7 +721,8 @@ class TestGetPythonAPIDocs(unittest.TestCase):
         so the agent can retry.
         """
         payload = _call_server_tool(
-            "get_python_api_docs", {"identifier": "bpy.props.IntegerProperty"},
+            "get_python_api_docs",
+            {"identifier": "bpy.props.IntegerProperty"},
         )
         self.assertEqual(payload["kind"], "partial")
         self.assertFalse(payload["found"])
@@ -723,7 +747,8 @@ class TestGetPythonAPIDocs(unittest.TestCase):
         too-large header instead of the full file, and empty examples.
         """
         payload = _call_server_tool(
-            "get_python_api_docs", {"identifier": "bpy.ops.object"},
+            "get_python_api_docs",
+            {"identifier": "bpy.ops.object"},
         )
         self.assertEqual(payload["kind"], "exact")
         self.assertTrue(payload["found"])
@@ -736,7 +761,8 @@ class TestGetPythonAPIDocs(unittest.TestCase):
         lines = content.splitlines()
         bullet_lines = [line for line in lines if line.startswith("- ")]
         self.assertGreater(
-            len(bullet_lines), 10,
+            len(bullet_lines),
+            10,
             "Expected many top-level operators in the summary",
         )
         # Spot-check a well-known bpy.ops.object operator.
@@ -755,7 +781,8 @@ class TestGetPythonAPIDocs(unittest.TestCase):
         name still gets a focused near-miss list.
         """
         payload = _call_server_tool(
-            "get_python_api_docs", {"identifier": "bpy.types.Scne"},
+            "get_python_api_docs",
+            {"identifier": "bpy.types.Scne"},
         )
         self.assertEqual(payload["kind"], "partial")
         self.assertFalse(payload["found"])
@@ -777,7 +804,8 @@ class TestGetPythonAPIDocs(unittest.TestCase):
             self.assertTrue(
                 tail_chars.issubset(last),
                 "Filter kept {!r} missing chars {!r}".format(
-                    entry, tail_chars - set(last),
+                    entry,
+                    tail_chars - set(last),
                 ),
             )
 
@@ -788,7 +816,8 @@ class TestGetPythonAPIDocs(unittest.TestCase):
         in an ``examples`` list, deduplicated and with stable ordering.
         """
         payload = _call_server_tool(
-            "get_python_api_docs", {"identifier": "bpy.app.handlers"},
+            "get_python_api_docs",
+            {"identifier": "bpy.app.handlers"},
         )
         self.assertEqual(payload["kind"], "exact")
         self.assertTrue(payload["found"])
@@ -829,7 +858,8 @@ class TestGetPythonAPIDocs(unittest.TestCase):
         stability.
         """
         payload = _call_server_tool(
-            "get_python_api_docs", {"identifier": "bpy.app"},
+            "get_python_api_docs",
+            {"identifier": "bpy.app"},
         )
         self.assertEqual(payload["kind"], "exact")
         self.assertEqual(payload["examples"], [])

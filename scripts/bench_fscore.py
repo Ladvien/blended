@@ -182,18 +182,24 @@ def render_report(model_dir_name, rows, audit_rows) -> str:
     lines = [
         f"# F-score and reference audit — {model_dir_name}",
         "",
-        (f"{len(scored)} of {len(rows)} instances scored; {N_POINTS} points, "
-         f"seed {SEED}; thresholds as a fraction of the unit-sphere radius; "
-         f"ranked on F@{PRIMARY_THRESHOLD} (chosen a priori)."),
+        (
+            f"{len(scored)} of {len(rows)} instances scored; {N_POINTS} points, "
+            f"seed {SEED}; thresholds as a fraction of the unit-sphere radius; "
+            f"ranked on F@{PRIMARY_THRESHOLD} (chosen a priori)."
+        ),
         "",
-        ("Chamfer distance ranks category priors rather than surface agreement "
-         "(DOI 10.1109/cvpr.2019.00352); precision and recall separate surface "
-         "we invented from surface we missed, which CD folds into one number."),
+        (
+            "Chamfer distance ranks category priors rather than surface agreement "
+            "(DOI 10.1109/cvpr.2019.00352); precision and recall separate surface "
+            "we invented from surface we missed, which CD folds into one number."
+        ),
         "",
         f"## Per instance (sorted by F@{PRIMARY_THRESHOLD:.2f} ascending — worst first)",
         "",
-        ("| instance | cd_pca | F@0.01 | F@0.02 | F@0.05 | F@0.10 "
-         "| precision@0.05 | recall@0.05 |"),
+        (
+            "| instance | cd_pca | F@0.01 | F@0.02 | F@0.05 | F@0.10 "
+            "| precision@0.05 | recall@0.05 |"
+        ),
         "|---|---|---|---|---|---|---|---|",
     ]
     for row in sorted(scored, key=lambda item: item["fscore"][PRIMARY_THRESHOLD]):
@@ -223,11 +229,16 @@ def render_report(model_dir_name, rows, audit_rows) -> str:
                 f"{np.mean([r['recall'][threshold] for r in scored]):.4f} |"
             )
         lines.append("")
-        lines.append(f"mean cd_pca over the same rows = "
-                     f"{np.mean([r['cd_pca'] for r in scored]):.4f}")
+        lines.append(
+            f"mean cd_pca over the same rows = "
+            f"{np.mean([r['cd_pca'] for r in scored]):.4f}"
+        )
 
-    flagged = [(name, audit) for name, audit in audit_rows.items()
-               if not audit.get("loadable", False) or audit.get("flags")]
+    flagged = [
+        (name, audit)
+        for name, audit in audit_rows.items()
+        if not audit.get("loadable", False) or audit.get("flags")
+    ]
     lines += ["", "## Reference audit", ""]
     if not flagged:
         lines.append("Every reference loads, is watertight and has no degenerate axis.")
@@ -236,14 +247,17 @@ def render_report(model_dir_name, rows, audit_rows) -> str:
             "A flagged reference makes its instance's score a statement about "
             "the reference, not about the candidate."
         )
-        lines += ["",
-                  ("| instance | faces | world mid/max, min/max "
-                   "| own-frame mid/max, min/max | flags |"),
-                  "|---|---|---|---|---|"]
+        lines += [
+            "",
+            (
+                "| instance | faces | world mid/max, min/max "
+                "| own-frame mid/max, min/max | flags |"
+            ),
+            "|---|---|---|---|---|",
+        ]
         for name, audit in sorted(flagged):
             if not audit.get("loadable", False):
-                lines.append(f"| {name} | — | — | — | "
-                             f"{audit.get('error', 'absent')} |")
+                lines.append(f"| {name} | — | — | — | {audit.get('error', 'absent')} |")
                 continue
             lines.append(
                 f"| {name} | {audit['faces']} | "
@@ -267,7 +281,8 @@ def self_test(sc) -> bool:
        catch. Non-zero exit rather than a wrong report.
     """
     probe, _ = trimesh.sample.sample_surface(
-        trimesh.creation.icosphere(subdivisions=3), 2048, seed=SEED)
+        trimesh.creation.icosphere(subdivisions=3), 2048, seed=SEED
+    )
     probe = sc.normalize_unit_sphere(np.asarray(probe, dtype=np.float64))
     identity, _, _ = fscore(probe, probe, min(FSCORE_THRESHOLDS))
 
@@ -275,10 +290,12 @@ def self_test(sc) -> bool:
     needle = trimesh.creation.box(extents=(1.0, 0.05, 0.05))
     world_aligned = own_frame_extents(needle)
     diagonal = needle.copy()
-    diagonal.apply_transform(trimesh.transformations.rotation_matrix(
-        np.radians(45), (0.0, 0.0, 1.0)))
-    diagonal.apply_transform(trimesh.transformations.rotation_matrix(
-        np.radians(35.264), (1.0, 0.0, 0.0)))
+    diagonal.apply_transform(
+        trimesh.transformations.rotation_matrix(np.radians(45), (0.0, 0.0, 1.0))
+    )
+    diagonal.apply_transform(
+        trimesh.transformations.rotation_matrix(np.radians(35.264), (1.0, 0.0, 0.0))
+    )
     own = own_frame_extents(diagonal)
     axis_aligned_ratio = min(diagonal.extents) / max(diagonal.extents)
     own_ratio = own[2] / own[0]
@@ -286,13 +303,20 @@ def self_test(sc) -> bool:
 
     checks = (
         ("F(S, S) = 1 at the tightest threshold", identity >= 1.0 - 1e-9),
-        ("the needle's own frame survives rotation",
-         abs(own_ratio - unrotated_ratio) < 0.01),
-        ("a world-axis box would NOT have seen it",
-         axis_aligned_ratio > own_ratio * 2.0),
+        (
+            "the needle's own frame survives rotation",
+            abs(own_ratio - unrotated_ratio) < 0.01,
+        ),
+        (
+            "a world-axis box would NOT have seen it",
+            axis_aligned_ratio > own_ratio * 2.0,
+        ),
     )
-    print(f"self-test: F(S,S)={identity:.6f} needle own min/max={own_ratio:.3f} "
-          f"world min/max={axis_aligned_ratio:.3f}", flush=True)
+    print(
+        f"self-test: F(S,S)={identity:.6f} needle own min/max={own_ratio:.3f} "
+        f"world min/max={axis_aligned_ratio:.3f}",
+        flush=True,
+    )
     for label, passed in checks:
         if not passed:
             print(f"self-test FAILED: {label}", file=sys.stderr, flush=True)
@@ -313,8 +337,11 @@ def main(argv) -> int:
         results_root = bench_root / results_root
     model_dir = results_root / arguments.model_dir
     data_root = bench_root / "data"
-    instances = [line.strip() for line in
-                 Path(arguments.instances_file).read_text().splitlines() if line.strip()]
+    instances = [
+        line.strip()
+        for line in Path(arguments.instances_file).read_text().splitlines()
+        if line.strip()
+    ]
 
     if not self_test(sc):
         raise SystemExit("self-test FAILED — refusing to emit a report")
@@ -323,13 +350,22 @@ def main(argv) -> int:
     rows = []
     audit_rows = {}
     for instance in instances:
-        audit_rows[instance] = reference_audit(data_root / instance / "glb" / f"{instance}.glb")
-        row = {"instance": instance, "fscore": None, "precision": None,
-               "recall": None, "cd_pca": None}
+        audit_rows[instance] = reference_audit(
+            data_root / instance / "glb" / f"{instance}.glb"
+        )
+        row = {
+            "instance": instance,
+            "fscore": None,
+            "precision": None,
+            "recall": None,
+            "cd_pca": None,
+        }
         reference_points = sc.load_mesh_points(
-            data_root / instance / "glb" / f"{instance}.glb", N_POINTS, rng)
+            data_root / instance / "glb" / f"{instance}.glb", N_POINTS, rng
+        )
         generated_points = sc.load_mesh_points(
-            model_dir / instance / "glb" / f"{instance}.glb", N_POINTS, rng)
+            model_dir / instance / "glb" / f"{instance}.glb", N_POINTS, rng
+        )
         if reference_points is None or generated_points is None:
             rows.append(row)
             continue
@@ -339,7 +375,8 @@ def main(argv) -> int:
         # uses, so F-score and cd_pca answer the same question about the
         # same pose: is the SHAPE right, given the best frame alignment.
         best_rotation, best_distance = best_pca_alignment(
-            sc, reference_points, generated_points)
+            sc, reference_points, generated_points
+        )
         aligned = generated_points @ best_rotation.T
         row["cd_pca"] = best_distance
         row["fscore"], row["precision"], row["recall"] = {}, {}, {}
@@ -349,8 +386,11 @@ def main(argv) -> int:
             row["precision"][threshold] = precision
             row["recall"][threshold] = recall
         rows.append(row)
-        print(f"  {instance:<26} cd_pca {row['cd_pca']:.4f}  "
-              f"F@{PRIMARY_THRESHOLD} {row['fscore'][PRIMARY_THRESHOLD]:.3f}", flush=True)
+        print(
+            f"  {instance:<26} cd_pca {row['cd_pca']:.4f}  "
+            f"F@{PRIMARY_THRESHOLD} {row['fscore'][PRIMARY_THRESHOLD]:.3f}",
+            flush=True,
+        )
 
     report = render_report(arguments.model_dir, rows, audit_rows)
     if arguments.out:
@@ -359,11 +399,21 @@ def main(argv) -> int:
     else:
         print(report)
     if arguments.json:
-        Path(arguments.json).write_text(json.dumps(
-            {"model_dir": arguments.model_dir, "n_points": N_POINTS, "seed": SEED,
-             "primary_threshold": PRIMARY_THRESHOLD,
-             "per_instance": [{k: v for k, v in row.items()} for row in rows],
-             "reference_audit": audit_rows}, indent=2, default=str) + "\n")
+        Path(arguments.json).write_text(
+            json.dumps(
+                {
+                    "model_dir": arguments.model_dir,
+                    "n_points": N_POINTS,
+                    "seed": SEED,
+                    "primary_threshold": PRIMARY_THRESHOLD,
+                    "per_instance": [{k: v for k, v in row.items()} for row in rows],
+                    "reference_audit": audit_rows,
+                },
+                indent=2,
+                default=str,
+            )
+            + "\n"
+        )
         print(f"wrote {arguments.json}")
     return 0
 

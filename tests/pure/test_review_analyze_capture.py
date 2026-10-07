@@ -135,7 +135,9 @@ def test_parse_glb_rejects_unsupported_container_version(tmp_path):
 def test_parse_glb_rejects_a_first_chunk_that_is_not_json(tmp_path):
     payload = b"\x00\x00\x00\x00"
     body = struct.pack(CHUNK_HEADER_FORMAT, len(payload), GLB_CHUNK_TYPE_BIN) + payload
-    header = struct.pack(GLB_HEADER_FORMAT, GLB_MAGIC, GLB_SUPPORTED_VERSION, 12 + len(body))
+    header = struct.pack(
+        GLB_HEADER_FORMAT, GLB_MAGIC, GLB_SUPPORTED_VERSION, 12 + len(body)
+    )
     path = tmp_path / "bin_first.glb"
     path.write_bytes(header + body)
     with pytest.raises(ValueError, match="not JSON"):
@@ -143,7 +145,9 @@ def test_parse_glb_rejects_a_first_chunk_that_is_not_json(tmp_path):
 
 
 def test_parse_glb_rejects_a_chunk_running_past_the_file(tmp_path):
-    good = _glb({"asset": {"version": "2.0"}}, [(GLB_CHUNK_TYPE_BIN, b"\x01\x02\x03\x04")])
+    good = _glb(
+        {"asset": {"version": "2.0"}}, [(GLB_CHUNK_TYPE_BIN, b"\x01\x02\x03\x04")]
+    )
     # Inflate the BIN chunk's declared length without growing the file;
     # the container header length still matches, so only the chunk walk
     # can see the lie.

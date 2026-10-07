@@ -219,12 +219,21 @@ def test_a_falling_f_score_is_a_regression_and_a_rising_one_is_not(tmp_path):
     """The sign convention, applied: on the ranking axis a candidate whose
     F-score fell on every instance regresses; one whose F-score rose does
     not, even though its Chamfer rows are identical to the baseline's."""
-    baseline = load(write_roll(tmp_path / "b.json", "b",
-                               {f"I{n}": (0.10, 0.03, 0.07) for n in range(4)}))
-    fell = load(write_roll(tmp_path / "f.json", "f",
-                           {f"I{n}": (0.10, 0.05, 0.05) for n in range(4)}))
-    rose = load(write_roll(tmp_path / "r.json", "r",
-                           {f"I{n}": (0.10, 0.01, 0.09) for n in range(4)}))
+    baseline = load(
+        write_roll(
+            tmp_path / "b.json", "b", {f"I{n}": (0.10, 0.03, 0.07) for n in range(4)}
+        )
+    )
+    fell = load(
+        write_roll(
+            tmp_path / "f.json", "f", {f"I{n}": (0.10, 0.05, 0.05) for n in range(4)}
+        )
+    )
+    rose = load(
+        write_roll(
+            tmp_path / "r.json", "r", {f"I{n}": (0.10, 0.01, 0.09) for n in range(4)}
+        )
+    )
     instances = [f"I{n}" for n in range(4)]
     worse = tool.paired_delta(baseline, fell, instances, tool.RANKING_METRIC)
     better = tool.paired_delta(baseline, rose, instances, tool.RANKING_METRIC)
@@ -305,8 +314,11 @@ def test_a_short_roll_inside_a_candidate_is_refused_by_name(tmp_path):
             write_roll(
                 tmp_path / "c.json",
                 "three_instance_roll",
-                {"I00": (0.07, 0.02, 0.05), "I01": (0.07, 0.02, 0.05),
-                 "I02": (0.07, 0.02, 0.05)},
+                {
+                    "I00": (0.07, 0.02, 0.05),
+                    "I01": (0.07, 0.02, 0.05),
+                    "I02": (0.07, 0.02, 0.05),
+                },
             )
         )[0],
     ]

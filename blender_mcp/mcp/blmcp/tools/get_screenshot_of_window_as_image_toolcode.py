@@ -36,9 +36,14 @@ class Result(NamedTuple):
 
 # @include_begin: _template_image_downscale_to_size_limit.py
 def _image_downscale_to_size_limit(
-        tmpdir: str, filepath: str, size_limit_in_bytes: int, size_tolerance_in_bytes: int = 0,
+    tmpdir: str,
+    filepath: str,
+    size_limit_in_bytes: int,
+    size_tolerance_in_bytes: int = 0,
 ) -> bytes:
-    return b''
+    return b""
+
+
 # @include_end
 
 
@@ -47,13 +52,19 @@ def main(params: Params) -> Result:
     from bpy import context  # pylint: disable=import-error,no-name-in-module
 
     if bpy.app.background:
-        return Result(status="error", message="Screenshots are not available in background mode")
+        return Result(
+            status="error", message="Screenshots are not available in background mode"
+        )
 
     window = context.window
     if window is None:
         return Result(status="error", message="No active window")
 
-    size_limit = params.size_limit_in_bytes if params.size_limit_in_bytes > 0 else _IMAGE_SIZE_LIMIT_IN_BYTES
+    size_limit = (
+        params.size_limit_in_bytes
+        if params.size_limit_in_bytes > 0
+        else _IMAGE_SIZE_LIMIT_IN_BYTES
+    )
 
     with tempfile.TemporaryDirectory(prefix="blmcp_screenshot_") as tmpdir:
         filepath_screenshot = os.path.join(tmpdir, "screenshot.png")
@@ -63,7 +74,8 @@ def main(params: Params) -> Result:
             return Result(status="error", message=str(ex))
 
         image_data = _image_downscale_to_size_limit(
-            tmpdir, filepath_screenshot,
+            tmpdir,
+            filepath_screenshot,
             size_limit_in_bytes=size_limit,
             size_tolerance_in_bytes=size_limit // 16,
         )

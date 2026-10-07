@@ -136,10 +136,7 @@ class MeshReport:
                 f"{self.flipped_normal_triangle_count} triangles face inward "
                 f"(flipped normals)"
             )
-        if (
-            not budget.allow_inverted_facets
-            and self.inverted_facet_count > 0
-        ):
+        if not budget.allow_inverted_facets and self.inverted_facet_count > 0:
             found_failures.append(
                 f"{self.inverted_facet_count} triangles disagree with their own "
                 f"vertex normals (inverted facets)"
@@ -269,6 +266,7 @@ def _count_flipped_normal_triangles(evaluated_mesh) -> int:
         if crossing_count % 2 == 1:
             flipped_count += 1
     return flipped_count
+
 
 def facet_disagrees_with_its_normals(
     corner_positions: tuple[tuple[float, float, float], ...],
@@ -620,9 +618,7 @@ def analyze_object(blender_object) -> MeshReport:
             # measurement here either mutates or is entitled to, and a
             # volume read after a weld is a volume of something else.
             volume_m3 = working_mesh.calc_volume(signed=True)
-            surface_area_m2 = sum(
-                face.calc_area() for face in working_mesh.faces
-            )
+            surface_area_m2 = sum(face.calc_area() for face in working_mesh.faces)
             triangle_count = sum(len(face.verts) - 2 for face in working_mesh.faces)
             # Blender's own Select Non-Manifold: an edge shared by more than
             # two faces, or by none (a wire edge).

@@ -102,9 +102,7 @@ class ChatTranscript:
             encoding="utf-8",
         )
 
-    def record(
-        self, kind: str, text: str, image_paths: tuple[str, ...] = ()
-    ) -> None:
+    def record(self, kind: str, text: str, image_paths: tuple[str, ...] = ()) -> None:
         """Append one event to both files."""
         self._event_index += 1
         record = {
@@ -126,10 +124,14 @@ class ChatTranscript:
             # pair already in the Markdown; printing it twice is noise.
             return
         heading = EVENT_HEADINGS.get(kind, kind)
-        body = text if len(text) <= MARKDOWN_TRUNCATE_CHARACTERS else (
-            text[:MARKDOWN_TRUNCATE_CHARACTERS]
-            + f"\n… [{len(text) - MARKDOWN_TRUNCATE_CHARACTERS} more characters "
-              f"in {self.jsonl_path.name}]"
+        body = (
+            text
+            if len(text) <= MARKDOWN_TRUNCATE_CHARACTERS
+            else (
+                text[:MARKDOWN_TRUNCATE_CHARACTERS]
+                + f"\n… [{len(text) - MARKDOWN_TRUNCATE_CHARACTERS} more characters "
+                f"in {self.jsonl_path.name}]"
+            )
         )
         block = f"### {heading}\n\n"
         if kind in ("tool", "result", "error"):

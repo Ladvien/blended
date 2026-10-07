@@ -20,7 +20,9 @@ import traceback
 from pathlib import Path
 
 REPOSITORY_ROOT = Path(__file__).resolve().parent.parent.parent
-sys.path.insert(0, str(max((REPOSITORY_ROOT / ".venv" / "lib").glob("python3.*/site-packages"))))
+sys.path.insert(
+    0, str(max((REPOSITORY_ROOT / ".venv" / "lib").glob("python3.*/site-packages")))
+)
 sys.path.insert(0, str(REPOSITORY_ROOT / "src"))
 
 import bpy
@@ -62,7 +64,9 @@ def _corners_outside_region(name, region, region_3d):
     for corner in blender_object.bound_box:
         world = blender_object.matrix_world @ Vector(corner)
         projected = location_3d_to_region_2d(region, region_3d, world)
-        if projected is None or not (0.0 <= projected.x <= region.width and 0.0 <= projected.y <= region.height):
+        if projected is None or not (
+            0.0 <= projected.x <= region.width and 0.0 <= projected.y <= region.height
+        ):
             outside.append((tuple(round(value, 3) for value in world), projected))
     return outside
 
@@ -98,12 +102,18 @@ def run_checks() -> list[str]:
             rotation_before = region_3d.view_rotation.copy()
             framing = frame_in_viewports((name,))
             label = f"{starting} {name}"
-            print(f"viewport_follow_check: {label}: {framing.line}; view_distance {region_3d.view_distance:.4f}")
+            print(
+                f"viewport_follow_check: {label}: {framing.line}; view_distance {region_3d.view_distance:.4f}"
+            )
             if framing.framed_names != (name,) or framing.viewport_count != 1:
-                failures.append(f"{label}: framed {framing.framed_names} in {framing.viewport_count}")
+                failures.append(
+                    f"{label}: framed {framing.framed_names} in {framing.viewport_count}"
+                )
             outside = _corners_outside_region(name, region, region_3d)
             if outside:
-                failures.append(f"{label}: corners outside the region {region.width}x{region.height}: {outside}")
+                failures.append(
+                    f"{label}: corners outside the region {region.width}x{region.height}: {outside}"
+                )
             if region_3d.view_rotation != rotation_before:
                 failures.append(f"{label}: view rotation changed")
             distances[name] = region_3d.view_distance
@@ -111,7 +121,10 @@ def run_checks() -> list[str]:
             failures.append(f"{starting}: the probe did not vary: {distances}")
 
     unlinked = frame_in_viewports((UNLINKED_BOX_NAME,))
-    if unlinked.framed_names or "nothing this call touched is in the scene" not in unlinked.line:
+    if (
+        unlinked.framed_names
+        or "nothing this call touched is in the scene" not in unlinked.line
+    ):
         failures.append(f"unlinked object: {unlinked}")
     if _state() != before:
         failures.append(f"selection/active/mode changed: {before} -> {_state()}")

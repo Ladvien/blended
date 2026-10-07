@@ -52,10 +52,10 @@ import math
 
 from blended.ops._contract import op
 
-DEPTH_AXIS_EXTENT_RANK = 1        # middle extent goes on the depth axis
-DEPTH_AXIS_INDEX = 1              # Blender Y; glTF Z after export_yup
-DEGENERATE_EXTENT_M = 1e-9        # below this the object has no geometry
-POST_CONDITION_TOLERANCE_RATIO = 1e-6   # float slack after a 90-deg turn
+DEPTH_AXIS_EXTENT_RANK = 1  # middle extent goes on the depth axis
+DEPTH_AXIS_INDEX = 1  # Blender Y; glTF Z after export_yup
+DEGENERATE_EXTENT_M = 1e-9  # below this the object has no geometry
+POST_CONDITION_TOLERANCE_RATIO = 1e-6  # float slack after a 90-deg turn
 QUARTER_TURN_RAD = math.pi / 2.0
 AXIS_COUNT = 3
 
@@ -69,7 +69,7 @@ _ROTATION_ONTO_DEPTH_AXIS_RAD = {
 
 
 def _as_extent_triple_m(
-    extents_m: tuple[float, float, float]
+    extents_m: tuple[float, float, float],
 ) -> tuple[float, float, float]:
     """Coerce to a float 3-tuple; a wrong-length input raises ValueError."""
     extent_x_m, extent_y_m, extent_z_m = extents_m
@@ -88,9 +88,7 @@ def middle_extent_m(extents_m: tuple[float, float, float]) -> float:
 
 
 @op(reads_only=True)
-def depth_axis_holds_middle_extent(
-    extents_m: tuple[float, float, float]
-) -> bool:
+def depth_axis_holds_middle_extent(extents_m: tuple[float, float, float]) -> bool:
     """Does the depth axis already carry a middle-valued extent?"""
     extents_m = _as_extent_triple_m(extents_m)
     largest = max(extents_m)
@@ -123,9 +121,7 @@ def canonical_depth_axis_rotation_euler_rad(
     if depth_axis_holds_middle_extent(extents_m):
         return _ROTATION_ONTO_DEPTH_AXIS_RAD[DEPTH_AXIS_INDEX]
     middle_m = middle_extent_m(extents_m)
-    source_axis = min(
-        axis for axis in range(AXIS_COUNT) if extents_m[axis] == middle_m
-    )
+    source_axis = min(axis for axis in range(AXIS_COUNT) if extents_m[axis] == middle_m)
     return _ROTATION_ONTO_DEPTH_AXIS_RAD[source_axis]
 
 
@@ -137,8 +133,7 @@ def depth_axis_extent_rank(extents_m: tuple[float, float, float]) -> int:
     is arbitrary while the VALUE invariant still holds.
     """
     extents_m = _as_extent_triple_m(extents_m)
-    return sum(1 for extent in extents_m
-               if extent > extents_m[DEPTH_AXIS_INDEX])
+    return sum(1 for extent in extents_m if extent > extents_m[DEPTH_AXIS_INDEX])
 
 
 AXIS_NAMES = ("x", "y", "z")
@@ -164,15 +159,17 @@ def orientation_reading(extents_m: tuple[float, float, float]) -> str:
         for axis in range(AXIS_COUNT)
     )
     if depth_axis_holds_middle_extent(extents_m):
-        return (f"extents {figures} m; middle extent on "
-                f"{AXIS_NAMES[DEPTH_AXIS_INDEX]} (canonical)")
+        return (
+            f"extents {figures} m; middle extent on "
+            f"{AXIS_NAMES[DEPTH_AXIS_INDEX]} (canonical)"
+        )
     middle_m = middle_extent_m(extents_m)
-    middle_axis = min(
-        axis for axis in range(AXIS_COUNT) if extents_m[axis] == middle_m
+    middle_axis = min(axis for axis in range(AXIS_COUNT) if extents_m[axis] == middle_m)
+    return (
+        f"extents {figures} m; middle extent on "
+        f"{AXIS_NAMES[middle_axis]}, canonical depth axis is "
+        f"{AXIS_NAMES[DEPTH_AXIS_INDEX]}"
     )
-    return (f"extents {figures} m; middle extent on "
-            f"{AXIS_NAMES[middle_axis]}, canonical depth axis is "
-            f"{AXIS_NAMES[DEPTH_AXIS_INDEX]}")
 
 
 def _mesh_objects(object_name: str | None):
@@ -189,9 +186,7 @@ def _mesh_objects(object_name: str | None):
             )
         return [blender_object]
     meshes = [
-        candidate
-        for candidate in bpy.context.scene.objects
-        if candidate.type == "MESH"
+        candidate for candidate in bpy.context.scene.objects if candidate.type == "MESH"
     ]
     if not meshes:
         raise RuntimeError("no mesh object in the scene to orient")

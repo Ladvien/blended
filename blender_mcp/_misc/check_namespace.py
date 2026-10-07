@@ -10,9 +10,7 @@ Usage::
     python _misc/check_namespace.py mcp/ addon/
 """
 
-__all__ = (
-    "main",
-)
+__all__ = ("main",)
 
 import argparse
 import ast
@@ -33,7 +31,9 @@ def _extract_all(tree: ast.Module) -> tuple[str, ...] | None:
                     if isinstance(node.value, (ast.Tuple, ast.List)):
                         names: list[str] = []
                         for elt in node.value.elts:
-                            if isinstance(elt, ast.Constant) and isinstance(elt.value, str):
+                            if isinstance(elt, ast.Constant) and isinstance(
+                                elt.value, str
+                            ):
                                 names.append(elt.value)
                             else:
                                 return None
@@ -74,7 +74,9 @@ def _extract_names(tree: ast.Module) -> tuple[list[str], set[str]]:
             all_names.add(node.target.id)
         elif isinstance(node, ast.Import):
             for alias in node.names:
-                all_names.add(alias.asname if alias.asname else alias.name.split(".")[0])
+                all_names.add(
+                    alias.asname if alias.asname else alias.name.split(".")[0]
+                )
         elif isinstance(node, ast.ImportFrom):
             for alias in node.names:
                 all_names.add(alias.asname if alias.asname else alias.name)
@@ -94,7 +96,8 @@ def _create_parser() -> argparse.ArgumentParser:
         help="Directory to skip (may be repeated).",
     )
     parser.add_argument(
-        "--verbose", "-v",
+        "--verbose",
+        "-v",
         action="store_true",
         help="Print files without errors too.",
     )
@@ -125,7 +128,9 @@ def main() -> int:
         else:
             files = []
             for dirpath, _dirnames, filenames in os.walk(path):
-                if any(dirpath == d or dirpath.startswith(d + os.sep) for d in skip_dirs):
+                if any(
+                    dirpath == d or dirpath.startswith(d + os.sep) for d in skip_dirs
+                ):
                     continue
                 for filename in sorted(filenames):
                     if filename.endswith(".py"):
@@ -158,7 +163,11 @@ def main() -> int:
                 continue
 
             if verbose:
-                print("{:s}: {:s}".format(filepath, ", ".join(all_names) if all_names else "(empty)"))
+                print(
+                    "{:s}: {:s}".format(
+                        filepath, ", ".join(all_names) if all_names else "(empty)"
+                    )
+                )
 
             all_set = set(all_names)
             defs, module_names = _extract_names(tree)
@@ -174,9 +183,15 @@ def main() -> int:
             if filename == "__init__.py":
                 pkg_dir = os.path.dirname(filepath)
                 for entry in os.scandir(pkg_dir):
-                    if entry.is_dir() and os.path.isfile(os.path.join(entry.path, filename)):
+                    if entry.is_dir() and os.path.isfile(
+                        os.path.join(entry.path, filename)
+                    ):
                         module_names.add(entry.name)
-                    elif entry.is_file() and entry.name.endswith(".py") and entry.name != filename:
+                    elif (
+                        entry.is_file()
+                        and entry.name.endswith(".py")
+                        and entry.name != filename
+                    ):
                         module_names.add(entry.name[:-3])
 
             for name in all_names:

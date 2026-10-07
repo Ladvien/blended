@@ -91,9 +91,7 @@ class SplayedLegSpec:
 
     def __post_init__(self) -> None:
         if self.top_z_m <= 0.0:
-            raise ImpossibleLeg(
-                f"top_z_m must be above the floor, got {self.top_z_m}"
-            )
+            raise ImpossibleLeg(f"top_z_m must be above the floor, got {self.top_z_m}")
         if self.leg_radius_m <= 0.0:
             raise ImpossibleLeg(
                 f"leg_radius_m must be positive, got {self.leg_radius_m}"
@@ -127,8 +125,7 @@ class SplayedLegSpec:
     def sole_drop_m(self) -> float:
         """How far below z=0 the base sits so the WHOLE cap clears it."""
         return (
-            self.leg_radius_m / math.cos(self.splay_rad)
-            + self.sole_clearance_margin_m
+            self.leg_radius_m / math.cos(self.splay_rad) + self.sole_clearance_margin_m
         )
 
     @property

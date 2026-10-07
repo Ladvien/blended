@@ -67,7 +67,9 @@ def parse_arguments(argv):
     parser.add_argument("--results-root", default="results/text_to_3D_agent")
     parser.add_argument("--model-dir", default="blended-deepseek-v4-pro")
     parser.add_argument(
-        "--prompt-variant", choices=("description", "instruction"), default="description"
+        "--prompt-variant",
+        choices=("description", "instruction"),
+        default="description",
     )
     parser.add_argument("--model", default="")
     parser.add_argument("--vision-model", default="")
@@ -190,7 +192,9 @@ def main(argv) -> int:
             sorted(
                 (
                     obj.name,
-                    len(obj.data.vertices) if getattr(obj.data, "vertices", None) is not None else -1,
+                    len(obj.data.vertices)
+                    if getattr(obj.data, "vertices", None) is not None
+                    else -1,
                 )
                 for obj in bpy.data.objects
             )
@@ -236,7 +240,8 @@ def main(argv) -> int:
     # (size-capped PNGs under the run's own directory), so a bench view
     # and a user's photograph reach the writer the same way.
     normalized_views = tuple(
-        normalize_reference_photo(view, work_directory / "_agent") for view in reference_views
+        normalize_reference_photo(view, work_directory / "_agent")
+        for view in reference_views
     )
     print(f"[instance] {arguments.instance}", flush=True)
     started = time.monotonic()

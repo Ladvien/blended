@@ -50,10 +50,7 @@ def _json_chunk(payload: bytes) -> bytes:
     """Blender-style JSON chunk: length field is the PADDED length."""
     padding = (4 - (len(payload) & 3)) & 3
     return (
-        struct.pack("<I", len(payload) + padding)
-        + b"JSON"
-        + payload
-        + b" " * padding
+        struct.pack("<I", len(payload) + padding) + b"JSON" + payload + b" " * padding
     )
 
 
@@ -77,9 +74,7 @@ def _build_glb(positions, indices, normals=None):
     while len(binary) % 4:
         binary.append(0)
 
-    buffer_views = [
-        {"buffer": 0, "byteOffset": 0, "byteLength": len(binary)}
-    ]
+    buffer_views = [{"buffer": 0, "byteOffset": 0, "byteLength": len(binary)}]
     accessors = [
         {
             "bufferView": 0,
@@ -177,9 +172,7 @@ def test_two_triangles_sharing_an_edge(tmp_path):
     """Two triangles on one shared edge: 2 tris, 4 welded boundary
     edges, 0 non-manifold, 0 inverted."""
     indices = (0, 1, 2, 1, 3, 2)
-    path = _write_glb(
-        tmp_path, _build_glb(SHARED_EDGE_POSITIONS, indices, UP_NORMALS)
-    )
+    path = _write_glb(tmp_path, _build_glb(SHARED_EDGE_POSITIONS, indices, UP_NORMALS))
     report = asset_report(path)
     mesh = report.meshes["Tri"]
     assert report.triangle_count == 2
@@ -357,9 +350,7 @@ def _build_glb_with_weights(positions, indices, weights, normals=None):
         )
         attributes["NORMAL"] = len(accessors) - 1
         offset += normals_len
-    buffer_views.append(
-        {"buffer": 0, "byteOffset": offset, "byteLength": weights_len}
-    )
+    buffer_views.append({"buffer": 0, "byteOffset": offset, "byteLength": weights_len})
     accessors.append(
         {
             "bufferView": len(buffer_views) - 1,
@@ -371,9 +362,7 @@ def _build_glb_with_weights(positions, indices, weights, normals=None):
     )
     attributes["WEIGHTS_0"] = len(accessors) - 1
     offset += weights_len
-    buffer_views.append(
-        {"buffer": 0, "byteOffset": offset, "byteLength": joints_len}
-    )
+    buffer_views.append({"buffer": 0, "byteOffset": offset, "byteLength": joints_len})
     accessors.append(
         {
             "bufferView": len(buffer_views) - 1,
@@ -385,9 +374,7 @@ def _build_glb_with_weights(positions, indices, weights, normals=None):
     )
     attributes["JOINTS_0"] = len(accessors) - 1
     offset += joints_len
-    buffer_views.append(
-        {"buffer": 0, "byteOffset": offset, "byteLength": indices_len}
-    )
+    buffer_views.append({"buffer": 0, "byteOffset": offset, "byteLength": indices_len})
     accessors.append(
         {
             "bufferView": len(buffer_views) - 1,
@@ -464,9 +451,9 @@ def test_weight_sum_violation_and_multi_influence_fraction(tmp_path):
     positions = SHARED_EDGE_POSITIONS[:3]
     indices = (0, 1, 2)
     weights = (
-        (0.5, 0.5, 0.0, 0.0),   # sum 1.0 — clean
+        (0.5, 0.5, 0.0, 0.0),  # sum 1.0 — clean
         (0.45, 0.45, 0.0, 0.0),  # sum 0.9 — violation
-        (0.3, 0.7, 0.0, 0.0),   # sum 1.0 — clean
+        (0.3, 0.7, 0.0, 0.0),  # sum 1.0 — clean
     )
     path = _write_glb(
         tmp_path,
@@ -590,9 +577,7 @@ def _build_glb_with_normalized_weights(
         )
         attributes["NORMAL"] = len(accessors) - 1
         offset += normals_len
-    buffer_views.append(
-        {"buffer": 0, "byteOffset": offset, "byteLength": weights_len}
-    )
+    buffer_views.append({"buffer": 0, "byteOffset": offset, "byteLength": weights_len})
     accessors.append(
         {
             "bufferView": len(buffer_views) - 1,
@@ -605,9 +590,7 @@ def _build_glb_with_normalized_weights(
     )
     attributes["WEIGHTS_0"] = len(accessors) - 1
     offset += weights_len
-    buffer_views.append(
-        {"buffer": 0, "byteOffset": offset, "byteLength": joints_len}
-    )
+    buffer_views.append({"buffer": 0, "byteOffset": offset, "byteLength": joints_len})
     accessors.append(
         {
             "bufferView": len(buffer_views) - 1,
@@ -619,9 +602,7 @@ def _build_glb_with_normalized_weights(
     )
     attributes["JOINTS_0"] = len(accessors) - 1
     offset += joints_len
-    buffer_views.append(
-        {"buffer": 0, "byteOffset": offset, "byteLength": indices_len}
-    )
+    buffer_views.append({"buffer": 0, "byteOffset": offset, "byteLength": indices_len})
     accessors.append(
         {
             "bufferView": len(buffer_views) - 1,
@@ -661,7 +642,9 @@ def _build_glb_with_normalized_weights(
     return header + json_chunk + bin_chunk
 
 
-def _build_glb_with_two_weight_sets(positions, indices, weights_0, weights_1, normals=None):
+def _build_glb_with_two_weight_sets(
+    positions, indices, weights_0, weights_1, normals=None
+):
     """Assemble a .glb with WEIGHTS_0 + WEIGHTS_1 + JOINTS_0 + JOINTS_1,
     all float32 VEC4, to pin the multi-set weight_set_count path."""
     binary = bytearray()
@@ -730,9 +713,7 @@ def _build_glb_with_two_weight_sets(positions, indices, weights_0, weights_1, no
         (w0_bytes, w0_len, "WEIGHTS_0"),
         (w1_bytes, w1_len, "WEIGHTS_1"),
     ):
-        buffer_views.append(
-            {"buffer": 0, "byteOffset": offset, "byteLength": _w_len}
-        )
+        buffer_views.append({"buffer": 0, "byteOffset": offset, "byteLength": _w_len})
         accessors.append(
             {
                 "bufferView": len(buffer_views) - 1,
@@ -748,9 +729,7 @@ def _build_glb_with_two_weight_sets(positions, indices, weights_0, weights_1, no
         (j0_bytes, j0_len, "JOINTS_0"),
         (j1_bytes, j1_len, "JOINTS_1"),
     ):
-        buffer_views.append(
-            {"buffer": 0, "byteOffset": offset, "byteLength": _j_len}
-        )
+        buffer_views.append({"buffer": 0, "byteOffset": offset, "byteLength": _j_len})
         accessors.append(
             {
                 "bufferView": len(buffer_views) - 1,
@@ -762,9 +741,7 @@ def _build_glb_with_two_weight_sets(positions, indices, weights_0, weights_1, no
         )
         attributes[_label] = len(accessors) - 1
         offset += _j_len
-    buffer_views.append(
-        {"buffer": 0, "byteOffset": offset, "byteLength": indices_len}
-    )
+    buffer_views.append({"buffer": 0, "byteOffset": offset, "byteLength": indices_len})
     accessors.append(
         {
             "bufferView": len(buffer_views) - 1,

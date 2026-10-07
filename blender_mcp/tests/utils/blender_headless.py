@@ -45,9 +45,8 @@ WAYLAND Environment Variables:
 
 Currently only WAYLAND is supported, other systems could be added.
 """
-__all__ = (
-    "main",
-)
+
+__all__ = ("main",)
 
 import os
 import signal
@@ -64,6 +63,7 @@ from typing import (
 
 # -----------------------------------------------------------------------------
 # Constants
+
 
 def environ_nonzero(var: str) -> bool:
     return os.environ.get(var, "").lstrip("0") != ""
@@ -98,10 +98,13 @@ def scantree(path: str) -> Iterator[os.DirEntry[str]]:
 # -----------------------------------------------------------------------------
 # Implementation Back-Ends
 
+
 class backend_base:
     @staticmethod
     def run(args: Sequence[str]) -> int:
-        sys.stderr.write("No headless back-ends for {!r} with args {!r}\n".format(sys.platform, args))
+        sys.stderr.write(
+            "No headless back-ends for {!r} with args {!r}\n".format(sys.platform, args)
+        )
         return 1
 
 
@@ -139,6 +142,7 @@ class backend_wayland(backend_base):
         Uses the expected socket file in `XDG_RUNTIME_DIR` to detect when the WAYLAND server starts.
         """
         import time
+
         time_idle = min(timeout / 100.0, 0.05)
 
         xdg_runtime_dir = os.environ.get("XDG_RUNTIME_DIR", "")
@@ -159,9 +163,9 @@ class backend_wayland(backend_base):
 
     @staticmethod
     def _weston_env_and_ini_from_portable(
-            *,
-            wayland_root_dir: str | None,
-            weston_root_dir: str | None,
+        *,
+        wayland_root_dir: str | None,
+        weston_root_dir: str | None,
     ) -> tuple[dict[str, str] | None, str]:
         """
         Construct a portable environment to run WESTON in.
@@ -177,43 +181,49 @@ class backend_wayland(backend_base):
         if weston_root_dir is None:
             # There is very little to do, simply write a configuration
             # that removes the panel to give some extra screen real estate.
-            weston_ini.extend([
-                "[shell]",
-                "background-color=0x00000000",
-                "panel-position=none",
-                # Don't look for a background image.
-                "background-image=",
-            ])
+            weston_ini.extend(
+                [
+                    "[shell]",
+                    "background-color=0x00000000",
+                    "panel-position=none",
+                    # Don't look for a background image.
+                    "background-image=",
+                ]
+            )
         else:
-            weston_ini.extend([
-                "[core]",
-                "",
-                "[shell]",
-                "background-color=0x00000000",
-                "client={:s}/libexec/weston-desktop-shell".format(weston_root_dir),
-                "panel-position=none",
-                # Don't look for a background image.
-                "background-image=",
-                "",
-                "[keyboard]",
-                "numlock-on=true",
-                "",
-                "[output]",
-                "seat=default",
-                "",
-                "[input-method]",
-                "path={:s}/libexec/weston-keyboard".format(weston_root_dir),
-            ])
+            weston_ini.extend(
+                [
+                    "[core]",
+                    "",
+                    "[shell]",
+                    "background-color=0x00000000",
+                    "client={:s}/libexec/weston-desktop-shell".format(weston_root_dir),
+                    "panel-position=none",
+                    # Don't look for a background image.
+                    "background-image=",
+                    "",
+                    "[keyboard]",
+                    "numlock-on=true",
+                    "",
+                    "[output]",
+                    "seat=default",
+                    "",
+                    "[input-method]",
+                    "path={:s}/libexec/weston-keyboard".format(weston_root_dir),
+                ]
+            )
 
         if wayland_root_dir is not None:
             ld_library_paths.append(os.path.join(wayland_root_dir, "lib64"))
 
         if weston_root_dir is not None:
             weston_lib_dir = os.path.join(weston_root_dir, "lib")
-            ld_library_paths.extend([
-                weston_lib_dir,
-                os.path.join(weston_lib_dir, "weston"),
-            ])
+            ld_library_paths.extend(
+                [
+                    weston_lib_dir,
+                    os.path.join(weston_lib_dir, "weston"),
+                ]
+            )
 
             # Setup the `WESTON_MODULE_MAP`.
             weston_map_filenames = {
@@ -230,7 +240,9 @@ class backend_wayland(backend_base):
             module_map = []
             for key, value in sorted(weston_map_filenames.items()):
                 if not value:
-                    raise Exception("Failure to find {!r} in {!r}".format(key, weston_lib_dir))  # noqa: TRY002 — copied from Blender's test harness
+                    raise Exception(  # noqa: TRY002 — copied from Blender's test harness
+                        "Failure to find {!r} in {!r}".format(key, weston_lib_dir)
+                    )
                 module_map.append("{:s}={:s}".format(key, value))
 
             weston_env["WESTON_MODULE_MAP"] = ";".join(module_map)
@@ -286,7 +298,11 @@ class backend_wayland(backend_base):
 
         # Ensure the WAYLAND server is NOT running (for this socket).
         if backend_wayland._wait_for_wayland_server(socket=socket, timeout=0.0):
-            sys.stderr.write("Wayland server for socket \"{:s}\" already running, exiting!\n".format(socket))
+            sys.stderr.write(
+                'Wayland server for socket "{:s}" already running, exiting!\n'.format(
+                    socket
+                )
+            )
             return 1
 
         weston_env, weston_ini = backend_wayland._weston_env_and_ini()
@@ -311,34 +327,48 @@ class backend_wayland(backend_base):
             print("Run:", cmd)
 
         with tempfile.NamedTemporaryFile(
-                prefix="weston_",
-                suffix=".ini",
-                mode='w',
-                encoding="utf-8",
+            prefix="weston_",
+            suffix=".ini",
+            mode="w",
+            encoding="utf-8",
         ) as weston_ini_tempfile:
             weston_ini_tempfile.write(weston_ini)
             weston_ini_tempfile.flush()
             with subprocess.Popen(
-                    [*cmd, "--config={:s}".format(weston_ini_tempfile.name)],
-                    **cmd_kw,
+                [*cmd, "--config={:s}".format(weston_ini_tempfile.name)],
+                **cmd_kw,
             ) as proc_server:
                 del cmd, cmd_kw
-                if not backend_wayland._wait_for_wayland_server(socket=socket, timeout=1.0):
+                if not backend_wayland._wait_for_wayland_server(
+                    socket=socket, timeout=1.0
+                ):
                     # The verbose mode will have written to standard out/error already.
                     # Only show the output is the server wasn't able to start.
                     if not VERBOSE:
                         assert proc_server.stdout is not None
                         assert proc_server.stderr is not None
                         sys.stderr.write("Unable to start wayland server, exiting!\n")
-                        sys.stderr.write(proc_server.stdout.read().decode("utf-8", errors="surrogateescape"))
-                        sys.stderr.write(proc_server.stderr.read().decode("utf-8", errors="surrogateescape"))
+                        sys.stderr.write(
+                            proc_server.stdout.read().decode(
+                                "utf-8", errors="surrogateescape"
+                            )
+                        )
+                        sys.stderr.write(
+                            proc_server.stderr.read().decode(
+                                "utf-8", errors="surrogateescape"
+                            )
+                        )
                         sys.stderr.write("\n")
                     proc_server.send_signal(signal.SIGINT)
                     # Wait for the interrupt to be handled.
                     proc_server.communicate()
                     return 1
                 with tempfile.TemporaryDirectory() as empty_user_dir:
-                    blender_env = {**os.environ, "WAYLAND_DISPLAY": socket, "BLENDER_USER_RESOURCES": empty_user_dir}
+                    blender_env = {
+                        **os.environ,
+                        "WAYLAND_DISPLAY": socket,
+                        "BLENDER_USER_RESOURCES": empty_user_dir,
+                    }
 
                     # Needed so Blender can find WAYLAND libraries such as `libwayland-cursor.so`.
                     if weston_env is not None and "LD_LIBRARY_PATH" in weston_env:
@@ -372,6 +402,7 @@ class backend_wayland(backend_base):
 
 # -----------------------------------------------------------------------------
 # Main Function
+
 
 def main() -> int:
     backend: type[backend_base]

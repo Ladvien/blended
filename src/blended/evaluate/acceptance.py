@@ -233,9 +233,7 @@ class PartReport:
     dimensions: tuple[DimensionMeasurement, ...] = field(default_factory=tuple)
     probes: tuple[ProbeMeasurement, ...] = field(default_factory=tuple)
     clear_axes: tuple[ClearAxisMeasurement, ...] = field(default_factory=tuple)
-    ground_contacts: tuple[GroundContactMeasurement, ...] = field(
-        default_factory=tuple
-    )
+    ground_contacts: tuple[GroundContactMeasurement, ...] = field(default_factory=tuple)
     base_z_m: float = 0.0
     transform_is_finite: bool = True
     # Two numbers, not one. A boolean modifier leaves an EMPTY slot
@@ -277,25 +275,19 @@ class AcceptanceReport:
     @property
     def dimensions(self) -> tuple[DimensionMeasurement, ...]:
         return tuple(
-            measurement
-            for part in self.part_reports
-            for measurement in part.dimensions
+            measurement for part in self.part_reports for measurement in part.dimensions
         )
 
     @property
     def probes(self) -> tuple[ProbeMeasurement, ...]:
         return tuple(
-            measurement
-            for part in self.part_reports
-            for measurement in part.probes
+            measurement for part in self.part_reports for measurement in part.probes
         )
 
     @property
     def clear_axes(self) -> tuple[ClearAxisMeasurement, ...]:
         return tuple(
-            measurement
-            for part in self.part_reports
-            for measurement in part.clear_axes
+            measurement for part in self.part_reports for measurement in part.clear_axes
         )
 
     @property
@@ -330,9 +322,7 @@ class AcceptanceReport:
         byte-identical to what they were before parts existed. Relation
         failures follow the parts.
         """
-        prefix = (
-            lambda part: f"{part.name}: " if len(self.part_reports) > 1 else ""
-        )
+        prefix = lambda part: f"{part.name}: " if len(self.part_reports) > 1 else ""
         found: list[str] = []
         for part in self.part_reports:
             if not part.object_found:
@@ -414,9 +404,7 @@ class AcceptanceReport:
                 f"    {measurement.describe()}" for measurement in part.dimensions
             )
             lines.append(f"    base_z: {part.base_z_m:+.4f} m")
-            lines.extend(
-                f"    {measurement.describe()}" for measurement in part.probes
-            )
+            lines.extend(f"    {measurement.describe()}" for measurement in part.probes)
             lines.extend(
                 f"    {measurement.describe()}" for measurement in part.clear_axes
             )
@@ -509,9 +497,7 @@ def _doubled_area_vector(world_vertices):
     total = Vector((0.0, 0.0, 0.0))
     count = len(world_vertices)
     for index in range(count):
-        total = total + world_vertices[index].cross(
-            world_vertices[(index + 1) % count]
-        )
+        total = total + world_vertices[index].cross(world_vertices[(index + 1) % count])
     return total
 
 
@@ -606,8 +592,7 @@ def evaluate_brief(brief: AssetBrief) -> AcceptanceReport:
     stray_object_names = tuple(
         scene_object.name
         for scene_object in bpy.context.scene.objects
-        if scene_object.type == "MESH"
-        and scene_object.name not in brief.part_names
+        if scene_object.type == "MESH" and scene_object.name not in brief.part_names
     )
     return AcceptanceReport(
         brief_name=brief.name,
@@ -766,8 +751,7 @@ def _measure_relations(brief: AssetBrief, bpy, Vector) -> tuple[str, ...]:
                 )
             if (
                 relation.minimum_separation_m is not None
-                and pair_report.minimum_separation_m
-                < relation.minimum_separation_m
+                and pair_report.minimum_separation_m < relation.minimum_separation_m
             ):
                 failures.append(
                     f"minimum separation "
@@ -850,8 +834,7 @@ def _measure_relations(brief: AssetBrief, bpy, Vector) -> tuple[str, ...]:
                 )
             continue
         raise TypeError(
-            f"unknown relation type {type(relation).__name__} on brief "
-            f"{brief.name!r}"
+            f"unknown relation type {type(relation).__name__} on brief {brief.name!r}"
         )
     return tuple(found)
 
@@ -890,14 +873,12 @@ def refine_brief(brief: AssetBrief, step: RefinementStep) -> AssetBrief:
                     replacements.get(spec.name, spec) for spec in part.dimensions
                 ),
                 probes=tuple(
-                    probe_replacements.get(probe.name, probe)
-                    for probe in part.probes
+                    probe_replacements.get(probe.name, probe) for probe in part.probes
                 ),
             )
             for part in brief.parts
         ),
     )
-
 
 
 @dataclasses.dataclass(frozen=True)
@@ -986,10 +967,7 @@ class RefinementOutcome:
 
     def summary(self, brief: AssetBrief) -> str:
         failures = self.failures(brief)
-        head = (
-            f"REFINEMENT {'PASS' if not failures else 'FAIL'}: "
-            f"{self.step.name}"
-        )
+        head = f"REFINEMENT {'PASS' if not failures else 'FAIL'}: {self.step.name}"
         lines = [head]
         for spec in self.step.changed:
             was = self._measured(self.before, spec.name)
@@ -1011,7 +989,6 @@ class RefinementOutcome:
         # the preservation half would report REFINEMENT FAIL beside a list
         # of everything that went right.
         lines.extend(
-            f"  {failure}"
-            for failure in self.after.failures(self.refined_brief(brief))
+            f"  {failure}" for failure in self.after.failures(self.refined_brief(brief))
         )
         return "\n".join(lines)

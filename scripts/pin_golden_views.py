@@ -100,8 +100,7 @@ def main(argv) -> int:
         # two is loud instead of silently pinned.
         recorded_identity = record["prompt_identity"]
         print(
-            f"[golden] {brief_name} iteration {iteration} "
-            f"recorded {recorded_identity}",
+            f"[golden] {brief_name} iteration {iteration} recorded {recorded_identity}",
             flush=True,
         )
         if recorded_identity != revision.identity:

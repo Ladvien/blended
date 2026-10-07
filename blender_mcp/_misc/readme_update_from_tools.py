@@ -10,9 +10,7 @@ extracts their names and docstrings, and replaces the content between
 the ``BEGIN TOOL LISTING`` / ``END TOOL LISTING`` sentinels in the readme.
 """
 
-__all__ = (
-    "main",
-)
+__all__ = ("main",)
 
 import ast
 import os
@@ -99,13 +97,17 @@ def main() -> int:
     begin_idx = content.find(begin_sentinel)
     end_idx = content.find(end_sentinel)
     if begin_idx == -1 or end_idx == -1:
-        print("Could not find {:s} / {:s} sentinels in {:s}".format(
-            begin_sentinel, end_sentinel, readme_path,
-        ))
+        print(
+            "Could not find {:s} / {:s} sentinels in {:s}".format(
+                begin_sentinel,
+                end_sentinel,
+                readme_path,
+            )
+        )
         return 1
 
     new_content = (
-        content[:begin_idx + len(begin_sentinel)]
+        content[: begin_idx + len(begin_sentinel)]
         + "\n\n"
         + tools_rst
         + "\n"

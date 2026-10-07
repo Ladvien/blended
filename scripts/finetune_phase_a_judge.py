@@ -199,8 +199,10 @@ def main(argv) -> int:
             views = [renders / name for name in VIEW_NAMES]
             missing = [str(view) for view in views if not view.exists()]
             description = (
-                bench_root / "data" / instance / "prompt_description.txt"
-            ).read_text().strip()
+                (bench_root / "data" / instance / "prompt_description.txt")
+                .read_text()
+                .strip()
+            )
             record = {
                 "model_dir": row["model_dir"],
                 "instance": instance,
@@ -211,7 +213,10 @@ def main(argv) -> int:
             }
             if missing:
                 record.update({"violated": None, "constraint": "", "parse_ok": False})
-                print(f"[judge] [{position}/{len(rows)}] {instance}: no renders", flush=True)
+                print(
+                    f"[judge] [{position}/{len(rows)}] {instance}: no renders",
+                    flush=True,
+                )
             else:
                 reply = describer.describe(
                     views, prompt=JUDGE_PROMPT.format(description=description)

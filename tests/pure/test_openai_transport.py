@@ -70,9 +70,7 @@ def openai_payloads(monkeypatch):
 
 def _bmb_client():
     return OllamaClient(
-        ModelConfig.from_environment(
-            model="qwen3.8-27b", endpoint=BMB_ENDPOINT
-        )
+        ModelConfig.from_environment(model="qwen3.8-27b", endpoint=BMB_ENDPOINT)
     )
 
 
@@ -146,7 +144,9 @@ def test_a_llama_swap_turn_gets_the_long_ceiling_and_the_cloud_keeps_the_short_o
     cloud = live_loop.OllamaClient(
         # The Ollama lane sends num_ctx, which the daemon tells it (OT-27);
         # this test is about the wall clock, so the window is given.
-        live_loop.ModelConfig.from_environment(model="deepseek-v4-pro:cloud", context_length=1_048_576)
+        live_loop.ModelConfig.from_environment(
+            model="deepseek-v4-pro:cloud", context_length=1_048_576
+        )
     )
     cloud.chat([{"role": "user", "content": "ping"}])
 
@@ -242,7 +242,9 @@ def test_ollama_endpoint_keeps_the_ollama_wire_shape(monkeypatch):
 
     monkeypatch.setattr(OllamaClient, "_request", capture)
     client = OllamaClient(
-        ModelConfig.from_environment(model="deepseek-v4-pro:cloud", context_length=1_048_576)
+        ModelConfig.from_environment(
+            model="deepseek-v4-pro:cloud", context_length=1_048_576
+        )
     )
     client.chat([{"role": "user", "content": "hi"}])
 
@@ -271,14 +273,21 @@ def test_a_pinned_seed_reaches_both_wires_and_an_unset_one_is_not_sent():
             model="deepseek-v4-pro:cloud", seed=7, context_length=8_192
         )
     )
-    assert ollama_lane._chat_payload([{"role": "user", "content": "hi"}])["options"]["seed"] == 7
+    assert (
+        ollama_lane._chat_payload([{"role": "user", "content": "hi"}])["options"][
+            "seed"
+        ]
+        == 7
+    )
 
     unset_openai = OllamaClient(
         ModelConfig.from_environment(model="qwen2.5-coder-7b-instruct")
     )
     assert "seed" not in unset_openai._chat_payload([{"role": "user", "content": "hi"}])
     unset_ollama = OllamaClient(
-        ModelConfig.from_environment(model="deepseek-v4-pro:cloud", context_length=8_192)
+        ModelConfig.from_environment(
+            model="deepseek-v4-pro:cloud", context_length=8_192
+        )
     )
     options = unset_ollama._chat_payload([{"role": "user", "content": "hi"}])["options"]
     assert "seed" not in options
@@ -299,7 +308,6 @@ def test_the_default_endpoint_does_not_override_the_model_pin():
         model="qwen3.8-27b", endpoint="http://192.168.1.50:1234"
     )
     assert explicit.endpoint == "http://192.168.1.50:1234"
-
 
 
 def test_gpt_oss_20b_is_a_bmb_model():
@@ -432,6 +440,7 @@ def test_the_401_hint_names_the_bmb_key_for_openai_lanes(monkeypatch):
     test cannot be polluted by the real key file or a shell env key
     from another test's environment.
     """
+
     def forbidden(self, path, payload, timeout_seconds):
         raise urllib.error.HTTPError(path, 401, "unauthorized", None, None)
 
@@ -463,9 +472,7 @@ def test_the_local_eye_rides_bigs_llama_swap(monkeypatch):
     assert eye.model == "qwen3-vl"
     assert eye.uses_openai_protocol  # big's llama-swap speaks OpenAI
     # As a writer the same id routes there too.
-    assert (
-        ModelConfig.from_environment(model="qwen3-vl").endpoint == BIG_ENDPOINT
-    )
+    assert ModelConfig.from_environment(model="qwen3-vl").endpoint == BIG_ENDPOINT
     # The describer uses the same rule, not a second copy of it. The
     # class and the patch target come from one module object, so the
     # patched _request is the one that runs and nothing reaches big.
@@ -477,16 +484,10 @@ def test_the_local_eye_rides_bigs_llama_swap(monkeypatch):
         captured.append(self.config.endpoint)
         # big's lane is OpenAI-shaped, so the reply must be too — the
         # eye reads choices[0].message there, not `message`.
-        return {
-            "choices": [
-                {"message": {"role": "assistant", "content": "a render"}}
-            ]
-        }
+        return {"choices": [{"message": {"role": "assistant", "content": "a render"}}]}
 
     monkeypatch.setattr(live_loop.OllamaClient, "_request", capture)
-    describer = live_loop.VisionDescriber(
-        live_loop.OllamaClient(writer), "qwen3-vl"
-    )
+    describer = live_loop.VisionDescriber(live_loop.OllamaClient(writer), "qwen3-vl")
     assert describer.describe([]) == "a render"
     assert captured == [BIG_ENDPOINT]
 
@@ -547,9 +548,7 @@ def test_a_404_hint_names_the_missing_model_not_the_api_key(monkeypatch):
         )
 
     monkeypatch.setattr(OllamaClient, "_request", missing)
-    status = OllamaClient(
-        ModelConfig(model="qwen3-vl", api_key="")
-    ).check_connection()
+    status = OllamaClient(ModelConfig(model="qwen3-vl", api_key="")).check_connection()
     assert not status.ok
     assert "Nothing at http://localhost:11434 serves" in status.detail
     assert BIG_ENDPOINT in status.detail
@@ -670,25 +669,50 @@ def test_the_assistant_tool_calls_travel_with_their_results():
                 "role": "assistant",
                 "content": "",
                 "tool_calls": [
-                    {"id": "call_1", "function": {"name": "add_box", "arguments": {"name": "Crate", "width_m": 0.5}}}
+                    {
+                        "id": "call_1",
+                        "function": {
+                            "name": "add_box",
+                            "arguments": {"name": "Crate", "width_m": 0.5},
+                        },
+                    }
                 ],
             },
-            {"role": "tool", "tool_name": "add_box", "tool_call_id": "call_1", "content": "OK: add_box"},
+            {
+                "role": "tool",
+                "tool_name": "add_box",
+                "tool_call_id": "call_1",
+                "content": "OK: add_box",
+            },
         ]
     )
     assistant, tool_result = converted[1], converted[2]
     (call,) = assistant["tool_calls"]
     assert call["id"] == "call_1" and call["type"] == "function"
     assert call["function"]["name"] == "add_box"
-    assert _json.loads(call["function"]["arguments"]) == {"name": "Crate", "width_m": 0.5}
+    assert _json.loads(call["function"]["arguments"]) == {
+        "name": "Crate",
+        "width_m": 0.5,
+    }
     # Every tool result answers a call that is actually in the request.
     assert tool_result["tool_call_id"] == call["id"]
 
     # A string already in protocol shape is passed through untouched.
     (passthrough,) = _to_openai_messages(
-        [{"role": "assistant", "content": "", "tool_calls": [{"id": "b", "function": {"name": "f", "arguments": '{"a":1}'}}]}]
+        [
+            {
+                "role": "assistant",
+                "content": "",
+                "tool_calls": [
+                    {"id": "b", "function": {"name": "f", "arguments": '{"a":1}'}}
+                ],
+            }
+        ]
     )[0]["tool_calls"]
     assert passthrough["function"]["arguments"] == '{"a":1}'
 
     # An assistant turn that made no calls carries no empty key.
-    assert "tool_calls" not in _to_openai_messages([{"role": "assistant", "content": "done"}])[0]
+    assert (
+        "tool_calls"
+        not in _to_openai_messages([{"role": "assistant", "content": "done"}])[0]
+    )

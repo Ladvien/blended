@@ -264,7 +264,14 @@ def test_golden_crate_with_lid_still_passes_the_form_gate(empty_scene):
 def test_golden_crate_with_lid_measures_the_signed_off_numbers(empty_scene):
     _, report = _measure("crate_with_lid")
 
-    for name in ("width_x", "depth_y", "height_z", "lid_width_x", "lid_depth_y", "lid_height_z"):
+    for name in (
+        "width_x",
+        "depth_y",
+        "height_z",
+        "lid_width_x",
+        "lid_depth_y",
+        "lid_height_z",
+    ):
         assert _dimension(report, name) == pytest.approx(
             CRATE_WITH_LID_SNAPSHOT[name], abs=SNAPSHOT_TOLERANCE_M
         ), name
@@ -292,9 +299,7 @@ def test_golden_per_view_references_and_manifests_are_pinned():
         assert manifest["iteration"] == iteration
         assert manifest["prompt_identity"] == _pinned_identity()
         recorded_views = set(manifest["view_sha256"])
-        assert recorded_views == {
-            "front", "right", "top", "bottom", "three_quarter"
-        }
+        assert recorded_views == {"front", "right", "top", "bottom", "three_quarter"}
         for view_name in recorded_views:
             png = directory / f"{view_name}.png"
             assert png.exists(), f"missing golden view {png}"

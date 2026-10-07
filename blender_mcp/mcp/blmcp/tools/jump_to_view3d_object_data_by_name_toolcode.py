@@ -96,5 +96,7 @@ def main(params: Params) -> Result:
         data_name=params.name,
         type=target.type,
         location=list(target.location),
-        message=None if view3d_found else "No 3D viewport found, object selected but not framed",
+        message=None
+        if view3d_found
+        else "No 3D viewport found, object selected but not framed",
     )

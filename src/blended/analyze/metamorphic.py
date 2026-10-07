@@ -104,9 +104,7 @@ class MetamorphicReport:
         if self.errors:
             return False
         return all(
-            outcome.ok
-            for outcomes in self.outcomes.values()
-            for outcome in outcomes
+            outcome.ok for outcomes in self.outcomes.values() for outcome in outcomes
         )
 
     def failures(self) -> list[str]:
@@ -135,9 +133,7 @@ def scaled_by(label, before, after, factor, rel_tol=EXACT_REL_TOL) -> RelationOu
     """`after` must equal `before * factor`."""
     expected = before * factor
     ok = math.isclose(after, expected, rel_tol=rel_tol, abs_tol=rel_tol)
-    return _outcome(
-        label, ok, f"{before} -> {after}, expected {expected} (x{factor})"
-    )
+    return _outcome(label, ok, f"{before} -> {after}, expected {expected} (x{factor})")
 
 
 def grew_by(label, before, after, delta, rel_tol=EXACT_REL_TOL) -> RelationOutcome:
@@ -150,9 +146,7 @@ def grew_by(label, before, after, delta, rel_tol=EXACT_REL_TOL) -> RelationOutco
     """
     expected = before + delta
     ok = math.isclose(after, expected, rel_tol=rel_tol, abs_tol=rel_tol)
-    return _outcome(
-        label, ok, f"{before} -> {after}, expected {expected} (+{delta})"
-    )
+    return _outcome(label, ok, f"{before} -> {after}, expected {expected} (+{delta})")
 
 
 def strictly_increased(label, before, after, margin=STRICT_MARGIN) -> RelationOutcome:
@@ -163,9 +157,7 @@ def strictly_increased(label, before, after, margin=STRICT_MARGIN) -> RelationOu
     predicted it would be asserting the implementation back at itself.
     """
     ok = after > before + margin
-    return _outcome(
-        label, ok, f"{before} -> {after}, expected a strict increase"
-    )
+    return _outcome(label, ok, f"{before} -> {after}, expected a strict increase")
 
 
 def measured_the_same(label, before, after, rel_tol) -> RelationOutcome:
@@ -220,9 +212,7 @@ def measure_build(blender_object) -> dict:
         "connected_component_count": report.connected_component_count,
         "non_manifold_edge_count": report.non_manifold_edge_count,
         "boundary_edge_count": report.boundary_edge_count,
-        "self_intersecting_face_pair_count": (
-            report.self_intersecting_face_pair_count
-        ),
+        "self_intersecting_face_pair_count": (report.self_intersecting_face_pair_count),
         "inverted_facet_count": report.inverted_facet_count,
         "dimension_x_m": dimensions[0],
         "dimension_y_m": dimensions[1],

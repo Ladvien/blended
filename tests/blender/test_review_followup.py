@@ -32,10 +32,7 @@ def _link_mesh_object(name, vertices, edges, faces):
 def _cube_vertices_and_faces():
     half = CUBE_HALF_EXTENT_M
     vertices = [
-        (x, y, z)
-        for z in (-half, half)
-        for y in (-half, half)
-        for x in (-half, half)
+        (x, y, z) for z in (-half, half) for y in (-half, half) for x in (-half, half)
     ]
     faces = [
         (0, 2, 3, 1),

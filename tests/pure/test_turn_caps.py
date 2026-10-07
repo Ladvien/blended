@@ -18,7 +18,9 @@ def _client(replies):
         def __init__(self):
             self.replies = list(replies)
             self.spent = TurnCost()
-            self.config = dataclasses.replace(ModelConfig.from_environment(), model="scripted", vision_model="")
+            self.config = dataclasses.replace(
+                ModelConfig.from_environment(), model="scripted", vision_model=""
+            )
 
         def chat(self, messages, tools=None):
             return self.replies.pop(0)
@@ -27,7 +29,13 @@ def _client(replies):
 
 
 def _call(tool_name, call_id, **arguments):
-    return {"role": "assistant", "content": "", "tool_calls": [{"id": call_id, "function": {"name": tool_name, "arguments": arguments}}]}
+    return {
+        "role": "assistant",
+        "content": "",
+        "tool_calls": [
+            {"id": call_id, "function": {"name": tool_name, "arguments": arguments}}
+        ],
+    }
 
 
 ANSWER = {"role": "assistant", "content": "Done."}
@@ -38,14 +46,28 @@ def _failing_gate(object_name: str) -> ToolOutcome:
         f"FAILED at gate: build {object_name}",
         ok=False,
         stage_reached=STAGE_GATE,
-        gates=({"object_name": object_name, "stage_reached": STAGE_GATE, "gate_failures": ["2 components"]},),
+        gates=(
+            {
+                "object_name": object_name,
+                "stage_reached": STAGE_GATE,
+                "gate_failures": ["2 components"],
+            },
+        ),
     )
 
 
 def _passing_gate(object_name: str) -> ToolOutcome:
     return ToolOutcome(
-        f"OK: build {object_name}", ok=True, stage_reached=STAGE_DONE,
-        gates=({"object_name": object_name, "stage_reached": STAGE_DONE, "gate_failures": []},),
+        f"OK: build {object_name}",
+        ok=True,
+        stage_reached=STAGE_DONE,
+        gates=(
+            {
+                "object_name": object_name,
+                "stage_reached": STAGE_DONE,
+                "gate_failures": [],
+            },
+        ),
     )
 
 
@@ -67,7 +89,9 @@ def test_three_consecutive_gate_failures_stop_the_turn_with_a_sheet(tmp_path):
         return _failing_gate("Bad")
 
     replies = [_call("build", f"c{i}", name="Bad") for i in range(1, 6)] + [ANSWER]
-    session = AgentSession(client=_client(replies), output_directory=tmp_path, dispatch=dispatch)
+    session = AgentSession(
+        client=_client(replies), output_directory=tmp_path, dispatch=dispatch
+    )
     events = []
     answer = session.send("build it", on_event=lambda k, t: events.append((k, t)))
 
@@ -77,13 +101,25 @@ def test_three_consecutive_gate_failures_stop_the_turn_with_a_sheet(tmp_path):
     assert [t for k, t in events if k == "render"] == [str(sheet)]
     # History stays consistent: every issued call has a result, none says "not run" here
     # because each reply carried a single call that did run.
-    assert all(m["content"] != GATE_CAP_TOOL_RESULT for m in session.messages if m.get("role") == "tool")
+    assert all(
+        m["content"] != GATE_CAP_TOOL_RESULT
+        for m in session.messages
+        if m.get("role") == "tool"
+    )
 
 
 def test_a_passing_verdict_resets_the_count(tmp_path):
     from blended.agent.loop import AgentSession
 
-    verdicts = iter([_failing_gate("Bad"), _failing_gate("Bad"), _passing_gate("Bad"), _failing_gate("Bad"), _failing_gate("Bad")])
+    verdicts = iter(
+        [
+            _failing_gate("Bad"),
+            _failing_gate("Bad"),
+            _passing_gate("Bad"),
+            _failing_gate("Bad"),
+            _failing_gate("Bad"),
+        ]
+    )
     dispatched = []
 
     def dispatch(tool_name, arguments, output_directory):
@@ -91,7 +127,9 @@ def test_a_passing_verdict_resets_the_count(tmp_path):
         return next(verdicts)
 
     replies = [_call("build", f"c{i}", name="Bad") for i in range(1, 6)] + [ANSWER]
-    session = AgentSession(client=_client(replies), output_directory=tmp_path, dispatch=dispatch)
+    session = AgentSession(
+        client=_client(replies), output_directory=tmp_path, dispatch=dispatch
+    )
     answer = session.send("build it")
 
     assert answer == "Done."
@@ -109,11 +147,20 @@ def test_queued_calls_after_the_cap_get_a_not_run_result(tmp_path):
         return _failing_gate("Bad")
 
     three_calls = {
-        "role": "assistant", "content": "",
-        "tool_calls": [{"id": f"m{i}", "function": {"name": "build", "arguments": {"name": "Bad"}}} for i in range(3)],
+        "role": "assistant",
+        "content": "",
+        "tool_calls": [
+            {"id": f"m{i}", "function": {"name": "build", "arguments": {"name": "Bad"}}}
+            for i in range(3)
+        ],
     }
     replies = [_call("build", "c0", name="Bad"), three_calls, ANSWER]
-    session = AgentSession(client=_client(replies), output_directory=tmp_path, dispatch=dispatch, maximum_gate_failures_per_object=3)
+    session = AgentSession(
+        client=_client(replies),
+        output_directory=tmp_path,
+        dispatch=dispatch,
+        maximum_gate_failures_per_object=3,
+    )
     session.send("build it")
 
     tool_messages = [m for m in session.messages if m.get("role") == "tool"]
@@ -136,7 +183,9 @@ def test_a_disabled_tool_is_neither_offered_nor_dispatched(tmp_path):
             self.spent = TurnCost()
             from blended.agent.loop import ModelConfig
 
-            self.config = dataclasses.replace(ModelConfig.from_environment(), model="scripted", vision_model="")
+            self.config = dataclasses.replace(
+                ModelConfig.from_environment(), model="scripted", vision_model=""
+            )
 
         def chat(self, messages, tools=None):
             offered.append([tool["function"]["name"] for tool in tools])
@@ -144,7 +193,9 @@ def test_a_disabled_tool_is_neither_offered_nor_dispatched(tmp_path):
 
     dispatched = []
     session = AgentSession(
-        client=Recording([_call("run_python", "h1", source="pass", reason="x"), ANSWER]),
+        client=Recording(
+            [_call("run_python", "h1", source="pass", reason="x"), ANSWER]
+        ),
         output_directory=tmp_path,
         dispatch=lambda name, *a: dispatched.append(name) or ToolOutcome("ok"),
         disabled_tools=frozenset({"run_python"}),

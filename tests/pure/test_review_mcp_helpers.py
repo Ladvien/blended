@@ -78,7 +78,10 @@ def synthetic_manual(files: dict[str, str]) -> Iterator[str]:
 def test_folded_matches_are_all_in_the_hit_text() -> None:
     with synthetic_manual({"manual/a.rst": FOLD_BODY}):
         result = rst_doc_search.search(
-            query="needle_zz", scope="manual", max_results=10, context=FOLD_CONTEXT,
+            query="needle_zz",
+            scope="manual",
+            max_results=10,
+            context=FOLD_CONTEXT,
         )
     (hit,) = result["hits"]
     # The score counts three matches; the text must show all three.
@@ -90,7 +93,10 @@ def test_folded_matches_are_all_in_the_hit_text() -> None:
 def test_hit_text_does_not_run_past_the_last_paragraph() -> None:
     with synthetic_manual({"manual/a.rst": FOLD_BODY}):
         result = rst_doc_search.search(
-            query="needle_zz", scope="manual", max_results=10, context=FOLD_CONTEXT * 10,
+            query="needle_zz",
+            scope="manual",
+            max_results=10,
+            context=FOLD_CONTEXT * 10,
         )
     (hit,) = result["hits"]
     assert hit["text"] == "\n\n".join(FOLD_BODY.strip().split("\n\n"))
@@ -99,7 +105,9 @@ def test_hit_text_does_not_run_past_the_last_paragraph() -> None:
 def test_connection_error_in_the_with_body_is_not_swallowed() -> None:
     body_message = "raised in the with body"
     with (
-        mock.patch.object(blender_cli, "send_code", side_effect=ConnectionError("no blender")),
+        mock.patch.object(
+            blender_cli, "send_code", side_effect=ConnectionError("no blender")
+        ),
         pytest.raises(ConnectionError, match=body_message),
         blender_cli.synced_blend_for_cli("/tmp/never_opened.blend") as path,
     ):
@@ -109,7 +117,9 @@ def test_connection_error_in_the_with_body_is_not_swallowed() -> None:
 
 def test_unreachable_blender_yields_the_file_unchanged() -> None:
     with (
-        mock.patch.object(blender_cli, "send_code", side_effect=ConnectionError("no blender")),
+        mock.patch.object(
+            blender_cli, "send_code", side_effect=ConnectionError("no blender")
+        ),
         blender_cli.synced_blend_for_cli("/tmp/never_opened.blend") as path,
     ):
         assert path == "/tmp/never_opened.blend"
@@ -123,9 +133,14 @@ def test_handoff_that_is_not_utf8_is_refused_loudly_and_consumed() -> None:
         path = blended_bridge.handoff_path(log_directory, parent_pid)
         path.write_bytes(b"\xff\xfe not json")
         stderr = io.StringIO()
-        with mock.patch.object(blended_bridge, "sys", types.SimpleNamespace(stderr=stderr)):
+        with mock.patch.object(
+            blended_bridge, "sys", types.SimpleNamespace(stderr=stderr)
+        ):
             session = blended_bridge.BlendedSession.resume(
-                log_directory, Path(tmp) / "outputs", parent_pid, now_s=time.time(),
+                log_directory,
+                Path(tmp) / "outputs",
+                parent_pid,
+                now_s=time.time(),
             )
         assert not session.plan_declared
         assert session.session_name is None
@@ -135,7 +150,9 @@ def test_handoff_that_is_not_utf8_is_refused_loudly_and_consumed() -> None:
 
 def test_missing_handoff_starts_a_new_session() -> None:
     with tempfile.TemporaryDirectory() as tmp:
-        session = blended_bridge.BlendedSession.resume(Path(tmp) / "logs", Path(tmp) / "outputs", 1)
+        session = blended_bridge.BlendedSession.resume(
+            Path(tmp) / "logs", Path(tmp) / "outputs", 1
+        )
     assert not session.plan_declared
     assert session.session_name is None
 

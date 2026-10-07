@@ -20,6 +20,7 @@ BOOLEAN_SOLVER_DEFAULT = "EXACT"
 class UnlinkedOperand(RuntimeError):
     """A boolean operand is not in the scene, so the modifier cannot see it."""
 
+
 class BooleanNoOp(RuntimeError):
     """A boolean completed without changing the target's mesh.
 

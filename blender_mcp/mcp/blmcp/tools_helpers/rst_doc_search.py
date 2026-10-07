@@ -68,9 +68,11 @@ def with_doc(doc: str) -> Callable[[Callable[..., object]], Callable[..., object
     the inner decorator below ``@mcp.tool(...)`` so MCP sees the
     formatted docstring at registration.
     """
+
     def decorate(func: Callable[..., object]) -> Callable[..., object]:
         func.__doc__ = doc
         return func
+
     return decorate
 
 
@@ -126,13 +128,49 @@ _DRILL_IN_MIN_CONTEXT = 3
 # hits). Applied case-insensitively and only to query tokens;
 # paragraph text is untouched so a paragraph mentioning a stop-word
 # is still findable via its other content.
-_STOPWORDS = frozenset({
-    "a", "an", "and", "any", "are", "as", "at", "be", "by", "can",
-    "do", "does", "for", "from", "how", "if", "in", "is", "it",
-    "its", "not", "of", "on", "or", "that", "the", "this", "to",
-    "was", "were", "what", "when", "where", "which", "why", "will",
-    "with", "you", "your",
-})
+_STOPWORDS = frozenset(
+    {
+        "a",
+        "an",
+        "and",
+        "any",
+        "are",
+        "as",
+        "at",
+        "be",
+        "by",
+        "can",
+        "do",
+        "does",
+        "for",
+        "from",
+        "how",
+        "if",
+        "in",
+        "is",
+        "it",
+        "its",
+        "not",
+        "of",
+        "on",
+        "or",
+        "that",
+        "the",
+        "this",
+        "to",
+        "was",
+        "were",
+        "what",
+        "when",
+        "where",
+        "which",
+        "why",
+        "will",
+        "with",
+        "you",
+        "your",
+    }
+)
 
 
 def _compile_query_pattern(token: str) -> re.Pattern[str]:
@@ -180,7 +218,9 @@ def iter_rst_paths(scope: str) -> Iterator[tuple[str, str]]:
     about them.
     """
     if scope not in _SCOPE_SUBDIRS:
-        raise ValueError("scope must be one of: {:s}".format(", ".join(sorted(_SCOPE_SUBDIRS))))
+        raise ValueError(
+            "scope must be one of: {:s}".format(", ".join(sorted(_SCOPE_SUBDIRS)))
+        )
     root = data_dir()
     base = os.path.join(root, _SCOPE_SUBDIRS[scope])
     for dirpath, dirnames, filenames in os.walk(base):
@@ -194,11 +234,11 @@ def iter_rst_paths(scope: str) -> Iterator[tuple[str, str]]:
 
 
 def search(
-        query: str,
-        scope: str,
-        max_results: int,
-        context: int,
-        index: int | None = None,
+    query: str,
+    scope: str,
+    max_results: int,
+    context: int,
+    index: int | None = None,
 ) -> dict[str, object]:
     """
     Search the bundled docs in *scope* for *query* and return
@@ -272,9 +312,7 @@ def search(
     # the same whole-file pattern checks.
     n_files = 0
     per_token_df = [0] * len(patterns)
-    pre_hits: list[
-        tuple[str, int, list[tuple[str, tuple[str, ...]]], list[int]]
-    ] = []
+    pre_hits: list[tuple[str, int, list[tuple[str, tuple[str, ...]]], list[int]]] = []
     for full, rel in iter_rst_paths(scope):
         try:
             # `stat` before `open` so the cache key matches the
@@ -304,13 +342,12 @@ def search(
         # Pre-filter: every token must have some surface somewhere
         # in this file. Cheap early-out before paying the
         # paragraph-split cost.
-        if not all(
-            body_present[i] or path_present[i]
-            for i in range(len(patterns))
-        ):
+        if not all(body_present[i] or path_present[i] for i in range(len(patterns))):
             continue
         paragraphs = split_paragraphs_with_sections_from_text(
-            full, mtime, text,
+            full,
+            mtime,
+            text,
         )
         for idx, (para, sections) in enumerate(paragraphs):
             per_tok_count = [len(p.findall(para)) for p in patterns]
@@ -335,10 +372,7 @@ def search(
     # common-everywhere token multiplies per-token count by ~1 and
     # a rare token gives a meaningful boost. The `+1` prevents a
     # zero-weight collapse when df approaches N.
-    idfs = [
-        math.log((n_files + 1) / (df + 1)) + 1
-        for df in per_token_df
-    ]
+    idfs = [math.log((n_files + 1) / (df + 1)) + 1 for df in per_token_df]
 
     # Map each path/title sub-token to the IDF of the whole-token it
     # came from. Splitting `bpy.data` (one whitespace-token) yields
@@ -351,7 +385,8 @@ def search(
         for s in _WORD_SEP_RE.split(t.lower()):
             if s:
                 query_bonus_tokens[s] = max(
-                    query_bonus_tokens.get(s, 0.0), idf,
+                    query_bonus_tokens.get(s, 0.0),
+                    idf,
                 )
 
     hits: list[dict[str, object]] = []
@@ -370,12 +405,9 @@ def search(
             # query outrank similarly-dense prose elsewhere, with the
             # boost scaling by rarity so rare-query and common-query
             # path matches have parity against body counts.
-            path_toks = {
-                s for s in _WORD_SEP_RE.split(rel.lower()) if s
-            }
+            path_toks = {s for s in _WORD_SEP_RE.split(rel.lower()) if s}
             file_path_bonus = _PATH_MATCH_WEIGHT * sum(
-                idf for q, idf in query_bonus_tokens.items()
-                if q in path_toks
+                idf for q, idf in query_bonus_tokens.items() if q in path_toks
             )
         # Per-hit title bonus: each enclosing section contributes
         # independently, so a query word repeated across levels
@@ -386,17 +418,14 @@ def search(
         # Weighted by IDF on the same principle as the path bonus.
         title_bonus = 0.0
         for title in section_stack:
-            title_tokens = {
-                s for s in _WORD_SEP_RE.split(title.lower()) if s
-            }
+            title_tokens = {s for s in _WORD_SEP_RE.split(title.lower()) if s}
             title_bonus += _TITLE_MATCH_WEIGHT * sum(
-                idf for q, idf in query_bonus_tokens.items()
-                if q in title_tokens
+                idf for q, idf in query_bonus_tokens.items() if q in title_tokens
             )
         if (
-            rel == last_file and
-            idx <= last_idx + 2 * context and
-            section_stack == last_section
+            rel == last_file
+            and idx <= last_idx + 2 * context
+            and section_stack == last_section
         ):
             # Window overlap with previous hit AND still in the same
             # section: fold this match in and extend the cluster
@@ -407,28 +436,31 @@ def search(
             # context are in the hit, not only the seed's window.
             hits[-1]["score"] += tfidf_score  # type: ignore[operator]
             hits[-1]["text"] = "\n\n".join(
-                p[0] for p in paragraphs[last_lo:min(len(paragraphs), idx + context + 1)]
+                p[0]
+                for p in paragraphs[last_lo : min(len(paragraphs), idx + context + 1)]
             )
             last_idx = idx
             continue
         lo = max(0, idx - context)
         hi = min(len(paragraphs), idx + context + 1)
-        hits.append({
-            "path": rel,
-            "text": "\n\n".join(p[0] for p in paragraphs[lo:hi]),
-            # Breadcrumb of the section path down to the seed match.
-            # Empty string for files without sections so consumers
-            # can always read the field without existence checks.
-            "breadcrumb": " > ".join(section_stack),
-            # Internal: the paragraph index within its file, used
-            # when the caller drills in via the `index` argument
-            # so the correct section can be located. Stripped from
-            # the public response below.
-            "_seed_idx": idx,
-            # Float during accumulation so fold additions do not
-            # drift per-step; rounded once after the loop below.
-            "score": tfidf_score + file_path_bonus + title_bonus,
-        })
+        hits.append(
+            {
+                "path": rel,
+                "text": "\n\n".join(p[0] for p in paragraphs[lo:hi]),
+                # Breadcrumb of the section path down to the seed match.
+                # Empty string for files without sections so consumers
+                # can always read the field without existence checks.
+                "breadcrumb": " > ".join(section_stack),
+                # Internal: the paragraph index within its file, used
+                # when the caller drills in via the `index` argument
+                # so the correct section can be located. Stripped from
+                # the public response below.
+                "_seed_idx": idx,
+                # Float during accumulation so fold additions do not
+                # drift per-step; rounded once after the loop below.
+                "score": tfidf_score + file_path_bonus + title_bonus,
+            }
+        )
         last_file, last_idx, last_lo = rel, idx, lo
         last_section = section_stack
 
@@ -477,8 +509,8 @@ def search(
 
         def _in_scope(i: int) -> bool:
             return (
-                0 <= i < len(paragraphs_full) and
-                paragraphs_full[i][1][:seed_len] == seed_section
+                0 <= i < len(paragraphs_full)
+                and paragraphs_full[i][1][:seed_len] == seed_section
             )
 
         effective = max(_DRILL_IN_MIN_CONTEXT, context)
@@ -496,9 +528,7 @@ def search(
             else:
                 break
 
-        hit["text"] = "\n\n".join(
-            p[0] for p in paragraphs_full[lo:hi + 1]
-        )
+        hit["text"] = "\n\n".join(p[0] for p in paragraphs_full[lo : hi + 1])
         hit.pop("_seed_idx", None)
         return {"hits": [hit], "truncated": False}
 

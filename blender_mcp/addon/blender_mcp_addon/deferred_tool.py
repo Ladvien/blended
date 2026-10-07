@@ -38,7 +38,7 @@ from .mcp_to_blender_server import _close_conn, _send_response_and_close
 # The background task itself continues to run in Blender.
 # One hour is long for what should typically be an interactive experience,
 # but renders can take a long time and it's not desirable for them to simply give up.
-_DEFERRED_TIMEOUT = (60.0 * 60.0)
+_DEFERRED_TIMEOUT = 60.0 * 60.0
 
 
 class _DeferredClient:
@@ -140,10 +140,13 @@ def poll() -> bool:
 
         # Check for timeout.
         if time.monotonic() > dc.deadline:
-            _send_and_close(dc, {
-                "status": "error",
-                "message": "Deferred operation timed out after {:.0f} seconds".format(_DEFERRED_TIMEOUT),
-            })
+            _send_and_close(
+                dc,
+                {
+                    "status": "error",
+                    "message": "Deferred operation timed out after {:.0f} seconds".format(_DEFERRED_TIMEOUT),
+                },
+            )
             did_work = True
             continue
 
@@ -151,10 +154,13 @@ def poll() -> bool:
         try:
             result = dc.check_fn()
         except (Exception, SystemExit):  # pylint: disable=broad-exception-caught
-            _send_and_close(dc, {
-                "status": "error",
-                "message": traceback.format_exc(),
-            })
+            _send_and_close(
+                dc,
+                {
+                    "status": "error",
+                    "message": traceback.format_exc(),
+                },
+            )
             did_work = True
             continue
 
@@ -163,12 +169,15 @@ def poll() -> bool:
             continue
 
         if not isinstance(result, dict):
-            _send_and_close(dc, {
-                "status": "error",
-                "message": "check_is_finished must return None or dict, not {:s}".format(
-                    type(result).__name__,
-                ),
-            })
+            _send_and_close(
+                dc,
+                {
+                    "status": "error",
+                    "message": "check_is_finished must return None or dict, not {:s}".format(
+                        type(result).__name__,
+                    ),
+                },
+            )
             did_work = True
             continue
 
@@ -177,10 +186,13 @@ def poll() -> bool:
             try:
                 json.dumps(result)
             except (TypeError, ValueError) as ex:
-                _send_and_close(dc, {
-                    "status": "error",
-                    "message": "Deferred result is not JSON-serializable: {:s}".format(str(ex)),
-                })
+                _send_and_close(
+                    dc,
+                    {
+                        "status": "error",
+                        "message": "Deferred result is not JSON-serializable: {:s}".format(str(ex)),
+                    },
+                )
                 did_work = True
                 continue
 

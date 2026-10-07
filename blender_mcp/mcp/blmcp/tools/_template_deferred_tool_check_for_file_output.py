@@ -11,9 +11,9 @@ from collections.abc import Callable
 
 
 def _deferred_tool_check_for_file_output(
-        job_type: str,
-        output_path: str,
-        restore_attrs: list[tuple[object, str, object]] | None = None,
+    job_type: str,
+    output_path: str,
+    restore_attrs: list[tuple[object, str, object]] | None = None,
 ) -> Callable[[], dict[str, object] | None]:
     """
     Return a deferred checker for a background job that writes a file.
@@ -35,6 +35,9 @@ def _deferred_tool_check_for_file_output(
                 setattr(obj, attr, value)
         if os.path.exists(output_path):
             return {"status": "ok", "filepath": output_path}
-        return {"status": "error", "message": "Job completed but output file was not created"}
+        return {
+            "status": "error",
+            "message": "Job completed but output file was not created",
+        }
 
     return check_is_finished

@@ -26,22 +26,38 @@ REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 
 
 def _record(brief, passed, *events):
-    return {"brief_name": brief, "form_gate_passed": passed, "tool_events": [{"tool_name": n, "ok": ok} for n, ok in events]}
+    return {
+        "brief_name": brief,
+        "form_gate_passed": passed,
+        "tool_events": [{"tool_name": n, "ok": ok} for n, ok in events],
+    }
 
 
 def test_the_core_is_scene_changing_ops_used_in_enough_passing_briefs():
     assert MINIMUM_BRIEFS_USING_OP == 2
     records = [
-        _record("a", True, ("add_box", True), ("rig_report", True), ("boolean_union", True)),
+        _record(
+            "a", True, ("add_box", True), ("rig_report", True), ("boolean_union", True)
+        ),
         _record("b", True, ("add_box", True), ("boolean_union", False)),
-        _record("c", False, ("boolean_union", True), ("add_lathe", True)),  # failed the gate: no vote
+        _record(
+            "c", False, ("boolean_union", True), ("add_lathe", True)
+        ),  # failed the gate: no vote
         _record("d", True, ("add_lathe", True)),
     ]
-    assert derive_core_ops(records) == ("add_box",)  # boolean_union: one passing brief succeeded; rig_report: a reader
+    assert derive_core_ops(records) == (
+        "add_box",
+    )  # boolean_union: one passing brief succeeded; rig_report: a reader
 
 
 def test_the_generated_module_equals_the_derivation_from_the_real_log():
-    records = [json.loads(l) for l in (REPOSITORY_ROOT / "_evaluate" / "iterations.jsonl").read_text().splitlines() if l.strip()]
+    records = [
+        json.loads(l)
+        for l in (REPOSITORY_ROOT / "_evaluate" / "iterations.jsonl")
+        .read_text()
+        .splitlines()
+        if l.strip()
+    ]
     assert core_ops() == derive_core_ops(records)
 
 
@@ -52,11 +68,17 @@ def test_the_offered_set_is_service_readers_and_core_and_is_fingerprinted():
     assert set(names) == set(SERVICE_TOOL_NAMES) | set(reader_ops()) | set(core)
     assert "boolean_union" not in names and "search_ops" in names
     assert offered_fingerprint(offered) != TOOL_SCHEMAS_FINGERPRINT
-    assert offered_fingerprint(offered) == offered_fingerprint(offered_tools(TOOL_SCHEMAS, core, SERVICE_TOOL_NAMES))
+    assert offered_fingerprint(offered) == offered_fingerprint(
+        offered_tools(TOOL_SCHEMAS, core, SERVICE_TOOL_NAMES)
+    )
 
 
 def test_the_generated_module_round_trips(tmp_path):
-    write_core_module(("add_box", "link_into_scene"), {"add_box": 3, "link_into_scene": 5}, tmp_path / "core_tools.py")
+    write_core_module(
+        ("add_box", "link_into_scene"),
+        {"add_box": 3, "link_into_scene": 5},
+        tmp_path / "core_tools.py",
+    )
     namespace: dict = {}
     exec((tmp_path / "core_tools.py").read_text(), namespace)  # noqa: S102 - the generated module is the artifact under test
     assert namespace["CORE_OPS"] == ("add_box", "link_into_scene")
@@ -82,7 +104,9 @@ class _RecordingClient:
         self.replies = list(replies)
         self.spent = TurnCost()
         self.seen_tools = []
-        self.config = dataclasses.replace(ModelConfig.from_environment(), model="scripted", vision_model="")
+        self.config = dataclasses.replace(
+            ModelConfig.from_environment(), model="scripted", vision_model=""
+        )
 
     def chat(self, messages, tools=None):
         self.seen_tools.append([t["function"]["name"] for t in tools])
@@ -90,35 +114,57 @@ class _RecordingClient:
 
 
 def _call(name, **arguments):
-    return {"role": "assistant", "content": "", "tool_calls": [{"function": {"name": name, "arguments": arguments}}]}
+    return {
+        "role": "assistant",
+        "content": "",
+        "tool_calls": [{"function": {"name": name, "arguments": arguments}}],
+    }
 
 
 def _ok(name, **validated):
-    return ToolOutcome(f"OK: {name}", ok=True, stage_reached=STAGE_DONE, validated_arguments=validated)
+    return ToolOutcome(
+        f"OK: {name}", ok=True, stage_reached=STAGE_DONE, validated_arguments=validated
+    )
 
 
 def test_the_client_is_shown_service_readers_and_core_and_nothing_else(tmp_path):
     from blended.agent.loop import AgentSession
 
     client = _RecordingClient([{"role": "assistant", "content": "nothing to build"}])
-    session = AgentSession(client=client, output_directory=tmp_path, dispatch=lambda *a: _ok("x"))
+    session = AgentSession(
+        client=client, output_directory=tmp_path, dispatch=lambda *a: _ok("x")
+    )
     session.send("hello")
 
     (shown,) = client.seen_tools
     assert set(shown) == set(SERVICE_TOOL_NAMES) | set(reader_ops()) | set(core_ops())
     assert len(shown) < len(TOOL_SCHEMAS)
-    assert "boolean_union" not in shown and "search_ops" in shown  # undisclosed; the way to find it
-    assert session.offered_tools_fingerprint() == offered_fingerprint(session.offered_tools())
+    assert (
+        "boolean_union" not in shown and "search_ops" in shown
+    )  # undisclosed; the way to find it
+    assert session.offered_tools_fingerprint() == offered_fingerprint(
+        session.offered_tools()
+    )
 
 
 def test_a_withheld_tool_leaves_the_offered_set_too(tmp_path):
     from blended.agent.loop import AgentSession
 
     client = _RecordingClient([{"role": "assistant", "content": "ok"}])
-    session = AgentSession(client=client, output_directory=tmp_path, dispatch=lambda *a: _ok("x"), disabled_tools=frozenset({"run_python"}))
+    session = AgentSession(
+        client=client,
+        output_directory=tmp_path,
+        dispatch=lambda *a: _ok("x"),
+        disabled_tools=frozenset({"run_python"}),
+    )
     session.send("hello")
     assert "run_python" not in client.seen_tools[0]
-    assert session.offered_tools_fingerprint() != AgentSession(client=client, output_directory=tmp_path, dispatch=lambda *a: _ok("x")).offered_tools_fingerprint()
+    assert (
+        session.offered_tools_fingerprint()
+        != AgentSession(
+            client=client, output_directory=tmp_path, dispatch=lambda *a: _ok("x")
+        ).offered_tools_fingerprint()
+    )
 
 
 def test_an_undisclosed_op_dispatches_by_name_after_search_ops(tmp_path):
@@ -147,12 +193,19 @@ def test_an_undisclosed_op_dispatches_by_name_after_search_ops(tmp_path):
 
     assert dispatched == ["search_ops", "boolean_union"]
     assert all("boolean_union" not in shown for shown in client.seen_tools)
-    structured = [decode_tool_event(text) for kind, text in events if kind == TOOL_EVENT_KIND]
+    structured = [
+        decode_tool_event(text) for kind, text in events if kind == TOOL_EVENT_KIND
+    ]
     assert [e.tool_name for e in structured] == ["search_ops", "boolean_union"]
     # Every event names the set the model was SHOWN, so a record from
     # this surface is distinguishable from one made on the whole set.
-    assert {e.offered_tools_fingerprint for e in structured} == {session.offered_tools_fingerprint()}
-    assert structured[0].offered_tools_fingerprint.startswith("t:") and structured[0].offered_tools_fingerprint != TOOL_SCHEMAS_FINGERPRINT
+    assert {e.offered_tools_fingerprint for e in structured} == {
+        session.offered_tools_fingerprint()
+    }
+    assert (
+        structured[0].offered_tools_fingerprint.startswith("t:")
+        and structured[0].offered_tools_fingerprint != TOOL_SCHEMAS_FINGERPRINT
+    )
 
 
 def test_the_cli_envelope_admits_an_undisclosed_op_by_name():
@@ -165,7 +218,10 @@ def test_the_cli_envelope_admits_an_undisclosed_op_by_name():
     (catch_all,) = [v for v in variants if "enum" in v["properties"]["name"]]
     assert len(pinned) == len(offered)
     offered_names = {t["function"]["name"] for t in offered}
-    assert set(catch_all["properties"]["name"]["enum"]) == set(OP_FUNCTIONS) - offered_names
+    assert (
+        set(catch_all["properties"]["name"]["enum"])
+        == set(OP_FUNCTIONS) - offered_names
+    )
     assert catch_all["properties"]["arguments"] == {"type": "object"}
     # The whole set needs no catch-all: nothing is undisclosed.
     whole = envelope_schema(TOOL_SCHEMAS)["properties"]["tool_calls"]["items"]["oneOf"]

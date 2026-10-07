@@ -8,9 +8,7 @@ Copy RST and Python files from a Blender manual checkout into ``data/manual/``.
 Python files are included because the manual contains linked examples and templates.
 """
 
-__all__ = (
-    "main",
-)
+__all__ = ("main",)
 
 import argparse
 import os

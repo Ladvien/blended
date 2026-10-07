@@ -53,7 +53,10 @@ def _summarize_as_dict(
 # -----------------------------------------------------------------------------
 # Per-category probability functions.
 
-def _usage_probability_for_animation(data: Any, scene: Any) -> tuple[str, dict[str, int]]:
+
+def _usage_probability_for_animation(
+    data: Any, scene: Any
+) -> tuple[str, dict[str, int]]:
     """
     Score likelihood that the file is used for animation.
     """
@@ -65,7 +68,9 @@ def _usage_probability_for_animation(data: Any, scene: Any) -> tuple[str, dict[s
     return _summarize_as_dict("Animation", signals)
 
 
-def _usage_probability_for_rendering(data: Any, scene: Any) -> tuple[str, dict[str, int]]:
+def _usage_probability_for_rendering(
+    data: Any, scene: Any
+) -> tuple[str, dict[str, int]]:
     """
     Score likelihood that the file is used for rendering.
     """
@@ -77,14 +82,20 @@ def _usage_probability_for_rendering(data: Any, scene: Any) -> tuple[str, dict[s
     default_paths = ("/tmp/", "/tmp\\", "")
     signals.append((float(scene.render.filepath not in default_paths), 0.8))
     node_tree = getattr(scene, "compositing_node_group", None)
-    signals.append((
-        float(bool(node_tree and any(n.type == "R_LAYERS" for n in node_tree.nodes))),
-        1.0,
-    ))
+    signals.append(
+        (
+            float(
+                bool(node_tree and any(n.type == "R_LAYERS" for n in node_tree.nodes))
+            ),
+            1.0,
+        )
+    )
     return _summarize_as_dict("Rendering", signals)
 
 
-def _usage_probability_for_scripting(data: Any, scene: Any) -> tuple[str, dict[str, int]]:
+def _usage_probability_for_scripting(
+    data: Any, scene: Any
+) -> tuple[str, dict[str, int]]:
     """
     Score likelihood that the file is used for scripting.
     """
@@ -94,7 +105,9 @@ def _usage_probability_for_scripting(data: Any, scene: Any) -> tuple[str, dict[s
     return _summarize_as_dict("Scripting", signals)
 
 
-def _usage_probability_for_video_editing(data: Any, scene: Any) -> tuple[str, dict[str, int]]:
+def _usage_probability_for_video_editing(
+    data: Any, scene: Any
+) -> tuple[str, dict[str, int]]:
     """
     Score likelihood that the file is used for video editing.
     """
@@ -108,7 +121,9 @@ def _usage_probability_for_video_editing(data: Any, scene: Any) -> tuple[str, di
     return _summarize_as_dict("Video Editing", signals)
 
 
-def _usage_probability_for_modeling(data: Any, scene: Any) -> tuple[str, dict[str, int]]:
+def _usage_probability_for_modeling(
+    data: Any, scene: Any
+) -> tuple[str, dict[str, int]]:
     """
     Score likelihood that the file is used for modeling.
     """
@@ -116,22 +131,34 @@ def _usage_probability_for_modeling(data: Any, scene: Any) -> tuple[str, dict[st
     signals: list[tuple[float, float]] = []
     # Exclude the default cube (named `Cube` with exactly 8 vertices).
     non_default = [
-        m for m in data.meshes
+        m
+        for m in data.meshes
         if m.name != "Cube" or len(m.vertices) != _DEFAULT_CUBE_VERTS
     ]
     signals.append((float(bool(non_default)), 0.8))
     # Meshes are created with a single `UVMap` layer by default.
-    signals.append((float(bool(
-        non_default and any(
-            len(m.uv_layers) > 1 or bool(m.color_attributes) for m in non_default
+    signals.append(
+        (
+            float(
+                bool(
+                    non_default
+                    and any(
+                        len(m.uv_layers) > 1 or bool(m.color_attributes)
+                        for m in non_default
+                    )
+                )
+            ),
+            0.7,
         )
-    )), 0.7))
+    )
     signals.append((float(bool(data.curves) or bool(data.metaballs)), 0.7))
     signals.append((float(any(bool(obj.modifiers) for obj in data.objects)), 0.5))
     return _summarize_as_dict("Modeling", signals)
 
 
-def _usage_probability_for_grease_pencil(data: Any, scene: Any) -> tuple[str, dict[str, int]]:
+def _usage_probability_for_grease_pencil(
+    data: Any, scene: Any
+) -> tuple[str, dict[str, int]]:
     """
     Score likelihood that the file is used for grease pencil.
     """
@@ -141,7 +168,9 @@ def _usage_probability_for_grease_pencil(data: Any, scene: Any) -> tuple[str, di
     return _summarize_as_dict("Grease Pencil", signals)
 
 
-def _usage_probability_for_geometry_nodes(data: Any, scene: Any) -> tuple[str, dict[str, int]]:
+def _usage_probability_for_geometry_nodes(
+    data: Any, scene: Any
+) -> tuple[str, dict[str, int]]:
     """
     Score likelihood that the file is used for geometry nodes.
     """
@@ -155,7 +184,9 @@ def _usage_probability_for_geometry_nodes(data: Any, scene: Any) -> tuple[str, d
     return _summarize_as_dict("Geometry Nodes", signals)
 
 
-def _usage_probability_for_compositing(data: Any, scene: Any) -> tuple[str, dict[str, int]]:
+def _usage_probability_for_compositing(
+    data: Any, scene: Any
+) -> tuple[str, dict[str, int]]:
     """
     Score likelihood that the file is used for compositing.
     """
@@ -165,14 +196,18 @@ def _usage_probability_for_compositing(data: Any, scene: Any) -> tuple[str, dict
     # (None until one is created); `scene.node_tree` no longer exists
     # (measured on 5.2.0). The more-than-two-nodes threshold is upstream's.
     node_tree = getattr(scene, "compositing_node_group", None)
-    signals.append((
-        float(bool(node_tree and len(node_tree.nodes) > 2)),
-        1.0,
-    ))
+    signals.append(
+        (
+            float(bool(node_tree and len(node_tree.nodes) > 2)),
+            1.0,
+        )
+    )
     return _summarize_as_dict("Compositing", signals)
 
 
-def _usage_probability_for_uv_unwrapping(data: Any, scene: Any) -> tuple[str, dict[str, int]]:
+def _usage_probability_for_uv_unwrapping(
+    data: Any, scene: Any
+) -> tuple[str, dict[str, int]]:
     """
     Score likelihood that the file is used for UV unwrapping.
     """
@@ -181,11 +216,11 @@ def _usage_probability_for_uv_unwrapping(data: Any, scene: Any) -> tuple[str, di
     # Meshes are created with a single `UVMap` layer by default.
     has_extra_uv = any(len(mesh.uv_layers) > 1 for mesh in data.meshes)
     has_renamed_uv = any(
-        any(uv.name != "UVMap" for uv in mesh.uv_layers)
-        for mesh in data.meshes
+        any(uv.name != "UVMap" for uv in mesh.uv_layers) for mesh in data.meshes
     )
     has_tex_image = any(
-        mat.node_tree and any(n.type == "TEX_IMAGE" and n.image for n in mat.node_tree.nodes)
+        mat.node_tree
+        and any(n.type == "TEX_IMAGE" and n.image for n in mat.node_tree.nodes)
         for mat in data.materials
     )
     signals.append((float(has_extra_uv), 1.0))
@@ -194,7 +229,9 @@ def _usage_probability_for_uv_unwrapping(data: Any, scene: Any) -> tuple[str, di
     return _summarize_as_dict("UV Unwrapping", signals)
 
 
-def _usage_probability_for_motion_tracking(data: Any, scene: Any) -> tuple[str, dict[str, int]]:
+def _usage_probability_for_motion_tracking(
+    data: Any, scene: Any
+) -> tuple[str, dict[str, int]]:
     """
     Score likelihood that the file is used for motion tracking.
     """
@@ -234,6 +271,7 @@ _USAGE_PROBABILITY_FUNCTIONS: tuple[_UsageFn, ...] = (
 
 # -----------------------------------------------------------------------------
 # Main entry point.
+
 
 def main(params: None) -> Result:
     del params

@@ -75,9 +75,7 @@ def _golden_manifest(tmp_path: Path, pinned_views: tuple[str, ...]) -> Path:
     for view in pinned_views:
         hashes[view] = hashlib.sha256((golden / f"{view}.png").read_bytes()).hexdigest()
     (golden / "manifest.json").write_text(
-        json.dumps(
-            {"brief": "b", "prompt_identity": "v1:x", "view_sha256": hashes}
-        )
+        json.dumps({"brief": "b", "prompt_identity": "v1:x", "view_sha256": hashes})
     )
     return golden
 
@@ -190,13 +188,9 @@ def test_a_foot_straddling_the_plus_x_axis_has_not_swung():
     before = _report(_contact(0.2))
     after = _report(_contact(-0.1))
     assert after.ground_contacts[0].measured_angle_deg == pytest.approx(359.9)
-    brief = AssetBrief(
-        name="stool", prompt_text="", parts=(PartSpec(name="Stool"),)
-    )
+    brief = AssetBrief(name="stool", prompt_text="", parts=(PartSpec(name="Stool"),))
     outcome = RefinementOutcome(
-        step=RefinementStep(
-            name="noop", instruction_text="", changed=(), why="why"
-        ),
+        step=RefinementStep(name="noop", instruction_text="", changed=(), why="why"),
         before=before,
         after=after,
     )
@@ -206,13 +200,9 @@ def test_a_foot_straddling_the_plus_x_axis_has_not_swung():
 def test_a_foot_that_really_swung_is_still_reported():
     before = _report(_contact(0.2))
     after = _report(_contact(10.0))
-    brief = AssetBrief(
-        name="stool", prompt_text="", parts=(PartSpec(name="Stool"),)
-    )
+    brief = AssetBrief(name="stool", prompt_text="", parts=(PartSpec(name="Stool"),))
     outcome = RefinementOutcome(
-        step=RefinementStep(
-            name="noop", instruction_text="", changed=(), why="why"
-        ),
+        step=RefinementStep(name="noop", instruction_text="", changed=(), why="why"),
         before=before,
         after=after,
     )

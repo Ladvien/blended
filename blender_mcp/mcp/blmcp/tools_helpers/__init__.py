@@ -57,13 +57,17 @@ def _toolcode_expand_includes(toolcode_path: str) -> str:
         if line.startswith(_INCLUDE_BEGIN_PREFIX):
             if skip:
                 raise ValueError(
-                    "Nested {:s} for {:s} in {:s}".format(_INCLUDE_BEGIN_PREFIX.rstrip(), include_name, toolcode_path)
+                    "Nested {:s} for {:s} in {:s}".format(
+                        _INCLUDE_BEGIN_PREFIX.rstrip(), include_name, toolcode_path
+                    )
                 )
-            include_name = line[len(_INCLUDE_BEGIN_PREFIX):].rstrip()
+            include_name = line[len(_INCLUDE_BEGIN_PREFIX) :].rstrip()
             include_path = os.path.join(toolcode_dir, include_name)
             if not os.path.exists(include_path):
                 raise FileNotFoundError(
-                    "Include file {:s} not found (from {:s})".format(include_path, toolcode_path)
+                    "Include file {:s} not found (from {:s})".format(
+                        include_path, toolcode_path
+                    )
                 )
             with open(include_path, "r", encoding="utf-8") as fh:
                 result.append(fh.read())
@@ -77,7 +81,9 @@ def _toolcode_expand_includes(toolcode_path: str) -> str:
             result.append(line)
     if skip:
         raise ValueError(
-            "Missing {:s} for {:s} in {:s}".format(_INCLUDE_END, include_name, toolcode_path)
+            "Missing {:s} for {:s} in {:s}".format(
+                _INCLUDE_END, include_name, toolcode_path
+            )
         )
     return "".join(result)
 

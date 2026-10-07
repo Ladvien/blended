@@ -66,7 +66,9 @@ _PORT_INTERACTIVE = 9888
 _TIMEOUT_SCALE = float(os.environ.get("GLOBAL_TIMEOUT_SCALE", "1"))
 
 # Maximum time to wait for Blender to start (seconds).
-_TIMEOUT_STARTUP = int(int(os.environ.get("BLENDER_MCP_TIMEOUT", "10")) * _TIMEOUT_SCALE)
+_TIMEOUT_STARTUP = int(
+    int(os.environ.get("BLENDER_MCP_TIMEOUT", "10")) * _TIMEOUT_SCALE
+)
 
 # Maximum time to wait for a local process to respond or exit (seconds).
 _TIMEOUT_LOCAL_PROC = int(10 * _TIMEOUT_SCALE)
@@ -123,11 +125,16 @@ def _blender_env(tmpdir: str) -> dict[str, str]:
     env = os.environ.copy()
     env["HOME"] = tmpdir
     env["BLENDER_USER_RESOURCES"] = os.path.join(tmpdir, "blender_user_resources")
-    env["ASAN_OPTIONS"] = ":".join(filter(None, [
-        env.get("ASAN_OPTIONS", ""),
-        "alloc_dealloc_mismatch=0",
-        "leak_check_at_exit=0",
-    ]))
+    env["ASAN_OPTIONS"] = ":".join(
+        filter(
+            None,
+            [
+                env.get("ASAN_OPTIONS", ""),
+                "alloc_dealloc_mismatch=0",
+                "leak_check_at_exit=0",
+            ],
+        )
+    )
     return env
 
 
@@ -149,7 +156,9 @@ def _run_blender(args: list[str], env: dict[str, str]) -> None:
 _CONFIG_MARKER = "BLMCP_USER_CONFIG="
 
 
-def _assert_blender_config_isolated(blender_bin: str, env: dict[str, str], tmpdir: str) -> None:
+def _assert_blender_config_isolated(
+    blender_bin: str, env: dict[str, str], tmpdir: str
+) -> None:
     """
     Raise unless Blender's user config directory resolves inside *tmpdir*.
 
@@ -158,22 +167,33 @@ def _assert_blender_config_isolated(blender_bin: str, env: dict[str, str], tmpdi
     """
     result = subprocess.run(
         [
-            blender_bin, "--background", "--factory-startup", "--python-expr",
-            "import bpy; print({!r} + bpy.utils.user_resource('CONFIG'))".format(_CONFIG_MARKER),
+            blender_bin,
+            "--background",
+            "--factory-startup",
+            "--python-expr",
+            "import bpy; print({!r} + bpy.utils.user_resource('CONFIG'))".format(
+                _CONFIG_MARKER
+            ),
         ],
         capture_output=True,
         env=env,
         check=False,
     )
     lines = result.stdout.decode("utf-8", errors="replace").splitlines()
-    config_dirs = [line[len(_CONFIG_MARKER):] for line in lines if line.startswith(_CONFIG_MARKER)]
+    config_dirs = [
+        line[len(_CONFIG_MARKER) :] for line in lines if line.startswith(_CONFIG_MARKER)
+    ]
     if len(config_dirs) != 1:
-        raise RuntimeError("Blender did not report its user config directory: {!r}".format(lines))
+        raise RuntimeError(
+            "Blender did not report its user config directory: {!r}".format(lines)
+        )
     real_tmpdir = os.path.realpath(tmpdir)
     if not os.path.realpath(config_dirs[0]).startswith(real_tmpdir + os.sep):
         raise RuntimeError(
             "Blender's user config {:s} is outside the test directory {:s}: "
-            "saving preferences would overwrite the real user's.".format(config_dirs[0], real_tmpdir)
+            "saving preferences would overwrite the real user's.".format(
+                config_dirs[0], real_tmpdir
+            )
         )
 
 
@@ -230,7 +250,8 @@ def _start_headless_display(env: dict[str, str]) -> "subprocess.Popen[bytes]":
     proc = subprocess.Popen(cmd, **weston_kw)
 
     if not backend_wayland._wait_for_wayland_server(
-        socket=weston_socket, timeout=_TIMEOUT_LOCAL_PROC,
+        socket=weston_socket,
+        timeout=_TIMEOUT_LOCAL_PROC,
     ):
         proc.send_signal(signal.SIGINT)
         proc.communicate()
@@ -262,15 +283,17 @@ def _assert_port_free(port: int) -> None:
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
         if sock.connect_ex(("localhost", port)) == 0:
             raise RuntimeError(
-                "Port {:d} is already in use (another Blender with the MCP add-on?)".format(port)
+                "Port {:d} is already in use (another Blender with the MCP add-on?)".format(
+                    port
+                )
             )
 
 
 def _wait_for_port(
-        port: int,
-        timeout: int,
-        proc: "subprocess.Popen[bytes]",
-        output: list[str],
+    port: int,
+    timeout: int,
+    proc: "subprocess.Popen[bytes]",
+    output: list[str],
 ) -> None:
     """
     Block until a TCP connection to *port* on localhost succeeds.
@@ -285,7 +308,8 @@ def _wait_for_port(
         if rc is not None:
             raise RuntimeError(
                 "Blender exited with code {:d} before the server became reachable\n{:s}".format(
-                    rc, "".join(output[-50:]),
+                    rc,
+                    "".join(output[-50:]),
                 )
             )
         try:
@@ -297,7 +321,9 @@ def _wait_for_port(
             time.sleep(0.2)
     raise RuntimeError(
         "Port {:d} not reachable within {:d}s\n{:s}".format(
-            port, timeout, "".join(output[-50:]),
+            port,
+            timeout,
+            "".join(output[-50:]),
         )
     )
 
@@ -330,7 +356,10 @@ class _TestServerMixin:
         addon_src = os.path.join(_REPO_DIR, "addon", "blender_mcp_addon")
         _run_blender(
             [
-                blender_bin, "--command", "extension", "build",
+                blender_bin,
+                "--command",
+                "extension",
+                "build",
                 "--source-dir=" + addon_src,
                 "--output-dir=" + tmpdir,
             ],
@@ -344,9 +373,17 @@ class _TestServerMixin:
         # Install the extension into the isolated HOME.
         _run_blender(
             [
-                blender_bin, "--online-mode", "--background", "--factory-startup",
-                "--command", "extension", "install-file",
-                zips[0], "--repo", "user_default", "--enable",
+                blender_bin,
+                "--online-mode",
+                "--background",
+                "--factory-startup",
+                "--command",
+                "extension",
+                "install-file",
+                zips[0],
+                "--repo",
+                "user_default",
+                "--enable",
             ],
             env=env,
         )
@@ -358,7 +395,8 @@ class _TestServerMixin:
             # preference overrides, but port and delay are all we need for now.
             _run_blender(
                 [
-                    blender_bin, "--background",
+                    blender_bin,
+                    "--background",
                     "--python-expr",
                     (
                         "import bpy; "
@@ -391,9 +429,14 @@ class _TestServerMixin:
         if not cls._background:
             blender_args.extend(["--gpu-backend", "vulkan"])
         if not cls._interactive:
-            blender_args.extend([
-                "--command", "blender_mcp", "--port", str(cls._port),
-            ])
+            blender_args.extend(
+                [
+                    "--command",
+                    "blender_mcp",
+                    "--port",
+                    str(cls._port),
+                ]
+            )
 
         _assert_port_free(cls._port)
         cls._blender_proc = subprocess.Popen(
@@ -420,11 +463,13 @@ class _TestServerMixin:
 
         # Save a blend file for CLI tools.
         cls._blend_path = os.path.join(tmpdir, "test.blend")
-        cls._execute_code((
+        cls._execute_code(
+            (
                 "import bpy\n"
                 "bpy.ops.wm.save_as_mainfile(filepath={!r})\n"
                 "result = {{'saved': True}}\n"
-            ).format(cls._blend_path))
+            ).format(cls._blend_path)
+        )
 
     @classmethod
     def _cleanup_blender(cls) -> None:
@@ -502,9 +547,11 @@ class _TestServerMixin:
         content = self._call_tool(name, arguments)
         text_item = content[0]
         self.assertEqual(
-            text_item.get("type"), "text",
+            text_item.get("type"),
+            "text",
             "Expected text content for {:s}, got {!r}".format(
-                name, text_item.get("type"),
+                name,
+                text_item.get("type"),
             ),
         )
         data = json.loads(text_item["text"])
@@ -518,10 +565,10 @@ class _TestServerMixin:
     def setUp(self) -> None:
         """Reload the default scene so each test starts from a clean state."""
         self._execute_code(
-                "import bpy\n"
-                "bpy.ops.wm.read_homefile(use_empty=False)\n"
-                "result = {'reset': True}\n"
-            )
+            "import bpy\n"
+            "bpy.ops.wm.read_homefile(use_empty=False)\n"
+            "result = {'reset': True}\n"
+        )
 
     # -----------------------------------------------------------------
     # blended tools.
@@ -544,9 +591,13 @@ class _TestServerMixin:
         # Scene-changing calls end with what the viewport did; a reader
         # (world_bounds) does not frame anything.
         if self._background:
-            expected_after_add = expected_after_link = "viewport: not framed: background Blender has no viewport"
+            expected_after_add = expected_after_link = (
+                "viewport: not framed: background Blender has no viewport"
+            )
         else:
-            expected_after_add = "viewport: unchanged: nothing this call touched is in the scene yet"
+            expected_after_add = (
+                "viewport: unchanged: nothing this call touched is in the scene yet"
+            )
             expected_after_link = "viewport: framed Crate in 1 3D viewport(s)"
         self.assertEqual(added[0]["text"].splitlines()[-1], expected_after_add)
         self.assertEqual(linked[0]["text"].splitlines()[-1], expected_after_link)
@@ -559,16 +610,26 @@ class _TestServerMixin:
         honours the plan declared before the restart.
         """
         # pylint: disable=protected-access
-        first = MCPClient([*self._mcp_command, "--exit-on-source-change"], env=self._mcp_env)
+        first = MCPClient(
+            [*self._mcp_command, "--exit-on-source-change"], env=self._mcp_env
+        )
         self.addCleanup(first.close)
         first.initialize()
-        self.assertFalse(first.call_tool("declare_plan", {"steps": ["Add a box"]}).get("isError", False))
+        self.assertFalse(
+            first.call_tool("declare_plan", {"steps": ["Add a box"]}).get(
+                "isError", False
+            )
+        )
 
         # A newer mtime on a watched file is a source change; restored after.
         watched = SOURCE_ROOTS[0] / "viewport_follow.py"
         original = watched.stat()
-        self.addCleanup(os.utime, watched, ns=(original.st_atime_ns, original.st_mtime_ns))
-        os.utime(watched, ns=(original.st_atime_ns, original.st_mtime_ns + _SOURCE_EDIT_NS))
+        self.addCleanup(
+            os.utime, watched, ns=(original.st_atime_ns, original.st_mtime_ns)
+        )
+        os.utime(
+            watched, ns=(original.st_atime_ns, original.st_mtime_ns + _SOURCE_EDIT_NS)
+        )
         self.assertEqual(first._proc.wait(timeout=_TIMEOUT_WATCHER_EXIT_S), 0)
 
         second = MCPClient(self._mcp_command, env=self._mcp_env)
@@ -656,29 +717,41 @@ class _TestServerMixin:
         return (width, height)
 
     def test_get_screenshot_of_area_as_image(self) -> None:
-        self._call_tool_screenshot("get_screenshot_of_area_as_image", {
-            "area_ui_type": "VIEW_3D",
-        })
+        self._call_tool_screenshot(
+            "get_screenshot_of_area_as_image",
+            {
+                "area_ui_type": "VIEW_3D",
+            },
+        )
 
     def test_get_screenshot_of_area_as_image_error(self) -> None:
-        self._call_tool_expect_error("get_screenshot_of_area_as_image", {
-            "area_ui_type": "NONEXISTENT",
-        })
+        self._call_tool_expect_error(
+            "get_screenshot_of_area_as_image",
+            {
+                "area_ui_type": "NONEXISTENT",
+            },
+        )
 
     def test_get_screenshot_of_window_as_image(self) -> None:
         self._call_tool_screenshot("get_screenshot_of_window_as_image")
 
     def test_get_screenshot_of_window_as_image_size_limit(self) -> None:
         size_limit = 16 * 1024  # 16 KB.
-        content = self._call_tool_screenshot("get_screenshot_of_window_as_image", {
-            "size_limit_in_bytes": size_limit,
-        })
+        content = self._call_tool_screenshot(
+            "get_screenshot_of_window_as_image",
+            {
+                "size_limit_in_bytes": size_limit,
+            },
+        )
         if self._interactive:
             image_data = content[0].get("data", "")
             raw_bytes = base64.b64decode(image_data)
             self.assertLessEqual(
-                len(raw_bytes), size_limit,
-                "Screenshot exceeds {:d} byte limit ({:d} bytes)".format(size_limit, len(raw_bytes)),
+                len(raw_bytes),
+                size_limit,
+                "Screenshot exceeds {:d} byte limit ({:d} bytes)".format(
+                    size_limit, len(raw_bytes)
+                ),
             )
 
     def test_get_screenshot_of_window_as_json(self) -> None:
@@ -696,35 +769,50 @@ class _TestServerMixin:
     # CLI tools.
 
     def test_get_blendfile_summary_datablocks_for_cli(self) -> None:
-        data = self._test_tool("get_blendfile_summary_datablocks_for_cli", {
-            "blend_file": self._blend_path,
-        })
+        data = self._test_tool(
+            "get_blendfile_summary_datablocks_for_cli",
+            {
+                "blend_file": self._blend_path,
+            },
+        )
         self.assertEqual(data["scene_name"], "Scene")
         self.assertIsInstance(data["datablock_counts"], dict)
 
     def test_get_blendfile_summary_missing_files_for_cli(self) -> None:
-        data = self._test_tool("get_blendfile_summary_missing_files_for_cli", {
-            "blend_file": self._blend_path,
-        })
+        data = self._test_tool(
+            "get_blendfile_summary_missing_files_for_cli",
+            {
+                "blend_file": self._blend_path,
+            },
+        )
         self.assertEqual(data["missing_files"], [])
 
     def test_get_blendfile_summary_of_linked_libraries_for_cli(self) -> None:
-        data = self._test_tool("get_blendfile_summary_of_linked_libraries_for_cli", {
-            "blend_file": self._blend_path,
-        })
+        data = self._test_tool(
+            "get_blendfile_summary_of_linked_libraries_for_cli",
+            {
+                "blend_file": self._blend_path,
+            },
+        )
         self.assertEqual(data["total_library_count"], 0)
 
     def test_get_blendfile_summary_path_info_for_cli(self) -> None:
-        data = self._test_tool("get_blendfile_summary_path_info_for_cli", {
-            "blend_file": self._blend_path,
-        })
+        data = self._test_tool(
+            "get_blendfile_summary_path_info_for_cli",
+            {
+                "blend_file": self._blend_path,
+            },
+        )
         self.assertTrue(data["is_saved"])
         self.assertTrue(data["filepath"].endswith(".blend"))
 
     def test_get_blendfile_summary_usage_guess_for_cli(self) -> None:
-        data = self._test_tool("get_blendfile_summary_usage_guess_for_cli", {
-            "blend_file": self._blend_path,
-        })
+        data = self._test_tool(
+            "get_blendfile_summary_usage_guess_for_cli",
+            {
+                "blend_file": self._blend_path,
+            },
+        )
         guesses = data["usage_guesses"]
         self.assertIn("Animation", guesses)
         self.assertIn("Modeling", guesses)
@@ -747,11 +835,14 @@ class _TestServerMixin:
         self.assertEqual(data["modifiers"], [])
         self.assertEqual(data["constraints"], [])
         self.assertEqual(data["materials"], ["Material"])
-        self.assertEqual(data["visibility"], {
-            "hide_viewport": False,
-            "hide_render": False,
-            "hide_get": False,
-        })
+        self.assertEqual(
+            data["visibility"],
+            {
+                "hide_viewport": False,
+                "hide_render": False,
+                "hide_get": False,
+            },
+        )
         self.assertIn("Collection", data["collections"])
 
     def test_get_object_detail_summary_error(self) -> None:
@@ -762,62 +853,65 @@ class _TestServerMixin:
 
     def test_get_objects_summary(self) -> None:
         data = self._test_tool("get_objects_summary")
-        self.assertEqual(data, {
-            "status": "ok",
-            "scene_name": "Scene",
-            "active_workspace": "Layout",
-            "active_object": "Cube",
-            "object_mode": "OBJECT",
-            "camera_object": "Camera",
-            "collections": [
-                {
-                    "name": "Scene Collection",
-                    "exclude": False,
-                    "hide_viewport": False,
-                    "objects": [],
-                    "children": [
-                        {
-                            "name": "Collection",
-                            "exclude": False,
-                            "hide_viewport": False,
-                            "objects": [
-                                {
-                                    "name": "Camera",
-                                    "type": "CAMERA",
-                                    "parent": None,
-                                    "data_name": "Camera",
-                                    "selected": False,
-                                    "visible": True,
-                                    "hide_viewport": False,
-                                    "hide_in_view_layer": False,
-                                },
-                                {
-                                    "name": "Cube",
-                                    "type": "MESH",
-                                    "parent": None,
-                                    "data_name": "Cube",
-                                    "selected": True,
-                                    "visible": True,
-                                    "hide_viewport": False,
-                                    "hide_in_view_layer": False,
-                                },
-                                {
-                                    "name": "Light",
-                                    "type": "LIGHT",
-                                    "parent": None,
-                                    "data_name": "Light",
-                                    "selected": False,
-                                    "visible": True,
-                                    "hide_viewport": False,
-                                    "hide_in_view_layer": False,
-                                },
-                            ],
-                            "children": [],
-                        },
-                    ],
-                },
-            ],
-        })
+        self.assertEqual(
+            data,
+            {
+                "status": "ok",
+                "scene_name": "Scene",
+                "active_workspace": "Layout",
+                "active_object": "Cube",
+                "object_mode": "OBJECT",
+                "camera_object": "Camera",
+                "collections": [
+                    {
+                        "name": "Scene Collection",
+                        "exclude": False,
+                        "hide_viewport": False,
+                        "objects": [],
+                        "children": [
+                            {
+                                "name": "Collection",
+                                "exclude": False,
+                                "hide_viewport": False,
+                                "objects": [
+                                    {
+                                        "name": "Camera",
+                                        "type": "CAMERA",
+                                        "parent": None,
+                                        "data_name": "Camera",
+                                        "selected": False,
+                                        "visible": True,
+                                        "hide_viewport": False,
+                                        "hide_in_view_layer": False,
+                                    },
+                                    {
+                                        "name": "Cube",
+                                        "type": "MESH",
+                                        "parent": None,
+                                        "data_name": "Cube",
+                                        "selected": True,
+                                        "visible": True,
+                                        "hide_viewport": False,
+                                        "hide_in_view_layer": False,
+                                    },
+                                    {
+                                        "name": "Light",
+                                        "type": "LIGHT",
+                                        "parent": None,
+                                        "data_name": "Light",
+                                        "selected": False,
+                                        "visible": True,
+                                        "hide_viewport": False,
+                                        "hide_in_view_layer": False,
+                                    },
+                                ],
+                                "children": [],
+                            },
+                        ],
+                    },
+                ],
+            },
+        )
 
     # -----------------------------------------------------------------
     # Navigation tools.
@@ -863,7 +957,8 @@ class _TestServerMixin:
         """
         Ask Blender to verify that *filepath* is a valid PNG file.
         """
-        data = self._execute_code((
+        data = self._execute_code(
+            (
                 "import os\n"
                 "with open({!r}, 'rb') as fh:\n"
                 "    header = fh.read(8)\n"
@@ -871,33 +966,43 @@ class _TestServerMixin:
                 "    'size': os.path.getsize({!r}),\n"
                 "    'png_magic': header == b'\\x89PNG\\r\\n\\x1a\\n',\n"
                 "}}\n"
-            ).format(filepath, filepath))
+            ).format(filepath, filepath)
+        )
         self.assertGreater(data["size"], 0)
         self.assertTrue(data["png_magic"])
 
     def _set_cycles_cpu(self) -> None:
         """Switch to Cycles CPU so rendering works in headless environments."""
+
         def code() -> None:
             import bpy  # type: ignore[import-not-found]
-            bpy.context.scene.render.engine = 'CYCLES'
-            bpy.context.scene.cycles.device = 'CPU'
-            result = {'engine': 'CYCLES'}  # noqa: F841
+
+            bpy.context.scene.render.engine = "CYCLES"
+            bpy.context.scene.cycles.device = "CPU"
+            result = {"engine": "CYCLES"}  # noqa: F841
+
         self._execute_code(_python_fn_body_as_string(code))
 
     def test_render_thumbnail_to_path(self) -> None:
         self._set_cycles_cpu()
-        data = self._test_tool("render_thumbnail_to_path", {
-            "output_path": "thumb.png",
-        })
+        data = self._test_tool(
+            "render_thumbnail_to_path",
+            {
+                "output_path": "thumb.png",
+            },
+        )
         self.assertEqual(data["status"], "ok")
         self.assertTrue(data["filepath"].endswith("thumb.png"))
         self._assert_valid_png(data["filepath"])
 
     def test_render_viewport_to_path(self) -> None:
         self._set_cycles_cpu()
-        data = self._test_tool("render_viewport_to_path", {
-            "output_path": "render.png",
-        })
+        data = self._test_tool(
+            "render_viewport_to_path",
+            {
+                "output_path": "render.png",
+            },
+        )
         self.assertEqual(data["status"], "ok")
         self.assertTrue(data["filepath"].endswith("render.png"))
         self._assert_valid_png(data["filepath"])
@@ -916,13 +1021,16 @@ class _TestServerMixin:
         # mechanism polls it until it returns a non-None result.
         def deferred_code() -> None:
             import time
+
             deadline = time.monotonic() + 0.3
 
             def check_is_finished():
                 if time.monotonic() < deadline:
                     return None
-                return {'deferred': True, 'value': 42}
+                return {"deferred": True, "value": 42}
+
             result = {}  # noqa: F841
+
         data = self._execute_code(_python_fn_body_as_string(deferred_code))
         self.assertTrue(data["deferred"])
         self.assertEqual(data["value"], 42)
@@ -934,8 +1042,10 @@ class _TestServerMixin:
 
         def deferred_code() -> None:
             def check_is_finished():
-                return {'deferred': True, 'value': 42}
+                return {"deferred": True, "value": 42}
+
             result = {}  # noqa: F841
+
         data = self._execute_code(_python_fn_body_as_string(deferred_code))
         self.assertEqual(data["status"], "error")
         self.assertIn(
@@ -950,12 +1060,13 @@ class _TestServerMixin:
 
         def _setup_render_scene() -> None:
             import bpy  # type: ignore[import-not-found]
+
             bpy.ops.wm.read_homefile(use_empty=True)
             scene = bpy.context.scene
             # Use Cycles CPU so the render works in headless environments
             # where EEVEE may not have a usable GPU context.
-            scene.render.engine = 'CYCLES'
-            scene.cycles.device = 'CPU'
+            scene.render.engine = "CYCLES"
+            scene.cycles.device = "CPU"
             scene.cycles.samples = 16
             scene.render.resolution_x = 960
             scene.render.resolution_y = 540
@@ -965,33 +1076,41 @@ class _TestServerMixin:
             cam.rotation_euler = (1.1, 0, 0.8)
             scene.camera = cam
             # Light.
-            bpy.ops.object.light_add(type='SUN', location=(5, -3, 8))
+            bpy.ops.object.light_add(type="SUN", location=(5, -3, 8))
             # Grid of spheres with different materials.
             for i in range(6):
                 for j in range(6):
                     bpy.ops.mesh.primitive_uv_sphere_add(
-                        segments=32, ring_count=16,
-                        radius=0.4, location=(i, j, 0),
+                        segments=32,
+                        ring_count=16,
+                        radius=0.4,
+                        location=(i, j, 0),
                     )
                     ob = bpy.context.active_object
-                    mat = bpy.data.materials.new('M_{:d}_{:d}'.format(i, j))
+                    mat = bpy.data.materials.new("M_{:d}_{:d}".format(i, j))
                     mat.use_nodes = True
-                    bsdf = mat.node_tree.nodes['Principled BSDF']
-                    bsdf.inputs['Base Color'].default_value = (
-                        i / 5.0, j / 5.0, 0.5, 1.0,
+                    bsdf = mat.node_tree.nodes["Principled BSDF"]
+                    bsdf.inputs["Base Color"].default_value = (
+                        i / 5.0,
+                        j / 5.0,
+                        0.5,
+                        1.0,
                     )
-                    bsdf.inputs['Roughness'].default_value = i / 5.0
-                    bsdf.inputs['Metallic'].default_value = j / 5.0
+                    bsdf.inputs["Roughness"].default_value = i / 5.0
+                    bsdf.inputs["Metallic"].default_value = j / 5.0
                     ob.data.materials.append(mat)
             # Ground plane.
             bpy.ops.mesh.primitive_plane_add(size=20, location=(2.5, 2.5, -0.5))
-            result = {'objects': len(bpy.data.objects)}  # noqa: F841
+            result = {"objects": len(bpy.data.objects)}  # noqa: F841
 
         self._execute_code(_python_fn_body_as_string(_setup_render_scene))
 
-        data = self._test_tool("render_viewport_to_path", {
-            "output_path": "deferred_render.png",
-        })
+        data = self._test_tool(
+            "render_viewport_to_path",
+            {
+                "output_path": "deferred_render.png",
+            },
+        )
         self.assertEqual(data["status"], "ok")
         self.assertTrue(data["filepath"].endswith("deferred_render.png"))
         self._assert_valid_png(data["filepath"])
@@ -1003,8 +1122,10 @@ class _TestServerMixin:
 
         def deferred_error_code() -> None:
             def check_is_finished():
-                raise RuntimeError('checker failed')
+                raise RuntimeError("checker failed")
+
             result = {}  # noqa: F841
+
         data = self._execute_code(_python_fn_body_as_string(deferred_error_code))
         self.assertEqual(data["status"], "error")
         self.assertIn("checker failed", data["message"])
@@ -1022,11 +1143,16 @@ class _TestServerMixin:
         # Comfortably over the kernel send buffer, so the add-on has to
         # write the response over multiple polls, see `_flush_pending_writes`.
         size = 8 * 1024 * 1024
-        request = json.dumps({
-            "type": "execute",
-            "code": "result = {{'data': 'x' * {:d}}}".format(size),
-            "strict_json": True,
-        }) + "\0"
+        request = (
+            json.dumps(
+                {
+                    "type": "execute",
+                    "code": "result = {{'data': 'x' * {:d}}}".format(size),
+                    "strict_json": True,
+                }
+            )
+            + "\0"
+        )
 
         buf = bytearray()
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
@@ -1042,10 +1168,13 @@ class _TestServerMixin:
                 buf.extend(chunk)
 
         self.assertIn(
-            b"\0", buf,
-            "Response truncated at {:d} bytes, the null terminator is missing".format(len(buf)),
+            b"\0",
+            buf,
+            "Response truncated at {:d} bytes, the null terminator is missing".format(
+                len(buf)
+            ),
         )
-        data = json.loads(buf[:buf.index(b"\0")].decode("utf-8"))
+        data = json.loads(buf[: buf.index(b"\0")].decode("utf-8"))
         self.assertEqual(data["status"], "ok")
         self.assertEqual(len(data["result"]["data"]), size)
 
@@ -1095,9 +1224,13 @@ class _TestServerMixin:
     def test_jump_to_view3d_object_data_by_name_error(self) -> None:
         if not self._interactive:
             return
-        data = self._test_tool("jump_to_view3d_object_data_by_name", {"name": "NonExistent"})
+        data = self._test_tool(
+            "jump_to_view3d_object_data_by_name", {"name": "NonExistent"}
+        )
         self.assertEqual(data["status"], "error")
-        self.assertEqual(data["message"], "No object found with data named 'NonExistent'")
+        self.assertEqual(
+            data["message"], "No object found with data named 'NonExistent'"
+        )
 
     # -----------------------------------------------------------------
     # State verification.
@@ -1110,21 +1243,25 @@ class _TestServerMixin:
             return
         # Hide the default Cube.
         self._execute_code(
-                "import bpy\n"
-                "bpy.data.objects['Cube'].hide_viewport = True\n"
-                "result = {'hidden': True}\n"
-            )
+            "import bpy\n"
+            "bpy.data.objects['Cube'].hide_viewport = True\n"
+            "result = {'hidden': True}\n"
+        )
         # Jump to it with allow_edits enabled.
-        data = self._test_tool("jump_to_view3d_object_by_name", {
-            "name": "Cube", "allow_edits": True,
-        })
+        data = self._test_tool(
+            "jump_to_view3d_object_by_name",
+            {
+                "name": "Cube",
+                "allow_edits": True,
+            },
+        )
         self.assertEqual(data["status"], "ok")
         self.assertEqual(data["object"], "Cube")
         # Verify the object is no longer hidden.
         check = self._execute_code(
-                "import bpy\n"
-                "result = {'hide_viewport': bpy.data.objects['Cube'].hide_viewport}\n"
-            )
+            "import bpy\n"
+            "result = {'hide_viewport': bpy.data.objects['Cube'].hide_viewport}\n"
+        )
         self.assertFalse(check["hide_viewport"])
 
     def test_jump_to_view3d_object_data_by_name_allow_edits(self) -> None:
@@ -1135,21 +1272,25 @@ class _TestServerMixin:
             return
         # Hide the default Cube.
         self._execute_code(
-                "import bpy\n"
-                "bpy.data.objects['Cube'].hide_viewport = True\n"
-                "result = {'hidden': True}\n"
-            )
+            "import bpy\n"
+            "bpy.data.objects['Cube'].hide_viewport = True\n"
+            "result = {'hidden': True}\n"
+        )
         # Jump to it via data name with allow_edits enabled.
-        data = self._test_tool("jump_to_view3d_object_data_by_name", {
-            "name": "Cube", "allow_edits": True,
-        })
+        data = self._test_tool(
+            "jump_to_view3d_object_data_by_name",
+            {
+                "name": "Cube",
+                "allow_edits": True,
+            },
+        )
         self.assertEqual(data["status"], "ok")
         self.assertEqual(data["data_name"], "Cube")
         # Verify the object is no longer hidden.
         check = self._execute_code(
-                "import bpy\n"
-                "result = {'hide_viewport': bpy.data.objects['Cube'].hide_viewport}\n"
-            )
+            "import bpy\n"
+            "result = {'hide_viewport': bpy.data.objects['Cube'].hide_viewport}\n"
+        )
         self.assertFalse(check["hide_viewport"])
 
     def test_execute_blender_code_stateful(self) -> None:
@@ -1158,18 +1299,21 @@ class _TestServerMixin:
         """
         # Create an object.
         self._execute_code(
-                "import bpy\n"
-                "bpy.ops.mesh.primitive_ico_sphere_add()\n"
-                "bpy.context.active_object.name = 'TestSphere'\n"
-                "result = {'created': True}\n"
-            )
+            "import bpy\n"
+            "bpy.ops.mesh.primitive_ico_sphere_add()\n"
+            "bpy.context.active_object.name = 'TestSphere'\n"
+            "result = {'created': True}\n"
+        )
         # Verify it exists in a separate call.
-        data = self._execute_code("import bpy\nresult = {'found': 'TestSphere' in bpy.data.objects}\n")
+        data = self._execute_code(
+            "import bpy\nresult = {'found': 'TestSphere' in bpy.data.objects}\n"
+        )
         self.assertTrue(data["found"])
 
 
 # -----------------------------------------------------------------------------
 # Concrete test classes.
+
 
 class TestBackgroundServer(_TestServerMixin, unittest.TestCase):
     """
@@ -1223,6 +1367,7 @@ def test_blender_version() -> bool:
     Check the Blender version is at least ``BLENDER_VERSION_MIN``.
     """
     import re
+
     blender_bin = os.environ.get("BLENDER_BIN", "blender")
     result = subprocess.run(
         [blender_bin, "--version"],
@@ -1232,13 +1377,18 @@ def test_blender_version() -> bool:
     output = result.stdout.decode("utf-8", errors="replace")
     match = re.search(r"Blender\s+(\d+)\.(\d+)", output)
     if not match:
-        print("ERROR: could not parse Blender version from: {:s}".format(output.strip()))
+        print(
+            "ERROR: could not parse Blender version from: {:s}".format(output.strip())
+        )
         return False
     version = (int(match.group(1)), int(match.group(2)))
     if version < BLENDER_VERSION_MIN:
-        print("ERROR: Blender {:d}.{:d} found, {:d}.{:d} or newer required".format(
-            *version, *BLENDER_VERSION_MIN,
-        ))
+        print(
+            "ERROR: Blender {:d}.{:d} found, {:d}.{:d} or newer required".format(
+                *version,
+                *BLENDER_VERSION_MIN,
+            )
+        )
         return False
     return True
 

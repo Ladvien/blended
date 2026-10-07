@@ -51,9 +51,7 @@ def test_the_v10_cycle_is_one_converged_cycle():
     ]
     verdicts = VerdictLog(VERDICT_LOG).verdicts()
 
-    cycles, identity = converged_suite_cycles(
-        records, tuple(sorted(BRIEFS)), verdicts
-    )
+    cycles, identity = converged_suite_cycles(records, tuple(sorted(BRIEFS)), verdicts)
 
     assert cycles >= 1, (
         "the recorded v10 cycle (iterations 47-51) must count as converged"
@@ -96,8 +94,7 @@ def test_a_cycle_that_mixes_prompt_identities_is_not_a_cycle():
         for iteration, (name, identity) in enumerate(zip(names, identities), start=1)
     ]
     verdicts = [
-        _clean_verdict(iteration, name)
-        for iteration, name in enumerate(names, start=1)
+        _clean_verdict(iteration, name) for iteration, name in enumerate(names, start=1)
     ]
 
     assert converged_suite_cycles(records, names, verdicts) == (0, "")
@@ -282,20 +279,23 @@ def test_the_preflight_refuses_an_examiner_that_flags_clean_runs(monkeypatch):
         control_specificity=1.0,
         cross_run_control_specificity=0.75,
     )
-    monkeypatch.setattr(
-        examiner_module, "load_calibration", lambda *a, **k: unlicensed
-    )
+    monkeypatch.setattr(examiner_module, "load_calibration", lambda *a, **k: unlicensed)
     monkeypatch.setattr(
         examiner_module, "examiner_identity", lambda model: unlicensed.examiner_identity
     )
     # Everything else the preflight touches, stubbed to "fine": the
     # examiner licence must be the ONLY reason it refuses here.
-    monkeypatch.setattr(module, "_client", lambda *a, **k: SimpleNamespace(
-        config=SimpleNamespace(
-            vision_model="eye", eye_config=lambda: SimpleNamespace(vision_model="eye")
+    monkeypatch.setattr(
+        module,
+        "_client",
+        lambda *a, **k: SimpleNamespace(
+            config=SimpleNamespace(
+                vision_model="eye",
+                eye_config=lambda: SimpleNamespace(vision_model="eye"),
+            ),
+            check_connection=lambda: SimpleNamespace(ok=True, detail=""),
         ),
-        check_connection=lambda: SimpleNamespace(ok=True, detail=""),
-    ))
+    )
     monkeypatch.setattr(examiner_module, "verify_golden_manifest", lambda *a: "v11:x")
 
     arguments = SimpleNamespace(
@@ -313,9 +313,7 @@ def test_the_preflight_refuses_an_examiner_that_flags_clean_runs(monkeypatch):
     # test would still pass if the preflight refused for any reason at
     # all.
     licensed = replace(unlicensed, cross_run_control_specificity=1.0)
-    monkeypatch.setattr(
-        examiner_module, "load_calibration", lambda *a, **k: licensed
-    )
+    monkeypatch.setattr(examiner_module, "load_calibration", lambda *a, **k: licensed)
     assert not [
         problem
         for problem in module.preflight(arguments, ())

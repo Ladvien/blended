@@ -37,9 +37,7 @@ CYLINDER_CENTER_X_M = 0.6
 # for these parameters (y overlaps by 0.6, z by CYLINDER_HEIGHT_M);
 # lowering CYLINDER_HEIGHT_M below 0.2 makes the reported depth a
 # different axis with no warning.
-EXPECTED_AABB_OVERLAP_M = CUBE_HALF_WIDTH_M - (
-    CYLINDER_CENTER_X_M - CYLINDER_RADIUS_M
-)
+EXPECTED_AABB_OVERLAP_M = CUBE_HALF_WIDTH_M - (CYLINDER_CENTER_X_M - CYLINDER_RADIUS_M)
 
 # Two plates, each thinner than the contact tolerance, crossing at the
 # origin: the interpenetration class BOTH gated numbers miss. The
@@ -94,7 +92,14 @@ def _box(name, minimum_corner_m, maximum_corner_m):
             (x_min, y_max, z_max),
         ],
         [],
-        [(0, 1, 2, 3), (7, 6, 5, 4), (0, 4, 5, 1), (1, 5, 6, 2), (2, 6, 7, 3), (3, 7, 4, 0)],
+        [
+            (0, 1, 2, 3),
+            (7, 6, 5, 4),
+            (0, 4, 5, 1),
+            (1, 5, 6, 2),
+            (2, 6, 7, 3),
+            (3, 7, 4, 0),
+        ],
     )
     mesh_data.update()
     box_object = bpy.data.objects.new(name, mesh_data)
@@ -310,4 +315,3 @@ def test_a_shallow_crossing_is_visible_only_in_the_depth(empty_scene):
     assert report.aabb_penetration_depth_m == pytest.approx(
         PLATE_THICKNESS_M, abs=BOUNDS_TOLERANCE_M
     )
-

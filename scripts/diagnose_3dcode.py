@@ -52,27 +52,35 @@ from bench_thresholds import (  # shared, stdlib-only
 # Every metric a diagnose row carries and the panel may rank or report.
 ROW_METRICS = (RANKING_METRIC,) + REPORTED_METRICS
 
-DIAGNOSTIC_N_POINTS = 8192          # scorer default --n-points
-DIAGNOSTIC_SEED = 0                 # scorer default --seed
-THIN_RATIO = 0.3                    # min_extent/max_extent below this -> flat
-ORIENT_WORDS = ("standing", "vertical", "flat", "horizontal", "upright",
-                "facing")
+DIAGNOSTIC_N_POINTS = 8192  # scorer default --n-points
+DIAGNOSTIC_SEED = 0  # scorer default --seed
+THIN_RATIO = 0.3  # min_extent/max_extent below this -> flat
+ORIENT_WORDS = ("standing", "vertical", "flat", "horizontal", "upright", "facing")
 QUANTITY_RE = re.compile(r"\d")
 
 
 def parse_arguments(argv):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--bench-root", required=True,
-                        help="3DCodeBench checkout (holds data/ and metrics/)")
-    parser.add_argument("--results-root", default="results/text_to_3D_agent",
-                        help="Results root under --bench-root (relative or absolute).")
-    parser.add_argument("--model-dir", required=True,
-                        help="Model row name under --results-root")
-    parser.add_argument("--instances-file", required=True,
-                        help="Frozen instance list for the report")
+    parser.add_argument(
+        "--bench-root",
+        required=True,
+        help="3DCodeBench checkout (holds data/ and metrics/)",
+    )
+    parser.add_argument(
+        "--results-root",
+        default="results/text_to_3D_agent",
+        help="Results root under --bench-root (relative or absolute).",
+    )
+    parser.add_argument(
+        "--model-dir", required=True, help="Model row name under --results-root"
+    )
+    parser.add_argument(
+        "--instances-file", required=True, help="Frozen instance list for the report"
+    )
     parser.add_argument("--out", required=True, help="Markdown report path")
-    parser.add_argument("--json", default="",
-                        help="Also write per-instance rows as JSON.")
+    parser.add_argument(
+        "--json", default="", help="Also write per-instance rows as JSON."
+    )
     return parser.parse_args(argv)
 
 
@@ -103,12 +111,16 @@ def self_test(sc):
     _, yaw_min, _, _ = sc.chamfer_with_yaw(pts, rotated)
     blindspot_ok = yaw_min > 0.5
 
-    print(f"self-test: cd_pca(S,S)={cd_pca(sc, pts, pts):.3e} "
-          f"cd_pca(S,Ry90 S)={cd_pca(sc, pts, rotated):.3e} "
-          f"cd_yawmin(S,Ry90 S)={yaw_min:.4f}")
-    checks = (("cd_pca(S, S) < 1e-6", identity_ok),
-              ("cd_pca(S, Ry90(S)) < 1e-6", recovery_ok),
-              ("cd_yawmin(S, Ry90(S)) > 0.5", blindspot_ok))
+    print(
+        f"self-test: cd_pca(S,S)={cd_pca(sc, pts, pts):.3e} "
+        f"cd_pca(S,Ry90 S)={cd_pca(sc, pts, rotated):.3e} "
+        f"cd_yawmin(S,Ry90 S)={yaw_min:.4f}"
+    )
+    checks = (
+        ("cd_pca(S, S) < 1e-6", identity_ok),
+        ("cd_pca(S, Ry90(S)) < 1e-6", recovery_ok),
+        ("cd_yawmin(S, Ry90(S)) > 0.5", blindspot_ok),
+    )
     for label, ok in checks:
         print(f"  {'PASS' if ok else 'FAIL'}  {label}")
     return all(ok for _, ok in checks)
@@ -146,8 +158,11 @@ def dominant_factor(delta_orient, anatomy):
 # The GLBs are glTF (Y-up): glTF X = Blender X, glTF Y = Blender Z (up),
 # glTF Z = -Blender Y (depth). The label names both frames so a "majority
 # thin axis" is never read in the wrong one.
-AXIS_NAMES = ("glTF X (Blender X)", "glTF Y (Blender Z, up)",
-              "glTF Z (Blender -Y, depth)")
+AXIS_NAMES = (
+    "glTF X (Blender X)",
+    "glTF Y (Blender Z, up)",
+    "glTF Z (Blender -Y, depth)",
+)
 
 
 def reference_thin_axis_histogram(sc, data_root, instances):
@@ -158,6 +173,7 @@ def reference_thin_axis_histogram(sc, data_root, instances):
     by any scorer.
     """
     import trimesh
+
     histogram = {axis: 0 for axis in AXIS_NAMES}
     thin = 0
     total = 0
@@ -166,7 +182,8 @@ def reference_thin_axis_histogram(sc, data_root, instances):
         if not glb.exists():
             continue
         points, _ = trimesh.sample.sample_surface(
-            trimesh.load(glb, force="mesh"), 2048, seed=0)
+            trimesh.load(glb, force="mesh"), 2048, seed=0
+        )
         extents = np.ptp(np.asarray(points), axis=0)
         total += 1
         smallest = float(extents.min())
@@ -210,9 +227,11 @@ def main(argv) -> int:
     model_dir = results_root / args.model_dir
     data_root = bench_root / "data"
 
-    instances = [line.strip() for line in
-                 Path(args.instances_file).read_text().splitlines()
-                 if line.strip()]
+    instances = [
+        line.strip()
+        for line in Path(args.instances_file).read_text().splitlines()
+        if line.strip()
+    ]
 
     # ---- self-test BEFORE any reported data is trusted -----------------
     if not self_test(sc):
@@ -235,11 +254,14 @@ def main(argv) -> int:
         anatomy = brief_anatomy(
             (data_root / instance / "prompt_description.txt").read_text()
             if (data_root / instance / "prompt_description.txt").exists()
-            else "")
+            else ""
+        )
         ref_geo = instance_geometry(
-            data_root / instance / "glb" / f"{instance}.glb", sc)
+            data_root / instance / "glb" / f"{instance}.glb", sc
+        )
         gen_geo = instance_geometry(
-            model_dir / instance / "glb" / f"{instance}.glb", sc)
+            model_dir / instance / "glb" / f"{instance}.glb", sc
+        )
 
         row = {
             "instance": instance,
@@ -247,8 +269,11 @@ def main(argv) -> int:
             "cd_yawmin_scored": (scored.get(instance) or {}).get("cd_yawmin"),
             "cd_pca": None,
             "delta_orient": None,
-            **{metric: None for metric in ROW_METRICS
-               if metric not in ("cd_yawmin", "cd_pca", "delta_orient")},
+            **{
+                metric: None
+                for metric in ROW_METRICS
+                if metric not in ("cd_yawmin", "cd_pca", "delta_orient")
+            },
             "thin_gen": gen_geo["thinness"] if gen_geo else None,
             "thin_ref": ref_geo["thinness"] if ref_geo else None,
             "anatomy": anatomy,
@@ -266,11 +291,11 @@ def main(argv) -> int:
             continue
 
         ref_pts = sc.load_mesh_points(
-            data_root / instance / "glb" / f"{instance}.glb",
-            DIAGNOSTIC_N_POINTS, rng)
+            data_root / instance / "glb" / f"{instance}.glb", DIAGNOSTIC_N_POINTS, rng
+        )
         gen_pts = sc.load_mesh_points(
-            model_dir / instance / "glb" / f"{instance}.glb",
-            DIAGNOSTIC_N_POINTS, rng)
+            model_dir / instance / "glb" / f"{instance}.glb", DIAGNOSTIC_N_POINTS, rng
+        )
         if ref_pts is None or gen_pts is None:
             rows.append(row)
             continue
@@ -286,8 +311,9 @@ def main(argv) -> int:
         # F-score, precision and recall on the SAME aligned cloud cd_pca
         # was measured on (OT-36): the ranking axis and the reported
         # Chamfer answer one question about one pose.
-        row.update(surface_columns(ref_pts, gen_pts @ rotation.T,
-                                   PRIMARY_FSCORE_THRESHOLD))
+        row.update(
+            surface_columns(ref_pts, gen_pts @ rotation.T, PRIMARY_FSCORE_THRESHOLD)
+        )
         scored_value = row["cd_yawmin_scored"]
         if scored_value is not None and abs(scored_value - cd_yaw_min) > 1e-9:
             mismatched.append((instance, scored_value, cd_yaw_min))
@@ -295,13 +321,21 @@ def main(argv) -> int:
 
     if mismatched:
         for instance, expected, got in mismatched:
-            print(f"REPLICATION MISMATCH {instance}: "
-                  f"scorer={expected!r} replicate={got!r}", file=sys.stderr)
+            print(
+                f"REPLICATION MISMATCH {instance}: "
+                f"scorer={expected!r} replicate={got!r}",
+                file=sys.stderr,
+            )
         raise SystemExit("cd_yawmin does not reproduce the scorer's output")
-    replicated = sum(1 for r in rows if r["cd_yawmin_scored"] is not None
-                     and r["cd_yawmin"] is not None)
-    print(f"replication: {replicated}/{len(instances)} instances match "
-          f"the scorer's per-instance cd_yawmin exactly")
+    replicated = sum(
+        1
+        for r in rows
+        if r["cd_yawmin_scored"] is not None and r["cd_yawmin"] is not None
+    )
+    print(
+        f"replication: {replicated}/{len(instances)} instances match "
+        f"the scorer's per-instance cd_yawmin exactly"
+    )
 
     # ---- benchmark placement prior -------------------------------------
     prior = reference_thin_axis_histogram(sc, data_root, instances)
@@ -309,20 +343,26 @@ def main(argv) -> int:
     # ---- report ---------------------------------------------------------
     report_order = sorted(
         (r for r in rows if r["cd_yawmin"] is not None),
-        key=lambda r: r["cd_yawmin"], reverse=True)
+        key=lambda r: r["cd_yawmin"],
+        reverse=True,
+    )
     report_order += [r for r in rows if r["cd_yawmin"] is None]
 
     lines = [
         f"# 3DCodeBench diagnostic — {args.model_dir}",
         "",
-        (f"Replication: `{sc.__file__}` imported unmodified; "
-         f"{replicated} instance cd_yawmin values asserted equal to "
-         f"`_metrics/shape_chamfer.json`."),
+        (
+            f"Replication: `{sc.__file__}` imported unmodified; "
+            f"{replicated} instance cd_yawmin values asserted equal to "
+            f"`_metrics/shape_chamfer.json`."
+        ),
         "",
         "## Per-instance (sorted by cd_yawmin descending)",
         "",
-        (f"| instance | {RANKING_METRIC} | cd_yawmin | cd_pca | Δ_orient | verdict "
-         "| thin_gen | thin_ref | brief(words/quant/orient) | turns | dur_s |"),
+        (
+            f"| instance | {RANKING_METRIC} | cd_yawmin | cd_pca | Δ_orient | verdict "
+            "| thin_gen | thin_ref | brief(words/quant/orient) | turns | dur_s |"
+        ),
         "|---|---|---|---|---|---|---|---|---|---|---|",
     ]
     for r in report_order:
@@ -333,7 +373,8 @@ def main(argv) -> int:
                 f"{r['anatomy']['words']}/"
                 f"{'q' if r['anatomy']['quantitative'] else '-'}/"
                 f"{''.join(w[:3] for w in r['anatomy']['orientation']) or '-'}"
-                f" | {r['num_turns']} | {r['duration_s']} |")
+                f" | {r['num_turns']} | {r['duration_s']} |"
+            )
             continue
         verdict = dominant_factor(r["delta_orient"], r["anatomy"])
         lines.append(
@@ -344,26 +385,37 @@ def main(argv) -> int:
             f"{r['anatomy']['words']}/"
             f"{'q' if r['anatomy']['quantitative'] else '-'}/"
             f"{''.join(w[:3] for w in r['anatomy']['orientation']) or '-'}"
-            f" | {r['num_turns']} | {r['duration_s']} |")
+            f" | {r['num_turns']} | {r['duration_s']} |"
+        )
 
-    artifact_rows = [r for r in report_order
-                     if r["delta_orient"] is not None
-                     and r["delta_orient"] >= ORIENT_ARTIFACT_THRESHOLD]
+    artifact_rows = [
+        r
+        for r in report_order
+        if r["delta_orient"] is not None
+        and r["delta_orient"] >= ORIENT_ARTIFACT_THRESHOLD
+    ]
     lines += [
         "",
         f"Orientation artifacts (Δ_orient >= {ORIENT_ARTIFACT_THRESHOLD}): "
         f"{len(artifact_rows)} — "
-        + (", ".join(f"{r['instance']} (Δ={r['delta_orient']:+.3f})"
-                     for r in artifact_rows) or "none"),
+        + (
+            ", ".join(
+                f"{r['instance']} (Δ={r['delta_orient']:+.3f})" for r in artifact_rows
+            )
+            or "none"
+        ),
         "",
-        (f"## Reference thin-axis prior ({prior['total']} baked refs, "
-         f"{prior['thin']} thin at <{THIN_RATIO:.1f} max-extent)"),
+        (
+            f"## Reference thin-axis prior ({prior['total']} baked refs, "
+            f"{prior['thin']} thin at <{THIN_RATIO:.1f} max-extent)"
+        ),
         "",
     ]
     if prior["thin"]:
         axis_lines = ", ".join(
             f"{axis}: {count} ({100.0 * count / prior['thin']:.0f}%)"
-            for axis, count in prior["axes"].items())
+            for axis, count in prior["axes"].items()
+        )
         lines.append(axis_lines)
         majority = max(prior["axes"], key=prior["axes"].get)
         if prior["axes"][majority] * 2 > prior["thin"]:
@@ -386,21 +438,25 @@ def main(argv) -> int:
         # the raw-bpy arms of the fine-tune decision experiment write a
         # script and nothing else. An empty list is reported as such,
         # never divided by.
-        (f"- turns: mean "
-         f"{sum(turns) / len(turns):.1f}") if turns else "- turns: — (no meta)",
-        (f"- max turns: {max(turns) if turns else '—'}"
-         f", turns>=20: {sum(1 for t in turns if t >= 20)}"),
-        (f"- excluded chunks: "
-         f"{sum(r['n_chunks_excluded'] or 0 for r in rows)} total"),
-        (f"- mean duration: "
-         f"{sum(durations) / len(durations):.1f}s") if durations
+        (f"- turns: mean {sum(turns) / len(turns):.1f}")
+        if turns
+        else "- turns: — (no meta)",
+        (
+            f"- max turns: {max(turns) if turns else '—'}"
+            f", turns>=20: {sum(1 for t in turns if t >= 20)}"
+        ),
+        (f"- excluded chunks: {sum(r['n_chunks_excluded'] or 0 for r in rows)} total"),
+        (f"- mean duration: {sum(durations) / len(durations):.1f}s")
+        if durations
         else "- mean duration: —",
         "",
         "## Self-test",
         "",
-        ("cd_pca(S,S) < 1e-6; cd_pca(S, Ry90(S)) < 1e-6; "
-         "cd_yawmin(S, Ry90(S)) > 0.5 — all asserted before this report was "
-         "written."),
+        (
+            "cd_pca(S,S) < 1e-6; cd_pca(S, Ry90(S)) < 1e-6; "
+            "cd_yawmin(S, Ry90(S)) > 0.5 — all asserted before this report was "
+            "written."
+        ),
     ]
 
     Path(args.out).write_text("\n".join(lines) + "\n")
@@ -414,17 +470,24 @@ def main(argv) -> int:
             "n_points": DIAGNOSTIC_N_POINTS,
             "seed": DIAGNOSTIC_SEED,
             "per_instance": [
-                {"instance": r["instance"],
-                 **{metric: r[metric] for metric in ROW_METRICS},
-                 "status": r["status"], "num_turns": r["num_turns"],
-                 "duration_s": r["duration_s"]}
+                {
+                    "instance": r["instance"],
+                    **{metric: r[metric] for metric in ROW_METRICS},
+                    "status": r["status"],
+                    "num_turns": r["num_turns"],
+                    "duration_s": r["duration_s"],
+                }
                 for r in rows
             ],
             "means": {
-                key: (sum(r[key] for r in scoreable) / len(scoreable)
-                      if scoreable else None)
+                key: (
+                    sum(r[key] for r in scoreable) / len(scoreable)
+                    if scoreable
+                    else None
+                )
                 for key in ROW_METRICS
-            } | {"n": len(scoreable)},
+            }
+            | {"n": len(scoreable)},
         }
         Path(args.json).write_text(json.dumps(document, indent=2) + "\n")
         print(f"wrote {args.json}")

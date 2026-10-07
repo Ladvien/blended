@@ -40,7 +40,9 @@ def test_analyzer_can_fail_on_seeded_defect(empty_scene):
     from blended.analyze import MeshBudget, analyze_object
     from blended.ops.primitives import add_box, link_into_scene
 
-    open_box = bpy.data.objects[add_box("OpenBox", width_m=1.0, depth_m=1.0, height_m=1.0)]
+    open_box = bpy.data.objects[
+        add_box("OpenBox", width_m=1.0, depth_m=1.0, height_m=1.0)
+    ]
     link_into_scene(open_box.name)
     # Seed a defect: delete one face -> boundary edges appear.
     import bmesh
@@ -86,4 +88,6 @@ def test_add_box_is_idempotent_by_name(empty_scene):
         if scene_object.name.startswith("SameName")
     ]
     assert matching_names == ["SameName"], matching_names
-    assert bpy.data.objects[second_box_name].dimensions.x > 1.5  # it is the NEW box that survived
+    assert (
+        bpy.data.objects[second_box_name].dimensions.x > 1.5
+    )  # it is the NEW box that survived

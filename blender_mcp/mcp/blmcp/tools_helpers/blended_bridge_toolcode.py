@@ -96,7 +96,8 @@ def main(params: Params) -> Result:
 
     if getattr(imported, _FINGERPRINT_ATTRIBUTE, None) != params.source_fingerprint:
         for module_name in [
-            name for name in list(sys.modules)
+            name
+            for name in list(sys.modules)
             if name == _PACKAGE or name.startswith(_PACKAGE + ".")
         ]:
             del sys.modules[module_name]

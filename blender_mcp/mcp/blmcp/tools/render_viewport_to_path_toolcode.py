@@ -28,11 +28,13 @@ class Result(NamedTuple):
 
 # @include_begin: _template_deferred_tool_check_for_file_output.py
 def _deferred_tool_check_for_file_output(
-        job_type: str,
-        output_path: str,
-        restore_attrs: list[tuple[object, str, object]] | None = None,
+    job_type: str,
+    output_path: str,
+    restore_attrs: list[tuple[object, str, object]] | None = None,
 ) -> Callable[[], dict[str, object] | None]:
     return lambda: None
+
+
 # @include_end
 
 
@@ -44,7 +46,9 @@ def main(params: Params) -> Result | Callable[[], dict[str, object] | None]:
     use_deferred = not bpy.app.background
 
     # Resolve the output path inside the MCP scratch directory.
-    output_path = os.path.join(bpy.app.tempdir, "blender_mcp", os.path.basename(params.output_path))
+    output_path = os.path.join(
+        bpy.app.tempdir, "blender_mcp", os.path.basename(params.output_path)
+    )
 
     scene = bpy.context.scene
 
@@ -59,7 +63,7 @@ def main(params: Params) -> Result | Callable[[], dict[str, object] | None]:
         output_path += rd.file_extension
     rd.filepath = output_path
 
-    render_args = ('INVOKE_DEFAULT',) if use_deferred else ()
+    render_args = ("INVOKE_DEFAULT",) if use_deferred else ()
 
     try:
         bpy.ops.render.render(*render_args, write_still=True)
@@ -69,7 +73,9 @@ def main(params: Params) -> Result | Callable[[], dict[str, object] | None]:
 
     if use_deferred:
         return _deferred_tool_check_for_file_output(
-            'RENDER', output_path, restore_attrs=[(rd, "filepath", orig_filepath)],
+            "RENDER",
+            output_path,
+            restore_attrs=[(rd, "filepath", orig_filepath)],
         )
 
     rd.filepath = orig_filepath

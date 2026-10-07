@@ -114,7 +114,7 @@ def test_a_vanished_object_is_not_reported_as_a_rebuild():
 
 
 def test_reading_a_missing_stamp_raises_rather_than_defaulting():
-    """"" would read as "rebuilt" whether it was rebuilt or never stamped."""
+    """ "" would read as "rebuilt" whether it was rebuilt or never stamped."""
     with pytest.raises(ObjectHasNoIdentity):
         read_identity(FakeBlenderObject("Stool"))
 

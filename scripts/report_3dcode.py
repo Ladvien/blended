@@ -57,8 +57,11 @@ def parse_arguments(argv):
     parser.add_argument("--bench-root", required=True)
     parser.add_argument("--results-root", default="results/text_to_3D_agent")
     parser.add_argument("--models", nargs="+", required=True)
-    parser.add_argument("--instances-file", default="instances_v1.txt",
-                        help="Relative to --bench-root unless absolute.")
+    parser.add_argument(
+        "--instances-file",
+        default="instances_v1.txt",
+        help="Relative to --bench-root unless absolute.",
+    )
     parser.add_argument("--blender", default=DEFAULT_BLENDER)
     parser.add_argument("--out", default="")
     return parser.parse_args(argv)
@@ -76,8 +79,11 @@ def load_json(path: Path):
 def blender_build_string(blender: str) -> str:
     try:
         output = subprocess.run(
-            [blender, "--version"], capture_output=True, text=True,
-            timeout=60, check=False,
+            [blender, "--version"],
+            capture_output=True,
+            text=True,
+            timeout=60,
+            check=False,
         ).stdout
     except (OSError, subprocess.TimeoutExpired):
         return "unavailable"
@@ -133,8 +139,10 @@ def failure_section(model_directory: Path) -> list[str]:
     failed = executability.get("failed_instances") or []
     if not failed:
         return [f"- **{model_directory.name}** — no failures."]
-    lines = [f"- **{model_directory.name}** — {len(failed)} failed: "
-             + ", ".join(f"`{name}`" for name in failed)]
+    lines = [
+        f"- **{model_directory.name}** — {len(failed)} failed: "
+        + ", ".join(f"`{name}`" for name in failed)
+    ]
     lines.extend(
         f"  - ×{entry.get('count')} {entry.get('fingerprint')}"
         for entry in executability.get("top_errors") or []

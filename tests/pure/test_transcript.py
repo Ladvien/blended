@@ -86,7 +86,13 @@ def test_schema_two_stores_the_tool_event_under_data(tmp_path):
     assert TRANSCRIPT_SCHEMA_VERSION == 2
     transcript = ChatTranscript(tmp_path, session_name="s")
     transcript.record("tool", 'add_box({"name": "Crate"})')
-    event = ToolEvent(tool_name="add_box", arguments={"name": "Crate"}, ok=True, stage_reached="done", wall_time_s=0.5)
+    event = ToolEvent(
+        tool_name="add_box",
+        arguments={"name": "Crate"},
+        ok=True,
+        stage_reached="done",
+        wall_time_s=0.5,
+    )
     transcript.record(TOOL_EVENT_KIND, encode_tool_event(event))
 
     rows = transcript.read_events()

@@ -6,6 +6,7 @@ on the same eight model dirs; these tests pin the pieces that claim rests
 on so a refactor cannot change what "oracle proportions" or "floating"
 mean without turning red.
 """
+
 from __future__ import annotations
 
 import sys
@@ -55,7 +56,9 @@ def test_extents_are_read_between_the_registered_percentiles():
 
 def test_oracle_rescale_gives_the_generated_cloud_the_reference_extents():
     reference = _Scorer.normalize_unit_sphere(_box_cloud((1.0, 3.0, 1.0)))  # tall jar
-    generated = _Scorer.normalize_unit_sphere(_box_cloud((2.0, 3.0, 2.0)))  # 2x too wide
+    generated = _Scorer.normalize_unit_sphere(
+        _box_cloud((2.0, 3.0, 2.0))
+    )  # 2x too wide
     rescaled = oracle_rescaled(_Scorer, reference, generated)
     ratio = extents_at_percentiles(rescaled) / extents_at_percentiles(reference)
     assert np.allclose(ratio, 1.0, rtol=0.05)

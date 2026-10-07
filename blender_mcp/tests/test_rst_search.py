@@ -303,7 +303,8 @@ class TestSectionTitleBoost(unittest.TestCase):
         }
         with _synthetic_corpus(corpus):
             result = _search(
-                query="subdivision surface", scope="manual",
+                query="subdivision surface",
+                scope="manual",
             )
         paths = [h["path"] for h in result["hits"]]
         self.assertEqual(paths[0], "manual/a.rst")
@@ -376,13 +377,15 @@ class TestSectionTitleBoost(unittest.TestCase):
         }
         with _synthetic_corpus(corpus):
             result = _search(
-                query="color management", scope="manual",
+                query="color management",
+                scope="manual",
             )
         # index.rst has path(+20) + title(+30) bonuses; the others
         # get only one of the two.
         paths = [h["path"] for h in result["hits"]]
         self.assertEqual(
-            paths[0], "manual/render/color_management/index.rst",
+            paths[0],
+            "manual/render/color_management/index.rst",
         )
 
     def test_title_bonus_scales_with_nested_match_depth(self) -> None:
@@ -424,7 +427,8 @@ class TestSectionTitleBoost(unittest.TestCase):
         }
         with _synthetic_corpus(corpus):
             result = _search(
-                query="color unique_match_needle", scope="manual",
+                query="color unique_match_needle",
+                scope="manual",
             )
         paths = [h["path"] for h in result["hits"]]
         self.assertEqual(paths[0], "manual/file_a.rst")
@@ -461,19 +465,17 @@ class TestBreadcrumb(unittest.TestCase):
         Root > middle > leaf section containing the match yields
         ``"Root > Middle > Leaf"``.
         """
-        content = (
+        content = _rst_section(
+            "Root",
             _rst_section(
-                "Root",
+                "Middle",
                 _rst_section(
-                    "Middle",
-                    _rst_section(
-                        "Leaf",
-                        "The unique_match_needle is here.\n",
-                        underline="~",
-                    ),
-                    underline="-",
+                    "Leaf",
+                    "The unique_match_needle is here.\n",
+                    underline="~",
                 ),
-            )
+                underline="-",
+            ),
         )
         with _synthetic_corpus({"manual/a.rst": content}):
             result = _search(query="unique_match_needle", scope="manual")
@@ -505,9 +507,11 @@ class TestBreadcrumb(unittest.TestCase):
         breadcrumb. The key must still exist so consumers don't
         need presence checks.
         """
-        with _synthetic_corpus({
-            "manual/a.rst": "The unique_match_needle sits alone.\n",
-        }):
+        with _synthetic_corpus(
+            {
+                "manual/a.rst": "The unique_match_needle sits alone.\n",
+            }
+        ):
             result = _search(query="unique_match_needle", scope="manual")
         self.assertEqual(len(result["hits"]), 1)
         self.assertIn("breadcrumb", result["hits"][0])
@@ -560,8 +564,8 @@ class TestBreadcrumb(unittest.TestCase):
                     "Alpha",
                     "The unique_match_needle alpha.\n",
                     underline="-",
-                ) +
-                _rst_section(
+                )
+                + _rst_section(
                     "Beta",
                     "The unique_match_needle beta.\n",
                     underline="-",
@@ -621,7 +625,8 @@ class TestBreadcrumb(unittest.TestCase):
         """
         corpus = {
             "manual/with_section.rst": _rst_section(
-                "A", "The unique_match_needle here.\n",
+                "A",
+                "The unique_match_needle here.\n",
             ),
             "manual/bare.rst": "The unique_match_needle sits bare.\n",
         }
@@ -786,22 +791,17 @@ class TestIdfWeighting(unittest.TestCase):
         corpus: dict[str, str] = {}
         # 'color' is in every file (common, IDF ~ 1).
         for i in range(9):
-            corpus["manual/filler_{:d}.rst".format(i)] = (
-                "color content here.\n"
-            )
+            corpus["manual/filler_{:d}.rst".format(i)] = "color content here.\n"
         # Path contains only 'color' (common); 'unique_xyzzy' is
         # rare but not in path. The path bonus should be modest
         # (IDF of 'color'), not amplified by the rare token.
-        corpus["manual/color_page.rst"] = (
-            "The color page mentions unique_xyzzy once.\n"
-        )
+        corpus["manual/color_page.rst"] = "The color page mentions unique_xyzzy once.\n"
         # Rival has neither token in path; both tokens once in body.
-        corpus["manual/other.rst"] = (
-            "Plain text color with unique_xyzzy inline.\n"
-        )
+        corpus["manual/other.rst"] = "Plain text color with unique_xyzzy inline.\n"
         with _synthetic_corpus(corpus):
             result = _search(
-                query="color unique_xyzzy", scope="manual",
+                query="color unique_xyzzy",
+                scope="manual",
             )
         scores = {h["path"]: h["score"] for h in result["hits"]}
         # The path-named file wins because of the color path bonus,
@@ -816,10 +816,7 @@ class TestIdfWeighting(unittest.TestCase):
             scores["manual/color_page.rst"],
             scores["manual/other.rst"],
         )
-        margin = (
-            scores["manual/color_page.rst"]
-            - scores["manual/other.rst"]
-        )
+        margin = scores["manual/color_page.rst"] - scores["manual/other.rst"]
         # Margin should be bounded near _PATH_MATCH_WEIGHT (~10),
         # not near _PATH_MATCH_WEIGHT * rare_IDF (~20-30).
         self.assertLess(margin, 15)
@@ -836,7 +833,8 @@ class TestIdfWeighting(unittest.TestCase):
         }
         with _synthetic_corpus(corpus):
             result = _search(
-                query="bake nonexistent_token_xyzzy", scope="manual",
+                query="bake nonexistent_token_xyzzy",
+                scope="manual",
             )
         self.assertEqual(result, {"hits": [], "truncated": False})
 
@@ -894,7 +892,8 @@ class TestPlatformPaths(unittest.TestCase):
         self.assertEqual(len(result["hits"]), 1)
         self.assertNotIn("\\", result["hits"][0]["path"])
         self.assertEqual(
-            result["hits"][0]["path"], "manual/sub_dir/a.rst",
+            result["hits"][0]["path"],
+            "manual/sub_dir/a.rst",
         )
 
 
@@ -924,13 +923,13 @@ class TestScoreComposition(unittest.TestCase):
                 "Alpha Heading",
                 "The needle_xyzzy in alpha.\n",
                 underline="-",
-            ) +
-            _rst_section(
+            )
+            + _rst_section(
                 "Beta Heading",
                 "The needle_xyzzy in beta.\n",
                 underline="-",
-            ) +
-            _rst_section(
+            )
+            + _rst_section(
                 "Gamma Heading",
                 "The needle_xyzzy in gamma.\n",
                 underline="-",
@@ -944,15 +943,15 @@ class TestScoreComposition(unittest.TestCase):
         }
         with _synthetic_corpus(corpus):
             result = _search(
-                query="needle_xyzzy", scope="manual", max_results=10,
+                query="needle_xyzzy",
+                scope="manual",
+                max_results=10,
             )
         named = sorted(
-            h["score"] for h in result["hits"]
-            if h["path"] == "manual/needle_xyzzy.rst"
+            h["score"] for h in result["hits"] if h["path"] == "manual/needle_xyzzy.rst"
         )
         rival = sorted(
-            h["score"] for h in result["hits"]
-            if h["path"] == "manual/unrelated.rst"
+            h["score"] for h in result["hits"] if h["path"] == "manual/unrelated.rst"
         )
         self.assertEqual(len(named), 3)
         self.assertEqual(len(rival), 3)
@@ -989,11 +988,14 @@ class TestMaxResultsTruncation(unittest.TestCase):
         for i in range(1, 6):
             body = " ".join(["needle_xyzzy"] * i) + " padding.\n"
             corpus["manual/f{:d}.rst".format(i)] = _rst_section(
-                "Page {:d}".format(i), body,
+                "Page {:d}".format(i),
+                body,
             )
         with _synthetic_corpus(corpus):
             result = _search(
-                query="needle_xyzzy", scope="manual", max_results=3,
+                query="needle_xyzzy",
+                scope="manual",
+                max_results=3,
             )
         self.assertTrue(result["truncated"])
         self.assertEqual(len(result["hits"]), 3)
@@ -1036,7 +1038,8 @@ class TestExtendedMatchSurface(unittest.TestCase):
         }
         with _synthetic_corpus(corpus):
             result = _search(
-                query="bpy.props IntProperty", scope="api",
+                query="bpy.props IntProperty",
+                scope="api",
             )
         paths = [h["path"] for h in result["hits"]]
         self.assertIn("api/bpy.props.rst", paths)
@@ -1054,7 +1057,8 @@ class TestExtendedMatchSurface(unittest.TestCase):
         )
         with _synthetic_corpus({"manual/a.rst": content}):
             result = _search(
-                query="color management bake", scope="manual",
+                query="color management bake",
+                scope="manual",
             )
         paths = [h["path"] for h in result["hits"]]
         self.assertIn("manual/a.rst", paths)
@@ -1104,8 +1108,8 @@ class TestExtendedMatchSurface(unittest.TestCase):
                     "Alpha",
                     "Paragraph about needle_xyzzy in body.\n",
                     underline="-",
-                ) +
-                _rst_section(
+                )
+                + _rst_section(
                     "Beta",
                     "Paragraph with no direct mention here.\n",
                     underline="-",
@@ -1114,11 +1118,11 @@ class TestExtendedMatchSurface(unittest.TestCase):
         )
         with _synthetic_corpus({"manual/needle_xyzzy.rst": content}):
             result = _search(
-                query="needle_xyzzy", scope="manual", max_results=10,
+                query="needle_xyzzy",
+                scope="manual",
+                max_results=10,
             )
-        scores_by_breadcrumb = {
-            h["breadcrumb"]: h["score"] for h in result["hits"]
-        }
+        scores_by_breadcrumb = {h["breadcrumb"]: h["score"] for h in result["hits"]}
         # Both matched (via the combined surface).
         self.assertIn("Root > Alpha", scores_by_breadcrumb)
         self.assertIn("Root > Beta", scores_by_breadcrumb)
@@ -1231,11 +1235,13 @@ class TestIndexDrillIn(unittest.TestCase):
         for i in range(4):
             body = "unique_match_needle " * (i + 1) + "padding.\n"
             corpus["manual/f{:d}.rst".format(i)] = _rst_section(
-                "Page {:d}".format(i), body,
+                "Page {:d}".format(i),
+                body,
             )
         with _synthetic_corpus(corpus):
             result = _search(
-                query="unique_match_needle", scope="manual",
+                query="unique_match_needle",
+                scope="manual",
             )
         for i, hit in enumerate(result["hits"]):
             self.assertEqual(hit["index"], i)
@@ -1256,11 +1262,13 @@ class TestIndexDrillIn(unittest.TestCase):
         content = _rst_section("Target", section_body)
         with _synthetic_corpus({"manual/a.rst": content}):
             baseline = _search(
-                query="unique_match_needle", scope="manual",
+                query="unique_match_needle",
+                scope="manual",
             )
             self.assertTrue(baseline["hits"])
             drilled = _search(
-                query="unique_match_needle", scope="manual",
+                query="unique_match_needle",
+                scope="manual",
                 index=baseline["hits"][0]["index"],
             )
         self.assertEqual(len(drilled["hits"]), 1)
@@ -1284,18 +1292,16 @@ class TestIndexDrillIn(unittest.TestCase):
             "Grandchild content here.\n",
             underline="-",
         )
-        parent_body = (
-            "Parent paragraph with unique_match_needle present.\n"
-            "\n"
-            + nested
-        )
+        parent_body = "Parent paragraph with unique_match_needle present.\n\n" + nested
         content = _rst_section("Parent", parent_body)
         with _synthetic_corpus({"manual/a.rst": content}):
             baseline = _search(
-                query="unique_match_needle", scope="manual",
+                query="unique_match_needle",
+                scope="manual",
             )
             drilled = _search(
-                query="unique_match_needle", scope="manual",
+                query="unique_match_needle",
+                scope="manual",
                 index=baseline["hits"][0]["index"],
             )
         text = drilled["hits"][0]["text"]
@@ -1315,7 +1321,9 @@ class TestIndexDrillIn(unittest.TestCase):
         }
         with _synthetic_corpus(corpus):
             result = _search(
-                query="unique_match_needle", scope="manual", index=99,
+                query="unique_match_needle",
+                scope="manual",
+                index=99,
             )
         self.assertEqual(result, {"hits": [], "truncated": False})
 
@@ -1327,18 +1335,18 @@ class TestIndexDrillIn(unittest.TestCase):
         """
         # 20 paragraphs in one section; only the middle one carries
         # the needle so the seed is centred in the section.
-        paragraphs = [
-            "Paragraph {:02d} placeholder.".format(i) for i in range(20)
-        ]
+        paragraphs = ["Paragraph {:02d} placeholder.".format(i) for i in range(20)]
         paragraphs[10] = "Paragraph 10 with unique_match_needle here."
         body = "\n\n".join(paragraphs) + "\n"
         content = _rst_section("Page", body)
         with _synthetic_corpus({"manual/a.rst": content}):
             baseline = _search(
-                query="unique_match_needle", scope="manual",
+                query="unique_match_needle",
+                scope="manual",
             )
             drilled = _search(
-                query="unique_match_needle", scope="manual",
+                query="unique_match_needle",
+                scope="manual",
                 index=baseline["hits"][0]["index"],
             )
         text = drilled["hits"][0]["text"]
@@ -1361,8 +1369,8 @@ class TestIndexDrillIn(unittest.TestCase):
                     "Alpha",
                     "The needle_xyzzy sits at the end of Alpha.\n",
                     underline="-",
-                ) +
-                _rst_section(
+                )
+                + _rst_section(
                     "Beta",
                     "Beta sibling content that must not appear.\n",
                     underline="-",
@@ -1372,7 +1380,8 @@ class TestIndexDrillIn(unittest.TestCase):
         with _synthetic_corpus({"manual/a.rst": content}):
             baseline = _search(query="needle_xyzzy", scope="manual")
             drilled = _search(
-                query="needle_xyzzy", scope="manual",
+                query="needle_xyzzy",
+                scope="manual",
                 index=baseline["hits"][0]["index"],
             )
         text = drilled["hits"][0]["text"]
@@ -1385,22 +1394,23 @@ class TestIndexDrillIn(unittest.TestCase):
         drill-in minimum, the window honours the caller's value
         (up to the section boundary).
         """
-        paragraphs = [
-            "Paragraph {:02d} body.".format(i) for i in range(12)
-        ]
+        paragraphs = ["Paragraph {:02d} body.".format(i) for i in range(12)]
         paragraphs[0] = "Paragraph 00 with unique_match_needle."
         body = "\n\n".join(paragraphs) + "\n"
         content = _rst_section("Page", body)
         with _synthetic_corpus({"manual/a.rst": content}):
             baseline = _search(
-                query="unique_match_needle", scope="manual",
+                query="unique_match_needle",
+                scope="manual",
             )
             drilled_default = _search(
-                query="unique_match_needle", scope="manual",
+                query="unique_match_needle",
+                scope="manual",
                 index=baseline["hits"][0]["index"],
             )
             drilled_wide = _search(
-                query="unique_match_needle", scope="manual",
+                query="unique_match_needle",
+                scope="manual",
                 index=baseline["hits"][0]["index"],
                 context=10,
             )
@@ -1427,10 +1437,12 @@ class TestIndexDrillIn(unittest.TestCase):
         }
         with _synthetic_corpus(corpus):
             baseline = _search(
-                query="unique_match_needle", scope="manual",
+                query="unique_match_needle",
+                scope="manual",
             )
             drilled = _search(
-                query="unique_match_needle", scope="manual",
+                query="unique_match_needle",
+                scope="manual",
                 index=baseline["hits"][0]["index"],
             )
         expected_keys = {"path", "text", "breadcrumb", "index", "score"}

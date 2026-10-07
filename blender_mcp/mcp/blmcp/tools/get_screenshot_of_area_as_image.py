@@ -4,9 +4,7 @@
 
 # pylint: disable=C0114  # See tool doc-string.
 
-__all__ = (
-    "register",
-)
+__all__ = ("register",)
 
 import base64
 
@@ -24,7 +22,9 @@ from blmcp.tools_helpers import (
 )
 from blmcp.tools_helpers.connection import send_code
 
-_TOOL_CALL = toolcode_wrap_with_calling_convention(toolcode_load_from_filepath(__file__))
+_TOOL_CALL = toolcode_wrap_with_calling_convention(
+    toolcode_load_from_filepath(__file__)
+)
 
 
 def register(mcp: FastMCP) -> None:

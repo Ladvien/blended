@@ -74,7 +74,9 @@ def test_xray_reveals_hidden_geometry(empty_scene, tmp_path):
 
     outer_box = bpy.data.objects[add_box("OuterShell", 1.0, 1.0, 1.0)]
     link_into_scene(outer_box.name)
-    inner_box = bpy.data.objects[add_box("HiddenInner", 0.4, 0.4, 0.4, location_m=(0.0, 0.0, 0.3))]
+    inner_box = bpy.data.objects[
+        add_box("HiddenInner", 0.4, 0.4, 0.4, location_m=(0.0, 0.0, 0.3))
+    ]
     link_into_scene(inner_box.name)
 
     plain_paths = capture_views(outer_box, tmp_path / "plain")

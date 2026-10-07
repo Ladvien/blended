@@ -35,14 +35,18 @@ def parse_arguments(argv):
     parser.add_argument("--model-dir", required=True)
     parser.add_argument("--results-root", default=DEFAULT_RESULTS_ROOT)
     parser.add_argument("--blender", default=DEFAULT_BLENDER)
-    parser.add_argument("--overwrite", action="store_true", help="re-render existing logs")
+    parser.add_argument(
+        "--overwrite", action="store_true", help="re-render existing logs"
+    )
     return parser.parse_args(argv)
 
 
 def bench_python(bench_root: Path) -> Path:
     python = bench_root / ".venv" / "bin" / "python"
     if not python.exists():
-        raise SystemExit(f"no bench venv at {python}: the bench's scorers need their own environment")
+        raise SystemExit(
+            f"no bench venv at {python}: the bench's scorers need their own environment"
+        )
     return python
 
 
@@ -50,12 +54,17 @@ def run_orchestrator(bench_root: Path, script: str, arguments) -> int:
     command = [
         str(bench_python(bench_root)),
         str(bench_root / "core" / script),
-        "--model", arguments.model_dir,
-        "--results-root", str(bench_root / arguments.results_root),
-        "--blender", arguments.blender,
+        "--model",
+        arguments.model_dir,
+        "--results-root",
+        str(bench_root / arguments.results_root),
+        "--blender",
+        arguments.blender,
     ]
     if arguments.overwrite:
-        command.append("--overwrite")  # both orchestrators skip an existing log otherwise
+        command.append(
+            "--overwrite"
+        )  # both orchestrators skip an existing log otherwise
     print(f"[bake] {script}: {' '.join(command[2:])}", flush=True)
     return subprocess.run(command, cwd=bench_root, check=False).returncode
 
@@ -86,7 +95,9 @@ def missing_artifacts(model_root: Path) -> dict[str, list[str]]:
         elif json.loads(log_path.read_text()).get("status") == "OK":
             glb_path = directory / "glb" / f"{directory.name}.glb"
             if not glb_path.exists():
-                absent.append(f"glb/{directory.name}.glb (script executed, nothing exported)")
+                absent.append(
+                    f"glb/{directory.name}.glb (script executed, nothing exported)"
+                )
         if absent:
             missing[directory.name] = absent
     return missing
@@ -116,7 +127,9 @@ def main(argv) -> int:
     for script in ("render.py", "export_glb.py"):
         code = run_orchestrator(bench_root, script, arguments)
         if code != 0:
-            print(f"[bake] {script} exited {code}; checking artifacts anyway", flush=True)
+            print(
+                f"[bake] {script} exited {code}; checking artifacts anyway", flush=True
+            )
     missing = missing_artifacts(model_root)
     print(f"[bake] render statuses: {dict(status_summary(model_root))}", flush=True)
     if missing:

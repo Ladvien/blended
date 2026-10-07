@@ -108,7 +108,9 @@ def run(command: list[str], cwd: Path | None = None) -> int:
     return subprocess.run(command, cwd=cwd, check=False).returncode
 
 
-def chosen_instances(source_root: Path, rows: dict[str, dict], wanted: int) -> list[str]:
+def chosen_instances(
+    source_root: Path, rows: dict[str, dict], wanted: int
+) -> list[str]:
     instances = [
         line.strip()
         for line in (REPOSITORY_ROOT / INSTANCES_FILE).read_text().splitlines()
@@ -160,7 +162,9 @@ def stage_artifacts(
         )
 
 
-def score(bench_root: Path, results_root: str, model_dir: str, instances_file: Path) -> dict:
+def score(
+    bench_root: Path, results_root: str, model_dir: str, instances_file: Path
+) -> dict:
     """Run the bench's own scorers plus diagnose, and return the rows."""
     bench_python = bench_root / ".venv" / "bin" / "python"
     absolute_results = bench_root / results_root
@@ -169,8 +173,10 @@ def score(bench_root: Path, results_root: str, model_dir: str, instances_file: P
             [
                 str(bench_python),
                 str(bench_root / "metrics" / scorer),
-                "--model", model_dir,
-                "--results-root", str(absolute_results),
+                "--model",
+                model_dir,
+                "--results-root",
+                str(absolute_results),
             ],
             cwd=bench_root,
         )
@@ -181,12 +187,18 @@ def score(bench_root: Path, results_root: str, model_dir: str, instances_file: P
         [
             str(bench_python),
             str(REPOSITORY_ROOT / "scripts" / "diagnose_3dcode.py"),
-            "--bench-root", str(bench_root),
-            "--results-root", results_root,
-            "--model-dir", model_dir,
-            "--instances-file", str(instances_file),
-            "--out", str(OUTPUT_DIRECTORY / f"diagnose_{model_dir}.md"),
-            "--json", str(diagnose_json),
+            "--bench-root",
+            str(bench_root),
+            "--results-root",
+            results_root,
+            "--model-dir",
+            model_dir,
+            "--instances-file",
+            str(instances_file),
+            "--out",
+            str(OUTPUT_DIRECTORY / f"diagnose_{model_dir}.md"),
+            "--json",
+            str(diagnose_json),
         ],
         cwd=REPOSITORY_ROOT,
     )
@@ -198,7 +210,9 @@ def score(bench_root: Path, results_root: str, model_dir: str, instances_file: P
     }
 
 
-def solid_volumes(bench_root: Path, results_root: str, model_dir: str, instances: list[str]) -> dict:
+def solid_volumes(
+    bench_root: Path, results_root: str, model_dir: str, instances: list[str]
+) -> dict:
     """Mesh volume per instance, read with the scorer's own trimesh."""
     probe = (
         "import json, sys, trimesh\n"
@@ -224,7 +238,9 @@ def solid_volumes(bench_root: Path, results_root: str, model_dir: str, instances
         check=False,
     )
     if completed.returncode != 0:
-        raise SystemExit(f"volume probe failed on {model_dir}: {completed.stderr[-800:]}")
+        raise SystemExit(
+            f"volume probe failed on {model_dir}: {completed.stderr[-800:]}"
+        )
     return json.loads(completed.stdout)
 
 
@@ -269,7 +285,8 @@ def main(argv) -> int:
         # The archived score for the same artifacts, as a third witness.
         row["cd_pca_archived"] = rows[instance]["cd_pca"]
         row["cd_pca_archived_matches"] = (
-            abs(rows[instance]["cd_pca"] - scored[left][instance]["cd_pca"]) <= tolerance
+            abs(rows[instance]["cd_pca"] - scored[left][instance]["cd_pca"])
+            <= tolerance
         )
         if not row["cd_pca_archived_matches"]:
             stage_one_failed.append(f"{instance}.cd_pca_vs_archive")
@@ -284,9 +301,12 @@ def main(argv) -> int:
             [
                 str(REPOSITORY_ROOT / ".venv" / "bin" / "python"),
                 str(REPOSITORY_ROOT / "scripts" / "bake_3dcode.py"),
-                "--bench-root", str(bench_root),
-                "--model-dir", model_dir,
-                "--results-root", arguments.results_root,
+                "--bench-root",
+                str(bench_root),
+                "--model-dir",
+                model_dir,
+                "--results-root",
+                arguments.results_root,
             ]
         )
         if bake != 0:
@@ -307,9 +327,19 @@ def main(argv) -> int:
         relative = abs(volume_a - volume_b) / scale
         row = {
             "instance": instance,
-            "volume": {left: volume_a, right: volume_b, "relative_difference": relative},
-            "vertices": [volumes[left][instance]["vertices"], volumes[right][instance]["vertices"]],
-            "faces": [volumes[left][instance]["faces"], volumes[right][instance]["faces"]],
+            "volume": {
+                left: volume_a,
+                right: volume_b,
+                "relative_difference": relative,
+            },
+            "vertices": [
+                volumes[left][instance]["vertices"],
+                volumes[right][instance]["vertices"],
+            ],
+            "faces": [
+                volumes[left][instance]["faces"],
+                volumes[right][instance]["faces"],
+            ],
             "solid_reproduced": relative <= SOLID_VOLUME_RELATIVE_TOLERANCE,
         }
         for metric in COMPARED_METRICS:

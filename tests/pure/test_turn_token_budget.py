@@ -55,7 +55,9 @@ class SpendingClient(ScriptedClient):
         self.tokens_per_call = tokens_per_call
 
     def chat(self, messages, tools=None):
-        self.spent = self.spent.plus(TurnCost(api_calls=1, input_tokens=self.tokens_per_call))
+        self.spent = self.spent.plus(
+            TurnCost(api_calls=1, input_tokens=self.tokens_per_call)
+        )
         return super().chat(messages, tools)
 
 
@@ -63,7 +65,9 @@ def test_the_turn_stops_at_the_seam_when_the_token_budget_is_exceeded(tmp_path):
     from blended.agent.loop import TOKEN_CAP_TOOL_RESULT, AgentSession
 
     session = AgentSession(
-        client=SpendingClient([TWO_CALL_REPLY, TWO_CALL_REPLY, ANSWER_REPLY], tokens_per_call=1_000),
+        client=SpendingClient(
+            [TWO_CALL_REPLY, TWO_CALL_REPLY, ANSWER_REPLY], tokens_per_call=1_000
+        ),
         maximum_turn_tokens=1_500,
     )
     executed = []
@@ -78,9 +82,17 @@ def test_the_turn_stops_at_the_seam_when_the_token_budget_is_exceeded(tmp_path):
     # Reply 1 (1,000 tokens) ran both calls; reply 2 took the turn to
     # 2,000 > 1,500, so its calls were answered "not run" and the turn stopped.
     assert executed == ["a = 1", "b = 2"]
-    assert answer == "Stopped after 2,000 tokens in one turn (budget 1,500) without reaching an answer. Tell me how to narrow this."
+    assert (
+        answer
+        == "Stopped after 2,000 tokens in one turn (budget 1,500) without reaching an answer. Tell me how to narrow this."
+    )
     tool_messages = [m for m in session.messages if m.get("role") == "tool"]
-    assert [m["content"] for m in tool_messages] == ["ok", "ok", TOKEN_CAP_TOOL_RESULT, TOKEN_CAP_TOOL_RESULT]
+    assert [m["content"] for m in tool_messages] == [
+        "ok",
+        "ok",
+        TOKEN_CAP_TOOL_RESULT,
+        TOKEN_CAP_TOOL_RESULT,
+    ]
 
 
 def test_an_answer_over_budget_is_still_returned(tmp_path):
@@ -88,14 +100,24 @@ def test_an_answer_over_budget_is_still_returned(tmp_path):
     ends the turn whatever it cost."""
     from blended.agent.loop import AgentSession
 
-    session = AgentSession(client=SpendingClient([ANSWER_REPLY], tokens_per_call=5_000), maximum_turn_tokens=100)
+    session = AgentSession(
+        client=SpendingClient([ANSWER_REPLY], tokens_per_call=5_000),
+        maximum_turn_tokens=100,
+    )
     assert session.send("hi") == "done"
 
 
 def test_the_budget_is_per_turn_not_per_session(tmp_path):
     from blended.agent.loop import AgentSession
 
-    session = AgentSession(client=SpendingClient([ANSWER_REPLY, TWO_CALL_REPLY, ANSWER_REPLY], tokens_per_call=900), maximum_turn_tokens=1_000)
+    session = AgentSession(
+        client=SpendingClient(
+            [ANSWER_REPLY, TWO_CALL_REPLY, ANSWER_REPLY], tokens_per_call=900
+        ),
+        maximum_turn_tokens=1_000,
+    )
     session.dispatch = lambda *a: ToolOutcome("ok")
     session.send("turn one")  # 900 spent for the session
-    assert session.send("turn two") == "done"  # 900 this turn, under budget, so its calls ran
+    assert (
+        session.send("turn two") == "done"
+    )  # 900 this turn, under budget, so its calls ran

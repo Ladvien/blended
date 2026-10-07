@@ -35,7 +35,9 @@ def _rigged_animated_textured_box():
         set_frame_range,
     )
 
-    box = add_box("Body", 0.2, 0.2, BOX_HEIGHT_M, location_m=(0.0, 0.0, BOX_HEIGHT_M / 2))
+    box = add_box(
+        "Body", 0.2, 0.2, BOX_HEIGHT_M, location_m=(0.0, 0.0, BOX_HEIGHT_M / 2)
+    )
     link_into_scene(box)
     step = BOX_HEIGHT_M / BONE_COUNT
     bones = tuple(
@@ -93,9 +95,13 @@ def test_a_wrong_object_type_is_named_not_crashed(empty_scene, tmp_path):
     from blended.agent.tools import dispatch_tool
 
     _rigged_animated_textured_box()
-    _outcome = dispatch_tool("inspect_domain", {"object_name": "Body", "domain": "rig"}, tmp_path)
+    _outcome = dispatch_tool(
+        "inspect_domain", {"object_name": "Body", "domain": "rig"}, tmp_path
+    )
     text, _ = _outcome.text, list(_outcome.images)
     assert "not an ARMATURE" in text
-    _outcome = dispatch_tool("inspect_domain", {"object_name": "Nope", "domain": "rig"}, tmp_path)
+    _outcome = dispatch_tool(
+        "inspect_domain", {"object_name": "Nope", "domain": "rig"}, tmp_path
+    )
     text, _ = _outcome.text, list(_outcome.images)
     assert "No object named" in text

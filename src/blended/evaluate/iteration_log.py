@@ -234,9 +234,7 @@ class IterationVerdict:
     # the loop's largest token consumer, measured 2026-09-06 at 10
     # calls per brief against the writer's 26 for the whole build.
     # Empty on older rows means "not recorded", not "no tags".
-    view_tags: tuple[tuple[str, tuple[str, ...]], ...] = field(
-        default_factory=tuple
-    )
+    view_tags: tuple[tuple[str, tuple[str, ...]], ...] = field(default_factory=tuple)
 
     def __post_init__(self) -> None:
         if self.classification and self.classification not in CLASSIFICATIONS:
@@ -265,9 +263,7 @@ def _tuple_field_names(
     stay as JSON read them).
     """
     return tuple(
-        item.name
-        for item in fields(record_type)
-        if item.default_factory is tuple
+        item.name for item in fields(record_type) if item.default_factory is tuple
     )
 
 

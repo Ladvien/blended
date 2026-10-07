@@ -129,7 +129,7 @@ def test_a_string_arguments_payload_survives_the_fold():
             }
         ]
     )
-    assert 'print(2)' in frame["message"]["content"][0]["text"]
+    assert "print(2)" in frame["message"]["content"][0]["text"]
 
 
 def test_images_land_at_their_placeholder_positions():
@@ -187,9 +187,7 @@ def test_tool_result_images_without_placeholders_still_arrive():
 def test_no_empty_text_blocks_are_emitted():
     """The API rejects an empty text block, and an empty assistant turn
     with only tool calls is normal."""
-    _, frame = render_call(
-        [{"role": "user", "content": "", "images": [FIRST_IMAGE]}]
-    )
+    _, frame = render_call([{"role": "user", "content": "", "images": [FIRST_IMAGE]}])
     for block in frame["message"]["content"]:
         if block["type"] == "text":
             assert block["text"].strip()
@@ -213,9 +211,7 @@ def test_the_envelope_pins_each_tool_to_its_own_arguments():
     schema = envelope_schema(TOOL_SCHEMAS)
     variants = schema["properties"]["tool_calls"]["items"]["oneOf"]
     assert len(variants) == len(TOOL_SCHEMAS)
-    by_name = {
-        variant["properties"]["name"]["const"]: variant for variant in variants
-    }
+    by_name = {variant["properties"]["name"]["const"]: variant for variant in variants}
     for tool in TOOL_SCHEMAS:
         function_block = tool["function"]
         variant = by_name[function_block["name"]]
@@ -244,9 +240,7 @@ def test_the_envelope_becomes_the_assistant_dict_the_loop_consumes():
     assert names == ["run_python", "inspect_object"]
     assert message["tool_calls"][0]["function"]["arguments"] == {"source": "print(1)"}
     identifiers = [call["id"] for call in message["tool_calls"]]
-    assert all(
-        identifier.startswith(TOOL_CALL_ID_PREFIX) for identifier in identifiers
-    )
+    assert all(identifier.startswith(TOOL_CALL_ID_PREFIX) for identifier in identifiers)
     # Ids must be unique ACROSS turns too: `_cancel_turn` matches
     # results to calls by id, and a per-turn counter would collide.
     second = assistant_message_from_envelope(
@@ -387,9 +381,7 @@ def _result_frame(**overrides) -> dict:
         "result": '{"message":"on it","tool_calls":[]}',
         "structured_output": {
             "message": "on it",
-            "tool_calls": [
-                {"name": "run_python", "arguments": {"source": "print(1)"}}
-            ],
+            "tool_calls": [{"name": "run_python", "arguments": {"source": "print(1)"}}],
         },
     }
     frame.update(overrides)

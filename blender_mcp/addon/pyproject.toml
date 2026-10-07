@@ -14,7 +14,9 @@ aggressive = 2
 [tool.ruff]
 line-length = 120
 indent-width = 4
-target-version = "py314"
+# Blender 5.2.0 LTS runs Python 3.13.13 (measured): a py314 target made
+# `ruff format` rewrite `except (A, B):` as `except A, B:`, a SyntaxError there.
+target-version = "py313"
 
 [tool.ruff.lint]
 ignore = [

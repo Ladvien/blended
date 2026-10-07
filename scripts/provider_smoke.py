@@ -139,7 +139,9 @@ def _run_check(
     try:
         content = _ask(config, question, image_base64)
     except Exception as error:  # noqa: BLE001 — a failed lane is the finding
-        return LaneCheck(lane, model, kind, False, time.monotonic() - started, str(error)[:300])
+        return LaneCheck(
+            lane, model, kind, False, time.monotonic() - started, str(error)[:300]
+        )
     ok = expected in content.lower()
     return LaneCheck(lane, model, kind, ok, time.monotonic() - started, content[:120])
 
@@ -154,9 +156,13 @@ def run_lanes(lanes: list[str], image_base64: str) -> list[LaneCheck]:
     checks: list[LaneCheck] = []
     if "openrouter" in lanes:
         config = _config(OPENROUTER_SMOKE_MODEL, OPENROUTER_MAX_COMPLETION_TOKENS)
-        checks.append(_run_check("openrouter", OPENROUTER_SMOKE_MODEL, "text", config, None))
         checks.append(
-            _run_check("openrouter", OPENROUTER_SMOKE_MODEL, "image", config, image_base64)
+            _run_check("openrouter", OPENROUTER_SMOKE_MODEL, "text", config, None)
+        )
+        checks.append(
+            _run_check(
+                "openrouter", OPENROUTER_SMOKE_MODEL, "image", config, image_base64
+            )
         )
     if "bmb" in lanes:
         checks.append(

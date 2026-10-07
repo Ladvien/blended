@@ -122,9 +122,7 @@ def reset_scene(fps: int = CANONICAL_FPS) -> None:
     import bpy
 
     missing = [
-        name
-        for name in WIPE_COLLECTIONS
-        if getattr(bpy.data, name, None) is None
+        name for name in WIPE_COLLECTIONS if getattr(bpy.data, name, None) is None
     ]
     if missing:
         raise SceneNotClean(
@@ -139,9 +137,7 @@ def reset_scene(fps: int = CANONICAL_FPS) -> None:
 
     # Removal drops the direct users; the purge collects what those
     # datablocks referenced in turn (node groups, node trees, actions).
-    bpy.data.orphans_purge(
-        do_local_ids=True, do_linked_ids=True, do_recursive=True
-    )
+    bpy.data.orphans_purge(do_local_ids=True, do_linked_ids=True, do_recursive=True)
 
     scene = bpy.context.scene
     scene.render.fps = fps

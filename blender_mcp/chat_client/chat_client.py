@@ -21,9 +21,7 @@ Examples::
    ANTHROPIC_API_KEY=sk-... python chat_client.py claude --model claude-sonnet-4-20250514
 """
 
-__all__ = (
-    "main",
-)
+__all__ = ("main",)
 
 import argparse
 import asyncio
@@ -44,6 +42,7 @@ from mcp.client.stdio import (
 
 # ---------------------------------------------------------------------------
 # OpenAI API helpers
+
 
 def _api_chat_completions(
     api_url: str,
@@ -76,19 +75,22 @@ def _mcp_tools_to_openai(mcp_tools: list[dict[str, Any]]) -> list[dict[str, Any]
     """Convert MCP tool metadata to OpenAI ``tools`` format."""
     result = []
     for t in mcp_tools:
-        result.append({
-            "type": "function",
-            "function": {
-                "name": t["name"],
-                "description": t["description"],
-                "parameters": t["inputSchema"],
-            },
-        })
+        result.append(
+            {
+                "type": "function",
+                "function": {
+                    "name": t["name"],
+                    "description": t["description"],
+                    "parameters": t["inputSchema"],
+                },
+            }
+        )
     return result
 
 
 # ---------------------------------------------------------------------------
 # Claude API helpers
+
 
 def _api_claude_messages(
     api_url: str,
@@ -133,11 +135,13 @@ def _mcp_tools_to_claude(mcp_tools: list[dict[str, Any]]) -> list[dict[str, Any]
     """Convert MCP tool metadata to Claude ``tools`` format."""
     result = []
     for t in mcp_tools:
-        result.append({
-            "name": t["name"],
-            "description": t["description"],
-            "input_schema": t["inputSchema"],
-        })
+        result.append(
+            {
+                "name": t["name"],
+                "description": t["description"],
+                "input_schema": t["inputSchema"],
+            }
+        )
     return result
 
 
@@ -151,7 +155,9 @@ def _mcp_tools_to_claude(mcp_tools: list[dict[str, Any]]) -> list[dict[str, Any]
 # - tool_calls: list of (id, name, arguments_dict) tuples.
 # - text_reply: optional text to display.
 # - turn_done: True when the LLM considers the turn finished.
-_ResponseTuple = tuple[dict[str, Any], list[tuple[str, str, dict[str, Any]]], str | None, bool]
+_ResponseTuple = tuple[
+    dict[str, Any], list[tuple[str, str, dict[str, Any]]], str | None, bool
+]
 
 
 def _process_openai_response(response: dict[str, Any]) -> _ResponseTuple:
@@ -201,6 +207,7 @@ def _process_claude_response(response: dict[str, Any]) -> _ResponseTuple:
 # ---------------------------------------------------------------------------
 # MCP tool invocation
 
+
 async def _call_tool(
     session: ClientSession,
     name: str,
@@ -224,6 +231,7 @@ async def _call_tool(
 
 # ---------------------------------------------------------------------------
 # Main async loop
+
 
 async def _run(
     server_command: str,
@@ -250,7 +258,10 @@ async def _run(
     parts = shlex.split(server_command)
     params = StdioServerParameters(command=parts[0], args=parts[1:], env=env or None)
 
-    async with stdio_client(params) as (read, write), ClientSession(read, write) as session:
+    async with (
+        stdio_client(params) as (read, write),
+        ClientSession(read, write) as session,
+    ):
         init_result = await session.initialize()
         instructions = init_result.instructions or ""
         tools_result = await session.list_tools()
@@ -270,9 +281,7 @@ async def _run(
             llm_tools = _mcp_tools_to_claude(mcp_tools)
 
         if non_interactive:
-            print(
-                "Connected to MCP server ({:d} tools).".format(len(mcp_tools))
-            )
+            print("Connected to MCP server ({:d} tools).".format(len(mcp_tools)))
         else:
             print(
                 "Connected to MCP server ({:d} tools). "
@@ -315,7 +324,10 @@ async def _run(
                 try:
                     if provider == "openai":
                         response = _api_chat_completions(
-                            api_url, messages, llm_tools, model,
+                            api_url,
+                            messages,
+                            llm_tools,
+                            model,
                         )
                     else:
                         assert api_key is not None
@@ -326,7 +338,10 @@ async def _run(
                             "system": system_text,
                         }
                         response = _api_claude_messages(
-                            api_url, api_key, messages, llm_tools,
+                            api_url,
+                            api_key,
+                            messages,
+                            llm_tools,
                             claude_opts,
                         )
                 except urllib.error.URLError as ex:
@@ -334,12 +349,12 @@ async def _run(
                     break
 
                 if provider == "openai":
-                    assistant_msg, tool_calls, text, done = (
-                        _process_openai_response(response)
+                    assistant_msg, tool_calls, text, done = _process_openai_response(
+                        response
                     )
                 else:
-                    assistant_msg, tool_calls, text, done = (
-                        _process_claude_response(response)
+                    assistant_msg, tool_calls, text, done = _process_claude_response(
+                        response
                     )
 
                 # Append the assistant message to history.
@@ -350,29 +365,39 @@ async def _run(
                         for tc_id, tc_name, tc_args in tool_calls:
                             print("  -> calling {:s}".format(tc_name))
                             result_text = await _call_tool(
-                                session, tc_name, tc_args,
+                                session,
+                                tc_name,
+                                tc_args,
                             )
-                            messages.append({
-                                "role": "tool",
-                                "tool_call_id": tc_id,
-                                "content": result_text,
-                            })
+                            messages.append(
+                                {
+                                    "role": "tool",
+                                    "tool_call_id": tc_id,
+                                    "content": result_text,
+                                }
+                            )
                     else:
                         tool_results: list[dict[str, Any]] = []
                         for tc_id, tc_name, tc_args in tool_calls:
                             print("  -> calling {:s}".format(tc_name))
                             result_text = await _call_tool(
-                                session, tc_name, tc_args,
+                                session,
+                                tc_name,
+                                tc_args,
                             )
-                            tool_results.append({
-                                "type": "tool_result",
-                                "tool_use_id": tc_id,
-                                "content": result_text,
-                            })
-                        messages.append({
-                            "role": "user",
-                            "content": tool_results,
-                        })
+                            tool_results.append(
+                                {
+                                    "type": "tool_result",
+                                    "tool_use_id": tc_id,
+                                    "content": result_text,
+                                }
+                            )
+                        messages.append(
+                            {
+                                "role": "user",
+                                "content": tool_results,
+                            }
+                        )
                     # Loop back to let the LLM process tool results.
                     continue
 
@@ -391,6 +416,7 @@ async def _run(
 # ---------------------------------------------------------------------------
 # CLI entry point
 
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="Chat client bridging an LLM provider with an MCP server.",
@@ -401,7 +427,8 @@ def main() -> None:
         help="Command to launch the MCP server (default: blender-mcp).",
     )
     parser.add_argument(
-        "-p", "--prompt",
+        "-p",
+        "--prompt",
         default=None,
         help="Provide the user message on the command line instead of reading from stdin.",
     )
@@ -471,14 +498,16 @@ def main() -> None:
 
     try:
         non_interactive: bool = args.non_interactive or args.prompt is not None
-        asyncio.run(_run(
-            args.server_command,
-            args.provider,
-            args.api_url,
-            opts,
-            args.prompt,
-            non_interactive,
-        ))
+        asyncio.run(
+            _run(
+                args.server_command,
+                args.provider,
+                args.api_url,
+                opts,
+                args.prompt,
+                non_interactive,
+            )
+        )
     except KeyboardInterrupt:
         pass
 

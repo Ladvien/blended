@@ -52,16 +52,20 @@ _TOOLCODE_DRIVER_TIMEOUT_S = 60.0
 
 
 def _ok_response(outcome: ToolOutcome) -> dict[str, object]:
-    return {"status": "ok", "result": {"status": "ok", "outcome": outcome_to_json(outcome)}}
+    return {
+        "status": "ok",
+        "result": {"status": "ok", "outcome": outcome_to_json(outcome)},
+    }
 
 
 class TestBlendedBridge(unittest.TestCase):
-
     def setUp(self) -> None:
         self._directory = tempfile.TemporaryDirectory()
         root = Path(self._directory.name)
         self._log_directory = root / "logs"
-        self._session = blended_bridge.BlendedSession(self._log_directory, root / "outputs")
+        self._session = blended_bridge.BlendedSession(
+            self._log_directory, root / "outputs"
+        )
         self._responses: list[dict[str, object]] = []
         self._sent: list[str] = []
         patcher = mock.patch.object(blended_bridge, "send_code", self._send_code)
@@ -79,7 +83,10 @@ class TestBlendedBridge(unittest.TestCase):
 
     def _log_rows(self) -> list[dict[str, object]]:
         (jsonl_path,) = self._log_directory.glob("mcp-*.jsonl")
-        return [json.loads(line) for line in jsonl_path.read_text(encoding="utf-8").splitlines()]
+        return [
+            json.loads(line)
+            for line in jsonl_path.read_text(encoding="utf-8").splitlines()
+        ]
 
     def test_scene_changing_tool_before_plan_is_refused_without_blender(self) -> None:
         result = self._call("add_box", _BOX_ARGUMENTS)
@@ -106,7 +113,9 @@ class TestBlendedBridge(unittest.TestCase):
         png_path = Path(self._directory.name) / "front.png"
         png_bytes = b"\x89PNG\r\n\x1a\nnot-a-real-image"
         png_path.write_bytes(png_bytes)
-        self._responses = [_ok_response(ToolOutcome("gate failed", images=(png_path,), ok=False))]
+        self._responses = [
+            _ok_response(ToolOutcome("gate failed", images=(png_path,), ok=False))
+        ]
 
         result = self._call("render_views", {"object_name": "Crate"})
 
@@ -115,7 +124,9 @@ class TestBlendedBridge(unittest.TestCase):
         self.assertEqual(base64.b64decode(result.content[1].data), png_bytes)
 
     def test_exception_in_blender_is_an_error_result(self) -> None:
-        self._responses = [{"status": "error", "message": "Traceback (most recent call last):\n  boom"}]
+        self._responses = [
+            {"status": "error", "message": "Traceback (most recent call last):\n  boom"}
+        ]
 
         result = self._call("render_views", {"object_name": "Crate"})
 
@@ -124,7 +135,6 @@ class TestBlendedBridge(unittest.TestCase):
 
 
 class TestSourceFingerprint(unittest.TestCase):
-
     def setUp(self) -> None:
         self._directory = tempfile.TemporaryDirectory()
         self.addCleanup(self._directory.cleanup)
@@ -182,7 +192,9 @@ class TestSourceFingerprint(unittest.TestCase):
 
     def test_missing_root_fails_loud(self) -> None:
         with self.assertRaises(FileNotFoundError):
-            blended_bridge.source_fingerprint((Path(self._directory.name) / "absent",), ())
+            blended_bridge.source_fingerprint(
+                (Path(self._directory.name) / "absent",), ()
+            )
 
 
 class TestInstructionsHead(unittest.TestCase):
@@ -214,21 +226,36 @@ class TestInstructionsHead(unittest.TestCase):
         self.assertIn(f"`{name}`", blended_bridge.MCP_INSTRUCTIONS_HEAD)
 
 
-
 class TestWatcherIsOptIn(unittest.TestCase):
     """Claude Code and Claude Desktop never restart a server that exits."""
 
     def test_watcher_is_off_unless_asked_for(self) -> None:
         self.assertFalse(argument_parser().parse_args([]).exit_on_source_change)
-        self.assertTrue(argument_parser().parse_args(["--exit-on-source-change"]).exit_on_source_change)
+        self.assertTrue(
+            argument_parser()
+            .parse_args(["--exit-on-source-change"])
+            .exit_on_source_change
+        )
 
     def test_project_configs_opt_in_only_for_omp(self) -> None:
         # Ground truth is the config each client reads, not the default.
-        claude_code = json.loads((blended_bridge.REPOSITORY_ROOT / ".mcp.json").read_text(encoding="utf-8"))
-        omp = json.loads((blended_bridge.REPOSITORY_ROOT / ".omp" / "mcp.json").read_text(encoding="utf-8"))
-        self.assertNotIn("--exit-on-source-change", claude_code["mcpServers"]["blended"].get("args", []))
+        claude_code = json.loads(
+            (blended_bridge.REPOSITORY_ROOT / ".mcp.json").read_text(encoding="utf-8")
+        )
+        omp = json.loads(
+            (blended_bridge.REPOSITORY_ROOT / ".omp" / "mcp.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        self.assertNotIn(
+            "--exit-on-source-change",
+            claude_code["mcpServers"]["blended"].get("args", []),
+        )
         self.assertIn("--exit-on-source-change", omp["mcpServers"]["blended"]["args"])
-        self.assertEqual(omp["mcpServers"]["blended"]["command"], claude_code["mcpServers"]["blended"]["command"])
+        self.assertEqual(
+            omp["mcpServers"]["blended"]["command"],
+            claude_code["mcpServers"]["blended"]["command"],
+        )
 
 
 class _Exited(BaseException):
@@ -266,9 +293,13 @@ class TestSourceWatcher(unittest.TestCase):
     _END_S = 60.0
 
     def setUp(self) -> None:
-        self._server = blended_bridge.BlendedFastMCP("watcher-probe", instructions="probe")
+        self._server = blended_bridge.BlendedFastMCP(
+            "watcher-probe", instructions="probe"
+        )
         self._handoffs: list[int] = []
-        self._server._blended = types.SimpleNamespace(call=self._blended_call, write_handoff=self._write_handoff)
+        self._server._blended = types.SimpleNamespace(
+            call=self._blended_call, write_handoff=self._write_handoff
+        )
         self._tool_name = min(blended_bridge.BLENDED_TOOL_NAMES)
         self._now_s = 0.0
         self._timeline: list[tuple[float, str]] = []
@@ -276,7 +307,10 @@ class TestSourceWatcher(unittest.TestCase):
         self._running: dict[int, object] = {}
         self._stderr = io.StringIO()
         for name, replacement in (
-            ("time", types.SimpleNamespace(sleep=self._sleep, monotonic=lambda: self._now_s)),
+            (
+                "time",
+                types.SimpleNamespace(sleep=self._sleep, monotonic=lambda: self._now_s),
+            ),
             ("os", types.SimpleNamespace(_exit=self._exit)),
             ("sys", types.SimpleNamespace(stderr=self._stderr)),
             ("source_fingerprint", self._fingerprint),
@@ -326,7 +360,9 @@ class TestSourceWatcher(unittest.TestCase):
     def _exit(self, exit_code: int) -> None:
         # Every exit first leaves the session to the client's next server.
         if self._handoffs != [self._server._parent_pid]:
-            raise AssertionError("exit without exactly one handoff: {!r}".format(self._handoffs))
+            raise AssertionError(
+                "exit without exactly one handoff: {!r}".format(self._handoffs)
+            )
         raise _Exited(exit_code)
 
     def _watch(self) -> tuple[int, float] | None:
@@ -359,7 +395,9 @@ class TestSourceWatcher(unittest.TestCase):
         self.assertIsNotNone(exited)
         exit_code, exit_s = exited
         self.assertEqual(exit_code, blended_bridge.SOURCE_CHANGED_EXIT_CODE)
-        self.assertGreaterEqual(exit_s - call_returned_s, blended_bridge.SOURCE_RESPONSE_DRAIN_S)
+        self.assertGreaterEqual(
+            exit_s - call_returned_s, blended_bridge.SOURCE_RESPONSE_DRAIN_S
+        )
 
     def test_an_edit_while_waiting_restarts_the_settle_clock(self) -> None:
         # The first edit settles during a long call; a second burst lands
@@ -381,12 +419,18 @@ class TestSourceWatcher(unittest.TestCase):
         call_returned_s = 4.5
         self._calls = [(0.5, call_returned_s)]
         with (
-            mock.patch.object(blended_bridge, "source_fingerprint", side_effect=RuntimeError("probe")),
+            mock.patch.object(
+                blended_bridge, "source_fingerprint", side_effect=RuntimeError("probe")
+            ),
             self.assertRaises(_Exited) as exited,
         ):
             self._server._watch_sources_or_exit(self._BASELINE)
-        self.assertEqual(exited.exception.exit_code, blended_bridge._WATCHER_FAILED_EXIT_CODE)
-        self.assertGreaterEqual(self._now_s - call_returned_s, blended_bridge.SOURCE_RESPONSE_DRAIN_S)
+        self.assertEqual(
+            exited.exception.exit_code, blended_bridge._WATCHER_FAILED_EXIT_CODE
+        )
+        self.assertGreaterEqual(
+            self._now_s - call_returned_s, blended_bridge.SOURCE_RESPONSE_DRAIN_S
+        )
         self.assertIn("RuntimeError: probe", self._stderr.getvalue())
 
 
@@ -401,7 +445,12 @@ class TestHandoff(unittest.TestCase):
 
     _CLIENT_PID = 4242
     _OTHER_CLIENT_PID = 4343
-    _BOX: ClassVar[dict[str, object]] = {"name": "Crate", "width_m": 0.5, "depth_m": 0.5, "height_m": 0.5}
+    _BOX: ClassVar[dict[str, object]] = {
+        "name": "Crate",
+        "width_m": 0.5,
+        "depth_m": 0.5,
+        "height_m": 0.5,
+    }
 
     def setUp(self) -> None:
         self._directory = tempfile.TemporaryDirectory()
@@ -417,8 +466,12 @@ class TestHandoff(unittest.TestCase):
     def _send_code(_code: str, _strict_json: bool) -> dict[str, object]:
         return _ok_response(ToolOutcome("ok"))
 
-    def _resume(self, parent_pid: int, now_s: float | None = None) -> blended_bridge.BlendedSession:
-        return blended_bridge.BlendedSession.resume(self._log_directory, self._output_root, parent_pid, now_s)
+    def _resume(
+        self, parent_pid: int, now_s: float | None = None
+    ) -> blended_bridge.BlendedSession:
+        return blended_bridge.BlendedSession.resume(
+            self._log_directory, self._output_root, parent_pid, now_s
+        )
 
     def _declared_session_handed_off(self) -> blended_bridge.BlendedSession:
         session = self._resume(self._CLIENT_PID)
@@ -431,12 +484,17 @@ class TestHandoff(unittest.TestCase):
         after = self._resume(self._CLIENT_PID)
         self.assertTrue(after.plan_declared)
         self.assertEqual(after.session_name, before.session_name)
-        self.assertFalse(blended_bridge.handoff_path(self._log_directory, self._CLIENT_PID).exists())
+        self.assertFalse(
+            blended_bridge.handoff_path(self._log_directory, self._CLIENT_PID).exists()
+        )
 
         result = asyncio.run(after.call("add_box", self._BOX))
         self.assertFalse(result.isError)
         (jsonl_path,) = self._log_directory.glob("mcp-*.jsonl")
-        rows = [json.loads(line) for line in jsonl_path.read_text(encoding="utf-8").splitlines()]
+        rows = [
+            json.loads(line)
+            for line in jsonl_path.read_text(encoding="utf-8").splitlines()
+        ]
         indices = [row["index"] for row in rows]
         self.assertEqual(indices, list(range(1, len(indices) + 1)))
         self.assertIn(
@@ -449,25 +507,41 @@ class TestHandoff(unittest.TestCase):
         other = self._resume(self._OTHER_CLIENT_PID)
         self.assertFalse(other.plan_declared)
         self.assertIsNone(other.session_name)
-        self.assertTrue(blended_bridge.handoff_path(self._log_directory, self._CLIENT_PID).exists())
+        self.assertTrue(
+            blended_bridge.handoff_path(self._log_directory, self._CLIENT_PID).exists()
+        )
 
     def test_expired_handoff_is_discarded_loudly(self) -> None:
         self._declared_session_handed_off()
         stderr = io.StringIO()
-        with mock.patch.object(blended_bridge, "sys", types.SimpleNamespace(stderr=stderr)):
+        with mock.patch.object(
+            blended_bridge, "sys", types.SimpleNamespace(stderr=stderr)
+        ):
             later_s = time.time() + blended_bridge.HANDOFF_MAX_AGE_S * 2
             after = self._resume(self._CLIENT_PID, now_s=later_s)
         self.assertFalse(after.plan_declared)
         self.assertIn("discarded a handoff", stderr.getvalue())
-        self.assertFalse(blended_bridge.handoff_path(self._log_directory, self._CLIENT_PID).exists())
+        self.assertFalse(
+            blended_bridge.handoff_path(self._log_directory, self._CLIENT_PID).exists()
+        )
 
     def test_malformed_handoff_is_refused_loudly(self) -> None:
         path = blended_bridge.handoff_path(self._log_directory, self._CLIENT_PID)
         self._log_directory.mkdir(parents=True)
-        path.write_text(json.dumps({"plan_declared": "yes", "session_name": None, "written_at_s": time.time()}),
-                        encoding="utf-8")
+        path.write_text(
+            json.dumps(
+                {
+                    "plan_declared": "yes",
+                    "session_name": None,
+                    "written_at_s": time.time(),
+                }
+            ),
+            encoding="utf-8",
+        )
         stderr = io.StringIO()
-        with mock.patch.object(blended_bridge, "sys", types.SimpleNamespace(stderr=stderr)):
+        with mock.patch.object(
+            blended_bridge, "sys", types.SimpleNamespace(stderr=stderr)
+        ):
             after = self._resume(self._CLIENT_PID)
         self.assertFalse(after.plan_declared)
         self.assertIn("refused a malformed handoff", stderr.getvalue())
@@ -475,11 +549,19 @@ class TestHandoff(unittest.TestCase):
 
     def test_a_failed_handoff_write_still_exits(self) -> None:
         server = blended_bridge.BlendedFastMCP("handoff-probe", instructions="probe")
-        server._blended = types.SimpleNamespace(write_handoff=mock.Mock(side_effect=OSError("disk full")))
+        server._blended = types.SimpleNamespace(
+            write_handoff=mock.Mock(side_effect=OSError("disk full"))
+        )
         stderr = io.StringIO()
         exits: list[int] = []
-        with mock.patch.object(blended_bridge, "sys", types.SimpleNamespace(stderr=stderr)), \
-                mock.patch.object(blended_bridge, "os", types.SimpleNamespace(_exit=exits.append)):
+        with (
+            mock.patch.object(
+                blended_bridge, "sys", types.SimpleNamespace(stderr=stderr)
+            ),
+            mock.patch.object(
+                blended_bridge, "os", types.SimpleNamespace(_exit=exits.append)
+            ),
+        ):
             server._exit_if_idle(blended_bridge.SOURCE_CHANGED_EXIT_CODE)
         self.assertEqual(exits, [blended_bridge.SOURCE_CHANGED_EXIT_CODE])
         self.assertIn("disk full", stderr.getvalue())
@@ -497,7 +579,7 @@ class TestToolcodeReimport(unittest.TestCase):
 
     # pylint: disable=protected-access
 
-    _DRIVER = textwrap.dedent('''\
+    _DRIVER = textwrap.dedent("""\
         import json
         import os
         import sys
@@ -520,7 +602,7 @@ class TestToolcodeReimport(unittest.TestCase):
             except Exception as error:
                 out.append({"error": "{:s}: {:s}".format(type(error).__name__, str(error))})
         print(json.dumps(out))
-    ''')
+    """)
 
     def setUp(self) -> None:
         self._directory = tempfile.TemporaryDirectory()
@@ -531,7 +613,9 @@ class TestToolcodeReimport(unittest.TestCase):
 
     @staticmethod
     def _tools_text(value: str) -> str:
-        return "VALUE = {!r}\n\n\ndef dispatch_tool(name, arguments, output_directory):\n    return VALUE\n".format(value)
+        return "VALUE = {!r}\n\n\ndef dispatch_tool(name, arguments, output_directory):\n    return VALUE\n".format(
+            value
+        )
 
     def _checkout(self, name: str, value: str) -> Path:
         src = self._root / name / "src"
@@ -540,12 +624,14 @@ class TestToolcodeReimport(unittest.TestCase):
         (src / "blended" / "__init__.py").write_text("", encoding="utf-8")
         (agent / "__init__.py").write_text("", encoding="utf-8")
         (agent / "outcome.py").write_text(
-            "def outcome_to_json(outcome):\n    return {'text': outcome}\n", encoding="utf-8",
+            "def outcome_to_json(outcome):\n    return {'text': outcome}\n",
+            encoding="utf-8",
         )
         (agent / "tools.py").write_text(self._tools_text(value), encoding="utf-8")
         # The probe tool reads only, so the toolcode never frames for it.
         (agent / "plan.py").write_text(
-            "def plan_required_for(tool_name):\n    return False\n", encoding="utf-8",
+            "def plan_required_for(tool_name):\n    return False\n",
+            encoding="utf-8",
         )
         (src / "blended" / "viewport_follow.py").write_text(
             "def follow_viewport(outcome):\n    raise AssertionError('framed a read-only probe')\n",
@@ -553,11 +639,21 @@ class TestToolcodeReimport(unittest.TestCase):
         )
         return src
 
-    def _step(self, src: Path, fingerprint: str, write: dict[str, str] | None = None) -> dict[str, object]:
+    def _step(
+        self, src: Path, fingerprint: str, write: dict[str, str] | None = None
+    ) -> dict[str, object]:
         params = blended_bridge_toolcode.Params(
-            "probe", "{}", str(self._root), str(src), str(self._site_packages), fingerprint,
+            "probe",
+            "{}",
+            str(self._root),
+            str(src),
+            str(self._site_packages),
+            fingerprint,
         )
-        return {"code": toolcode_format_call(blended_bridge._TOOL_CALL, params), "write": write or {}}
+        return {
+            "code": toolcode_format_call(blended_bridge._TOOL_CALL, params),
+            "write": write or {},
+        }
 
     def _run(self, steps: list[dict[str, object]]) -> list[dict[str, str]]:
         plan = self._root / "plan.json"
@@ -579,41 +675,58 @@ class TestToolcodeReimport(unittest.TestCase):
         src = self._checkout("a", "one")
         tools = src / "blended" / "agent" / "tools.py"
         self.assertEqual(len(self._tools_text("one")), len(self._tools_text("two")))
-        results = self._run([
-            self._step(src, "fingerprint-1"),
-            self._step(src, "fingerprint-1", write={str(tools): self._tools_text("two")}),
-            self._step(src, "fingerprint-2"),
-        ])
-        self.assertEqual(results, [{"outcome": "one"}, {"outcome": "one"}, {"outcome": "two"}])
+        results = self._run(
+            [
+                self._step(src, "fingerprint-1"),
+                self._step(
+                    src, "fingerprint-1", write={str(tools): self._tools_text("two")}
+                ),
+                self._step(src, "fingerprint-2"),
+            ]
+        )
+        self.assertEqual(
+            results, [{"outcome": "one"}, {"outcome": "one"}, {"outcome": "two"}]
+        )
         # The probe is live only if the first import cached bytecode.
         self.assertTrue(any((tools.parent / "__pycache__").glob("tools.*.pyc")))
 
     def test_another_checkouts_copy_is_refused_and_left_loaded(self) -> None:
         a_src = self._checkout("a", "from-a")
         b_src = self._checkout("b", "from-b")
-        results = self._run([
-            self._step(a_src, "fingerprint-a"),
-            self._step(b_src, "fingerprint-b"),
-            self._step(a_src, "fingerprint-a"),
-        ])
+        results = self._run(
+            [
+                self._step(a_src, "fingerprint-a"),
+                self._step(b_src, "fingerprint-b"),
+                self._step(a_src, "fingerprint-a"),
+            ]
+        )
         self.assertEqual(results[0], {"outcome": "from-a"})
         self.assertIn("another copy is loaded", results[1]["error"])
         self.assertEqual(results[2], {"outcome": "from-a"})
-
 
 
 class TestSuitesPresent(unittest.TestCase):
     """A splice to the end of this file once deleted two suites unnoticed."""
 
     _SUITES = (
-        "TestBlendedBridge", "TestSourceFingerprint", "TestInstructionsHead", "TestWatcherIsOptIn",
-        "TestSourceWatcher", "TestHandoff", "TestToolcodeReimport", "TestSuitesPresent",
+        "TestBlendedBridge",
+        "TestSourceFingerprint",
+        "TestInstructionsHead",
+        "TestWatcherIsOptIn",
+        "TestSourceWatcher",
+        "TestHandoff",
+        "TestToolcodeReimport",
+        "TestSuitesPresent",
     )
 
     def test_every_suite_is_still_defined(self) -> None:
-        defined = {name for name, value in globals().items() if isinstance(value, type)
-                   and issubclass(value, unittest.TestCase)}
+        defined = {
+            name
+            for name, value in globals().items()
+            if isinstance(value, type) and issubclass(value, unittest.TestCase)
+        }
         self.assertEqual(sorted(set(self._SUITES) - defined), [])
+
 
 if __name__ == "__main__":
     unittest.main()

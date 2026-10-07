@@ -360,8 +360,7 @@ def main(argv) -> int:
                 1
                 for row in cross_run_records
                 for name, tags in row["view_tags"]
-                if name == view_name
-                and set(tags) & set(DEVIATION_TAGS)
+                if name == view_name and set(tags) & set(DEVIATION_TAGS)
             )
             print(
                 f"  {view_name:<14} raised a deviation in "
@@ -398,9 +397,7 @@ def main(argv) -> int:
                 f"{sorted(missing_views)}"
             )
 
-        golden_directory = (
-            GOLDEN_ROOT / f"{brief_name}_v{record['prompt_revision']}"
-        )
+        golden_directory = GOLDEN_ROOT / f"{brief_name}_v{record['prompt_revision']}"
         verdict = examine_asset(
             eye, golden_directory, render_directory, brief, vision_model
         )
@@ -418,9 +415,7 @@ def main(argv) -> int:
                 "abstained": verdict.abstained,
                 # Advisory tags a gate owns; recorded so a re-licence
                 # shows whether restricting the vocabulary worked.
-                "measured_property_reports": list(
-                    verdict.measured_property_reports
-                ),
+                "measured_property_reports": list(verdict.measured_property_reports),
             }
         )
         print(verdict.summary(), flush=True)

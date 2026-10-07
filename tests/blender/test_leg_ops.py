@@ -175,8 +175,7 @@ def test_a_ring_of_legs_lands_on_its_bearings(empty_scene):
             <= BEARING_TOLERANCE_DEG
         ]
         assert len(matches) == 1, (
-            f"expected exactly one sole near {expected_deg} deg, "
-            f"measured {centroids}"
+            f"expected exactly one sole near {expected_deg} deg, measured {centroids}"
         )
         assert matches[0][0] == pytest.approx(
             briefs.STOOL_FOOT_CIRCLE_RADIUS_M, abs=PLACEMENT_TOLERANCE_M

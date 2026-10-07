@@ -48,22 +48,32 @@ class Part:
     text: str
 
 
-def prompt_parts(revision: int | None = None, lane: str | None = None) -> tuple[str, list[Part]]:
+def prompt_parts(
+    revision: int | None = None, lane: str | None = None
+) -> tuple[str, list[Part]]:
     """The assembled system prompt and its parts, each a verbatim substring."""
     from blended.agent.prompt_versions import get_revision
     from blended.manifest import CONVENTIONS, build_manifest
 
     whole = build_system_prompt(revision=revision, lane=lane)
     agreement = get_revision(revision).body
-    conventions = "\n".join(f"{index}. {rule}" for index, rule in enumerate(CONVENTIONS, 1))
+    conventions = "\n".join(
+        f"{index}. {rule}" for index, rule in enumerate(CONVENTIONS, 1)
+    )
     manifest = build_manifest()
     parts = [
         Part(f"working agreement v{get_revision(revision).revision}", agreement),
         Part("conventions", conventions),
         # The operations section is measured from the manifest but is no
         # longer in the prompt (OT-24); the schemas carry the ops.
-        Part("manifest: gate fields + budget", manifest_slice(manifest, GATE_HEADING, DRIFT_HEADING)),
-        Part("manifest: drift catalog", manifest_slice(manifest, DRIFT_HEADING, OUTPUT_CONTRACT_HEADING)),
+        Part(
+            "manifest: gate fields + budget",
+            manifest_slice(manifest, GATE_HEADING, DRIFT_HEADING),
+        ),
+        Part(
+            "manifest: drift catalog",
+            manifest_slice(manifest, DRIFT_HEADING, OUTPUT_CONTRACT_HEADING),
+        ),
     ]
     if lane is not None:
         from blended.agent.skill_modules import render_modules
@@ -71,7 +81,9 @@ def prompt_parts(revision: int | None = None, lane: str | None = None) -> tuple[
         parts.append(Part(f"skills ({lane})", render_modules(lane)))
     for part in parts:
         if part.text and part.text not in whole:
-            raise ValueError(f"part {part.name!r} is not a substring of the assembled prompt")
+            raise ValueError(
+                f"part {part.name!r} is not a substring of the assembled prompt"
+            )
     return whole, parts
 
 
@@ -83,9 +95,18 @@ def tool_parts(tools: list[dict]) -> list[Part]:
 
     return [
         Part("tools: OpenAI/Ollama `tools` field (offered)", json.dumps(tools)),
-        Part("  of which op tools", json.dumps([t for t in tools if t in OP_TOOL_SCHEMAS])),
-        Part("  of which service tools", json.dumps([t for t in tools if t in SERVICE_TOOL_SCHEMAS])),
-        Part("tools: Claude Code envelope + protocol note", json.dumps(envelope_schema(tools)) + "\n\n" + TOOL_PROTOCOL_NOTE),
+        Part(
+            "  of which op tools",
+            json.dumps([t for t in tools if t in OP_TOOL_SCHEMAS]),
+        ),
+        Part(
+            "  of which service tools",
+            json.dumps([t for t in tools if t in SERVICE_TOOL_SCHEMAS]),
+        ),
+        Part(
+            "tools: Claude Code envelope + protocol note",
+            json.dumps(envelope_schema(tools)) + "\n\n" + TOOL_PROTOCOL_NOTE,
+        ),
     ]
 
 
@@ -100,13 +121,20 @@ def bmb_tokenizer(endpoint: str, api_key_path: Path) -> Callable[[str], int]:
         request = urllib.request.Request(
             endpoint.rstrip("/") + BMB_TOKENIZE_PATH,
             data=json.dumps({"content": text}).encode("utf-8"),
-            headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
+            headers={
+                "Authorization": f"Bearer {key}",
+                "Content-Type": "application/json",
+            },
         )
         try:
-            with urllib.request.urlopen(request, timeout=TOKENIZE_TIMEOUT_SECONDS) as reply:
+            with urllib.request.urlopen(
+                request, timeout=TOKENIZE_TIMEOUT_SECONDS
+            ) as reply:
                 return len(json.loads(reply.read())["tokens"])
         except (OSError, KeyError, ValueError) as error:
-            raise TokenizerUnreachable(f"bmb tokenizer at {endpoint}: {error}") from error
+            raise TokenizerUnreachable(
+                f"bmb tokenizer at {endpoint}: {error}"
+            ) from error
 
     return tokenize
 
@@ -119,11 +147,17 @@ class CountedPart:
 
 
 def count_parts(parts: list[Part], tokenize: Callable[[str], int]) -> list[CountedPart]:
-    return [CountedPart(part.name, len(part.text), tokenize(part.text) if part.text else 0) for part in parts]
+    return [
+        CountedPart(part.name, len(part.text), tokenize(part.text) if part.text else 0)
+        for part in parts
+    ]
 
 
 def composition(
-    tokenize: Callable[[str], int], tools: list[dict], revision: int | None = None, lane: str | None = None
+    tokenize: Callable[[str], int],
+    tools: list[dict],
+    revision: int | None = None,
+    lane: str | None = None,
 ) -> list[CountedPart]:
     """Every row of the table: prompt parts, the scaffolding remainder, the tools, totals."""
     whole, parts = prompt_parts(revision, lane)
@@ -134,7 +168,9 @@ def composition(
     rows = [
         CountedPart("system prompt (assembled)", len(whole), whole_tokens),
         *[CountedPart("  " + row.name, row.characters, row.tokens) for row in counted],
-        CountedPart("  template scaffolding (remainder)", scaffolding_chars, scaffolding_tokens),
+        CountedPart(
+            "  template scaffolding (remainder)", scaffolding_chars, scaffolding_tokens
+        ),
     ]
     tools_counted = count_parts(tool_parts(tools), tokenize)
     rows.extend(tools_counted)
@@ -156,7 +192,12 @@ def render_table(rows: list[CountedPart], tokenizer_name: str) -> str:
 SPEC_ROW_LABEL = "| Context per call |"
 
 
-def spec_row(rows: list[CountedPart], tokenizer_name: str, date_text: str, revision_text: str = "") -> str:
+def spec_row(
+    rows: list[CountedPart],
+    tokenizer_name: str,
+    date_text: str,
+    revision_text: str = "",
+) -> str:
     by_name = {row.name.strip(): row for row in rows}
     whole = by_name["system prompt (assembled)"]
     tools_all = by_name["tools: OpenAI/Ollama `tools` field (offered)"]
@@ -173,15 +214,24 @@ def spec_row(rows: list[CountedPart], tokenizer_name: str, date_text: str, revis
     )
 
 
-def write_spec_row(spec_path: Path, row: str, after_label: str = "| The agent's tool surface |") -> None:
+def write_spec_row(
+    spec_path: Path, row: str, after_label: str = "| The agent's tool surface |"
+) -> None:
     """Insert or replace the context row in the measured-state table, idempotently."""
     lines = spec_path.read_text().splitlines()
-    existing = [index for index, line in enumerate(lines) if line.startswith(SPEC_ROW_LABEL)]
+    existing = [
+        index for index, line in enumerate(lines) if line.startswith(SPEC_ROW_LABEL)
+    ]
     if existing:
         lines[existing[0]] = row
     else:
-        anchor = next((index for index, line in enumerate(lines) if line.startswith(after_label)), None)
+        anchor = next(
+            (index for index, line in enumerate(lines) if line.startswith(after_label)),
+            None,
+        )
         if anchor is None:
-            raise ValueError(f"{spec_path} has no row starting {after_label!r} to insert the context row after")
+            raise ValueError(
+                f"{spec_path} has no row starting {after_label!r} to insert the context row after"
+            )
         lines.insert(anchor + 1, row)
     spec_path.write_text("\n".join(lines) + "\n")

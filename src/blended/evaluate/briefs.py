@@ -611,11 +611,7 @@ def _stool_refinements() -> tuple[RefinementStep, ...]:
                 f"of {STOOL_TOTAL_HEIGHT_Z_M} m. Leave everything else "
                 f"exactly as it is."
             ),
-            changed=(
-                DimensionSpec(
-                    "total_height_z", "z", STOOL_REFINED_HEIGHT_Z_M
-                ),
-            ),
+            changed=(DimensionSpec("total_height_z", "z", STOOL_REFINED_HEIGHT_Z_M),),
             changed_probes=(
                 SolidityProbe(
                     name="seat_is_solid",
@@ -648,12 +644,8 @@ def _stool_refinements() -> tuple[RefinementStep, ...]:
                 f"else exactly as it is."
             ),
             changed=(
-                DimensionSpec(
-                    "seat_diameter_x", "x", STOOL_REFINED_SEAT_DIAMETER_M
-                ),
-                DimensionSpec(
-                    "seat_diameter_y", "y", STOOL_REFINED_SEAT_DIAMETER_M
-                ),
+                DimensionSpec("seat_diameter_x", "x", STOOL_REFINED_SEAT_DIAMETER_M),
+                DimensionSpec("seat_diameter_y", "y", STOOL_REFINED_SEAT_DIAMETER_M),
             ),
             changed_probes=(
                 # The seat probe's z derives from the height the previous
@@ -972,8 +964,7 @@ RIBBED_COLUMN_BRIEF = AssetBrief(
                     ),
                     expect_inside=True,
                     why=(
-                        "no material at rib radius — the ribs do not exist "
-                        "as geometry"
+                        "no material at rib radius — the ribs do not exist as geometry"
                     ),
                 ),
                 SolidityProbe(
@@ -1031,8 +1022,7 @@ CRATE_WITH_LID_BRIEF = AssetBrief(
                     name="cavity_is_hollow",
                     point_m=(0.0, 0.0, CRATE_BODY_HEIGHT_Z_M / 2.0),
                     expect_inside=False,
-                    why="the crate body is a solid block, not a hollow "
-                    "container",
+                    why="the crate body is a solid block, not a hollow container",
                 ),
                 SolidityProbe(
                     name="wall_is_solid",
@@ -1087,18 +1077,13 @@ CRATE_WITH_LID_BRIEF = AssetBrief(
             # the rim, so the bound is the same resting tolerance the pair
             # module uses to suppress the face-pair count.
             maximum_aabb_penetration_depth_m=CONTACT_DEPTH_TOLERANCE_M,
-            why=(
-                "a lid sunk into the body reads as closed in every "
-                "orthographic view"
-            ),
+            why=("a lid sunk into the body reads as closed in every orthographic view"),
         ),
         DistinctMaterialSpec(
             name="lid_is_distinguishable_from_the_body",
             part_a="CrateLid",
             part_b="CrateBody",
-            minimum_colour_distance_rgb=(
-                CRATE_LID_MINIMUM_COLOUR_DISTANCE_RGB
-            ),
+            minimum_colour_distance_rgb=(CRATE_LID_MINIMUM_COLOUR_DISTANCE_RGB),
             why=(
                 "a lid the same colour as the body, flush on the rim and "
                 "the same footprint, is invisible in every view: the "
@@ -1124,7 +1109,9 @@ class UnknownBrief(KeyError):
 
 def get_brief(name: str) -> AssetBrief:
     if name not in BRIEFS:
-        raise UnknownBrief(f"No brief {name!r}. Available: {', '.join(sorted(BRIEFS))}.")
+        raise UnknownBrief(
+            f"No brief {name!r}. Available: {', '.join(sorted(BRIEFS))}."
+        )
     return BRIEFS[name]
 
 
@@ -1141,7 +1128,10 @@ def _validate_brief(brief: AssetBrief) -> list[str]:
                 f"{brief.name}: provenance symbol {prov.symbol!r} has "
                 f"unknown source {prov.source!r}"
             )
-        if prov.source in (SOURCE_LITERATURE, SOURCE_REFERENCE) and not prov.cites.strip():
+        if (
+            prov.source in (SOURCE_LITERATURE, SOURCE_REFERENCE)
+            and not prov.cites.strip()
+        ):
             problems.append(
                 f"{brief.name}: provenance symbol {prov.symbol!r} is "
                 f"{prov.source} but carries no citation"
@@ -1181,8 +1171,7 @@ def _validate_brief(brief: AssetBrief) -> list[str]:
         # only check that ties the number to what was actually asked for.
         if not prov.phrase.strip():
             problems.append(
-                f"{brief.name}: provenance symbol {prov.symbol!r} has an "
-                f"empty phrase"
+                f"{brief.name}: provenance symbol {prov.symbol!r} has an empty phrase"
             )
         elif prov.phrase not in brief.prompt_text:
             problems.append(
@@ -1236,7 +1225,5 @@ def validate_briefs() -> list[str]:
     for name, brief in BRIEFS.items():
         problems.extend(_validate_brief(brief))
         if brief.name != name:
-            problems.append(
-                f"registry key {name!r} holds a brief named {brief.name!r}"
-            )
+            problems.append(f"registry key {name!r} holds a brief named {brief.name!r}")
     return problems

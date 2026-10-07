@@ -144,7 +144,9 @@ def rotate_object_euler(
     return ObjectName(object_name)
 
 
-def move_object_to(object_name: str, location_m: tuple[float, float, float]) -> ObjectName:
+def move_object_to(
+    object_name: str, location_m: tuple[float, float, float]
+) -> ObjectName:
     """Set the named object's world location in metres, then refresh.
 
     Same reason as rotate_object_euler: placement is half of assembly,

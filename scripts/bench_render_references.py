@@ -18,6 +18,7 @@ without its four views, listing them — never a partial success.
       --bench-root /Users/ladvien/3dcodebench \
       --instances-file bench_sets/instances_holdout.txt
 """
+
 from __future__ import annotations
 
 import argparse
@@ -44,8 +45,12 @@ def parse_arguments(argv):
     parser.add_argument("--instances-file", required=True)
     parser.add_argument("--blender", default=DEFAULT_BLENDER)
     parser.add_argument("--overwrite", action="store_true")
-    parser.add_argument("--timeout", type=int, default=DEFAULT_TIMEOUT_SECONDS,
-                        help="per-instance seconds (default %(default)s, core/render.py's own)")
+    parser.add_argument(
+        "--timeout",
+        type=int,
+        default=DEFAULT_TIMEOUT_SECONDS,
+        help="per-instance seconds (default %(default)s, core/render.py's own)",
+    )
     return parser.parse_args(argv)
 
 
@@ -62,7 +67,9 @@ def is_rendered(directory: Path) -> bool:
     return all((directory / name).exists() for name in REFERENCE_VIEW_FILENAMES)
 
 
-def render_instance(bench_root: Path, blender: str, instance: str, timeout_seconds: int) -> bool:
+def render_instance(
+    bench_root: Path, blender: str, instance: str, timeout_seconds: int
+) -> bool:
     factory = bench_root / "data" / instance / f"{instance}.py"
     if not factory.exists():
         print(f"[reference] {instance}: no factory at {factory}", flush=True)
@@ -74,20 +81,38 @@ def render_instance(bench_root: Path, blender: str, instance: str, timeout_secon
     # previous run's OK log under --overwrite.
     (output / "render_log.json").unlink(missing_ok=True)
     command = [
-        blender, "-b", "--python", str(bench_root / "core" / "render.py"), "--",
-        "--blender-render", "--script", str(factory), "--output-dir", str(output),
+        blender,
+        "-b",
+        "--python",
+        str(bench_root / "core" / "render.py"),
+        "--",
+        "--blender-render",
+        "--script",
+        str(factory),
+        "--output-dir",
+        str(output),
     ]
     try:
         completed = subprocess.run(
-            command, cwd=bench_root, capture_output=True, text=True, check=False,
+            command,
+            cwd=bench_root,
+            capture_output=True,
+            text=True,
+            check=False,
             timeout=timeout_seconds,
         )
     except subprocess.TimeoutExpired:
-        print(f"[reference] {instance}: FAILED (no result in {timeout_seconds}s)", flush=True)
+        print(
+            f"[reference] {instance}: FAILED (no result in {timeout_seconds}s)",
+            flush=True,
+        )
         return False
     if not is_rendered(output):
         tail = (completed.stdout + completed.stderr)[-600:]
-        print(f"[reference] {instance}: FAILED (exit {completed.returncode})\n{tail}", flush=True)
+        print(
+            f"[reference] {instance}: FAILED (exit {completed.returncode})\n{tail}",
+            flush=True,
+        )
         return False
     print(f"[reference] {instance}: four views under {output}", flush=True)
     return True
@@ -99,15 +124,24 @@ def main(argv) -> int:
     instances = Path(arguments.instances_file).read_text().split()
     failed: list[str] = []
     for instance in instances:
-        if not arguments.overwrite and is_rendered(images_directory(bench_root, instance)):
+        if not arguments.overwrite and is_rendered(
+            images_directory(bench_root, instance)
+        ):
             print(f"[reference] {instance}: already rendered", flush=True)
             continue
-        if not render_instance(bench_root, arguments.blender, instance, arguments.timeout):
+        if not render_instance(
+            bench_root, arguments.blender, instance, arguments.timeout
+        ):
             failed.append(instance)
     if failed:
-        print(f"[reference] {len(failed)} of {len(instances)} not rendered: {', '.join(failed)}", flush=True)
+        print(
+            f"[reference] {len(failed)} of {len(instances)} not rendered: {', '.join(failed)}",
+            flush=True,
+        )
         return 1
-    print(f"[reference] all {len(instances)} instances have their four views", flush=True)
+    print(
+        f"[reference] all {len(instances)} instances have their four views", flush=True
+    )
     return 0
 
 

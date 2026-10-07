@@ -22,7 +22,9 @@ import re
 from pathlib import Path
 
 # A recorded call is the text the loop emitted: `name({json arguments})`.
-_CALL_PATTERN = re.compile(r"^(?P<name>[A-Za-z_][A-Za-z0-9_]*)\((?P<arguments>.*)\)$", re.DOTALL)
+_CALL_PATTERN = re.compile(
+    r"^(?P<name>[A-Za-z_][A-Za-z0-9_]*)\((?P<arguments>.*)\)$", re.DOTALL
+)
 
 
 class IterationNotFound(KeyError):
@@ -57,7 +59,11 @@ def calls_from(record: dict) -> list[tuple[str, dict]]:
 
 def sources_from(record: dict) -> list[str]:
     """The run_python sources of one record, in the order they ran."""
-    return [arguments["source"] for name, arguments in calls_from(record) if name == "run_python"]
+    return [
+        arguments["source"]
+        for name, arguments in calls_from(record)
+        if name == "run_python"
+    ]
 
 
 def steps_applied(record: dict, brief) -> list:
@@ -107,11 +113,15 @@ def replay_record(record: dict, object_names: tuple[str, ...], on_chunk=None):
             result = run_source_in_process(arguments["source"])
         else:
             op_arguments = {
-                key: value for key, value in arguments.items() if key != PLAN_STEP_ARGUMENT
+                key: value
+                for key, value in arguments.items()
+                if key != PLAN_STEP_ARGUMENT
             }
             op_function = OP_FUNCTIONS[name]
             if not callable(op_function):
-                raise TypeError(f"OP_FUNCTIONS[{name!r}] is not callable: {op_function!r}")
+                raise TypeError(
+                    f"OP_FUNCTIONS[{name!r}] is not callable: {op_function!r}"
+                )
             result = call_op(name, op_function, op_arguments)
         if on_chunk is not None:
             on_chunk(index, len(calls), result)

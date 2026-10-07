@@ -43,14 +43,26 @@ def main(argv) -> int:
     try:
         # What a call CARRIES (OT-25), not the whole set: the disclosed surface.
         offered = offered_tools(TOOL_SCHEMAS, core_ops(), SERVICE_TOOL_NAMES)
-        rows = composition(bmb_tokenizer(BMB_ENDPOINT, BMB_API_KEY_FILE), offered, arguments.revision, arguments.lane)
+        rows = composition(
+            bmb_tokenizer(BMB_ENDPOINT, BMB_API_KEY_FILE),
+            offered,
+            arguments.revision,
+            arguments.lane,
+        )
     except TokenizerUnreachable as error:
         print(f"[composition] REFUSED: {error}", file=sys.stderr)
         return 2
     print(render_table(rows, TOKENIZER_NAME))
     if arguments.spec:
-        revision_text = (f", working agreement v{arguments.revision}" if arguments.revision else "") + f", {len(offered)} of {len(TOOL_SCHEMAS)} tools offered (OT-25)"
-        row = spec_row(rows, TOKENIZER_NAME, _datetime.datetime.now(_datetime.UTC).date().isoformat(), revision_text)
+        revision_text = (
+            f", working agreement v{arguments.revision}" if arguments.revision else ""
+        ) + f", {len(offered)} of {len(TOOL_SCHEMAS)} tools offered (OT-25)"
+        row = spec_row(
+            rows,
+            TOKENIZER_NAME,
+            _datetime.datetime.now(_datetime.UTC).date().isoformat(),
+            revision_text,
+        )
         write_spec_row(SPEC_PATH, row)
         print(f"[composition] spec row written to {SPEC_PATH.name}")
     return 0

@@ -18,9 +18,7 @@ Notes:
   This is more of a slap on the wrist not to try some things.
 """
 
-__all__ = (
-    "WeakSandboxForLLM",
-)
+__all__ = ("WeakSandboxForLLM",)
 
 import sys
 from typing import Any, Self
@@ -31,9 +29,7 @@ def _blocked_exit(*args: object, **kwargs: object) -> None:
 
 
 # Each entry is `(object, attr_name, replacement)`.
-_OVERRIDES: tuple[tuple[object, str, object], ...] = (
-    (sys, "exit", _blocked_exit),
-)
+_OVERRIDES: tuple[tuple[object, str, object], ...] = ((sys, "exit", _blocked_exit),)
 
 # Operators that LLM-generated code must not access.
 # Each entry is `("module.func", "reason")`.
@@ -79,6 +75,7 @@ _BLOCKED_OPS_SET: frozenset[str] = frozenset(op for op, _reason in _BLOCKED_OPS)
 
 class WeakSandboxForLLM:
     """Context manager wrapping ``exec()`` of LLM-generated code."""
+
     __slots__ = (
         "_store_attrs",
         "_store_ops",
@@ -121,8 +118,8 @@ class WeakSandboxForLLM:
                 reason = next(r for op, r in _BLOCKED_OPS if op == key)
 
                 def _blocked(
-                        *args: tuple[object, ...],
-                        **kwargs: dict[str, object],
+                    *args: tuple[object, ...],
+                    **kwargs: dict[str, object],
                 ) -> None:
                     # Include the arguments as they may help the LLM pin-point the cause of the error.
                     args_str = ", ".join(
@@ -130,7 +127,9 @@ class WeakSandboxForLLM:
                     )
                     raise RuntimeError(
                         "Operator 'bpy.ops.{:s}({:s})' is not allowed in LLM-generated code: {:s}".format(
-                            key, args_str, reason,
+                            key,
+                            args_str,
+                            reason,
                         )
                     )
 

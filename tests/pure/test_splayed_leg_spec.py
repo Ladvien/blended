@@ -98,9 +98,7 @@ def test_a_vertical_leg_needs_no_outboard_offset():
     vertical = VERTICAL_SPEC
     assert vertical.splay_rad == pytest.approx(0.0)
     assert vertical.base_radius_m == pytest.approx(vertical.foot_radius_m)
-    assert _axis_radius_at_ground(vertical) == pytest.approx(
-        vertical.foot_radius_m
-    )
+    assert _axis_radius_at_ground(vertical) == pytest.approx(vertical.foot_radius_m)
 
 
 @pytest.mark.parametrize(

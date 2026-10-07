@@ -62,7 +62,9 @@ def parse_arguments(argv):
     # capping a runaway loop: planter_box answers in 3.
     parser.add_argument("--max-tool-calls", type=int, default=24)
     # OT-13's acceptance: the vocabulary alone has to carry the brief.
-    parser.add_argument("--no-hatch", action="store_true", help="withhold run_python entirely")
+    parser.add_argument(
+        "--no-hatch", action="store_true", help="withhold run_python entirely"
+    )
     return parser.parse_args(argv)
 
 
@@ -241,8 +243,7 @@ def main(argv) -> int:
             continue
         part_report = analyze_object(part_object)
         structural_failures.extend(
-            f"{part.name}: {failure}"
-            for failure in part_report.failures(brief.budget)
+            f"{part.name}: {failure}" for failure in part_report.failures(brief.budget)
         )
         built_objects.append(part_object)
     structural_passed = not structural_failures
@@ -322,9 +323,7 @@ def main(argv) -> int:
                 if not golden_view.exists() or not candidate_view.exists():
                     continue
                 comparisons.append(
-                    compare_view_files(
-                        view_name, golden_view, candidate_view
-                    )
+                    compare_view_files(view_name, golden_view, candidate_view)
                 )
             if comparisons:
                 print(
@@ -439,9 +438,7 @@ def main(argv) -> int:
                 and part.name in bpy.context.scene.objects
             ]
             for refined_object in refined_objects_in_scene:
-                locality = measure_locality(
-                    refined_object, step.name, stamped_identity
-                )
+                locality = measure_locality(refined_object, step.name, stamped_identity)
                 refinement_locality.append(locality.summary())
                 print(locality.summary(), flush=True)
             if refined_objects_in_scene:
@@ -507,8 +504,7 @@ def main(argv) -> int:
     print(f"brief      : {brief.name}", flush=True)
     print(f"prompt     : {revision.identity}", flush=True)
     print(
-        f"models     : writer {client.config.model} / eye "
-        f"{client.config.vision_model}",
+        f"models     : writer {client.config.model} / eye {client.config.vision_model}",
         flush=True,
     )
     print(f"tool calls : {len(tool_calls)}", flush=True)

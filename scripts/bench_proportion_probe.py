@@ -31,6 +31,7 @@ measurement reference-image grounding rests on.
       --json outputs/bench/proportion_probe_dev.json \
       --out outputs/bench/proportion_probe_dev.md
 """
+
 from __future__ import annotations
 
 import argparse
@@ -83,7 +84,9 @@ def parse_arguments(argv):
     parser.add_argument("--headroom-json", required=True, help="the BUILT side")
     parser.add_argument("--endpoint", default=DEFAULT_ENDPOINT)
     parser.add_argument("--model", default=DEFAULT_MODEL, help="the writer, or an eye")
-    parser.add_argument("--images-root", default="", help="<root>/<inst>/images/ holds the four views")
+    parser.add_argument(
+        "--images-root", default="", help="<root>/<inst>/images/ holds the four views"
+    )
     parser.add_argument("--json", default="")
     parser.add_argument("--out", default="")
     return parser.parse_args(argv)
@@ -123,9 +126,13 @@ def ask(endpoint: str, model: str, description: str, image_paths: list[Path]) ->
     if match is None:
         raise ValueError(f"no JSON object in the writer's answer: {content[:200]!r}")
     answer = json.loads(match.group(0))
-    ratios = np.array([float(answer["largest"]), float(answer["middle"]), float(answer["smallest"])])
+    ratios = np.array(
+        [float(answer["largest"]), float(answer["middle"]), float(answer["smallest"])]
+    )
     if not (ratios[0] == 1.0 and ratios[0] >= ratios[1] >= ratios[2] > 0):
-        raise ValueError(f"ratios are not 1 >= middle >= smallest > 0: {ratios.tolist()}")
+        raise ValueError(
+            f"ratios are not 1 >= middle >= smallest > 0: {ratios.tolist()}"
+        )
     return {"ratios": ratios, "evidence": str(answer.get("evidence", ""))}
 
 
@@ -147,8 +154,14 @@ def main(argv) -> int:
         built[row["instance"]] = row
     rows = []
     for instance in Path(arguments.instances_file).read_text().split():
-        description = (bench_root / "data" / instance / "prompt_description.txt").read_text().strip()
-        reference = reference_ratios(sc, bench_root / "data" / instance / "glb" / f"{instance}.glb")
+        description = (
+            (bench_root / "data" / instance / "prompt_description.txt")
+            .read_text()
+            .strip()
+        )
+        reference = reference_ratios(
+            sc, bench_root / "data" / instance / "glb" / f"{instance}.glb"
+        )
         image_paths: list[Path] = []
         if arguments.images_root:
             image_paths = [
@@ -157,7 +170,9 @@ def main(argv) -> int:
             ]
             missing = [str(path) for path in image_paths if not path.exists()]
             if missing:
-                raise FileNotFoundError(f"{instance}: reference views missing: {missing}")
+                raise FileNotFoundError(
+                    f"{instance}: reference views missing: {missing}"
+                )
         stated = ask(arguments.endpoint, arguments.model, description, image_paths)
         errors = np.abs(np.log2(reference / stated["ratios"]))
         row = {
@@ -168,8 +183,12 @@ def main(argv) -> int:
             "evidence": stated["evidence"],
             "stated_log2_error_middle": float(errors[1]),
             "stated_log2_error_smallest": float(errors[2]),
-            "built_log2_error_middle": built[instance]["log2_error_middle"] if instance in built else None,
-            "built_log2_error_smallest": built[instance]["log2_error_smallest"] if instance in built else None,
+            "built_log2_error_middle": built[instance]["log2_error_middle"]
+            if instance in built
+            else None,
+            "built_log2_error_smallest": built[instance]["log2_error_smallest"]
+            if instance in built
+            else None,
         }
         rows.append(row)
         print(
@@ -188,8 +207,10 @@ def main(argv) -> int:
     lines = [
         "# Proportion probe: stated versus built, dev set",
         "",
-        (f"- instances paired: {len(paired)} (model {arguments.model}, "
-         f"{'four reference views attached' if arguments.images_root else 'text only'})"),
+        (
+            f"- instances paired: {len(paired)} (model {arguments.model}, "
+            f"{'four reference views attached' if arguments.images_root else 'text only'})"
+        ),
         f"- mean |log2 error|, middle axis: stated {stated_m:.3f} vs built {built_m:.3f}",
         f"- mean |log2 error|, smallest axis: stated {stated_s:.3f} vs built {built_s:.3f}",
         "",
@@ -201,8 +222,8 @@ def main(argv) -> int:
             f"| {r['instance']} | {r['reference_ratios']} | {r['stated_ratios']} | "
             f"{r['evidence'][:60]} | {r['stated_log2_error_middle']:.2f}/{r['stated_log2_error_smallest']:.2f} | "
             f"{r['built_log2_error_middle']:.2f}/{r['built_log2_error_smallest']:.2f} |"
-            if r["built_log2_error_middle"] is not None else
-            f"| {r['instance']} | {r['reference_ratios']} | {r['stated_ratios']} | {r['evidence'][:60]} | "
+            if r["built_log2_error_middle"] is not None
+            else f"| {r['instance']} | {r['reference_ratios']} | {r['stated_ratios']} | {r['evidence'][:60]} | "
             f"{r['stated_log2_error_middle']:.2f}/{r['stated_log2_error_smallest']:.2f} | – |"
         )
     report = "\n".join(lines) + "\n"

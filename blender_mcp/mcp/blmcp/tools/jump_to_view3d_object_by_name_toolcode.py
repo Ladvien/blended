@@ -38,7 +38,9 @@ def main(params: Params) -> Result:
 
     obj = bpy.data.objects.get(params.name)
     if obj is None:
-        return Result(status="error", message="Object {!r} not found".format(params.name))
+        return Result(
+            status="error", message="Object {!r} not found".format(params.name)
+        )
 
     if params.allow_edits:
         if obj.hide_viewport:
@@ -87,5 +89,7 @@ def main(params: Params) -> Result:
         object=params.name,
         type=obj.type,
         location=list(obj.location),
-        message=None if view3d_found else "No 3D viewport found, object selected but not framed",
+        message=None
+        if view3d_found
+        else "No 3D viewport found, object selected but not framed",
     )

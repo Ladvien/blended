@@ -24,14 +24,21 @@ def test_a_missing_dimension_after_the_edit_is_reported_not_raised():
                 name=part,
                 object_found=True,
                 linked_into_scene=True,
-                dimensions=tuple(DimensionMeasurement(spec=spec, measured_m=spec.expected_m) for spec in step.changed),
+                dimensions=tuple(
+                    DimensionMeasurement(spec=spec, measured_m=spec.expected_m)
+                    for spec in step.changed
+                ),
             ),
         ),
     )
-    after = AcceptanceReport(brief_name=brief.name, part_reports=(PartReport(name=part, object_found=False),))
+    after = AcceptanceReport(
+        brief_name=brief.name, part_reports=(PartReport(name=part, object_found=False),)
+    )
     outcome = RefinementOutcome(step=step, before=before, after=after)
 
     summary = outcome.summary(brief)  # must not raise
     assert "missing (part not found)" in summary
     assert not outcome.passes(brief)
-    assert any(part in failure or "no object" in failure for failure in outcome.failures(brief))
+    assert any(
+        part in failure or "no object" in failure for failure in outcome.failures(brief)
+    )

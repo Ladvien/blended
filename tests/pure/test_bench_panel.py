@@ -24,9 +24,13 @@ import bench_panel as tool
 FROZEN_INSTANCES = tuple(f"I{index:02d}" for index in range(20))
 
 
-def write_roll(path: Path, model_dir: str, values: dict,
-               status: str = "OK_AGENT_DONE",
-               statuses: dict | None = None) -> Path:
+def write_roll(
+    path: Path,
+    model_dir: str,
+    values: dict,
+    status: str = "OK_AGENT_DONE",
+    statuses: dict | None = None,
+) -> Path:
     """A diagnose JSON with `{instance: (cd_yawmin, cd_pca, delta_orient,
     fscore_005)}`; precision and recall are set equal to the F-score so a
     synthetic row carries every panel column."""
@@ -48,8 +52,7 @@ def write_roll(path: Path, model_dir: str, values: dict,
                         "num_turns": 20,
                         "duration_s": 300.0,
                     }
-                    for instance, (yawmin, pca, orient, f_score)
-                    in values.items()
+                    for instance, (yawmin, pca, orient, f_score) in values.items()
                 ],
             }
         )
@@ -68,8 +71,9 @@ def f_from_pca(pca: float) -> float:
 def flat_values(pca: float, instances=FROZEN_INSTANCES) -> dict:
     """Every instance identical, so a group's spread comes only from the
     differences the test introduces on purpose."""
-    return {instance: (pca + 0.05, pca, 0.05, f_from_pca(pca))
-            for instance in instances}
+    return {
+        instance: (pca + 0.05, pca, 0.05, f_from_pca(pca)) for instance in instances
+    }
 
 
 def group_of(tmp_path: Path, label: str, pcas, statuses=None) -> str:
@@ -106,8 +110,7 @@ def test_the_rolls_table_puts_the_ranking_metric_before_the_reported_one(
 ):
     """Column order IS the rule for a reader who skims one table."""
     panel = render(tmp_path, group_of(tmp_path, "g", [0.02, 0.03, 0.04]))
-    header = next(line for line in panel.splitlines()
-                  if line.startswith("| roll |"))
+    header = next(line for line in panel.splitlines() if line.startswith("| roll |"))
     assert header.index("fscore_005") < header.index("cd_pca")
     assert header.index("cd_pca") < header.index("cd_yawmin")
     assert "cd_pca (reported)" in header
@@ -126,17 +129,18 @@ def test_the_ranking_axis_is_f_score_and_higher_ranks_first(tmp_path):
     paths = {}
     for label, values in (("high_f", high_f), ("low_f", low_f)):
         paths[label] = ",".join(
-            str(write_roll(tmp_path / f"{label}_{index}.json",
-                           f"{label}_roll{index}", values))
+            str(
+                write_roll(
+                    tmp_path / f"{label}_{index}.json", f"{label}_roll{index}", values
+                )
+            )
             for index in range(3)
         )
-    panel = render(tmp_path, f"high_f={paths['high_f']}",
-                   f"low_f={paths['low_f']}")
+    panel = render(tmp_path, f"high_f={paths['high_f']}", f"low_f={paths['low_f']}")
     assert tool.RANKING_METRIC == "fscore_005"
     assert "higher is better" in panel
     body = panel.split("## Groups")[1].split("## Power")[0]
-    rows = [line for line in body.splitlines()
-            if line.startswith(("| 1 |", "| 2 |"))]
+    rows = [line for line in body.splitlines() if line.startswith(("| 1 |", "| 2 |"))]
     assert rows[0].startswith("| 1 | high_f |"), rows
     assert rows[1].startswith("| 2 | low_f |"), rows
 
@@ -149,8 +153,11 @@ def test_a_roll_that_failed_one_instance_cannot_rank(tmp_path):
     paths = [
         str(write_roll(tmp_path / "a.json", "whole_a", flat_values(0.02))),
         str(write_roll(tmp_path / "b.json", "whole_b", flat_values(0.03))),
-        str(write_roll(tmp_path / "c.json", "one_short", flat_values(0.04),
-                       statuses=one_failed)),
+        str(
+            write_roll(
+                tmp_path / "c.json", "one_short", flat_values(0.04), statuses=one_failed
+            )
+        ),
     ]
     with pytest.raises(SystemExit) as raised:
         render(tmp_path, "g=" + ",".join(paths))
@@ -206,7 +213,8 @@ def test_rolls_disagreeing_on_their_instance_sets_are_refused(tmp_path):
         str(write_roll(tmp_path / "b.json", "roll_b", flat_values(0.03))),
         str(
             write_roll(
-                tmp_path / "c.json", "odd_one_out",
+                tmp_path / "c.json",
+                "odd_one_out",
                 flat_values(0.04, shifted),
             )
         ),
@@ -248,8 +256,7 @@ def test_a_worse_executability_cannot_rank_first(tmp_path):
         render(
             tmp_path,
             group_of(tmp_path, "whole", [0.030, 0.031, 0.032]),
-            group_of(tmp_path, "broken", [0.010, 0.011, 0.012],
-                     statuses=failing),
+            group_of(tmp_path, "broken", [0.010, 0.011, 0.012], statuses=failing),
         )
     message = str(raised.value)
     assert "group broken has 0 rankable roll(s)" in message
@@ -263,11 +270,13 @@ def test_a_worse_executability_cannot_rank_first(tmp_path):
 def test_a_short_roll_can_be_reported_without_being_ranked(tmp_path):
     """A roll below the instance floor is listed and excluded from means."""
     short = write_roll(
-        tmp_path / "short.json", "twelve_instance_sweep",
+        tmp_path / "short.json",
+        "twelve_instance_sweep",
         flat_values(0.40, FROZEN_INSTANCES[:12]),
     )
     panel = render(
-        tmp_path, group_of(tmp_path, "g", [0.020, 0.021, 0.022]),
+        tmp_path,
+        group_of(tmp_path, "g", [0.020, 0.021, 0.022]),
         reported=[short],
     )
     rolls = panel.split("## Rolls")[1].split("## Groups")[0]
@@ -286,8 +295,7 @@ def test_the_power_block_names_the_axis_the_target_is_visible_on(tmp_path):
     verdicts = [line for line in lines if line.startswith("- `")]
     assert len(verdicts) == len(tool.PANEL_METRICS)
     for line in verdicts:
-        assert ("**visible**" in line
-                or "**below the instrument's resolution**" in line)
+        assert "**visible**" in line or "**below the instrument's resolution**" in line
         assert "0.0" in line  # both numbers are printed, never just a word
 
 
@@ -322,9 +330,7 @@ def test_visibility_is_judged_at_the_roll_floor_not_at_the_group_size(
     assert axis["detectable_effect"] == pytest.approx(
         tool.REGRESSION_SIGMA * axis["standard_error_at_floor"], abs=1e-12
     )
-    assert axis["detectable_effect"] > tool.REGRESSION_SIGMA * (
-        axis["standard_error"]
-    )
+    assert axis["detectable_effect"] > tool.REGRESSION_SIGMA * (axis["standard_error"])
 
 
 def test_the_not_measured_section_names_image_similarity_and_both_reasons(

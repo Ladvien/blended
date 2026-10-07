@@ -43,8 +43,10 @@ def _world_extents_m(object_name):
     `matrix_world`, the ground truth the op's own helper must match."""
     blender_object = bpy.data.objects[object_name]
     bpy.context.view_layer.update()
-    corners = [blender_object.matrix_world @ Vector(corner)
-               for corner in blender_object.bound_box]
+    corners = [
+        blender_object.matrix_world @ Vector(corner)
+        for corner in blender_object.bound_box
+    ]
     return tuple(
         max(corner[axis] for corner in corners)
         - min(corner[axis] for corner in corners)
@@ -62,9 +64,7 @@ def test_the_middle_extent_ends_up_on_the_depth_axis(empty_scene):
     assert record["depth_axis_extent_rank"] == 1
     extents_m = _world_extents_m(box)
     assert extents_m == pytest.approx((2.0, 1.0, 0.1), abs=EXTENT_TOLERANCE_M)
-    assert record["extents_after_m"] == pytest.approx(
-        extents_m, abs=EXTENT_TOLERANCE_M
-    )
+    assert record["extents_after_m"] == pytest.approx(extents_m, abs=EXTENT_TOLERANCE_M)
 
 
 def test_a_writers_own_rotation_is_composed_not_discarded(empty_scene):

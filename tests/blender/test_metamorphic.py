@@ -244,9 +244,7 @@ def _relations_for(builder_name, parameters):
 
     z_residue_m = BOOLEAN_EMBED_M if builder_name == "pallet" else 0.0
     small_factor = (
-        PALLET_SMALL_SCALE_FACTOR
-        if builder_name == "pallet"
-        else SMALL_SCALE_FACTOR
+        PALLET_SMALL_SCALE_FACTOR if builder_name == "pallet" else SMALL_SCALE_FACTOR
     )
     field_name, refined_value = REFINED_COUNTS[builder_name]
 
@@ -339,7 +337,9 @@ def test_a_relation_without_a_justification_is_refused():
         name="unjustified",
         transform=lambda parameters: parameters,
         relation=lambda before, after: all_of(
-            unchanged("triangle_count", before["triangle_count"], after["triangle_count"])
+            unchanged(
+                "triangle_count", before["triangle_count"], after["triangle_count"]
+            )
         ),
         justification="   ",
     )
@@ -375,7 +375,9 @@ def test_a_broken_relation_fails_instead_of_being_swallowed():
     )
 
     assert not report.ok
-    assert report.failures() == ["broken: raised RuntimeError: the relation itself is broken"]
+    assert report.failures() == [
+        "broken: raised RuntimeError: the relation itself is broken"
+    ]
 
 
 def test_the_scale_relation_can_actually_fail():

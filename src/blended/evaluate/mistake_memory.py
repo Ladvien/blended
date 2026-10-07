@@ -465,8 +465,7 @@ MISTAKES: tuple[MistakeRecord, ...] = (
             "record."
         ),
         fix=(
-            "The event carries the whole call; display layers keep their "
-            "own previews."
+            "The event carries the whole call; display layers keep their own previews."
         ),
         guarded_by=(
             "tests/blender/test_agent_loop.py::"
@@ -1177,8 +1176,7 @@ MISTAKES: tuple[MistakeRecord, ...] = (
             "and file extents under the exporter's axis permutation."
         ),
         guarded_by=(
-            "tests/blender/test_glb_file_report.py::"
-            "test_file_and_welded_reimport_agree"
+            "tests/blender/test_glb_file_report.py::test_file_and_welded_reimport_agree"
         ),
         recorded_on="2026-08-23",
     ),
@@ -1234,8 +1232,7 @@ MISTAKES: tuple[MistakeRecord, ...] = (
             "the holes stay open, reported as remaining failures."
         ),
         guarded_by=(
-            "tests/blender/test_ingest_cleanup.py::"
-            "test_a_regressing_fill_is_reverted"
+            "tests/blender/test_ingest_cleanup.py::test_a_regressing_fill_is_reverted"
         ),
         recorded_on="2026-08-23",
     ),
@@ -1315,7 +1312,7 @@ MISTAKES: tuple[MistakeRecord, ...] = (
         scope="harness_code",
         failure=(
             "First live turn on the Claude Code lane: the writer answered "
-            "\"I'm unable to create the Crate cube right now\" and made "
+            '"I\'m unable to create the Crate cube right now" and made '
             "ZERO tool calls, with a valid schema in the request."
         ),
         cause=(
@@ -1342,7 +1339,7 @@ MISTAKES: tuple[MistakeRecord, ...] = (
         scope="harness_code",
         failure=(
             "chat_e2e --only object on claude-code:sonnet: 0 tool calls, "
-            "FAIL, and the answer read \"Every tool call I make "
+            'FAIL, and the answer read "Every tool call I make '
             "(run_python, list_scene, search_ops) is being rejected with "
             "'No such tool available'\"."
         ),
@@ -1350,7 +1347,7 @@ MISTAKES: tuple[MistakeRecord, ...] = (
             "The harness system prompt describes the six tools as "
             "callable, which is true on every lane that hands them over "
             "natively. Claude Code is itself an agent harness, so the "
-            "model emitted native tool_use blocks — and `--tools \"\"` "
+            'model emitted native tool_use blocks — and `--tools ""` '
             "correctly refused them. The structured envelope was "
             "available and simply never used."
         ),
@@ -1884,7 +1881,7 @@ MISTAKES: tuple[MistakeRecord, ...] = (
             "doubled examiner calls for nothing."
         ),
         guarded_by=(
-            "make calibrate-eye ARGS=\"--cross-run-only\"; "
+            'make calibrate-eye ARGS="--cross-run-only"; '
             "tests/pure/test_examiner.py::"
             "test_a_licence_measured_on_identical_images_does_not_"
             "cover_a_fresh_run; docs/2026-09-06-token-budget-plan.md"
@@ -1902,7 +1899,6 @@ MISTAKES: tuple[MistakeRecord, ...] = (
             "and 6.5 mm against the surface. The gap widens as "
             "geometry gets coarser."
         ),
-
         cause=(
             "A vertex-penetration probe samples the query object's "
             "vertices against the target's closest surface point. "
@@ -3169,8 +3165,7 @@ MISTAKES: tuple[MistakeRecord, ...] = (
         identifier="rotation-mode-set-before-validation",
         scope="harness_code",
         failure=(
-            "A bad Euler order raised but left rotation_mode changed "
-            "(AXIS_ANGLE)."
+            "A bad Euler order raised but left rotation_mode changed (AXIS_ANGLE)."
         ),
         cause="The mutation preceded the call that validates the argument.",
         fix="Build the Euler first.",
@@ -3184,8 +3179,7 @@ MISTAKES: tuple[MistakeRecord, ...] = (
         identifier="rename-return-vs-truncated-name",
         scope="harness_code",
         failure=(
-            "A 300-character new name returned a name absent from "
-            "bpy.data.objects."
+            "A 300-character new name returned a name absent from bpy.data.objects."
         ),
         cause="Blender truncates object names at 255 bytes; the op echoed the request.",
         fix="Return obj.name.",
@@ -3983,6 +3977,37 @@ MISTAKES: tuple[MistakeRecord, ...] = (
         ),
         recorded_on="2026-10-07",
     ),
+    MistakeRecord(
+        identifier="formatter-target-newer-than-blender-python",
+        scope="harness_code",
+        failure=(
+            "After `ruff format .`, `make test-blender-app` failed at import: "
+            "mcp_to_blender_server.py line 258, `except Exception, "
+            "SystemExit:` — SyntaxError: multiple exception types must be "
+            "parenthesized. Four sites in two add-on files "
+            "(mcp_to_blender_server.py x3, deferred_tool.py x1). ruff check, "
+            "mypy and make test-pure (the dev venv, Python 3.11) stayed "
+            "green; only Blender's own import saw it."
+        ),
+        cause=(
+            "blender_mcp/addon/pyproject.toml, the subtree's own config, "
+            "sets ruff target-version py314. ruff format drops the "
+            "parentheses around an except tuple for a 3.14 target (PEP 758), "
+            "and Blender 5.2.0 LTS runs Python 3.13.13 (measured). The "
+            "formatter was told a Python newer than the one that runs the "
+            "file."
+        ),
+        fix=(
+            "The add-on's target-version is py313, the Python the installed "
+            "Blender runs; the add-on was reformatted from its pre-format "
+            "state."
+        ),
+        guarded_by=(
+            "tests/pure/test_review_followup.py::"
+            "test_every_python_file_parses_under_the_minimum_python"
+        ),
+        recorded_on="2026-10-07",
+    ),
 )
 
 
@@ -3992,7 +4017,9 @@ def validate_memory() -> list[str]:
     seen: set[str] = set()
     for record in MISTAKES:
         if record.scope not in SCOPES:
-            problems.append(f"{record.identifier}: scope {record.scope!r} not in SCOPES")
+            problems.append(
+                f"{record.identifier}: scope {record.scope!r} not in SCOPES"
+            )
         if not record.guarded_by.strip():
             problems.append(f"{record.identifier}: no guard — the record is not done")
         if record.identifier in seen:
@@ -4008,9 +4035,7 @@ def consult(scope: str = "") -> str:
     2026-10-07): whoever consults the memory must run it or read this
     file. If this returns text nobody reads, the memory is decoration.
     """
-    selected = [
-        record for record in MISTAKES if not scope or record.scope == scope
-    ]
+    selected = [record for record in MISTAKES if not scope or record.scope == scope]
     if not selected:
         return f"(no recorded mistakes for scope {scope!r})"
     lines: list[str] = []

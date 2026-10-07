@@ -86,9 +86,9 @@ def test_record_for_run_finds_the_exact_run(monkeypatch):
 
 def test_replace_runs_rewrites_the_real_registry_block(monkeypatch):
     pin = _load_script("pin_revision", monkeypatch)
-    text = (REPOSITORY_ROOT / "src" / "blended" / "agent" / "prompt_versions.py").read_text(
-        encoding="utf-8"
-    )
+    text = (
+        REPOSITORY_ROOT / "src" / "blended" / "agent" / "prompt_versions.py"
+    ).read_text(encoding="utf-8")
     rewritten = pin._replace_runs(text, [(901, "alpha"), (902, "beta")])
     block = rewritten.split("CONVERGENCE_RUNS = ", 1)[1].split("\n)\n", 1)[0] + "\n)"
     assert ast.literal_eval(block) == ((901, "alpha"), (902, "beta"))

@@ -1,5 +1,6 @@
 """The four reference views are one definition, in render order, and a
 missing one is an error rather than a silent fall-back to text."""
+
 from __future__ import annotations
 
 import pytest
@@ -12,7 +13,10 @@ from blended.evaluate.bench_reference_views import (
 
 def test_the_views_are_the_benchs_four_turntable_frames_in_order():
     assert REFERENCE_VIEW_FILENAMES == (
-        "Image_005.png", "Image_015.png", "Image_025.png", "Image_035.png",
+        "Image_005.png",
+        "Image_015.png",
+        "Image_025.png",
+        "Image_035.png",
     )
 
 

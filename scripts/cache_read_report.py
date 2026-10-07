@@ -1,6 +1,6 @@
 """Cache-read fraction per run, and a paired before/after comparison (OT-26).
 
-    .venv/bin/python scripts/cache_read_report.py --before 78-86 --after 87-91
+.venv/bin/python scripts/cache_read_report.py --before 78-86 --after 87-91
 """
 
 from __future__ import annotations
@@ -28,16 +28,41 @@ def _span(text: str) -> tuple[int, int]:
 
 def main(argv) -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n", 1)[0])
-    parser.add_argument("--log", default=str(REPOSITORY_ROOT / "_evaluate" / "iterations.jsonl"))
-    parser.add_argument("--before", type=_span, help="inclusive iteration span, e.g. 78-86")
-    parser.add_argument("--after", type=_span, help="inclusive iteration span, e.g. 87-91")
+    parser.add_argument(
+        "--log", default=str(REPOSITORY_ROOT / "_evaluate" / "iterations.jsonl")
+    )
+    parser.add_argument(
+        "--before", type=_span, help="inclusive iteration span, e.g. 78-86"
+    )
+    parser.add_argument(
+        "--after", type=_span, help="inclusive iteration span, e.g. 87-91"
+    )
     arguments = parser.parse_args(argv)
     rows = cache_rows(IterationLog(Path(arguments.log)).records())
-    selected = [r for r in rows if (arguments.before and arguments.before[0] <= r.iteration <= arguments.before[1]) or (arguments.after and arguments.after[0] <= r.iteration <= arguments.after[1])] if (arguments.before or arguments.after) else rows
+    selected = (
+        [
+            r
+            for r in rows
+            if (
+                arguments.before
+                and arguments.before[0] <= r.iteration <= arguments.before[1]
+            )
+            or (
+                arguments.after
+                and arguments.after[0] <= r.iteration <= arguments.after[1]
+            )
+        ]
+        if (arguments.before or arguments.after)
+        else rows
+    )
     print(render_rows(selected))
     if arguments.before and arguments.after:
-        before = [r for r in rows if arguments.before[0] <= r.iteration <= arguments.before[1]]
-        after = [r for r in rows if arguments.after[0] <= r.iteration <= arguments.after[1]]
+        before = [
+            r for r in rows if arguments.before[0] <= r.iteration <= arguments.before[1]
+        ]
+        after = [
+            r for r in rows if arguments.after[0] <= r.iteration <= arguments.after[1]
+        ]
         print()
         print(render_pairs(paired_by_brief(before, after)))
     return 0

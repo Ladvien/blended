@@ -90,7 +90,9 @@ def _process_is_gone(pid: int) -> bool:
 def test_a_stderr_flood_does_not_stall_the_turn(fake_claude, monkeypatch):
     monkeypatch.setenv("FAKE_CLAUDE_MODE", "stderr_flood")
     transport = ClaudeCodeTransport(
-        WRITER_MODEL, binary_path=str(fake_claude), timeout_seconds=FLOOD_TIMEOUT_SECONDS
+        WRITER_MODEL,
+        binary_path=str(fake_claude),
+        timeout_seconds=FLOOD_TIMEOUT_SECONDS,
     )
     started = time.monotonic()
     message = transport.chat([{"role": "user", "content": "go"}])
@@ -108,7 +110,9 @@ def test_a_malformed_frame_does_not_leave_the_cli_running(fake_claude, monkeypat
     deadline = time.monotonic() + REAP_WAIT_SECONDS
     while not _process_is_gone(pid) and time.monotonic() < deadline:
         time.sleep(POLL_SECONDS)
-    assert _process_is_gone(pid), "the CLI outlived the failed turn (killed and reaped expected)"
+    assert _process_is_gone(pid), (
+        "the CLI outlived the failed turn (killed and reaped expected)"
+    )
 
 
 def test_streamed_thinking_is_not_repeated_by_the_complete_frame(fake_claude):
@@ -131,7 +135,9 @@ def test_streamed_thinking_is_not_repeated_by_the_complete_frame(fake_claude):
             },
             {
                 "type": "assistant",
-                "message": {"content": [{"type": "thinking", "thinking": "weighing it"}]},
+                "message": {
+                    "content": [{"type": "thinking", "thinking": "weighing it"}]
+                },
             },
             _result_frame(),
         ],

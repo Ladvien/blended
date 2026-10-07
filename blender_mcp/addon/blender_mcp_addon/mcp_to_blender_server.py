@@ -80,9 +80,9 @@ _timer = _TimerState()
 
 
 def timer_internal_vars_calc(
-        active: float | None = None,
-        idle: float | None = None,
-        idle_delay: float | None = None,
+    active: float | None = None,
+    idle: float | None = None,
+    idle_delay: float | None = None,
 ) -> None:
     """
     Optionally update ``TIMER_*`` constants and recalculate internal variables.
@@ -148,6 +148,7 @@ timer_internal_vars_calc()
 # ---------------------------------------------------------------------------
 # Client connection state.
 
+
 class _Client:
     """
     Per-connection state for a client (the MCP server process) that has not yet sent a complete request.
@@ -185,6 +186,7 @@ class _PendingWrite(NamedTuple):
 
 # ---------------------------------------------------------------------------
 # Server state.
+
 
 class _State:
     """
@@ -230,8 +232,8 @@ def _encode_response(response: dict[str, object]) -> bytes:
 
 
 def _execute_code(
-        code: str,
-        strict_json: bool,
+    code: str,
+    strict_json: bool,
 ) -> _ExecResult:
     """
     Execute *code* and return an ``_ExecResult``.
@@ -277,8 +279,7 @@ def _execute_code(
         response = {
             "status": "error",
             "message": (
-                "The `result` variable must be a dict, not {:s}. "
-                "Wrap your return value: `result = {{\"key\": value}}`"
+                'The `result` variable must be a dict, not {:s}. Wrap your return value: `result = {{"key": value}}`'
             ).format(type(result).__name__),
         }
     else:
@@ -308,7 +309,7 @@ def _execute_code(
 
 
 def _execute_code_from_request(
-        data: bytes,
+    data: bytes,
 ) -> tuple[_ExecResult, bool]:
     """
     Parse a raw request and execute it.
@@ -327,10 +328,12 @@ def _execute_code_from_request(
     request = json.loads(data)
 
     if request.get("type") != "execute":
-        return _ExecResult({
-            "status": "error",
-            "message": "Unknown request type: {!r}".format(request.get("type")),
-        }), False
+        return _ExecResult(
+            {
+                "status": "error",
+                "message": "Unknown request type: {!r}".format(request.get("type")),
+            }
+        ), False
     code = request.get("code", "")
 
     # Not expected in normal use, but a clear message beats a cryptic trace-back,
@@ -338,13 +341,15 @@ def _execute_code_from_request(
     strict_json = request.get("strict_json")
     if not isinstance(strict_json, bool):
         return (
-            _ExecResult({
-                "status": "error",
-                "message": (
-                    "Internal error: a blender_mcp tool sent a request without the required 'strict_json' boolean key. "
-                    "This is a bug in the tool that generated this code"
-                ),
-            }),
+            _ExecResult(
+                {
+                    "status": "error",
+                    "message": (
+                        "Internal error: a blender_mcp tool sent a request without the required 'strict_json' boolean key. "
+                        "This is a bug in the tool that generated this code"
+                    ),
+                }
+            ),
             False,
         )
 
@@ -410,6 +415,7 @@ def _close_client_with_response(client: _Client, response: dict[str, object]) ->
 # stalls Blender's main thread until the client drains its receive buffer.
 # Instead queue whatever the socket won't take now, writing the rest on following polls.
 
+
 def _send_partial(conn: socket.socket, data: memoryview) -> memoryview:
     """
     Write as much of *data* as the socket accepts without blocking.
@@ -462,6 +468,7 @@ def _flush_pending_writes() -> bool:
 # ---------------------------------------------------------------------------
 # Polling (called from the execution modules).
 
+
 def _accept_clients() -> None:
     """
     Accept all pending connections on the listening socket.
@@ -491,10 +498,13 @@ def _service_clients() -> bool:
         # Evict clients that have not sent a complete request in time.
         client.timeout -= 1
         if client.timeout <= 0:
-            _close_client_with_response(client, {
-                "status": "error",
-                "message": "Client timed out",
-            })
+            _close_client_with_response(
+                client,
+                {
+                    "status": "error",
+                    "message": "Client timed out",
+                },
+            )
             continue
 
         try:
@@ -515,10 +525,13 @@ def _service_clients() -> bool:
 
         # Guard against unbounded input from a misbehaving client.
         if len(client.buffer) > _MAX_REQUEST_BYTES:
-            _close_client_with_response(client, {
-                "status": "error",
-                "message": "Request exceeds {:d} byte limit".format(_MAX_REQUEST_BYTES),
-            })
+            _close_client_with_response(
+                client,
+                {
+                    "status": "error",
+                    "message": "Request exceeds {:d} byte limit".format(_MAX_REQUEST_BYTES),
+                },
+            )
             continue
 
         if b"\0" not in client.buffer:
@@ -526,7 +539,7 @@ def _service_clients() -> bool:
             continue
 
         # Execute the request and send the response.
-        request_data = bytes(client.buffer[:client.buffer.index(b"\0")])
+        request_data = bytes(client.buffer[: client.buffer.index(b"\0")])
         try:
             exec_result, strict_json = _execute_code_from_request(request_data)
         except Exception:  # pylint: disable=broad-exception-caught
@@ -536,6 +549,7 @@ def _service_clients() -> bool:
         if exec_result.check_fn is not None:
             # Deferred response: hand the connection to deferred_tool.
             from . import deferred_tool
+
             deferred_tool.add(
                 client.conn,
                 exec_result.check_fn,
@@ -560,6 +574,7 @@ def poll() -> bool:
     Return ``True`` if work was done, or deferred clients & queued responses are pending.
     """
     from . import deferred_tool
+
     # Stay in active polling mode until queued responses have been written.
     did_work = _flush_pending_writes()
     _accept_clients()
@@ -596,7 +611,7 @@ def _handle_blocking_client(conn: socket.socket) -> bool:
                 conn.sendall(_encode_response(err))
                 return False
 
-        request_data = bytes(buf[:buf.index(b"\0")])
+        request_data = bytes(buf[: buf.index(b"\0")])
         try:
             exec_result, _strict_json = _execute_code_from_request(request_data)
             if exec_result.check_fn is not None:
@@ -667,6 +682,7 @@ def _require_loopback_host(host: str, port: int) -> None:
 
 # ---------------------------------------------------------------------------
 # Public API.
+
 
 def start(host: str, port: int) -> None:
     """

@@ -15,9 +15,7 @@ class-qualified test name (e.g. ``TestChatClient.test_cube_creation``),
 which can be copied directly into ``make test_integration TESTS=...``.
 """
 
-__all__ = (
-    "main",
-)
+__all__ = ("main",)
 
 
 def main() -> None:
@@ -26,6 +24,7 @@ def main() -> None:
 
     sys.path.insert(0, ".")
     from tests.integration.test_blender_mcp_with_llm import TestChatClient
+
     for test in unittest.TestLoader().loadTestsFromTestCase(TestChatClient):
         assert isinstance(test, unittest.TestCase)
         test_id = test.id()

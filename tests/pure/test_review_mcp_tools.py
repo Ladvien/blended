@@ -42,8 +42,12 @@ def api_docs_through_symlink(tmp_path, monkeypatch):
     """``get_python_api_docs`` over a data root that is reached via a symlink."""
     real_root = tmp_path / "real"
     (real_root / "api").mkdir(parents=True)
-    (real_root / "api" / "foo.rst").write_text("Title\n=====\n\nbody\n", encoding="utf-8")
-    (real_root / "secret.rst").write_text("outside the api directory\n", encoding="utf-8")
+    (real_root / "api" / "foo.rst").write_text(
+        "Title\n=====\n\nbody\n", encoding="utf-8"
+    )
+    (real_root / "secret.rst").write_text(
+        "outside the api directory\n", encoding="utf-8"
+    )
     link_root = tmp_path / "link"
     link_root.symlink_to(real_root, target_is_directory=True)
     monkeypatch.setattr(get_python_api_docs, "data_dir", lambda: str(link_root))
@@ -59,7 +63,9 @@ def test_api_docs_exact_match_through_symlinked_data_root(api_docs_through_symli
     assert "body" in response["content"]
 
 
-def test_api_docs_traversal_still_rejected_through_symlinked_data_root(api_docs_through_symlink):
+def test_api_docs_traversal_still_rejected_through_symlinked_data_root(
+    api_docs_through_symlink,
+):
     response = api_docs_through_symlink("../secret")
     assert response["kind"] != "exact"
     assert "outside the api directory" not in str(response)

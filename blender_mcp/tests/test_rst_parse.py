@@ -81,7 +81,8 @@ class TestRST(unittest.TestCase):
         # `strict=True` asserts the bundled data contains no unknown
         # directives or roles.
         for path, doc in self._rst_parse_docs.iter_doctrees_for_paths(
-                files, strict=True,
+            files,
+            strict=True,
         ):
             self.assertIsInstance(
                 doc,
@@ -147,7 +148,9 @@ class TestRST(unittest.TestCase):
         self.assertIn("IntProperty", top_level)
         self.assertIn("Returns an integer property", top_level)
 
-        nested = self._rst_parse_docs.find_definition_in_doctree(doc, "Scene.frame_current")
+        nested = self._rst_parse_docs.find_definition_in_doctree(
+            doc, "Scene.frame_current"
+        )
         self.assertIsNotNone(nested)
         self.assertIn("frame_current", nested)
         self.assertIn("currently active frame", nested)
@@ -164,9 +167,12 @@ class TestRST(unittest.TestCase):
             with open(path, "w", encoding="utf-8") as fh:
                 fh.write(".. unknown::\n\n   This is unknown.\n")
             with self.assertRaises(docutils.utils.SystemMessage):
-                list(self._rst_parse_docs.iter_doctrees_for_paths(
-                    [path], strict=True,
-                ))
+                list(
+                    self._rst_parse_docs.iter_doctrees_for_paths(
+                        [path],
+                        strict=True,
+                    )
+                )
 
     def test_literalinclude_preserves_options(self) -> None:
         """

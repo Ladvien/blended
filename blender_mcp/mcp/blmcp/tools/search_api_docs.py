@@ -4,9 +4,7 @@
 
 # pylint: disable=C0114  # See tool doc-string.
 
-__all__ = (
-    "register",
-)
+__all__ = ("register",)
 
 from mcp.server.fastmcp import FastMCP  # pylint: disable=import-error,no-name-in-module
 from mcp.types import ToolAnnotations  # pylint: disable=import-error,no-name-in-module

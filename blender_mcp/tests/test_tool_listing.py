@@ -37,26 +37,19 @@ EXPECTED_TOOLS = [
         "inputSchema": {
             "properties": {},
             "title": "get_blendfile_summary_datablocksArguments",
-            "type": "object"
-        }
+            "type": "object",
+        },
     },
     {
         "name": "get_blendfile_summary_datablocks_for_cli",
         "description": "\n"
         "Return a data-block summary by opening *blend_file* in background Blender.\n",
         "inputSchema": {
-            "properties": {
-                "blend_file": {
-                    "title": "Blend File",
-                    "type": "string"
-                }
-            },
-            "required": [
-                "blend_file"
-            ],
+            "properties": {"blend_file": {"title": "Blend File", "type": "string"}},
+            "required": ["blend_file"],
             "title": "get_blendfile_summary_datablocks_for_cliArguments",
-            "type": "object"
-        }
+            "type": "object",
+        },
     },
     {
         "name": "get_blendfile_summary_missing_files",
@@ -66,26 +59,19 @@ EXPECTED_TOOLS = [
         "inputSchema": {
             "properties": {},
             "title": "get_blendfile_summary_missing_filesArguments",
-            "type": "object"
-        }
+            "type": "object",
+        },
     },
     {
         "name": "get_blendfile_summary_missing_files_for_cli",
         "description": "\n"
         "Report missing file references by opening *blend_file* in background Blender.\n",
         "inputSchema": {
-            "properties": {
-                "blend_file": {
-                    "title": "Blend File",
-                    "type": "string"
-                }
-            },
-            "required": [
-                "blend_file"
-            ],
+            "properties": {"blend_file": {"title": "Blend File", "type": "string"}},
+            "required": ["blend_file"],
             "title": "get_blendfile_summary_missing_files_for_cliArguments",
-            "type": "object"
-        }
+            "type": "object",
+        },
     },
     {
         "name": "get_blendfile_summary_of_linked_libraries",
@@ -94,26 +80,19 @@ EXPECTED_TOOLS = [
         "inputSchema": {
             "properties": {},
             "title": "get_blendfile_summary_of_linked_librariesArguments",
-            "type": "object"
-        }
+            "type": "object",
+        },
     },
     {
         "name": "get_blendfile_summary_of_linked_libraries_for_cli",
         "description": "\n"
         "Return linked-library info by opening *blend_file* in background Blender.\n",
         "inputSchema": {
-            "properties": {
-                "blend_file": {
-                    "title": "Blend File",
-                    "type": "string"
-                }
-            },
-            "required": [
-                "blend_file"
-            ],
+            "properties": {"blend_file": {"title": "Blend File", "type": "string"}},
+            "required": ["blend_file"],
             "title": "get_blendfile_summary_of_linked_libraries_for_cliArguments",
-            "type": "object"
-        }
+            "type": "object",
+        },
     },
     {
         "name": "get_blendfile_summary_path_info",
@@ -122,26 +101,19 @@ EXPECTED_TOOLS = [
         "inputSchema": {
             "properties": {},
             "title": "get_blendfile_summary_path_infoArguments",
-            "type": "object"
-        }
+            "type": "object",
+        },
     },
     {
         "name": "get_blendfile_summary_path_info_for_cli",
         "description": "\n"
         "Return path info by opening *blend_file* in background Blender.\n",
         "inputSchema": {
-            "properties": {
-                "blend_file": {
-                    "title": "Blend File",
-                    "type": "string"
-                }
-            },
-            "required": [
-                "blend_file"
-            ],
+            "properties": {"blend_file": {"title": "Blend File", "type": "string"}},
+            "required": ["blend_file"],
             "title": "get_blendfile_summary_path_info_for_cliArguments",
-            "type": "object"
-        }
+            "type": "object",
+        },
     },
     {
         "name": "get_blendfile_summary_usage_guess",
@@ -150,26 +122,19 @@ EXPECTED_TOOLS = [
         "inputSchema": {
             "properties": {},
             "title": "get_blendfile_summary_usage_guessArguments",
-            "type": "object"
-        }
+            "type": "object",
+        },
     },
     {
         "name": "get_blendfile_summary_usage_guess_for_cli",
         "description": "\n"
         "Guess use-cases by opening *blend_file* in background Blender.\n",
         "inputSchema": {
-            "properties": {
-                "blend_file": {
-                    "title": "Blend File",
-                    "type": "string"
-                }
-            },
-            "required": [
-                "blend_file"
-            ],
+            "properties": {"blend_file": {"title": "Blend File", "type": "string"}},
+            "required": ["blend_file"],
             "title": "get_blendfile_summary_usage_guess_for_cliArguments",
-            "type": "object"
-        }
+            "type": "object",
+        },
     },
     {
         "name": "get_object_detail_summary",
@@ -179,18 +144,11 @@ EXPECTED_TOOLS = [
         "Includes type, transforms, parent, children, modifiers, constraints,\n"
         "materials, visibility, data-block name, and collections.\n",
         "inputSchema": {
-            "properties": {
-                "name": {
-                    "title": "Name",
-                    "type": "string"
-                }
-            },
-            "required": [
-                "name"
-            ],
+            "properties": {"name": {"title": "Name", "type": "string"}},
+            "required": ["name"],
             "title": "get_object_detail_summaryArguments",
-            "type": "object"
-        }
+            "type": "object",
+        },
     },
     {
         "name": "get_objects_summary",
@@ -202,8 +160,8 @@ EXPECTED_TOOLS = [
         "inputSchema": {
             "properties": {},
             "title": "get_objects_summaryArguments",
-            "type": "object"
-        }
+            "type": "object",
+        },
     },
     {
         "name": "get_python_api_docs",
@@ -227,20 +185,20 @@ EXPECTED_TOOLS = [
         "The response always carries ``kind``, ``found``, and ``identifier``.\n"
         "The remaining keys depend on ``kind``:\n"
         "\n"
-        "- ``\"exact\"`` (``found=True``): ``<identifier>.rst`` was read.\n"
+        '- ``"exact"`` (``found=True``): ``<identifier>.rst`` was read.\n'
         "  Extra keys: ``content`` (RST text), ``examples``. When the\n"
         "  file exceeds 32 KB, ``content`` is replaced with a dot-point\n"
         "  summary of the file's top-level definitions (prefixed by a\n"
         "  header noting the truncation) and ``examples`` is empty -\n"
         "  re-query individual members for their rendered blocks.\n"
-        "- ``\"namespace\"`` (``found=True``):\n"
+        '- ``"namespace"`` (``found=True``):\n'
         "  no ``<identifier>.rst`` but ``<identifier>.<child>.rst`` siblings exist.\n"
         "  Extra key: ``submodules`` (list of child identifiers).\n"
-        "- ``\"definition\"`` (``found=True``):\n"
+        '- ``"definition"`` (``found=True``):\n'
         "  *identifier* is defined inside a parent RST\n"
         "  (e.g. ``bpy.props.IntProperty`` lives in ``bpy.props.rst``).\n"
         "  Extra keys: ``content`` (rendered block), ``examples``.\n"
-        "- ``\"partial\"`` (``found=False``):\n"
+        '- ``"partial"`` (``found=False``):\n'
         "  the parent RST was located but the trailing component isn't defined in it.\n"
         "  Extra keys:\n"
         "  - ``parent`` the identifier whose RST was loaded.\n"
@@ -250,26 +208,19 @@ EXPECTED_TOOLS = [
         "\n"
         "  For a toctree landing page like ``bpy.types`` ``available`` is empty and ``submodules``\n"
         "  is the near-miss list; for a self-contained module like ``bpy.props`` it's the reverse.\n"
-        "- ``\"suggestions\"`` (``found=False``):\n"
+        '- ``"suggestions"`` (``found=False``):\n'
         "  no direct match, but *identifier* appears as a component of other files.\n"
         "  Extra key: ``suggestions`` (list of full identifiers).\n"
-        "- ``\"missing\"`` (``found=False``): nothing matched.\n"
+        '- ``"missing"`` (``found=False``): nothing matched.\n'
         "\n"
         "``examples`` (present on the ``exact`` and ``definition`` kinds)\n"
         "is a list of ``{path, content}`` entries referenced from this documentation.\n",
         "inputSchema": {
-            "properties": {
-                "identifier": {
-                    "title": "Identifier",
-                    "type": "string"
-                }
-            },
-            "required": [
-                "identifier"
-            ],
+            "properties": {"identifier": {"title": "Identifier", "type": "string"}},
+            "required": ["identifier"],
             "title": "get_python_api_docsArguments",
-            "type": "object"
-        }
+            "type": "object",
+        },
     },
     {
         "name": "get_screenshot_of_area_as_image",
@@ -305,23 +256,21 @@ EXPECTED_TOOLS = [
                         "PROPERTIES",
                         "FILE_BROWSER",
                         "SPREADSHEET",
-                        "PREFERENCES"
+                        "PREFERENCES",
                     ],
                     "title": "Area Ui Type",
-                    "type": "string"
+                    "type": "string",
                 },
                 "size_limit_in_bytes": {
                     "default": 0,
                     "title": "Size Limit In Bytes",
-                    "type": "integer"
-                }
+                    "type": "integer",
+                },
             },
-            "required": [
-                "area_ui_type"
-            ],
+            "required": ["area_ui_type"],
             "title": "get_screenshot_of_area_as_imageArguments",
-            "type": "object"
-        }
+            "type": "object",
+        },
     },
     {
         "name": "get_screenshot_of_window_as_image",
@@ -335,12 +284,12 @@ EXPECTED_TOOLS = [
                 "size_limit_in_bytes": {
                     "default": 0,
                     "title": "Size Limit In Bytes",
-                    "type": "integer"
+                    "type": "integer",
                 }
             },
             "title": "get_screenshot_of_window_as_imageArguments",
-            "type": "object"
-        }
+            "type": "object",
+        },
     },
     {
         "name": "get_screenshot_of_window_as_json",
@@ -349,26 +298,18 @@ EXPECTED_TOOLS = [
         "inputSchema": {
             "properties": {},
             "title": "get_screenshot_of_window_as_jsonArguments",
-            "type": "object"
-        }
+            "type": "object",
+        },
     },
     {
         "name": "jump_to_tab_by_name",
-        "description": "\n"
-        "Switch the active workspace tab to *name*.\n",
+        "description": "\nSwitch the active workspace tab to *name*.\n",
         "inputSchema": {
-            "properties": {
-                "name": {
-                    "title": "Name",
-                    "type": "string"
-                }
-            },
-            "required": [
-                "name"
-            ],
+            "properties": {"name": {"title": "Name", "type": "string"}},
+            "required": ["name"],
             "title": "jump_to_tab_by_nameArguments",
-            "type": "object"
-        }
+            "type": "object",
+        },
     },
     {
         "name": "jump_to_tab_by_space_type",
@@ -379,22 +320,17 @@ EXPECTED_TOOLS = [
         "is created by duplicating the current workspace.\n",
         "inputSchema": {
             "properties": {
-                "space_type": {
-                    "title": "Space Type",
-                    "type": "string"
-                },
+                "space_type": {"title": "Space Type", "type": "string"},
                 "allow_edits": {
                     "default": False,
                     "title": "Allow Edits",
-                    "type": "boolean"
-                }
+                    "type": "boolean",
+                },
             },
-            "required": [
-                "space_type"
-            ],
+            "required": ["space_type"],
             "title": "jump_to_tab_by_space_typeArguments",
-            "type": "object"
-        }
+            "type": "object",
+        },
     },
     {
         "name": "jump_to_view3d_object_by_name",
@@ -409,22 +345,17 @@ EXPECTED_TOOLS = [
         "collections enabled to make it visible.\n",
         "inputSchema": {
             "properties": {
-                "name": {
-                    "title": "Name",
-                    "type": "string"
-                },
+                "name": {"title": "Name", "type": "string"},
                 "allow_edits": {
                     "default": False,
                     "title": "Allow Edits",
-                    "type": "boolean"
-                }
+                    "type": "boolean",
+                },
             },
-            "required": [
-                "name"
-            ],
+            "required": ["name"],
             "title": "jump_to_view3d_object_by_nameArguments",
-            "type": "object"
-        }
+            "type": "object",
+        },
     },
     {
         "name": "jump_to_view3d_object_data_by_name",
@@ -435,22 +366,17 @@ EXPECTED_TOOLS = [
         "collections enabled to make it visible.\n",
         "inputSchema": {
             "properties": {
-                "name": {
-                    "title": "Name",
-                    "type": "string"
-                },
+                "name": {"title": "Name", "type": "string"},
                 "allow_edits": {
                     "default": False,
                     "title": "Allow Edits",
-                    "type": "boolean"
-                }
+                    "type": "boolean",
+                },
             },
-            "required": [
-                "name"
-            ],
+            "required": ["name"],
             "title": "jump_to_view3d_object_data_by_nameArguments",
-            "type": "object"
-        }
+            "type": "object",
+        },
     },
     {
         "name": "render_thumbnail_to_path",
@@ -459,18 +385,11 @@ EXPECTED_TOOLS = [
         "``blender_mcp/<basename of output_path>`` (temporarily overrides settings);\n"
         "the format's extension is added when missing. Returns the written ``filepath``.\n",
         "inputSchema": {
-            "properties": {
-                "output_path": {
-                    "title": "Output Path",
-                    "type": "string"
-                }
-            },
-            "required": [
-                "output_path"
-            ],
+            "properties": {"output_path": {"title": "Output Path", "type": "string"}},
+            "required": ["output_path"],
             "title": "render_thumbnail_to_pathArguments",
-            "type": "object"
-        }
+            "type": "object",
+        },
     },
     {
         "name": "render_viewport_to_path",
@@ -479,18 +398,11 @@ EXPECTED_TOOLS = [
         "using current render settings; the format's extension is added when missing.\n"
         "Returns the written ``filepath``.\n",
         "inputSchema": {
-            "properties": {
-                "output_path": {
-                    "title": "Output Path",
-                    "type": "string"
-                }
-            },
-            "required": [
-                "output_path"
-            ],
+            "properties": {"output_path": {"title": "Output Path", "type": "string"}},
+            "required": ["output_path"],
             "title": "render_viewport_to_pathArguments",
-            "type": "object"
-        }
+            "type": "object",
+        },
     },
     {
         "name": "search_api_docs",
@@ -512,7 +424,7 @@ EXPECTED_TOOLS = [
         "the paragraph body, the file path, or an enclosing section\n"
         "title - in any order. Common English stop-words (``the``,\n"
         "``a``, ``how``, ``to``, ...) are dropped, so natural\n"
-        "phrasings like ``\"how to bake\"`` work as expected. Regular\n"
+        'phrasings like ``"how to bake"`` work as expected. Regular\n'
         "expressions are not supported.\n"
         "\n"
         "Use ``context`` to pull more surrounding paragraphs into\n"
@@ -523,35 +435,23 @@ EXPECTED_TOOLS = [
         "Read-only; consults bundled RST files only.\n",
         "inputSchema": {
             "properties": {
-                "query": {
-                    "title": "Query",
-                    "type": "string"
-                },
+                "query": {"title": "Query", "type": "string"},
                 "max_results": {
                     "default": 20,
                     "title": "Max Results",
-                    "type": "integer"
+                    "type": "integer",
                 },
-                "context": {
-                    "default": 0,
-                    "title": "Context",
-                    "type": "integer"
-                },
+                "context": {"default": 0, "title": "Context", "type": "integer"},
                 "index": {
-                    "anyOf": [
-                        {"type": "integer"},
-                        {"type": "null"}
-                    ],
+                    "anyOf": [{"type": "integer"}, {"type": "null"}],
                     "default": None,
-                    "title": "Index"
-                }
+                    "title": "Index",
+                },
             },
-            "required": [
-                "query"
-            ],
+            "required": ["query"],
             "title": "search_api_docsArguments",
-            "type": "object"
-        }
+            "type": "object",
+        },
     },
     {
         "name": "search_manual_docs",
@@ -573,7 +473,7 @@ EXPECTED_TOOLS = [
         "the paragraph body, the file path, or an enclosing section\n"
         "title - in any order. Common English stop-words (``the``,\n"
         "``a``, ``how``, ``to``, ...) are dropped, so natural\n"
-        "phrasings like ``\"how to bake\"`` work as expected. Regular\n"
+        'phrasings like ``"how to bake"`` work as expected. Regular\n'
         "expressions are not supported.\n"
         "\n"
         "Use ``context`` to pull more surrounding paragraphs into\n"
@@ -584,36 +484,24 @@ EXPECTED_TOOLS = [
         "Read-only; consults bundled RST files only.\n",
         "inputSchema": {
             "properties": {
-                "query": {
-                    "title": "Query",
-                    "type": "string"
-                },
+                "query": {"title": "Query", "type": "string"},
                 "max_results": {
                     "default": 20,
                     "title": "Max Results",
-                    "type": "integer"
+                    "type": "integer",
                 },
-                "context": {
-                    "default": 0,
-                    "title": "Context",
-                    "type": "integer"
-                },
+                "context": {"default": 0, "title": "Context", "type": "integer"},
                 "index": {
-                    "anyOf": [
-                        {"type": "integer"},
-                        {"type": "null"}
-                    ],
+                    "anyOf": [{"type": "integer"}, {"type": "null"}],
                     "default": None,
-                    "title": "Index"
-                }
+                    "title": "Index",
+                },
             },
-            "required": [
-                "query"
-            ],
+            "required": ["query"],
             "title": "search_manual_docsArguments",
-            "type": "object"
-        }
-    }
+            "type": "object",
+        },
+    },
 ]
 # END: EXPECTED_TOOLS
 
@@ -632,7 +520,10 @@ def _list_tools() -> list[dict[str, object]]:
             args=["-m", "blmcp"],
             env=env,
         )
-        async with stdio_client(params) as (read, write), ClientSession(read, write) as session:
+        async with (
+            stdio_client(params) as (read, write),
+            ClientSession(read, write) as session,
+        ):
             await session.initialize()
             result = await session.list_tools()
             # blended's surface is pinned by TOOL_SCHEMAS_FINGERPRINT;

@@ -40,7 +40,11 @@ def _object_info(obj: _Object) -> dict[str, Any]:
         "hide_viewport": obj.hide_viewport,
         "hide_in_view_layer": obj.hide_get(),
     }
-    if obj.type == 'EMPTY' and obj.instance_type == 'COLLECTION' and obj.instance_collection is not None:
+    if (
+        obj.type == "EMPTY"
+        and obj.instance_type == "COLLECTION"
+        and obj.instance_collection is not None
+    ):
         info["instance_collection"] = obj.instance_collection.name
     return info
 

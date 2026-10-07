@@ -40,7 +40,11 @@ _USE_HTTP_SUPPORT = True
 # loopback names (DNS-rebinding protection). A page on another origin reaches
 # 127.0.0.1 through the browser; the Origin check is what refuses it.
 LOOPBACK_ALLOWED_HOSTS = ["127.0.0.1:*", "localhost:*", "[::1]:*"]
-LOOPBACK_ALLOWED_ORIGINS = ["http://127.0.0.1:*", "http://localhost:*", "http://[::1]:*"]
+LOOPBACK_ALLOWED_ORIGINS = [
+    "http://127.0.0.1:*",
+    "http://localhost:*",
+    "http://[::1]:*",
+]
 
 _TRANSPORTS = ("stdio", *(("http",) if _USE_HTTP_SUPPORT else ()))
 
@@ -64,17 +68,23 @@ def _require_loopback_host(host: str, port: int) -> None:
     """
     infos = socket.getaddrinfo(host, port, socket.AF_UNSPEC, socket.SOCK_STREAM)
     addresses = {str(info[4][0]) for info in infos}
-    if not all(ipaddress.ip_address(address.split("%", 1)[0]).is_loopback for address in addresses):
+    if not all(
+        ipaddress.ip_address(address.split("%", 1)[0]).is_loopback
+        for address in addresses
+    ):
         raise ValueError(
             "refusing to listen on {!r}: it resolves to {}, not loopback; "
-            "this server runs arbitrary Python without authentication".format(host, ", ".join(sorted(addresses)))
+            "this server runs arbitrary Python without authentication".format(
+                host, ", ".join(sorted(addresses))
+            )
         )
 
 
 def argument_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="MCP server for Blender.")
     parser.add_argument(
-        "--transport", "-t",
+        "--transport",
+        "-t",
         choices=_TRANSPORTS,
         default="stdio",
         help="Transport protocol (default: stdio).",
@@ -97,7 +107,8 @@ def argument_parser() -> argparse.ArgumentParser:
             help="Loopback host to bind to for HTTP transports (default: 127.0.0.1); any other host is refused.",
         )
         parser.add_argument(
-            "--port", "-p",
+            "--port",
+            "-p",
             type=int,
             default=8000,
             help="Port to bind to for HTTP transports (default: 8000).",
@@ -110,14 +121,19 @@ def main() -> int:
     args = parser.parse_args()
     # Only a client-spawned stdio server gets restarted after it exits.
     if args.exit_on_source_change and args.transport != "stdio":
-        parser.error("--exit-on-source-change needs --transport stdio: nothing restarts an HTTP server that exits")
+        parser.error(
+            "--exit-on-source-change needs --transport stdio: nothing restarts an HTTP server that exits"
+        )
 
     # Load prompts.
     data_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
     with open(os.path.join(data_dir, "prompts.yml"), encoding="utf-8") as fh:
         prompts = yaml.safe_load(fh)
 
-    mcp = BlendedFastMCP("blender-mcp", instructions=blended_instructions(str(prompts["initial_instructions"])))
+    mcp = BlendedFastMCP(
+        "blender-mcp",
+        instructions=blended_instructions(str(prompts["initial_instructions"])),
+    )
     # Exit once src/blended or blmcp changes while idle; a reconnecting client
     # restarts the server, which then lists the current tools and instructions.
     if args.exit_on_source_change:

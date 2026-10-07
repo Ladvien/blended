@@ -336,9 +336,7 @@ def parse_tags(reply_text: str) -> tuple[str, ...]:
             f"reply is not valid JSON: {error}. Reply: {reply_text[:200]!r}"
         ) from error
     if not isinstance(payload, dict):
-        raise ExaminerReplyUnparseable(
-            f"reply JSON is not an object: {payload!r}"
-        )
+        raise ExaminerReplyUnparseable(f"reply JSON is not an object: {payload!r}")
     reasoning = payload.get("reasoning")
     tags = payload.get("tags")
     if not isinstance(reasoning, str) or not reasoning.strip():
@@ -352,8 +350,7 @@ def parse_tags(reply_text: str) -> tuple[str, ...]:
     unknown = sorted(set(tags) - set(VALID_TAGS))
     if unknown:
         raise UnknownDeviationTag(
-            f"tags outside the closed vocabulary: {unknown}. "
-            f"Valid tags: {VALID_TAGS}"
+            f"tags outside the closed vocabulary: {unknown}. Valid tags: {VALID_TAGS}"
         )
     return tuple(tags)
 
@@ -373,7 +370,9 @@ def _examiner_prompt(reference_position: str) -> str:
     return render(EXAMINER_TEMPLATE, reference_position=reference_position)
 
 
-def examine_view(eye, golden_view: Path, test_view: Path, view_name: str) -> ViewVerdict:
+def examine_view(
+    eye, golden_view: Path, test_view: Path, view_name: str
+) -> ViewVerdict:
     """Compare one golden view against the render under review.
 
     Called twice with swapped image order (MT-bench position-bias
@@ -503,9 +502,7 @@ def examine_asset(
         for tag in view.order_consistent_tags
         if tag in MEASURED_DEVIATION_TAGS
     }
-    abstained = any(
-        CANNOT_TELL_TAG in view.order_consistent_tags for view in views
-    )
+    abstained = any(CANNOT_TELL_TAG in view.order_consistent_tags for view in views)
     return AssetVerdict(
         brief_name=brief.name,
         examiner_identity=examiner_identity(vision_model),

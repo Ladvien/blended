@@ -116,8 +116,11 @@ def test_execution_row_reads_baked_labels_for_a_written_script(tmp_path):
         "# --- op 3: world_bounds ---\n_op('world_bounds', {})\n"
     )
     completion = {
-        "arm": "a1", "draw": 1, "instance": "Inst_seed0",
-        "parse_result": "OK", "script_written": True,
+        "arm": "a1",
+        "draw": 1,
+        "instance": "Inst_seed0",
+        "parse_result": "OK",
+        "script_written": True,
     }
     row = phase_b.execution_row(tmp_path, "res", completion, _Taxonomy)
     assert row["render_status"] == "OK"
@@ -136,8 +139,11 @@ def test_execution_row_ignores_stale_artifacts_when_no_script_was_written(tmp_pa
     (instance_root / "glb" / "Inst_seed0.glb").write_bytes(b"glb")
     (instance_root / "Inst_seed0.py").write_text("# --- chunk 1 ---\na = 1\n")
     completion = {
-        "arm": "a1", "draw": 1, "instance": "Inst_seed0",
-        "parse_result": "NO_TOOL_CALLS", "script_written": False,
+        "arm": "a1",
+        "draw": 1,
+        "instance": "Inst_seed0",
+        "parse_result": "NO_TOOL_CALLS",
+        "script_written": False,
     }
     row = phase_b.execution_row(tmp_path, "res", completion, _Taxonomy)
     assert row["render_status"] == "NO_SCRIPT"
@@ -164,9 +170,7 @@ def _measured(executability: dict[str, float], codes: dict[str, dict]) -> dict:
 
 
 def test_zero_standard_error_is_a_real_half_width_not_a_missing_one():
-    measured = _measured(
-        {"a2": 0.0, "a3": 0.0, "a4": 1.0, "a5": 0.75, "a1": 0.8}, {}
-    )
+    measured = _measured({"a2": 0.0, "a3": 0.0, "a4": 1.0, "a5": 0.75, "a1": 0.8}, {})
     computed = phase_b.deltas(measured)
     assert computed["delta_facade_half_width_pp"] == 0.0
     assert computed["delta_tune_half_width_pp"] == 0.0
@@ -178,7 +182,9 @@ def test_failure_class_shares_exclude_passes_and_excluded_codes():
     )
     assert shares == {"failures": 10, "syntax": 0.8, "geometry": 0.2}
     assert phase_b.failure_class_shares({"PASS": 4}) == {
-        "failures": 0, "syntax": None, "geometry": None,
+        "failures": 0,
+        "syntax": None,
+        "geometry": None,
     }
 
 
@@ -225,10 +231,17 @@ def test_phase_c_counts_ops_off_the_baked_script_not_the_meta_counters(tmp_path)
         "# --- op 3: world_bounds ---\n_op('world_bounds', {})\n"
     )
     _archive_instance(
-        tmp_path, "blended-collecting",
-        {"n_op_calls_included": 9, "n_chunks_included": 9}, labels,
+        tmp_path,
+        "blended-collecting",
+        {"n_op_calls_included": 9, "n_chunks_included": 9},
+        labels,
     )
-    _archive_instance(tmp_path, "blended-blind", {"n_chunks_included": 9}, "# --- chunk 1 ---\na = 1\n")
+    _archive_instance(
+        tmp_path,
+        "blended-blind",
+        {"n_chunks_included": 9},
+        "# --- chunk 1 ---\na = 1\n",
+    )
     pairs = phase_c.archive_pairs(tmp_path, "res")["pairs"]
     summary = phase_c.summarise_pairs(pairs)
     assert summary["op_sequence_pairs"] == 1
@@ -262,7 +275,8 @@ def test_mechanism_summary_refuses_to_print_a_refutation_the_numbers_do_not_supp
         mechanism.assert_hypothesis_refuted(_drop(0.40), _drop(0.26), ok)
     with pytest.raises(SystemExit, match="both predictions fail"):
         mechanism.assert_hypothesis_refuted(
-            _drop(0.07), _drop(0.26),
+            _drop(0.07),
+            _drop(0.26),
             {"failure_before_first_chunk": 9, "failure_after_first_chunk": 2},
         )
     with pytest.raises(SystemExit, match="unmeasured"):
@@ -273,7 +287,12 @@ def test_mechanism_summary_refuses_to_print_a_refutation_the_numbers_do_not_supp
 
 
 def _record(arm: str, draw: int, instance: str, parse_result: str) -> dict:
-    return {"arm": arm, "draw": draw, "instance": instance, "parse_result": parse_result}
+    return {
+        "arm": arm,
+        "draw": draw,
+        "instance": instance,
+        "parse_result": parse_result,
+    }
 
 
 def test_sweep_reads_only_records_the_subprocess_wrote(tmp_path, monkeypatch):
@@ -281,19 +300,22 @@ def test_sweep_reads_only_records_the_subprocess_wrote(tmp_path, monkeypatch):
     path = sweep.completions_path("a4", 2, per_draw=True)
     path.parent.mkdir(parents=True)
     path.write_text(
-        json.dumps(_record("a4", 2, "Inst_seed0", "OK")) + "\n"
-        + json.dumps(_record("a4", 2, "Other_seed0", "NO_CODE")) + "\n"
-        + json.dumps(_record("a4", 1, "Inst_seed0", "NO_CODE")) + "\n"
+        json.dumps(_record("a4", 2, "Inst_seed0", "OK"))
+        + "\n"
+        + json.dumps(_record("a4", 2, "Other_seed0", "NO_CODE"))
+        + "\n"
+        + json.dumps(_record("a4", 1, "Inst_seed0", "NO_CODE"))
+        + "\n"
     )
     before = sweep.matching_completions("a4", 2, "Inst_seed0", True)
     assert [record["parse_result"] for record in before] == ["OK"]
     # The re-run crashed: nothing appended. The old "OK" must not be reported.
-    after = sweep.matching_completions("a4", 2, "Inst_seed0", True)[len(before):]
+    after = sweep.matching_completions("a4", 2, "Inst_seed0", True)[len(before) :]
     assert sweep.completion_outcome(after, 1) == ({}, "ERR_EXIT_1")
     assert sweep.completion_outcome(after, 0) == ({}, sweep.OUTCOME_NO_RECORD)
     with path.open("a") as handle:
         handle.write(json.dumps(_record("a4", 2, "Inst_seed0", "SYNTAX_ERROR")) + "\n")
-    fresh = sweep.matching_completions("a4", 2, "Inst_seed0", True)[len(before):]
+    fresh = sweep.matching_completions("a4", 2, "Inst_seed0", True)[len(before) :]
     record, outcome = sweep.completion_outcome(fresh, 0)
     assert outcome == "SYNTAX_ERROR"
     assert record["parse_result"] == "SYNTAX_ERROR"
@@ -301,9 +323,15 @@ def test_sweep_reads_only_records_the_subprocess_wrote(tmp_path, monkeypatch):
 
 def test_blender_ops_command_turns_a_script_exception_into_a_nonzero_exit(tmp_path):
     arguments = type(
-        "Arguments", (), {
-            "arm": "a1", "bench_root": str(tmp_path), "results_root": "res",
-            "per_draw_files": False, "overwrite": False, "blender": "/b/Blender",
+        "Arguments",
+        (),
+        {
+            "arm": "a1",
+            "bench_root": str(tmp_path),
+            "results_root": "res",
+            "per_draw_files": False,
+            "overwrite": False,
+            "blender": "/b/Blender",
         },
     )()
     command = sweep.completion_command(arguments, 1, "Inst_seed0")
@@ -319,13 +347,17 @@ def test_judge_refuses_to_truncate_hand_verified_rows(tmp_path):
     path = tmp_path / "g3_judgements.jsonl"
     judge.refuse_to_overwrite_hand_verification(path)  # absent: fine
     path.write_text(
-        json.dumps({"instance": "A", "hand_verified": False}) + "\n"
-        + json.dumps({"instance": "B"}) + "\n"
+        json.dumps({"instance": "A", "hand_verified": False})
+        + "\n"
+        + json.dumps({"instance": "B"})
+        + "\n"
     )
     judge.refuse_to_overwrite_hand_verification(path)  # nothing verified: fine
     path.write_text(
-        json.dumps({"instance": "A", "hand_verified": False}) + "\n"
-        + json.dumps({"instance": "B", "hand_verified": True, "agrees": False}) + "\n"
+        json.dumps({"instance": "A", "hand_verified": False})
+        + "\n"
+        + json.dumps({"instance": "B", "hand_verified": True, "agrees": False})
+        + "\n"
     )
     with pytest.raises(SystemExit, match="1 hand-verified"):
         judge.refuse_to_overwrite_hand_verification(path)
@@ -335,7 +367,10 @@ def test_judge_refuses_to_truncate_hand_verified_rows(tmp_path):
 
 
 def test_bar_verdict_is_derived_from_the_delta_and_its_interval():
-    assert report.bar_verdict(96.2, 5.48, 15.0) == "clears the bar by ~15x its own interval"
+    assert (
+        report.bar_verdict(96.2, 5.48, 15.0)
+        == "clears the bar by ~15x its own interval"
+    )
     assert report.bar_verdict(20.0, 8.0, 15.0) == (
         "point estimate clears the bar; its interval does not"
     )
@@ -345,6 +380,12 @@ def test_bar_verdict_is_derived_from_the_delta_and_its_interval():
 
 
 def test_bands_overlap_only_when_they_share_a_point_and_are_measured():
-    assert report.bands_overlap({"low": 25.8, "high": 59.2}, {"low": 25.7, "high": 64.3})
-    assert not report.bands_overlap({"low": 0.0, "high": 10.0}, {"low": 20.0, "high": 30.0})
-    assert not report.bands_overlap({"low": None, "high": None}, {"low": 0.0, "high": 1.0})
+    assert report.bands_overlap(
+        {"low": 25.8, "high": 59.2}, {"low": 25.7, "high": 64.3}
+    )
+    assert not report.bands_overlap(
+        {"low": 0.0, "high": 10.0}, {"low": 20.0, "high": 30.0}
+    )
+    assert not report.bands_overlap(
+        {"low": None, "high": None}, {"low": 0.0, "high": 1.0}
+    )

@@ -80,7 +80,9 @@ def gate_verdict_json(verdict: GateVerdict) -> dict:
         "scene_state": verdict.scene_state,
         "gate_failures": list(verdict.gate_failures),
         "world_extents_m": (
-            list(verdict.world_extents_m) if verdict.world_extents_m is not None else None
+            list(verdict.world_extents_m)
+            if verdict.world_extents_m is not None
+            else None
         ),
         "report": asdict(verdict.report) if verdict.report is not None else None,
     }
@@ -367,12 +369,7 @@ def degenerate_transform_failure(blender_object) -> str:
 
     _synchronise_view_layer()
     matrix = blender_object.matrix_world
-    non_finite = [
-        value
-        for row in matrix
-        for value in row
-        if not math.isfinite(value)
-    ]
+    non_finite = [value for row in matrix for value in row if not math.isfinite(value)]
     if non_finite:
         return TRANSFORM_FAILURES["non_finite"].format(
             name=blender_object.name,
@@ -396,9 +393,8 @@ def scene_state_failure(blender_object) -> str:
     The transform first: with a NaN matrix, "can it be seen" is not even
     a meaningful question.
     """
-    return (
-        degenerate_transform_failure(blender_object)
-        or invisibility_failure(blender_object)
+    return degenerate_transform_failure(blender_object) or invisibility_failure(
+        blender_object
     )
 
 

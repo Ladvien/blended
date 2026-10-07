@@ -8,9 +8,7 @@ CLI command handler for running the MCP server in background mode.
 Started via ``blender --background file.blend --command blender_mcp``.
 """
 
-__all__ = (
-    "cli_execute",
-)
+__all__ = ("cli_execute",)
 
 import argparse
 

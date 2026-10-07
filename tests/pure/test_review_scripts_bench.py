@@ -42,7 +42,9 @@ def _module_level_names(path: Path) -> set[str]:
         elif isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
             names.add(node.target.id)
         elif isinstance(node, (ast.Import, ast.ImportFrom)):
-            names.update((alias.asname or alias.name).split(".")[0] for alias in node.names)
+            names.update(
+                (alias.asname or alias.name).split(".")[0] for alias in node.names
+            )
     return names
 
 
@@ -52,7 +54,11 @@ def test_every_sibling_script_import_names_something_the_sibling_binds():
     stale: list[str] = []
     for path in sorted(modules.values()):
         for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
-            if not (isinstance(node, ast.ImportFrom) and node.level == 0 and node.module in modules):
+            if not (
+                isinstance(node, ast.ImportFrom)
+                and node.level == 0
+                and node.module in modules
+            ):
                 continue
             bound = _module_level_names(modules[node.module])
             for alias in node.names:
@@ -104,5 +110,8 @@ def test_a_blender_that_writes_a_fresh_ok_log_and_views_still_passes(tmp_path):
     output = _stage_reference(tmp_path, "Jar_seed0")
     log = output / "render_log.json"
     blender = _fake_blender(tmp_path, f"echo '{{\"status\": \"OK\"}}' > '{log}'")
-    assert bench_render_references.render_instance(tmp_path, blender, "Jar_seed0", 30) is True
+    assert (
+        bench_render_references.render_instance(tmp_path, blender, "Jar_seed0", 30)
+        is True
+    )
     assert os.path.getsize(log) > 0

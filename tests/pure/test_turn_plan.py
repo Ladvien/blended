@@ -68,7 +68,9 @@ def _assistant(*tool_calls, content="", thinking=None):
 
 
 PLAN_REPLY = _assistant(
-    _tool_call("c1", "declare_plan", {"steps": ["Build the base", "Add the lid", "Export"]}),
+    _tool_call(
+        "c1", "declare_plan", {"steps": ["Build the base", "Add the lid", "Export"]}
+    ),
 )
 RUN_PYTHON_REPLY = _assistant(
     _tool_call("c2", "run_python", {"source": "a = 1", "plan_step": 1}),
@@ -93,7 +95,9 @@ def test_parse_plan_arguments_rejects_empty_list():
 
 def test_parse_plan_arguments_rejects_too_many_steps():
     with pytest.raises(ValueError, match=str(MAXIMUM_PLAN_STEPS)):
-        parse_plan_arguments({"steps": [f"step {i}" for i in range(MAXIMUM_PLAN_STEPS + 1)]})
+        parse_plan_arguments(
+            {"steps": [f"step {i}" for i in range(MAXIMUM_PLAN_STEPS + 1)]}
+        )
 
 
 def test_parse_plan_arguments_rejects_blank_step():
@@ -259,7 +263,9 @@ def test_require_plan_refuses_run_python_without_plan(tmp_path):
     run_python_calls = [c for c in dispatched if c[0] == "run_python"]
     assert len(run_python_calls) == 1
     # The refusal was emitted as a result event and recorded in history.
-    result_events = [t for k, t in events if k == "result" and t == MISSING_PLAN_REFUSAL]
+    result_events = [
+        t for k, t in events if k == "result" and t == MISSING_PLAN_REFUSAL
+    ]
     assert len(result_events) == 1
     # The plan was declared and a plan event was emitted.
     plan_events = [t for k, t in events if k == "plan"]
@@ -436,6 +442,7 @@ def test_dispatch_tool_declare_plan_echoes_steps():
     assert "1. build" in result
     assert "2. export" in result
 
+
 # --- op tools (OT-6): plan-required like run_python, plan_step honoured ---
 
 
@@ -444,12 +451,18 @@ def test_plan_required_tools_are_run_python_and_every_scene_changing_op():
     from blended.ops._contract import changes_scene, facade_ops
 
     assert PLAN_REQUIRED_TOOLS[0] == "run_python"
-    assert set(PLAN_REQUIRED_TOOLS[1:]) == {name for name, f in facade_ops() if changes_scene(f)}
+    assert set(PLAN_REQUIRED_TOOLS[1:]) == {
+        name for name, f in facade_ops() if changes_scene(f)
+    }
     assert "add_box" in PLAN_REQUIRED_TOOLS and "rig_report" not in PLAN_REQUIRED_TOOLS
 
 
 def test_an_op_tool_without_a_plan_is_refused_with_the_same_text(tmp_path):
-    add_box = _tool_call("o1", "add_box", {"name": "Crate", "width_m": 0.5, "depth_m": 0.5, "height_m": 0.5})
+    add_box = _tool_call(
+        "o1",
+        "add_box",
+        {"name": "Crate", "width_m": 0.5, "depth_m": 0.5, "height_m": 0.5},
+    )
     replies = [_assistant(add_box), PLAN_REPLY, _assistant(add_box), ANSWER_REPLY]
     session = live_loop.AgentSession(client=ScriptedClient(replies), require_plan=True)
     dispatched = []
@@ -462,12 +475,20 @@ def test_an_op_tool_without_a_plan_is_refused_with_the_same_text(tmp_path):
     events = []
     session.send("build it", on_event=lambda k, t: events.append((k, t)))
 
-    assert dispatched == ["declare_plan", "add_box"]  # the first add_box never reached dispatch
-    assert [t for k, t in events if k == "result" and t == MISSING_PLAN_REFUSAL] == [MISSING_PLAN_REFUSAL]
+    assert dispatched == [
+        "declare_plan",
+        "add_box",
+    ]  # the first add_box never reached dispatch
+    assert [t for k, t in events if k == "result" and t == MISSING_PLAN_REFUSAL] == [
+        MISSING_PLAN_REFUSAL
+    ]
 
 
 def test_a_reader_op_needs_no_plan(tmp_path):
-    replies = [_assistant(_tool_call("r1", "rig_report", {"armature_name": "Rig"})), ANSWER_REPLY]
+    replies = [
+        _assistant(_tool_call("r1", "rig_report", {"armature_name": "Rig"})),
+        ANSWER_REPLY,
+    ]
     session = live_loop.AgentSession(client=ScriptedClient(replies), require_plan=True)
     dispatched = []
 
@@ -485,7 +506,9 @@ def test_an_op_tool_call_with_plan_step_reports_progress(tmp_path):
     step_reply = _assistant(
         _tool_call("o2", "link_into_scene", {"object_name": "Crate", "plan_step": 3}),
     )
-    session = live_loop.AgentSession(client=ScriptedClient([PLAN_REPLY, step_reply, ANSWER_REPLY]), require_plan=True)
+    session = live_loop.AgentSession(
+        client=ScriptedClient([PLAN_REPLY, step_reply, ANSWER_REPLY]), require_plan=True
+    )
     seen_arguments = []
 
     def dispatch(tool_name, arguments, output_directory):
@@ -506,5 +529,7 @@ def test_dispatch_strips_plan_step_before_binding():
     reader called with it is not refused as 'unknown parameter'."""
     from blended.agent.tools import dispatch_tool
 
-    text = dispatch_tool("middle_extent_m", {"extents_m": [0.3, 0.2, 0.25], "plan_step": 2}, None).text
+    text = dispatch_tool(
+        "middle_extent_m", {"extents_m": [0.3, 0.2, 0.25], "plan_step": 2}, None
+    ).text
     assert text.startswith("OK: middle_extent_m"), text

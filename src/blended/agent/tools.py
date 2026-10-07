@@ -325,7 +325,9 @@ TOOL_SCHEMAS = SERVICE_TOOL_SCHEMAS + OP_TOOL_SCHEMAS
 # The dispatch tables (OT-4): a service tool name reaches its branch in
 # `dispatch_tool`; an op tool name reaches its facade function through
 # `op_call.call_op`; any other name is refused at the door.
-SERVICE_TOOL_NAMES = frozenset(tool["function"]["name"] for tool in SERVICE_TOOL_SCHEMAS)
+SERVICE_TOOL_NAMES = frozenset(
+    tool["function"]["name"] for tool in SERVICE_TOOL_SCHEMAS
+)
 
 
 def _facade_op_functions() -> dict[str, Callable[..., Any]]:
@@ -361,7 +363,9 @@ def search_ops(query: str) -> ToolOutcome:
     moment of use, not a signature string to re-parse (AGT-18). One ranked
     page, capped at MAXIMUM_SEARCH_RESULTS, never paginated.
     """
-    query_tokens = [token for token in _SEARCH_WORD_PATTERN.split(query.lower()) if token]
+    query_tokens = [
+        token for token in _SEARCH_WORD_PATTERN.split(query.lower()) if token
+    ]
     if not query_tokens:
         return ToolOutcome(
             f"Query {query!r} contains no searchable words. Search for an "
@@ -445,8 +449,7 @@ def dispatch_tool(
         except ValueError as error:
             return ToolOutcome(f"FAILED: {error}", ok=False)
         numbered = "\n".join(
-            f"  {index}. {step}"
-            for index, step in enumerate(plan.steps, start=1)
+            f"  {index}. {step}" for index, step in enumerate(plan.steps, start=1)
         )
         return ToolOutcome(f"Plan declared:\n{numbered}")
 
@@ -467,7 +470,10 @@ def dispatch_tool(
         # model sent (plan_step stripped), not an empty dict, so the
         # miner can see WHAT was refused.
         validated_arguments = (
-            {name: json_returned(value) for name, value in result.bound_arguments.items()}
+            {
+                name: json_returned(value)
+                for name, value in result.bound_arguments.items()
+            }
             if result.bound_arguments
             else op_arguments
         )
@@ -490,7 +496,9 @@ def dispatch_tool(
     if tool_name == "run_python":
         reason = arguments.get("reason", "")
         if not isinstance(reason, str) or not reason.strip():
-            return ToolOutcome(RUN_PYTHON_REASON_REFUSAL, ok=False, stage_reached=STAGE_EXECUTE)
+            return ToolOutcome(
+                RUN_PYTHON_REASON_REFUSAL, ok=False, stage_reached=STAGE_EXECUTE
+            )
         outcome = _dispatch_service_tool(tool_name, arguments, output_directory)
         return dataclasses.replace(
             outcome,
@@ -513,11 +521,20 @@ def _dispatch_service_tool(
     output_directory = Path(output_directory)
 
     def failed(text: str, stage: str = STAGE_EXECUTE) -> ToolOutcome:
-        return ToolOutcome(text, ok=False, stage_reached=stage, validated_arguments=arguments)
-
-    def done(text: str, images: tuple[Path, ...] = (), stage: str = "", **fields) -> ToolOutcome:
         return ToolOutcome(
-            text, images, ok=True, stage_reached=stage, validated_arguments=arguments, **fields
+            text, ok=False, stage_reached=stage, validated_arguments=arguments
+        )
+
+    def done(
+        text: str, images: tuple[Path, ...] = (), stage: str = "", **fields
+    ) -> ToolOutcome:
+        return ToolOutcome(
+            text,
+            images,
+            ok=True,
+            stage_reached=stage,
+            validated_arguments=arguments,
+            **fields,
         )
 
     if tool_name == "run_python":
@@ -535,7 +552,8 @@ def _dispatch_service_tool(
                     else "\n(nothing printed)"
                 )
                 return done(
-                    f"Executed OK in {run_result.duration_s:.2f}s.{printed}", stage=STAGE_DONE
+                    f"Executed OK in {run_result.duration_s:.2f}s.{printed}",
+                    stage=STAGE_DONE,
                 )
             drift_notes = "".join(
                 f"\n  KNOWN TRAP [{entry.symbol}]: {entry.fix}"
@@ -620,13 +638,17 @@ def _dispatch_service_tool(
             from blended.ops import rig_report
 
             if blender_object.type != "ARMATURE":
-                return failed(f"{object_name!r} is a {blender_object.type}, not an ARMATURE.")
+                return failed(
+                    f"{object_name!r} is a {blender_object.type}, not an ARMATURE."
+                )
             report = rig_report(object_name)
         elif domain == "weights":
             from blended.ops import weight_report
 
             if blender_object.type != "MESH":
-                return failed(f"{object_name!r} is a {blender_object.type}, not a MESH.")
+                return failed(
+                    f"{object_name!r} is a {blender_object.type}, not a MESH."
+                )
             report = weight_report(object_name)
         elif domain == "animation":
             from blended.ops import animation_report
@@ -636,7 +658,9 @@ def _dispatch_service_tool(
             from blended.ops import material_report
 
             if blender_object.type != "MESH":
-                return failed(f"{object_name!r} is a {blender_object.type}, not a MESH.")
+                return failed(
+                    f"{object_name!r} is a {blender_object.type}, not a MESH."
+                )
             report = material_report(object_name)
         else:
             return failed(f"Unknown domain {domain!r}.")
@@ -698,11 +722,15 @@ def _dispatch_service_tool(
         object_name = arguments["object_name"]
         blender_object = bpy.data.objects.get(object_name)
         if blender_object is None:
-            return failed(f"No object named {object_name!r} in the scene.", STAGE_LOCATE)
+            return failed(
+                f"No object named {object_name!r} in the scene.", STAGE_LOCATE
+            )
         export_report = export_glb(blender_object, Path(arguments["path"]))
         failures = export_report.round_trip_failures()
         if failures:
-            return failed("EXPORT VERIFICATION FAILED:\n" + "\n".join(failures), STAGE_EXPORT)
+            return failed(
+                "EXPORT VERIFICATION FAILED:\n" + "\n".join(failures), STAGE_EXPORT
+            )
         return done(
             f"Exported and verified: {export_report.export_path} "
             f"({export_report.file_size_bytes} bytes, "

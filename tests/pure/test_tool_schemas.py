@@ -114,13 +114,17 @@ def test_a_contract_violation_refuses_the_whole_set(monkeypatch):
 # --- each tool IS its signature --------------------------------------------
 
 
-@pytest.mark.parametrize("op_name,function", facade_ops(), ids=lambda x: x if isinstance(x, str) else "")
+@pytest.mark.parametrize(
+    "op_name,function", facade_ops(), ids=lambda x: x if isinstance(x, str) else ""
+)
 def test_the_parameter_set_equals_the_signature(op_name, function):
     parameters = _op_tool(op_name)["function"]["parameters"]
     signature = inspect.signature(function)
     # plan_step is the harness's (OT-6): present on every scene-changing
     # op tool, absent from readers, never part of the signature.
-    own_properties = [name for name in parameters["properties"] if name != PLAN_STEP_ARGUMENT]
+    own_properties = [
+        name for name in parameters["properties"] if name != PLAN_STEP_ARGUMENT
+    ]
     assert own_properties == list(signature.parameters)
     assert (PLAN_STEP_ARGUMENT in parameters["properties"]) == changes_scene(function)
     assert PLAN_STEP_ARGUMENT not in parameters["required"]
@@ -135,7 +139,9 @@ def test_the_parameter_set_equals_the_signature(op_name, function):
         assert ("default" in parameters["properties"][name]) == has_default, name
 
 
-@pytest.mark.parametrize("op_name,function", facade_ops(), ids=lambda x: x if isinstance(x, str) else "")
+@pytest.mark.parametrize(
+    "op_name,function", facade_ops(), ids=lambda x: x if isinstance(x, str) else ""
+)
 def test_every_numeric_parameter_carries_a_unit_in_its_name(op_name, function):
     properties = _op_tool(op_name)["function"]["parameters"]["properties"]
     for name, property_schema in properties.items():
@@ -148,7 +154,9 @@ def test_every_numeric_parameter_carries_a_unit_in_its_name(op_name, function):
         )
 
 
-@pytest.mark.parametrize("op_name,function", facade_ops(), ids=lambda x: x if isinstance(x, str) else "")
+@pytest.mark.parametrize(
+    "op_name,function", facade_ops(), ids=lambda x: x if isinstance(x, str) else ""
+)
 def test_the_description_is_the_summary_and_the_return(op_name, function):
     description = _op_tool(op_name)["function"]["description"]
     summary = (inspect.getdoc(function) or "").split("\n", 1)[0].strip()
@@ -157,7 +165,11 @@ def test_the_description_is_the_summary_and_the_return(op_name, function):
     # OT-5: the gating marker is part of what the model reads, and only
     # an op whose return names an object carries one.
     if returns_object_names(function):
-        expected = generator.GATED_DESCRIPTION if is_gated(function) else generator.UNGATED_DESCRIPTION
+        expected = (
+            generator.GATED_DESCRIPTION
+            if is_gated(function)
+            else generator.UNGATED_DESCRIPTION
+        )
         assert description.endswith(expected), op_name
     else:
         assert generator.GATED_DESCRIPTION not in description
@@ -179,9 +191,9 @@ def test_fixed_tuples_become_bounded_arrays():
 
 
 def test_optional_parameters_admit_null():
-    rotation = _op_tool("keyframe_object_transform")["function"]["parameters"]["properties"][
-        "rotation_euler_deg"
-    ]
+    rotation = _op_tool("keyframe_object_transform")["function"]["parameters"][
+        "properties"
+    ]["rotation_euler_deg"]
     assert rotation["anyOf"][1] == {"type": "null"}
     assert rotation["default"] is None
 
@@ -191,9 +203,14 @@ def test_a_config_dataclass_becomes_an_object_with_its_required_fields():
     assert spec["type"] == "object"
     assert spec["additionalProperties"] is False
     assert spec["required"] == [
-        f.name for f in dataclasses.fields(ops_facade.SplayedLegSpec) if f.default is dataclasses.MISSING
+        f.name
+        for f in dataclasses.fields(ops_facade.SplayedLegSpec)
+        if f.default is dataclasses.MISSING
     ]
-    assert spec["properties"]["segment_count"]["default"] == ops_facade.SplayedLegSpec.segment_count
+    assert (
+        spec["properties"]["segment_count"]["default"]
+        == ops_facade.SplayedLegSpec.segment_count
+    )
 
 
 def test_a_tuple_of_dataclasses_becomes_an_array_of_objects():
@@ -214,7 +231,9 @@ def test_an_unmappable_annotation_is_loud():
 
 
 def test_the_fingerprint_has_its_own_prefix_and_width():
-    assert _FINGERPRINT_PATTERN.match(TOOL_SCHEMAS_FINGERPRINT), TOOL_SCHEMAS_FINGERPRINT
+    assert _FINGERPRINT_PATTERN.match(TOOL_SCHEMAS_FINGERPRINT), (
+        TOOL_SCHEMAS_FINGERPRINT
+    )
 
 
 def test_the_fingerprint_moves_when_a_schema_moves():
@@ -246,17 +265,23 @@ def test_the_three_unlinked_constructors_are_the_only_ungated_object_returners()
     object nothing has linked yet. Every other op whose return names an
     object is gated. A new ungated op must be added here on purpose."""
     ungated = sorted(
-        name for name, function in facade_ops() if returns_object_names(function) and not is_gated(function)
+        name
+        for name, function in facade_ops()
+        if returns_object_names(function) and not is_gated(function)
     )
     assert ungated == ["add_box", "add_cylinder", "add_lathe"]
-    assert not returns_object_names(ops_facade.assign_material)  # a material name, not an object
+    assert not returns_object_names(
+        ops_facade.assign_material
+    )  # a material name, not an object
     assert not returns_object_names(ops_facade.orientation_reading)  # prose
     assert is_gated(ops_facade.link_into_scene) and is_gated(ops_facade.boolean_union)
 
 
 def test_the_readers_are_the_only_plan_free_op_tools():
     """Measured set (OT-6): reports, readings and pure computations."""
-    readers = sorted(name for name, function in facade_ops() if not changes_scene(function))
+    readers = sorted(
+        name for name, function in facade_ops() if not changes_scene(function)
+    )
     assert readers == [
         "animation_report",
         "canonical_depth_axis_rotation_euler_rad",
@@ -273,7 +298,10 @@ def test_the_readers_are_the_only_plan_free_op_tools():
         "weight_report",
         "world_bounds",
     ]
-    assert _op_tool("add_box")["function"]["parameters"]["properties"][PLAN_STEP_ARGUMENT] == PLAN_STEP_SCHEMA
+    assert (
+        _op_tool("add_box")["function"]["parameters"]["properties"][PLAN_STEP_ARGUMENT]
+        == PLAN_STEP_SCHEMA
+    )
 
 
 # --- selectors (OT-14): an enum of kinds, round-tripped -----------------------
@@ -285,11 +313,16 @@ def test_a_selector_round_trips_as_an_object_with_an_enum_of_kinds():
 
     schema = generator.json_schema_for_type(EdgeSelector)
     assert schema["type"] == "object"
-    assert schema["properties"]["kind"] == {"type": "string", "enum": list(EDGE_SELECTOR_KINDS)}
+    assert schema["properties"]["kind"] == {
+        "type": "string",
+        "enum": list(EDGE_SELECTOR_KINDS),
+    }
     assert schema["required"] == ["kind"]
     assert schema["properties"]["minimum_dihedral_angle_deg"]["default"] == 30.0
 
-    bound = convert_argument(EdgeSelector, {"kind": "material_slot", "material_slot_index": 1}, "x.edges")
+    bound = convert_argument(
+        EdgeSelector, {"kind": "material_slot", "material_slot_index": 1}, "x.edges"
+    )
     assert bound == EdgeSelector(kind="material_slot", material_slot_index=1)
     with pytest.raises(ArgumentError, match="kind"):
         convert_argument(EdgeSelector, {"kind": "by_colour"}, "x.edges")
@@ -298,5 +331,7 @@ def test_a_selector_round_trips_as_an_object_with_an_enum_of_kinds():
 def test_the_select_ops_are_readers_with_selector_parameters():
     for name in ("select_edges", "select_faces", "select_vertices"):
         tool = _op_tool(name)["function"]
-        assert tool["parameters"]["properties"]["selector"]["properties"]["kind"]["enum"]
+        assert tool["parameters"]["properties"]["selector"]["properties"]["kind"][
+            "enum"
+        ]
         assert PLAN_STEP_ARGUMENT not in tool["parameters"]["properties"]  # a reader

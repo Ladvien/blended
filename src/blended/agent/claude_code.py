@@ -127,12 +127,12 @@ CONTINUATION_CUE = (
 TOOL_PROTOCOL_NOTE = (
     "TOOL PROTOCOL ON THIS CONNECTION\n"
     "You have no tools of your own here. A direct tool call is rejected "
-    "with \"No such tool available\" — the tools described above are run "
+    'with "No such tool available" — the tools described above are run '
     "by the harness, not by you.\n"
     "To use one, answer with the structured object you were given a "
     "schema for: put anything you want to say to the user in `message`, "
     "and the calls you want executed in `tool_calls`, each one "
-    "`{\"name\": <tool>, \"arguments\": {...}}`. The harness runs them "
+    '`{"name": <tool>, "arguments": {...}}`. The harness runs them '
     "and hands you the results in the next turn's transcript.\n"
     "Leave `tool_calls` empty only when you are finished and answering."
 )
@@ -184,7 +184,9 @@ def resolve_binary(configured_path: str = "") -> Path:
         candidate = directory / CLAUDE_CODE_BINARY_NAME
         if candidate.is_file():
             return candidate
-    searched = ", ".join(str(directory) for directory in CLAUDE_CODE_INSTALL_DIRECTORIES)
+    searched = ", ".join(
+        str(directory) for directory in CLAUDE_CODE_INSTALL_DIRECTORIES
+    )
     raise RuntimeError(
         f"Claude Code CLI ({CLAUDE_CODE_BINARY_NAME}) is not on PATH and not "
         f"in {searched}. {CLAUDE_CODE_INSTALL_HINT}"
@@ -269,14 +271,10 @@ def render_call(messages: list[dict]) -> tuple[str, dict]:
                 function_block = tool_call.get("function") or {}
                 arguments = function_block.get("arguments", {})
                 text_parts.append(
-                    TOOL_CALL_LABEL_FORMAT.format(
-                        name=function_block.get("name", "")
-                    )
+                    TOOL_CALL_LABEL_FORMAT.format(name=function_block.get("name", ""))
                 )
                 text_parts.append(
-                    arguments
-                    if isinstance(arguments, str)
-                    else json.dumps(arguments)
+                    arguments if isinstance(arguments, str) else json.dumps(arguments)
                 )
             continue
         if role == "tool":
@@ -445,16 +443,19 @@ def parse_rate_limit(frame: dict) -> RateLimitSnapshot:
     )
 
 
-
 class NoBilledInput(ValueError):
     """No prompt-side tokens at all: nothing to take a fraction of."""
 
 
-def cache_read_fraction(input_tokens: int, cache_read_tokens: int, cache_write_tokens: int) -> float:
+def cache_read_fraction(
+    input_tokens: int, cache_read_tokens: int, cache_write_tokens: int
+) -> float:
     """cache reads over everything billed on the prompt side (OT-26)."""
     billed = input_tokens + cache_read_tokens + cache_write_tokens
     if billed <= 0:
-        raise NoBilledInput("no prompt-side tokens were billed; the fraction is undefined")
+        raise NoBilledInput(
+            "no prompt-side tokens were billed; the fraction is undefined"
+        )
     return cache_read_tokens / billed
 
 
@@ -506,7 +507,9 @@ class TurnCost:
         to 0.791 on the planter with fewer tokens per call), so a change
         of order is judged by `cache_write_tokens` per call, not by this.
         Undefined before anything was billed."""
-        return cache_read_fraction(self.input_tokens, self.cache_read_tokens, self.cache_write_tokens)
+        return cache_read_fraction(
+            self.input_tokens, self.cache_read_tokens, self.cache_write_tokens
+        )
 
     def plus(self, other: TurnCost) -> TurnCost:
         """Accumulate across the turns of one run."""
@@ -529,7 +532,11 @@ class TurnCost:
             + (f", {self.cache_read_fraction:.0%}" if self.billed_input_tokens else "")
             + "), "
             f"{self.output_tokens:,} out"
-            + (f" ({self.reasoning_tokens:,} reasoning)" if self.reasoning_tokens else "")
+            + (
+                f" ({self.reasoning_tokens:,} reasoning)"
+                if self.reasoning_tokens
+                else ""
+            )
             + (f", {self.retried_calls} retried" if self.retried_calls else "")
             + f", ${self.cost_usd:.4f}"
         )
@@ -546,7 +553,6 @@ def parse_turn_cost(result_frame: dict, api_calls: int) -> TurnCost:
         output_tokens=int(usage.get("output_tokens") or 0),
         cost_usd=float(result_frame.get("total_cost_usd") or 0.0),
     )
-
 
 
 class ClaudeCodeTransport:

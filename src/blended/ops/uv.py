@@ -110,8 +110,7 @@ def unwrap_uvs(
     blender_object = object_by_name(object_name, "MESH")
     if object_name not in bpy.context.scene.objects:
         raise ValueError(
-            f"{object_name} is not linked into the scene; "
-            f"bpy.ops cannot act on it."
+            f"{object_name} is not linked into the scene; bpy.ops cannot act on it."
         )
 
     # Determinism: unwrap solvers REUSE existing seams and island

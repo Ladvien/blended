@@ -42,11 +42,16 @@ def send_code(code: str, strict_json: bool) -> dict[str, object]:
     returns an invalid response.
     """
     host, port = get_connection_params()
-    request = json.dumps({
-        "type": "execute",
-        "code": code,
-        "strict_json": strict_json,
-    }) + "\0"
+    request = (
+        json.dumps(
+            {
+                "type": "execute",
+                "code": code,
+                "strict_json": strict_json,
+            }
+        )
+        + "\0"
+    )
 
     try:
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
@@ -66,7 +71,9 @@ def send_code(code: str, strict_json: bool) -> dict[str, object]:
     except ConnectionRefusedError as ex:
         raise ConnectionError(
             "Cannot connect to Blender at {:s}:{:d}. "
-            "Ensure Blender is running with the MCP addon enabled and the server started.".format(host, port)
+            "Ensure Blender is running with the MCP addon enabled and the server started.".format(
+                host, port
+            )
         ) from ex
     except TimeoutError as ex:
         raise ConnectionError(
@@ -77,7 +84,9 @@ def send_code(code: str, strict_json: bool) -> dict[str, object]:
         # Callers use `ConnectionError` to trigger a fallback path;
         # a broader catch would mask real bugs as connection failures.
         raise ConnectionError(
-            "Socket error communicating with Blender at {:s}:{:d}: {:s}".format(host, port, str(ex))
+            "Socket error communicating with Blender at {:s}:{:d}: {:s}".format(
+                host, port, str(ex)
+            )
         ) from ex
 
     if not buf:
@@ -89,6 +98,8 @@ def send_code(code: str, strict_json: bool) -> dict[str, object]:
         response: dict[str, object] = json.loads(line.decode("utf-8"))
     except (json.JSONDecodeError, UnicodeDecodeError) as ex:
         raise ConnectionError(
-            "Invalid response from Blender at {:s}:{:d}: {:s}".format(host, port, str(ex))
+            "Invalid response from Blender at {:s}:{:d}: {:s}".format(
+                host, port, str(ex)
+            )
         ) from ex
     return response

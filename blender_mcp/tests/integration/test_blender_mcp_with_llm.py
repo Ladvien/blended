@@ -97,6 +97,7 @@ def use_screenshot_check() -> bool:
 # ---------------------------------------------------------------------------
 # Helpers (duplicated from test_blender_mcp_with_blender.py, same pattern).
 
+
 def _blender_env(tmpdir: str) -> dict[str, str]:
     """
     Return an environment dict for Blender sub-processes.
@@ -112,11 +113,16 @@ def _blender_env(tmpdir: str) -> dict[str, str]:
     env = os.environ.copy()
     env["HOME"] = tmpdir
     env["BLENDER_USER_RESOURCES"] = os.path.join(tmpdir, "blender_user_resources")
-    env["ASAN_OPTIONS"] = ":".join(filter(None, [
-        env.get("ASAN_OPTIONS", ""),
-        "alloc_dealloc_mismatch=0",
-        "leak_check_at_exit=0",
-    ]))
+    env["ASAN_OPTIONS"] = ":".join(
+        filter(
+            None,
+            [
+                env.get("ASAN_OPTIONS", ""),
+                "alloc_dealloc_mismatch=0",
+                "leak_check_at_exit=0",
+            ],
+        )
+    )
     return env
 
 
@@ -138,7 +144,9 @@ def _run_blender(args: list[str], env: dict[str, str]) -> None:
 _CONFIG_MARKER = "BLMCP_USER_CONFIG="
 
 
-def _assert_blender_config_isolated(blender_bin: str, env: dict[str, str], tmpdir: str) -> None:
+def _assert_blender_config_isolated(
+    blender_bin: str, env: dict[str, str], tmpdir: str
+) -> None:
     """
     Raise unless Blender's user config directory resolves inside *tmpdir*.
 
@@ -147,22 +155,33 @@ def _assert_blender_config_isolated(blender_bin: str, env: dict[str, str], tmpdi
     """
     result = subprocess.run(
         [
-            blender_bin, "--background", "--factory-startup", "--python-expr",
-            "import bpy; print({!r} + bpy.utils.user_resource('CONFIG'))".format(_CONFIG_MARKER),
+            blender_bin,
+            "--background",
+            "--factory-startup",
+            "--python-expr",
+            "import bpy; print({!r} + bpy.utils.user_resource('CONFIG'))".format(
+                _CONFIG_MARKER
+            ),
         ],
         capture_output=True,
         env=env,
         check=False,
     )
     lines = result.stdout.decode("utf-8", errors="replace").splitlines()
-    config_dirs = [line[len(_CONFIG_MARKER):] for line in lines if line.startswith(_CONFIG_MARKER)]
+    config_dirs = [
+        line[len(_CONFIG_MARKER) :] for line in lines if line.startswith(_CONFIG_MARKER)
+    ]
     if len(config_dirs) != 1:
-        raise RuntimeError("Blender did not report its user config directory: {!r}".format(lines))
+        raise RuntimeError(
+            "Blender did not report its user config directory: {!r}".format(lines)
+        )
     real_tmpdir = os.path.realpath(tmpdir)
     if not os.path.realpath(config_dirs[0]).startswith(real_tmpdir + os.sep):
         raise RuntimeError(
             "Blender's user config {:s} is outside the test directory {:s}: "
-            "saving preferences would overwrite the real user's.".format(config_dirs[0], real_tmpdir)
+            "saving preferences would overwrite the real user's.".format(
+                config_dirs[0], real_tmpdir
+            )
         )
 
 
@@ -174,7 +193,9 @@ def _assert_port_free(port: int) -> None:
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
         if sock.connect_ex(("localhost", port)) == 0:
             raise RuntimeError(
-                "Port {:d} is already in use (another Blender with the MCP add-on?)".format(port)
+                "Port {:d} is already in use (another Blender with the MCP add-on?)".format(
+                    port
+                )
             )
 
 
@@ -184,6 +205,7 @@ def _drain_stdout(proc: "subprocess.Popen[bytes]") -> None:
 
     This prevents the pipe buffer from filling up and blocking the child.
     """
+
     def _reader() -> None:
         assert proc.stdout is not None
         for _line in proc.stdout:
@@ -228,7 +250,8 @@ def _start_headless_display(
     )
 
     if not backend_wayland._wait_for_wayland_server(
-        socket=weston_socket, timeout=_TIMEOUT_LOCAL_PROC,
+        socket=weston_socket,
+        timeout=_TIMEOUT_LOCAL_PROC,
     ):
         proc.send_signal(signal.SIGINT)
         proc.communicate()
@@ -262,7 +285,9 @@ def _wait_for_port(port: int, timeout: int, proc: "subprocess.Popen[bytes]") -> 
         rc = proc.poll()
         if rc is not None:
             raise RuntimeError(
-                "Blender exited with code {:d} before the server became reachable".format(rc)
+                "Blender exited with code {:d} before the server became reachable".format(
+                    rc
+                )
             )
         try:
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
@@ -271,13 +296,13 @@ def _wait_for_port(port: int, timeout: int, proc: "subprocess.Popen[bytes]") -> 
                 return
         except (ConnectionRefusedError, OSError):
             time.sleep(0.2)
-    raise RuntimeError(
-        "Port {:d} not reachable within {:d}s".format(port, timeout)
-    )
+    raise RuntimeError("Port {:d} not reachable within {:d}s".format(port, timeout))
 
 
 def _wait_for_health(
-    port: int, timeout: int, proc: "subprocess.Popen[bytes]",
+    port: int,
+    timeout: int,
+    proc: "subprocess.Popen[bytes]",
 ) -> None:
     """
     Block until ``http://localhost:{port}/health`` returns 200.
@@ -313,19 +338,27 @@ def _wait_for_health(
 # ---------------------------------------------------------------------------
 # Blender TCP helpers.
 
+
 def _blender_exec_for_internal_use_only(
-    port: int, code: str, timeout: float = _TIMEOUT_LOCAL_PROC,
+    port: int,
+    code: str,
+    timeout: float = _TIMEOUT_LOCAL_PROC,
 ) -> dict[str, Any]:
     """
     Execute *code* in Blender via the addon's TCP socket server.
 
     Sends a null-byte-delimited JSON request and returns the parsed response.
     """
-    request = json.dumps({
-        "type": "execute",
-        "code": code,
-        "strict_json": True,
-    }).encode("utf-8") + b"\0"
+    request = (
+        json.dumps(
+            {
+                "type": "execute",
+                "code": code,
+                "strict_json": True,
+            }
+        ).encode("utf-8")
+        + b"\0"
+    )
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
         sock.settimeout(timeout)
         sock.connect(("localhost", port))
@@ -341,7 +374,9 @@ def _blender_exec_for_internal_use_only(
 
 
 def _blender_exec_for_internal_use_only_ok_or_exception(
-    port: int, code: str, timeout: float = _TIMEOUT_LOCAL_PROC,
+    port: int,
+    code: str,
+    timeout: float = _TIMEOUT_LOCAL_PROC,
 ) -> dict[str, Any]:
     """
     Like ``_blender_exec_for_internal_use_only`` but raises ``RuntimeError``
@@ -350,9 +385,7 @@ def _blender_exec_for_internal_use_only_ok_or_exception(
     result = _blender_exec_for_internal_use_only(port, code, timeout)
     if result.get("status") != "ok":
         raise RuntimeError(
-            "Blender exec failed: {:s}".format(
-                str(result.get("message", result))
-            )
+            "Blender exec failed: {:s}".format(str(result.get("message", result)))
         )
     return result
 
@@ -385,13 +418,17 @@ def _save_screenshot(port: int, filepath: str) -> None:
     """
     Save a screenshot of the Blender window to *filepath*.
     """
+
     def code() -> None:
         import bpy  # pylint: disable=import-error
+
         bpy.ops.screen.screenshot(filepath=filepath)
 
     _blender_exec_for_internal_use_only_ok_or_exception(
-        port, "filepath = {!r}\n{:s}".format(
-            filepath, _python_fn_body_as_string(code),
+        port,
+        "filepath = {!r}\n{:s}".format(
+            filepath,
+            _python_fn_body_as_string(code),
         ),
     )
 
@@ -412,6 +449,7 @@ def _blender_reset(port: int) -> None:
 
 # ---------------------------------------------------------------------------
 # New helpers.
+
 
 class _StatusReport:
     """
@@ -434,9 +472,7 @@ class _StatusReport:
     def __exit__(self, *_args: object) -> None:
         if self._status is None:
             print(" [???]", flush=True)
-            raise RuntimeError(
-                "No status set for step: {:s}".format(self._label)
-            )
+            raise RuntimeError("No status set for step: {:s}".format(self._label))
         print(" [{:s}]".format(self._status), flush=True)
 
 
@@ -536,32 +572,38 @@ def _start_mock_llm(port: int) -> http.server.HTTPServer:
             if request_num == 0:
                 # First request: tell the LLM to call get_object_detail_summary.
                 response = {
-                    "choices": [{
-                        "message": {
-                            "role": "assistant",
-                            "content": None,
-                            "tool_calls": [{
-                                "id": "call_001",
-                                "type": "function",
-                                "function": {
-                                    "name": "get_object_detail_summary",
-                                    "arguments": json.dumps({"name": "Cube"}),
-                                },
-                            }],
-                        },
-                        "finish_reason": "tool_calls",
-                    }],
+                    "choices": [
+                        {
+                            "message": {
+                                "role": "assistant",
+                                "content": None,
+                                "tool_calls": [
+                                    {
+                                        "id": "call_001",
+                                        "type": "function",
+                                        "function": {
+                                            "name": "get_object_detail_summary",
+                                            "arguments": json.dumps({"name": "Cube"}),
+                                        },
+                                    }
+                                ],
+                            },
+                            "finish_reason": "tool_calls",
+                        }
+                    ],
                 }
             else:
                 # Second (and any subsequent) request: plain text reply.
                 response = {
-                    "choices": [{
-                        "message": {
-                            "role": "assistant",
-                            "content": "The active object is Cube.",
-                        },
-                        "finish_reason": "stop",
-                    }],
+                    "choices": [
+                        {
+                            "message": {
+                                "role": "assistant",
+                                "content": "The active object is Cube.",
+                            },
+                            "finish_reason": "stop",
+                        }
+                    ],
                 }
 
             payload = json.dumps(response).encode()
@@ -583,6 +625,7 @@ def _start_mock_llm(port: int) -> http.server.HTTPServer:
 
 # ---------------------------------------------------------------------------
 # Test class.
+
 
 @unittest.skipUnless(
     os.environ.get("BLENDER_BIN"),
@@ -629,7 +672,10 @@ class TestChatClient(unittest.TestCase):
             addon_src = os.path.join(_REPO_DIR, "addon", "blender_mcp_addon")
             _run_blender(
                 [
-                    blender_bin, "--command", "extension", "build",
+                    blender_bin,
+                    "--command",
+                    "extension",
+                    "build",
                     "--source-dir=" + addon_src,
                     "--output-dir=" + tmpdir,
                 ],
@@ -645,9 +691,17 @@ class TestChatClient(unittest.TestCase):
         with _StatusReport("Installing addon") as st:
             _run_blender(
                 [
-                    blender_bin, "--background", "--factory-startup", "--online-mode",
-                    "--command", "extension", "install-file",
-                    zips[0], "--repo", "user_default", "--enable",
+                    blender_bin,
+                    "--background",
+                    "--factory-startup",
+                    "--online-mode",
+                    "--command",
+                    "extension",
+                    "install-file",
+                    zips[0],
+                    "--repo",
+                    "user_default",
+                    "--enable",
                 ],
                 env=env,
             )
@@ -655,10 +709,14 @@ class TestChatClient(unittest.TestCase):
 
         # -----------------------------------
         # Save preferences (interactive mode)
-        with _StatusReport("Saving preferences (port {:d})".format(_PORT_BLENDER)) as st:
+        with _StatusReport(
+            "Saving preferences (port {:d})".format(_PORT_BLENDER)
+        ) as st:
             _run_blender(
                 [
-                    blender_bin, "--background", "--online-mode",
+                    blender_bin,
+                    "--background",
+                    "--online-mode",
                     "--python-expr",
                     (
                         "import bpy; "
@@ -697,7 +755,9 @@ class TestChatClient(unittest.TestCase):
 
         # --------
         # Mock LLM
-        with _StatusReport("Starting mock LLM (port {:d})".format(_PORT_MOCK_LLM)) as st:
+        with _StatusReport(
+            "Starting mock LLM (port {:d})".format(_PORT_MOCK_LLM)
+        ) as st:
             cls._mock_server = _start_mock_llm(_PORT_MOCK_LLM)
             cls.addClassCleanup(cls._mock_server.shutdown)
             st.status("OK")
@@ -706,12 +766,16 @@ class TestChatClient(unittest.TestCase):
         # llama-server (optional)
         cls._llama_server_proc = None
         if _env_nonzero("USE_LLAMA_CXX"):
-            with _StatusReport("Starting llama-server (port {:d})".format(_PORT_LLAMA_SERVER)) as st:
+            with _StatusReport(
+                "Starting llama-server (port {:d})".format(_PORT_LLAMA_SERVER)
+            ) as st:
                 cls._llama_server_proc = _start_llama_server(_PORT_LLAMA_SERVER, env)
                 cls.addClassCleanup(_stop_llama_server, cls._llama_server_proc)
                 st.status("OK")
             with _StatusReport("Waiting for llama-server to load model") as st:
-                _wait_for_health(_PORT_LLAMA_SERVER, _TIMEOUT_STARTUP, cls._llama_server_proc)
+                _wait_for_health(
+                    _PORT_LLAMA_SERVER, _TIMEOUT_STARTUP, cls._llama_server_proc
+                )
                 st.status("OK")
 
         # ----------------------------
@@ -746,9 +810,12 @@ class TestChatClient(unittest.TestCase):
             "Describe the default cube",
             ["openai", "--api-url", "http://localhost:{:d}".format(_PORT_MOCK_LLM)],
         )
-        self.assertIn("Cube", stdout_text, "Expected 'Cube' in output.\n" + self._last_output_info)
         self.assertIn(
-            "get_object_detail_summary", stdout_text,
+            "Cube", stdout_text, "Expected 'Cube' in output.\n" + self._last_output_info
+        )
+        self.assertIn(
+            "get_object_detail_summary",
+            stdout_text,
             "Expected tool call name in output.\n" + self._last_output_info,
         )
 
@@ -761,7 +828,9 @@ class TestChatClient(unittest.TestCase):
             "What is the name of the default object in the scene?",
             self._llm_provider_args(),
         )
-        self.assertIn("Cube", stdout_text, "Expected 'Cube' in output.\n" + self._last_output_info)
+        self.assertIn(
+            "Cube", stdout_text, "Expected 'Cube' in output.\n" + self._last_output_info
+        )
         # Verify a tool was actually called (not just answered from training data).
         self.assertTrue(
             "get_object_detail_summary" in stdout_text or "run_python" in stdout_text,
@@ -781,7 +850,9 @@ class TestChatClient(unittest.TestCase):
             "Use get_object_detail_summary to describe the object named 'Cube'.",
             ["openai", "--api-url", "http://localhost:{:d}".format(_PORT_LLAMA_SERVER)],
         )
-        self.assertIn("Cube", stdout_text, "Expected 'Cube' in output.\n" + self._last_output_info)
+        self.assertIn(
+            "Cube", stdout_text, "Expected 'Cube' in output.\n" + self._last_output_info
+        )
         self.assertTrue(
             "get_object_detail_summary" in stdout_text
             or "get_objects_summary" in stdout_text
@@ -798,18 +869,23 @@ class TestChatClient(unittest.TestCase):
 
         # Step 1: ask the LLM to rotate the cube.
         stdout_text, _stderr_text = self._run_chat_client(
-            "Rotate the default Cube by 45 degrees on the X axis.", provider,
+            "Rotate the default Cube by 45 degrees on the X axis.",
+            provider,
         )
         self.assertIn(
-            "run_python", stdout_text,
+            "run_python",
+            stdout_text,
             "Expected a code execution tool call.\n" + self._last_output_info,
         )
 
         # Step 2: ask the LLM to report the rotation.
         stdout_text, _stderr_text = self._run_chat_client(
-            "What is the X rotation of the Cube in degrees?", provider,
+            "What is the X rotation of the Cube in degrees?",
+            provider,
         )
-        self.assertIn("45", stdout_text, "Expected '45' in output.\n" + self._last_output_info)
+        self.assertIn(
+            "45", stdout_text, "Expected '45' in output.\n" + self._last_output_info
+        )
 
         # Reset so this test does not leak state.
         _blender_reset(_PORT_BLENDER)
@@ -826,7 +902,8 @@ class TestChatClient(unittest.TestCase):
         """
         _blender_reset(_PORT_BLENDER)
         _blender_exec_for_internal_use_only_ok_or_exception(
-            _PORT_BLENDER, _python_fn_body_as_string(fn),
+            _PORT_BLENDER,
+            _python_fn_body_as_string(fn),
         )
 
     def _run_in_blender(self, fn: Callable[[], object]) -> object:
@@ -837,12 +914,18 @@ class TestChatClient(unittest.TestCase):
         ``result = {"value": fn()}``. *fn* is never called locally.
         """
         source = textwrap.dedent(inspect.getsource(fn))
-        code = "{:s}\nresult = {{\"value\": {:s}()}}\n".format(source, fn.__name__)
-        response = _blender_exec_for_internal_use_only_ok_or_exception(_PORT_BLENDER, code)
+        code = '{:s}\nresult = {{"value": {:s}()}}\n'.format(source, fn.__name__)
+        response = _blender_exec_for_internal_use_only_ok_or_exception(
+            _PORT_BLENDER, code
+        )
         return response.get("result", {}).get("value")
 
     def _run_chat_client(
-        self, prompt: str, provider_args: list[str], *, timeout: int = _TIMEOUT_CHAT_CLIENT,
+        self,
+        prompt: str,
+        provider_args: list[str],
+        *,
+        timeout: int = _TIMEOUT_CHAT_CLIENT,
     ) -> tuple[str, str]:
         """
         Run the chat client with *prompt* and return ``(stdout, stderr)`` text.
@@ -863,11 +946,15 @@ class TestChatClient(unittest.TestCase):
         chat_client = os.path.join(_REPO_DIR, "chat_client", "chat_client.py")
         proc = subprocess.Popen(
             [
-                self._venv_python, chat_client,
-                "--server-command", self._blender_mcp_cmd,
+                self._venv_python,
+                chat_client,
+                "--server-command",
+                self._blender_mcp_cmd,
                 "--non-interactive",
-                "--prompt", prompt,
-            ] + provider_args,
+                "--prompt",
+                prompt,
+            ]
+            + provider_args,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             env=env,
@@ -881,8 +968,8 @@ class TestChatClient(unittest.TestCase):
             raise
         stdout_text = stdout.decode("utf-8", errors="replace")
         stderr_text = stderr.decode("utf-8", errors="replace")
-        self._last_output_info = (
-            "stdout:\n{:s}\nstderr:\n{:s}".format(stdout_text, stderr_text)
+        self._last_output_info = "stdout:\n{:s}\nstderr:\n{:s}".format(
+            stdout_text, stderr_text
         )
         print(flush=True)
         print("  prompt: {:s}".format(prompt), flush=True)
@@ -892,7 +979,11 @@ class TestChatClient(unittest.TestCase):
     def _llm_provider_args(self) -> list[str]:
         """Return provider arguments for the real LLM (Claude or llama-server)."""
         if _env_nonzero("USE_LLAMA_CXX"):
-            return ["openai", "--api-url", "http://localhost:{:d}".format(_PORT_LLAMA_SERVER)]
+            return [
+                "openai",
+                "--api-url",
+                "http://localhost:{:d}".format(_PORT_LLAMA_SERVER),
+            ]
         model = os.environ.get("ANTHROPIC_MODEL", "claude-sonnet-4-20250514")
         return ["claude", "--model", model]
 
@@ -904,7 +995,8 @@ class TestChatClient(unittest.TestCase):
         in assertion messages.
         """
         stdout_text, _stderr_text = self._run_chat_client(
-            prompt, self._llm_provider_args(),
+            prompt,
+            self._llm_provider_args(),
         )
         return stdout_text
 
@@ -919,18 +1011,20 @@ class TestChatClient(unittest.TestCase):
         """
         Three misspelled object names are corrected by the LLM.
         """
+
         def setup() -> None:
             """Three objects with misspelled names."""
             import bpy
+
             bpy.ops.mesh.primitive_cube_add()
             ob = bpy.context.object
-            ob.name = ob.data.name = 'Cuube'
+            ob.name = ob.data.name = "Cuube"
             bpy.ops.object.camera_add()
             ob = bpy.context.object
-            ob.name = ob.data.name = 'Cmera'
-            bpy.ops.object.light_add(type='POINT')
+            ob.name = ob.data.name = "Cmera"
+            bpy.ops.object.light_add(type="POINT")
             ob = bpy.context.object
-            ob.name = ob.data.name = 'Lihgt'
+            ob.name = ob.data.name = "Lihgt"
 
         self._setup_scene(setup)
         self._run_prompt(
@@ -944,7 +1038,8 @@ class TestChatClient(unittest.TestCase):
         )
         names = result.get("result", {}).get("names")
         self.assertEqual(
-            names, ["Camera", "Cube", "Light"],
+            names,
+            ["Camera", "Cube", "Light"],
             "Expected corrected names.\n" + self._last_output_info,
         )
 
@@ -953,30 +1048,33 @@ class TestChatClient(unittest.TestCase):
         """
         Query which objects use a given material.
         """
+
         def setup() -> None:
             """Create a 'Cube' and 'Sphere' both sharing a material 'Red'."""
             import bpy
-            mat = bpy.data.materials.new('Red')
+
+            mat = bpy.data.materials.new("Red")
             bpy.ops.mesh.primitive_cube_add()
-            bpy.context.object.name = 'Cube'
+            bpy.context.object.name = "Cube"
             bpy.context.object.data.materials.append(mat)
             bpy.ops.mesh.primitive_uv_sphere_add()
-            bpy.context.object.name = 'Sphere'
+            bpy.context.object.name = "Sphere"
             bpy.context.object.data.materials.append(mat)
 
         self._setup_scene(setup)
         self._run_prompt(
-            "Select all objects that use the material named 'Red'. "
-            "Do it immediately."
+            "Select all objects that use the material named 'Red'. Do it immediately."
         )
 
         def validate() -> list[str]:
             import bpy
+
             return sorted(ob.name for ob in bpy.context.selected_objects)
 
         selected = self._run_in_blender(validate)
         self.assertEqual(
-            selected, ["Cube", "Sphere"],
+            selected,
+            ["Cube", "Sphere"],
             "Expected only objects using the 'Red' material to be selected.\n"
             + self._last_output_info,
         )
@@ -986,13 +1084,15 @@ class TestChatClient(unittest.TestCase):
         """
         Select the object with the highest polygon count.
         """
+
         def setup() -> None:
             """Add a high-poly UV sphere ('HighPolySphere') and a default cube ('LowPolyCube')."""
             import bpy
+
             bpy.ops.mesh.primitive_uv_sphere_add(segments=64, ring_count=32)
-            bpy.context.object.name = 'HighPolySphere'
+            bpy.context.object.name = "HighPolySphere"
             bpy.ops.mesh.primitive_cube_add()
-            bpy.context.object.name = 'LowPolyCube'
+            bpy.context.object.name = "LowPolyCube"
 
         self._setup_scene(setup)
         self._run_prompt(
@@ -1002,11 +1102,13 @@ class TestChatClient(unittest.TestCase):
 
         def validate() -> list[str]:
             import bpy
+
             return sorted(ob.name for ob in bpy.context.selected_objects)
 
         selected = self._run_in_blender(validate)
         self.assertEqual(
-            selected, ["HighPolySphere"],
+            selected,
+            ["HighPolySphere"],
             "Expected only the high-poly object to be selected.\n"
             + self._last_output_info,
         )
@@ -1016,16 +1118,18 @@ class TestChatClient(unittest.TestCase):
         """
         Fix a mesh that is not deformed by its armature.
         """
+
         def setup() -> None:
             """Create a mesh 'Body' and an armature 'Rig' but do NOT parent them or add an Armature modifier."""
             import bpy
+
             bpy.ops.mesh.primitive_cube_add()
             ob = bpy.context.object
-            ob.name = 'Body'
-            vg = ob.vertex_groups.new(name='Bone')
-            vg.add(range(len(ob.data.vertices)), 1.0, 'REPLACE')
+            ob.name = "Body"
+            vg = ob.vertex_groups.new(name="Bone")
+            vg.add(range(len(ob.data.vertices)), 1.0, "REPLACE")
             bpy.ops.object.armature_add()
-            bpy.context.object.name = 'Rig'
+            bpy.context.object.name = "Rig"
 
         self._setup_scene(setup)
         _stdout = self._run_prompt(
@@ -1038,11 +1142,12 @@ class TestChatClient(unittest.TestCase):
             from mathutils import (
                 Vector,  # type: ignore[import-not-found]  # Blender-only module.
             )
+
             dg = bpy.context.evaluated_depsgraph_get()
-            body = bpy.data.objects['Body']
-            rig = bpy.data.objects['Rig']
+            body = bpy.data.objects["Body"]
+            rig = bpy.data.objects["Rig"]
             rest_cos = [v.co.copy() for v in body.evaluated_get(dg).data.vertices]
-            rig.pose.bones['Bone'].location = Vector((0, 0, 2))
+            rig.pose.bones["Bone"].location = Vector((0, 0, 2))
             rig.update_tag()
             dg.update()
             posed_cos = [v.co.copy() for v in body.evaluated_get(dg).data.vertices]
@@ -1082,7 +1187,7 @@ class TestChatClient(unittest.TestCase):
             import bmesh  # type: ignore[import-not-found]  # Blender-only module.
             import bpy
 
-            mat = bpy.data.materials.new('Default')
+            mat = bpy.data.materials.new("Default")
 
             # ---------------------
             # Objects with problems
@@ -1090,30 +1195,30 @@ class TestChatClient(unittest.TestCase):
             # Barrel: non-manifold (face deleted).
             bpy.ops.mesh.primitive_cube_add(location=(0, 0, 0))
             ob = bpy.context.object
-            ob.name = 'Barrel'
+            ob.name = "Barrel"
             ob.data.materials.append(mat)
-            bpy.ops.object.mode_set(mode='EDIT')
+            bpy.ops.object.mode_set(mode="EDIT")
             bm = bmesh.from_edit_mesh(ob.data)
             bm.faces.ensure_lookup_table()
-            bmesh.ops.delete(bm, geom=[bm.faces[0]], context='FACES')
+            bmesh.ops.delete(bm, geom=[bm.faces[0]], context="FACES")
             bmesh.update_edit_mesh(ob.data)
-            bpy.ops.object.mode_set(mode='OBJECT')
+            bpy.ops.object.mode_set(mode="OBJECT")
 
             # Lantern: no material assigned.
             bpy.ops.mesh.primitive_cube_add(location=(3, 0, 0))
             ob = bpy.context.object
-            ob.name = 'Lantern'
+            ob.name = "Lantern"
             ob.data.materials.clear()
 
             # Wagon: material uses an absolute image path.
             bpy.ops.mesh.primitive_cube_add(location=(6, 0, 0))
             ob = bpy.context.object
-            ob.name = 'Wagon'
-            abs_mat = bpy.data.materials.new('AbsPathMat')
+            ob.name = "Wagon"
+            abs_mat = bpy.data.materials.new("AbsPathMat")
             abs_mat.use_nodes = True
-            tex = abs_mat.node_tree.nodes.new('ShaderNodeTexImage')
-            img = bpy.data.images.new('WoodTex', 1, 1)
-            img.filepath = '/home/user/textures/wood.png'
+            tex = abs_mat.node_tree.nodes.new("ShaderNodeTexImage")
+            img = bpy.data.images.new("WoodTex", 1, 1)
+            img.filepath = "/home/user/textures/wood.png"
             tex.image = img
             ob.data.materials.append(abs_mat)
 
@@ -1122,17 +1227,17 @@ class TestChatClient(unittest.TestCase):
 
             bpy.ops.mesh.primitive_cube_add(location=(0, 3, 0))
             ob = bpy.context.object
-            ob.name = 'Crate'
+            ob.name = "Crate"
             ob.data.materials.append(mat)
 
             bpy.ops.mesh.primitive_uv_sphere_add(location=(3, 3, 0))
             ob = bpy.context.object
-            ob.name = 'Fence'
+            ob.name = "Fence"
             ob.data.materials.append(mat)
 
             bpy.ops.mesh.primitive_cylinder_add(location=(6, 3, 0))
             ob = bpy.context.object
-            ob.name = 'Chimney'
+            ob.name = "Chimney"
             ob.data.materials.append(mat)
 
         self._setup_scene(setup)
@@ -1149,11 +1254,13 @@ class TestChatClient(unittest.TestCase):
 
         def validate() -> list[str]:
             import bpy
+
             return sorted(ob.name for ob in bpy.context.selected_objects)
 
         selected = self._run_in_blender(validate)
         self.assertEqual(
-            selected, sorted(objects_bad),
+            selected,
+            sorted(objects_bad),
             "Expected only objects with problems to be selected.\n"
             + self._last_output_info,
         )

@@ -62,7 +62,10 @@ def _bounded_stdout(captured_text: str) -> str:
     if len(trimmed) <= MAXIMUM_STDOUT_CHARACTERS:
         return trimmed
     dropped = len(trimmed) - MAXIMUM_STDOUT_CHARACTERS
-    return f"[{dropped} earlier characters dropped]\n" + trimmed[-MAXIMUM_STDOUT_CHARACTERS:]
+    return (
+        f"[{dropped} earlier characters dropped]\n"
+        + trimmed[-MAXIMUM_STDOUT_CHARACTERS:]
+    )
 
 
 def execute_captured(

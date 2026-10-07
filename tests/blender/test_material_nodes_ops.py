@@ -111,7 +111,10 @@ def test_image_texture_material_reports_path(empty_scene, tmp_path):
     report = material_report(box.name)
     assert "ShaderNodeTexImage" in report.node_type_counts
     assert len(report.image_paths) == 1
-    assert str(png_path) in report.image_paths[0] or "test_tile.png" in report.image_paths[0]
+    assert (
+        str(png_path) in report.image_paths[0]
+        or "test_tile.png" in report.image_paths[0]
+    )
 
 
 def test_image_texture_missing_file_raises(empty_scene, tmp_path):
@@ -119,7 +122,9 @@ def test_image_texture_missing_file_raises(empty_scene, tmp_path):
 
     box = _box()
     with pytest.raises(FileNotFoundError):
-        assign_image_texture_material(box.name, "Missing", tmp_path / "no_such_file.png")
+        assign_image_texture_material(
+            box.name, "Missing", tmp_path / "no_such_file.png"
+        )
 
 
 # ── Workbench render ─────────────────────────────────────────────────

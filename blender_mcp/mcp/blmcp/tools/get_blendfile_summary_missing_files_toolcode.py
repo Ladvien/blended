@@ -33,11 +33,13 @@ def main(params: None) -> Result:
         checked += 1
         filepath = bpy.path.abspath(path)
         if not os.path.exists(filepath):
-            missing.append({
-                "id_type": type(id_data).__name__,
-                "id_name": getattr(id_data, "name", ""),
-                "path": filepath,
-            })
+            missing.append(
+                {
+                    "id_type": type(id_data).__name__,
+                    "id_name": getattr(id_data, "name", ""),
+                    "path": filepath,
+                }
+            )
 
     bpy.data.file_path_foreach(
         _visit,

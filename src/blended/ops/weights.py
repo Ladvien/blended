@@ -60,8 +60,7 @@ def assign_vertex_group_weights(
     mesh_object = object_by_name(object_name, "MESH")
     if weight < MINIMUM_WEIGHT or weight > MAXIMUM_WEIGHT:
         raise ValueError(
-            f"weight {weight} out of range "
-            f"[{MINIMUM_WEIGHT}, {MAXIMUM_WEIGHT}]"
+            f"weight {weight} out of range [{MINIMUM_WEIGHT}, {MAXIMUM_WEIGHT}]"
         )
 
     group = mesh_object.vertex_groups.get(group_name)
@@ -96,8 +95,7 @@ def assign_weights_by_height(
     mesh_object = object_by_name(object_name, "MESH")
     if weight < MINIMUM_WEIGHT or weight > MAXIMUM_WEIGHT:
         raise ValueError(
-            f"weight {weight} out of range "
-            f"[{MINIMUM_WEIGHT}, {MAXIMUM_WEIGHT}]"
+            f"weight {weight} out of range [{MINIMUM_WEIGHT}, {MAXIMUM_WEIGHT}]"
         )
 
     # matrix_world is lazy (see blended.ops.transforms): a location set a

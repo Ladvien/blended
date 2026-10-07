@@ -182,7 +182,7 @@ def standalone_script(
                 f"\n# --- {label} (raised in the run after changing the "
                 f"scene; reproduced) ---\n"
                 f"try:\n"
-                f"    exec(compile({body!r}, {label!r}, \"exec\"), globals())\n"
+                f'    exec(compile({body!r}, {label!r}, "exec"), globals())\n'
                 f"except Exception as _error:\n"
                 f"    print({f'[bridge] {label} raised as it did in the run: '!r} "
                 f"+ repr(_error))\n"

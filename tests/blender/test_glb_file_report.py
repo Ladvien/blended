@@ -39,6 +39,6 @@ def test_file_and_welded_reimport_agree(empty_scene, tmp_path):
     )
     assert file_report.root_node_names == [pallet_object.name]
     assert file_report.inverted_facet_count == 0
-    assert all(
-        mesh.has_normals for mesh in file_report.meshes.values()
-    ), "the shipped file must carry NORMAL accessors"
+    assert all(mesh.has_normals for mesh in file_report.meshes.values()), (
+        "the shipped file must carry NORMAL accessors"
+    )

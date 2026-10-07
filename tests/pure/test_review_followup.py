@@ -153,4 +153,34 @@ def test_a_duplicate_skill_module_name_is_a_registry_problem(monkeypatch):
 
     problems = skill_modules.validate_modules()
 
-    assert any(first.name in problem and "2 times" in problem for problem in problems), problems
+    assert any(
+        first.name in problem and "2 times" in problem for problem in problems
+    ), problems
+
+
+# --- 8.4: a formatter must not emit syntax the project's Pythons cannot parse ---
+
+SOURCE_ROOTS = ("src", "tests", "scripts", "blender_mcp", "examples")
+
+
+def test_every_python_file_parses_under_the_minimum_python():
+    """`ruff format` with the add-on's `target-version = "py314"` rewrote
+    `except (A, B):` as `except A, B:` (PEP 758), which Blender 5.2.0's Python
+    3.13.13 rejects: `make test-blender-app` died at import while `ruff check`,
+    mypy and `make test-pure` stayed green. The dev venv's Python is the
+    project's minimum (3.11), so parsing every file with it rejects anything newer."""
+    import ast
+
+    failures = []
+    for root in SOURCE_ROOTS:
+        for path in sorted((REPOSITORY_ROOT / root).rglob("*.py")):
+            if ".venv" in path.parts:
+                continue
+            try:
+                ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+            except SyntaxError as error:
+                failures.append(
+                    f"{path.relative_to(REPOSITORY_ROOT)}:{error.lineno}: {error.msg}"
+                )
+
+    assert not failures, failures
