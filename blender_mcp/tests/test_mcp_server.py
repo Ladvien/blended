@@ -22,10 +22,14 @@ import unittest
 from typing import Any
 
 import yaml
-from blended.agent.tools import TOOL_SCHEMAS
-from blmcp.tools_helpers.blended_bridge import CLAUDE_CODE_INSTRUCTIONS_LIMIT_CHARACTERS, MCP_INSTRUCTIONS_HEAD
+from blmcp.tools_helpers.blended_bridge import (
+    CLAUDE_CODE_INSTRUCTIONS_LIMIT_CHARACTERS,
+    MCP_INSTRUCTIONS_HEAD,
+)
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
+
+from blended.agent.tools import TOOL_SCHEMAS
 
 # Root of the repository.
 _REPO_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -110,22 +114,21 @@ def _query_server() -> dict[str, Any]:
             args=["-m", "blmcp"],
             env=_server_env(),
         )
-        async with stdio_client(params) as (read, write):
-            async with ClientSession(read, write) as session:
-                init_result = await session.initialize()
-                tools_result = await session.list_tools()
-                return {
-                    "server_info": init_result.serverInfo,
-                    "instructions": init_result.instructions or "",
-                    "tools": [
-                        {
-                            "name": t.name,
-                            "description": t.description or "",
-                            "inputSchema": t.inputSchema,
-                        }
-                        for t in tools_result.tools
-                    ],
-                }
+        async with stdio_client(params) as (read, write), ClientSession(read, write) as session:
+            init_result = await session.initialize()
+            tools_result = await session.list_tools()
+            return {
+                "server_info": init_result.serverInfo,
+                "instructions": init_result.instructions or "",
+                "tools": [
+                    {
+                        "name": t.name,
+                        "description": t.description or "",
+                        "inputSchema": t.inputSchema,
+                    }
+                    for t in tools_result.tools
+                ],
+            }
 
     return asyncio.run(_run())
 
@@ -143,20 +146,19 @@ def _call_server_tool(name: str, arguments: dict[str, object]) -> dict[str, Any]
             args=["-m", "blmcp"],
             env=_server_env(),
         )
-        async with stdio_client(params) as (read, write):
-            async with ClientSession(read, write) as session:
-                await session.initialize()
-                call_result = await session.call_tool(name, arguments)
-                if call_result.isError:
-                    raise RuntimeError(
-                        "Tool {:s} returned error: {!r}".format(name, call_result.content)
-                    )
-                # FastMCP serialises dict return values as a single JSON
-                # text-content block.
-                text = call_result.content[0].text  # type: ignore[attr-defined]
-                payload = json.loads(text)
-                assert isinstance(payload, dict)
-                return payload
+        async with stdio_client(params) as (read, write), ClientSession(read, write) as session:
+            await session.initialize()
+            call_result = await session.call_tool(name, arguments)
+            if call_result.isError:
+                raise RuntimeError(
+                    "Tool {:s} returned error: {!r}".format(name, call_result.content)
+                )
+            # FastMCP serialises dict return values as a single JSON
+            # text-content block.
+            text = call_result.content[0].text  # type: ignore[attr-defined]
+            payload = json.loads(text)
+            assert isinstance(payload, dict)
+            return payload
 
     return asyncio.run(_run())
 

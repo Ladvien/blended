@@ -30,12 +30,17 @@ from pathlib import Path
 from typing import ClassVar
 from unittest import mock
 
+from blmcp import argument_parser
+from blmcp.tools_helpers import (
+    blended_bridge,
+    blended_bridge_toolcode,
+    toolcode_format_call,
+)
+from mcp.server.fastmcp import FastMCP  # pylint: disable=import-error,no-name-in-module
+
 from blended.agent.outcome import ToolOutcome, outcome_to_json
 from blended.agent.plan import MISSING_PLAN_REFUSAL
 from blended.agent.prompt_versions import get_revision
-from blmcp import argument_parser
-from blmcp.tools_helpers import blended_bridge, blended_bridge_toolcode, toolcode_format_call
-from mcp.server.fastmcp import FastMCP  # pylint: disable=import-error,no-name-in-module
 
 _BOX_ARGUMENTS = {"name": "Crate", "width_m": 0.5, "depth_m": 0.5, "height_m": 0.5}
 

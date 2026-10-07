@@ -8,13 +8,14 @@ __all__ = (
     "register",
 )
 
+from mcp.server.fastmcp import FastMCP  # pylint: disable=import-error,no-name-in-module
+from mcp.types import ToolAnnotations  # pylint: disable=import-error,no-name-in-module
+
 from blmcp.tools_helpers.rst_doc_search import (
     SEARCH_TOOL_DESCRIPTION,
     search,
     with_doc,
 )
-from mcp.server.fastmcp import FastMCP  # pylint: disable=import-error,no-name-in-module
-from mcp.types import ToolAnnotations  # pylint: disable=import-error,no-name-in-module
 
 
 def register(mcp: FastMCP) -> None:

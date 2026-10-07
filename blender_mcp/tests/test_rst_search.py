@@ -26,8 +26,8 @@ import sys
 import tempfile
 import unittest
 from collections.abc import Iterator
-from unittest import mock
 from typing import Any
+from unittest import mock
 
 _REPO_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 _MCP_DIR = os.path.join(_REPO_DIR, "mcp")

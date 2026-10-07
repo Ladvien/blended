@@ -1035,7 +1035,9 @@ class TestChatClient(unittest.TestCase):
 
         def validate() -> bool:
             import bpy
-            from mathutils import Vector  # type: ignore[import-not-found]  # Blender-only module.
+            from mathutils import (
+                Vector,  # type: ignore[import-not-found]  # Blender-only module.
+            )
             dg = bpy.context.evaluated_depsgraph_get()
             body = bpy.data.objects['Body']
             rig = bpy.data.objects['Rig']

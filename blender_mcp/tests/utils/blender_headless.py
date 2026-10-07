@@ -49,20 +49,18 @@ __all__ = (
     "main",
 )
 
+import os
+import signal
 import subprocess
 import sys
-import signal
-import os
 import tempfile
-
-from typing import (
-    Any,
-)
 from collections.abc import (
     Iterator,
     Sequence,
 )
-
+from typing import (
+    Any,
+)
 
 # -----------------------------------------------------------------------------
 # Constants
@@ -232,7 +230,7 @@ class backend_wayland(backend_base):
             module_map = []
             for key, value in sorted(weston_map_filenames.items()):
                 if not value:
-                    raise Exception("Failure to find {!r} in {!r}".format(key, weston_lib_dir))
+                    raise Exception("Failure to find {!r} in {!r}".format(key, weston_lib_dir))  # noqa: TRY002 — copied from Blender's test harness
                 module_map.append("{:s}={:s}".format(key, value))
 
             weston_env["WESTON_MODULE_MAP"] = ";".join(module_map)

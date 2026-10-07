@@ -19,7 +19,7 @@ Runs under the bench venv (needs trimesh + numpy + scipy; no Blender).
         --bench-root /Users/ladvien/3dcodebench \
         --model-dir blended-deepseek-v4-pro \
         --instances-file /Users/ladvien/3dcodebench/instances_v1.txt \
-        --out 3dcode_diagnose_v1.md
+        --out docs/research/3dcodebench/3dcode_diagnose_v1.md
 
 The script asserts, before any data is trusted, that its per-instance
 cd_yawmin matches <model_dir>/_metrics/shape_chamfer.json for every instance
