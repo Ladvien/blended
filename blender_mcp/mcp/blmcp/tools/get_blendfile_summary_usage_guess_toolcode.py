@@ -71,11 +71,12 @@ def _usage_probability_for_rendering(data: Any, scene: Any) -> tuple[str, dict[s
     """
     del data
     signals: list[tuple[float, float]] = []
-    signals.append((float(scene.render.engine not in ("BLENDER_EEVEE_NEXT", "BLENDER_EEVEE")), 0.5))
+    # Blender 5.x's only built-in EEVEE engine id is `BLENDER_EEVEE` (measured on 5.2.0).
+    signals.append((float(scene.render.engine != "BLENDER_EEVEE"), 0.5))
     # Blender's default output paths, indicating no intentional render setup.
     default_paths = ("/tmp/", "/tmp\\", "")
     signals.append((float(scene.render.filepath not in default_paths), 0.8))
-    node_tree = getattr(scene, "node_tree", None)
+    node_tree = getattr(scene, "compositing_node_group", None)
     signals.append((
         float(bool(node_tree and any(n.type == "R_LAYERS" for n in node_tree.nodes))),
         1.0,
@@ -160,10 +161,12 @@ def _usage_probability_for_compositing(data: Any, scene: Any) -> tuple[str, dict
     """
     del data
     signals: list[tuple[float, float]] = []
-    # Enabling `use_nodes` creates `Render Layers` and `Composite` nodes by default.
-    node_tree = getattr(scene, "node_tree", None)
+    # Blender 5.x keeps the compositor tree in `scene.compositing_node_group`
+    # (None until one is created); `scene.node_tree` no longer exists
+    # (measured on 5.2.0). The more-than-two-nodes threshold is upstream's.
+    node_tree = getattr(scene, "compositing_node_group", None)
     signals.append((
-        float(bool(node_tree and scene.use_nodes and len(node_tree.nodes) > 2)),
+        float(bool(node_tree and len(node_tree.nodes) > 2)),
         1.0,
     ))
     return _summarize_as_dict("Compositing", signals)

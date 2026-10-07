@@ -60,7 +60,15 @@ def assign_material(
             f"this op rather than working around it at the call site."
         )
     red, green, blue = base_color_rgb
-    principled.inputs[BASE_COLOR_INPUT_NAME].default_value = (red, green, blue, 1.0)
+    base_color_input = principled.inputs[BASE_COLOR_INPUT_NAME]
+    # A reused material may carry a texture feeding Base Color (from
+    # assign_procedural_material / assign_image_texture_material under the
+    # same name); a linked input ignores default_value, so the flat colour
+    # asked for here would show only in Workbench (measured: red requested,
+    # material_report still base_color_linked=True with a checker node).
+    for stale_link in list(base_color_input.links):
+        material.node_tree.links.remove(stale_link)
+    base_color_input.default_value = (red, green, blue, 1.0)
     principled.inputs["Roughness"].default_value = roughness
     # The half Workbench actually renders.
     material.diffuse_color = (red, green, blue, 1.0)

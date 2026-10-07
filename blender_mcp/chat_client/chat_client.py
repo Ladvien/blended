@@ -29,9 +29,9 @@ import argparse
 import asyncio
 import json
 import os
+import shlex
 import urllib.error
 import urllib.request
-
 from typing import Any
 
 from mcp import ClientSession, StdioServerParameters  # pylint: disable=import-error,no-name-in-module
@@ -243,7 +243,7 @@ async def _run(
         value = os.environ.get(key)
         if value is not None:
             env[key] = value
-    parts = server_command.split()
+    parts = shlex.split(server_command)
     params = StdioServerParameters(command=parts[0], args=parts[1:], env=env or None)
 
     async with stdio_client(params) as (read, write):

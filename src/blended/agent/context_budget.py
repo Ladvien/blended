@@ -28,6 +28,7 @@ from blended.agent.system_prompt import (
     GATE_HEADING,
     OUTPUT_CONTRACT_HEADING,
     build_system_prompt,
+    manifest_slice,
 )
 
 # The drift catalog's heading inside the manifest's gate-and-traps slice.
@@ -47,14 +48,6 @@ class Part:
     text: str
 
 
-def _slice(whole: str, start_heading: str, end_heading: str) -> str:
-    start = whole.find(start_heading)
-    end = whole.find(end_heading)
-    if start < 0 or end < 0 or end < start:
-        raise ValueError(f"manifest headings {start_heading!r}..{end_heading!r} not found in order")
-    return whole[start:end]
-
-
 def prompt_parts(revision: int | None = None, lane: str | None = None) -> tuple[str, list[Part]]:
     """The assembled system prompt and its parts, each a verbatim substring."""
     from blended.agent.prompt_versions import get_revision
@@ -69,8 +62,8 @@ def prompt_parts(revision: int | None = None, lane: str | None = None) -> tuple[
         Part("conventions", conventions),
         # The operations section is measured from the manifest but is no
         # longer in the prompt (OT-24); the schemas carry the ops.
-        Part("manifest: gate fields + budget", _slice(manifest, GATE_HEADING, DRIFT_HEADING)),
-        Part("manifest: drift catalog", _slice(manifest, DRIFT_HEADING, OUTPUT_CONTRACT_HEADING)),
+        Part("manifest: gate fields + budget", manifest_slice(manifest, GATE_HEADING, DRIFT_HEADING)),
+        Part("manifest: drift catalog", manifest_slice(manifest, DRIFT_HEADING, OUTPUT_CONTRACT_HEADING)),
     ]
     if lane is not None:
         from blended.agent.skill_modules import render_modules
@@ -98,7 +91,10 @@ def tool_parts(tools: list[dict]) -> list[Part]:
 
 def bmb_tokenizer(endpoint: str, api_key_path: Path) -> Callable[[str], int]:
     """A `tokenize(text) -> int` bound to bmb's llama-server; loud when it is down."""
-    key = api_key_path.read_text().strip()
+    try:
+        key = api_key_path.read_text().strip()
+    except OSError as error:
+        raise TokenizerUnreachable(f"bmb api key at {api_key_path}: {error}") from error
 
     def tokenize(text: str) -> int:
         request = urllib.request.Request(
@@ -184,6 +180,8 @@ def write_spec_row(spec_path: Path, row: str, after_label: str = "| The agent's 
     if existing:
         lines[existing[0]] = row
     else:
-        anchor = next(index for index, line in enumerate(lines) if line.startswith(after_label))
+        anchor = next((index for index, line in enumerate(lines) if line.startswith(after_label)), None)
+        if anchor is None:
+            raise ValueError(f"{spec_path} has no row starting {after_label!r} to insert the context row after")
         lines.insert(anchor + 1, row)
     spec_path.write_text("\n".join(lines) + "\n")

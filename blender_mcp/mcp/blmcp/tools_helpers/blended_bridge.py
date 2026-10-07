@@ -32,6 +32,8 @@ __all__ = (
     "HANDOFF_MAX_AGE_S",
     "MCP_INSTRUCTIONS_HEAD",
     "MCP_INSTRUCTIONS_HEAD_CONDENSES_REVISION",
+    "REPOSITORY_ROOT",
+    "REPOSITORY_SRC",
     "SOURCE_CHANGED_EXIT_CODE",
     "SOURCE_POLL_INTERVAL_S",
     "SOURCE_RESPONSE_DRAIN_S",
@@ -40,6 +42,7 @@ __all__ = (
     "SOURCE_SKIPPED_DIRECTORY_NAMES",
     "SOURCE_SKIPPED_PATHS",
     "SOURCE_SUFFIXES",
+    "VENV_SITE_PACKAGES",
     "VIEWPORT_FOLLOW_TOOL_NAME",
     "BlendedFastMCP",
     "BlendedSession",
@@ -74,7 +77,11 @@ from blended.agent.tool_event import (
     encode_tool_event,
     refused_tool_event,
 )
-from blended.agent.tools import MAXIMUM_TRACEBACK_CHARACTERS, TOOL_SCHEMAS, TOOL_SCHEMAS_FINGERPRINT
+from blended.agent.tools import (
+    MAXIMUM_TRACEBACK_CHARACTERS,
+    TOOL_SCHEMAS,
+    TOOL_SCHEMAS_FINGERPRINT,
+)
 from blended.agent.transcript import ChatTranscript, default_log_directory
 from mcp import types  # pylint: disable=import-error,no-name-in-module
 from mcp.server.fastmcp import FastMCP  # pylint: disable=import-error,no-name-in-module
@@ -199,7 +206,7 @@ is framed once it is linked into the scene. To show a different part, or one a
 
 def blended_instructions(upstream_instructions: str) -> str:
     """The must-read head, blended's working agreement, then upstream's instructions."""
-    return "\n\n".join((MCP_INSTRUCTIONS_HEAD, build_system_prompt(), upstream_instructions))
+    return f"{MCP_INSTRUCTIONS_HEAD}\n\n{build_system_prompt()}\n\n{upstream_instructions}"
 
 
 def source_fingerprint(
@@ -301,12 +308,15 @@ class BlendedSession:
         one is refused on stderr.
         """
         path = handoff_path(log_directory, parent_pid)
-        if not path.exists():
-            return cls(log_directory, output_root)
-        text = path.read_text(encoding="utf-8")
-        path.unlink()
         try:
-            handoff = json.loads(text)
+            raw = path.read_bytes()
+        except FileNotFoundError:
+            return cls(log_directory, output_root)
+        # Consumed before it is parsed, so a handoff that cannot be read is
+        # refused once, not on every start.
+        path.unlink(missing_ok=True)
+        try:
+            handoff = json.loads(raw.decode("utf-8"))
             plan_declared = handoff[_HANDOFF_PLAN_KEY]
             session_name = handoff[_HANDOFF_SESSION_KEY]
             written_at_s = handoff[_HANDOFF_WRITTEN_AT_KEY]
@@ -355,7 +365,7 @@ class BlendedSession:
         if self._transcript is None or self._output_directory is None:
             resumed = self.session_name is not None
             if self.session_name is None:
-                self.session_name = datetime.now().strftime(_SESSION_NAME_FORMAT)
+                self.session_name = datetime.now().astimezone().strftime(_SESSION_NAME_FORMAT)
             self._transcript = ChatTranscript(self.log_directory, session_name=self.session_name, routing=_ROUTING)
             self._output_directory = (self.output_root / self.session_name).resolve()
             self._output_directory.mkdir(parents=True, exist_ok=True)

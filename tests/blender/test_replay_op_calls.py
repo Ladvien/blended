@@ -52,7 +52,8 @@ def test_an_op_call_sequence_replays_to_a_scored_pass(empty_scene):
     replayed = []
     built = replay_record(PLANTER_RECORD, ("PlanterBox",), on_chunk=lambda i, n, r: replayed.append((i, n, r.ok)))
 
-    assert [name for name, _ in [(r, None) for r in replayed]] and len(replayed) == 9  # 12 calls, 3 skipped
+    assert [index for index, _, _ in replayed] == list(range(1, 10))  # 12 calls, 3 skipped
+    assert {total for _, total, _ in replayed} == {9}
     assert all(ok for _, _, ok in replayed)
     assert [obj.name for obj in built] == ["PlanterBox"]
     brief = get_brief("planter_box")

@@ -1,9 +1,12 @@
 """Where F@0.05 is lost: the proportion headroom of finished bench rolls.
 
 For every instance of every `--model-dir` this reads the generated and
-reference GLBs, scores F@0.05 exactly as `diagnose_3dcode.py` does (the
+reference GLBs, scores F@0.05 with the pieces `diagnose_3dcode.py` uses (the
 scorer's sampling and unit-sphere normalisation, `best_pca_alignment`,
-`fscore`), then asks one counterfactual: what would F@0.05 be if the
+`fscore`) — except that each instance seeds its own `default_rng(SEED)`
+instead of sharing the scorer's one stream across instances, so past the
+first instance the clouds sampled are not the ones the panel's F column was scored on — then asks
+one counterfactual: what would F@0.05 be if the
 generated cloud had the reference's extents on every axis? The rescale
 is per axis IN THE ALIGNED FRAME — the frame the metric is measured in —
 which is what BEN-6c asked of the older world-axis oracle in
@@ -33,6 +36,7 @@ math on fixtures).
 from __future__ import annotations
 
 import argparse
+import functools
 import json
 import sys
 from collections import defaultdict
@@ -42,8 +46,8 @@ import numpy as np
 import trimesh
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from bench_surface_metrics import best_pca_alignment, fscore  # noqa: E402
-from bench_thresholds import (  # noqa: E402
+from bench_surface_metrics import best_pca_alignment, fscore
+from bench_thresholds import (
     COMPONENT_TOUCH_TOLERANCE_FRACTION,
     PAIRWISE_COMPONENT_LIMIT,
     PRIMARY_FSCORE_THRESHOLD,
@@ -151,6 +155,10 @@ def score_instance(sc, reference_glb: Path, generated_glb: Path) -> dict | None:
     }
 
 
+def mean_of(group: list[dict], key: str) -> float:
+    return float(np.mean([r[key] for r in group]))
+
+
 def render_markdown(rows: list[dict]) -> str:
     if not rows:
         return "no instances scored\n"
@@ -175,7 +183,7 @@ def render_markdown(rows: list[dict]) -> str:
         by_instance.items(), key=lambda item: -np.mean([r["headroom"] for r in item[1]])
     )
     for instance, group in ordered:
-        mean = lambda key: float(np.mean([r[key] for r in group]))  # noqa: E731
+        mean = functools.partial(mean_of, group)
         lines.append(
             f"| {instance} | {len(group)} | {mean('fscore'):.3f} | "
             f"{mean('fscore_oracle_proportions'):.3f} | {mean('headroom'):+.3f} | "

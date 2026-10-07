@@ -8,8 +8,8 @@
 |---|---|
 | (instruction, script) pairs | 321 |
 | ... that executed (`render_log.status == OK`) | 302 |
-| ... that carry a `cd_pca` | 269 |
-| ... that pass at `cd_pca <= 0.0252` | 156 |
+| ... that carry a `cd_pca` | 288 |
+| ... that pass at `cd_pca <= 0.0252` | 165 |
 | deduplicated on (instance, sha256(script)) | 321 |
 | ... and execution-verified | 302 |
 | **distinct instructions** | 32 |
@@ -19,10 +19,10 @@ The distinct-instruction row is the binding one: the frozen holdout is 20 prompt
 
 ## Op-sequence pairs (the target rule 4 would name)
 
-- attempts whose emitted script calls facade ops: **76**
+- attempts whose emitted script calls any facade op (reader ops included): **76**
 - op calls in those scripts: **205**
 - distinct ops exercised: **13** of 48
-- `run_python` chunks across the same archive: **2816** against 205 op calls counted in metadata
+- baked `run_python` chunks against baked scene-changing op calls, over the pairs whose bridge could record an op: **581** against **136**; 198 earlier pairs come from a bridge that collected no op calls, so their chunk counts are not comparable
 
 ## Convergence log (`_evaluate/iterations.jsonl`)
 
@@ -45,14 +45,14 @@ Top hatch reasons, normalised:
 ## Op coverage over the whole facade
 
 - ops in the facade: **48**
-- ops appearing anywhere in the mined records: **22**
-- ops appearing fewer than 20 times: **12**
-- ops never appearing: **26**
+- ops appearing anywhere in the archived scripts or the convergence log: **24**
+- ops appearing fewer than 20 times: **13**
+- ops never appearing: **24**
 
 Ops the corpus never exercises, and therefore cannot teach:
 
 ```
-add_armature, add_splayed_leg, animation_report, apply_canonical_depth_axis, apply_object_transform, assign_image_texture_material, assign_procedural_material, assign_vertex_group_weights, assign_weights_by_height, bind_mesh_to_armature, boolean_intersect, canonical_depth_axis_rotation_euler_rad, deforming_bone_names, depth_axis_extent_rank, depth_axis_holds_middle_extent, keyframe_object_transform, keyframe_pose_bone_rotation, linear_array, middle_extent_m, orientation_reading, rig_report, rotate_object_euler, select_vertices, set_frame_range, weight_report, weld_and_dissolve
+add_armature, add_splayed_leg, animation_report, apply_canonical_depth_axis, apply_object_transform, assign_image_texture_material, assign_procedural_material, assign_vertex_group_weights, assign_weights_by_height, bind_mesh_to_armature, boolean_intersect, deforming_bone_names, depth_axis_extent_rank, keyframe_object_transform, keyframe_pose_bone_rotation, linear_array, middle_extent_m, orientation_reading, rig_report, rotate_object_euler, select_vertices, set_frame_range, weight_report, weld_and_dissolve
 ```
 
 ## Reference point

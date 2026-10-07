@@ -126,7 +126,13 @@ def synced_blend_for_cli(blend_file: str) -> Generator[str, None, None]:
                 strict_json=True,
             )
         except ConnectionError:
-            # No running Blender instance, use the on-disk file as-is.
+            # No running Blender instance. Handled outside this `try`: a
+            # `yield` inside it would catch a `ConnectionError` raised in the
+            # caller's `with` body and yield a second time.
+            response = None
+
+        if response is None:
+            # Use the on-disk file as-is.
             yield blend_file
             return
 

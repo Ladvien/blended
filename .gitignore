@@ -33,3 +33,6 @@ outputs/
 # Editor/tool caches
 .serena/
 logs/*
+# Default scratch output of the harness, examples and agent render tools
+# (src/blended/harness.py DEFAULT_OUTPUT_DIRECTORY, src/blended/agent/tools.py).
+_renders/

@@ -99,6 +99,25 @@ def parse_arguments(argv):
     return parser.parse_args(argv)
 
 
+def refuse_to_overwrite_hand_verification(path: Path) -> None:
+    """A re-run rewrites `g3_judgements.jsonl` from scratch, and the rows'
+    `hand_verified` / `hand_violated` / `agrees` fields are typed by a
+    human, not produced here. Losing them loses the judge's measured error
+    rate, so refuse rather than truncate the file."""
+    if not path.exists():
+        return
+    verified = sum(
+        1
+        for line in path.read_text().splitlines()
+        if line.strip() and json.loads(line).get("hand_verified") is True
+    )
+    if verified:
+        raise SystemExit(
+            f"{path} holds {verified} hand-verified row(s); a re-run would "
+            f"truncate them. Move the file aside first if that is intended."
+        )
+
+
 def geometry_rows() -> list[dict]:
     with TAXONOMY_CSV.open() as handle:
         return [
@@ -156,6 +175,7 @@ def main(argv) -> int:
     results_root = bench_root / arguments.results_root
     if not TAXONOMY_CSV.exists():
         raise SystemExit(f"run scripts/finetune_phase_a.py first: no {TAXONOMY_CSV}")
+    refuse_to_overwrite_hand_verification(JUDGE_JSONL)
 
     from blended.agent.loop import ModelConfig, OllamaClient, VisionDescriber
 

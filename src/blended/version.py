@@ -2,8 +2,11 @@
 
 API drift between Blender series is the dominant failure mode for
 agent-written bpy code (3DCodeBench: ~85% of failures for models below
-the executability floor were 4.x->5.0 drift). Every session asserts the
-series it is actually running against before any geometry is built.
+the executability floor were 4.x->5.0 drift). The entry-point scripts
+(run_agent_task, run_3dcode_instance, pin_golden_views,
+calibrate_visual_gate) call `assert_supported_blender` before any geometry
+is built; the MCP bridge does not, so a tool call there runs against
+whatever series Blender is.
 """
 
 from __future__ import annotations

@@ -164,6 +164,8 @@ def select_vertices(object_name: str, selector: VertexSelector) -> tuple[int, ..
 @op(reads_only=True)
 def select_faces(object_name: str, selector: FaceSelector) -> tuple[int, ...]:
     """Resolve a FaceSelector on the named mesh to sorted face indices."""
+    import bpy
+
     from blended.ops._objects import object_by_name
 
     mesh_object = object_by_name(object_name, "MESH")
@@ -177,10 +179,15 @@ def select_faces(object_name: str, selector: FaceSelector) -> tuple[int, ...]:
         return tuple(p.index for p in polygons if all(v in members for v in p.vertices))
     axis = AXIS_VECTORS[selector.axis]
     threshold = math.cos(math.radians(selector.normal_tolerance_deg))
-    rotation = mesh_object.matrix_world.to_3x3()
+    # matrix_world is lazy (see blended.ops.transforms); read it fresh.
+    bpy.context.view_layer.update()
+    # Normals transform by the inverse-transpose: with a non-uniform scale
+    # the plain 3x3 skews them (measured: a 45-degree face under z-scale 10
+    # read as a +z face). Equal to the rotation for rigid transforms.
+    normal_matrix = mesh_object.matrix_world.to_3x3().inverted_safe().transposed()
     selected = []
     for polygon in polygons:
-        world_normal = (rotation @ polygon.normal).normalized()
+        world_normal = (normal_matrix @ polygon.normal).normalized()
         if world_normal.dot(axis) >= threshold:
             selected.append(polygon.index)
     return tuple(selected)

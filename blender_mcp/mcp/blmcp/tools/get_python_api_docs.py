@@ -419,7 +419,10 @@ def register(mcp: FastMCP) -> None:
         ``examples`` (present on the ``exact`` and ``definition`` kinds)
         is a list of ``{path, content}`` entries referenced from this documentation.
         """
-        api_path = os.path.join(data_dir(), "api")
+        # realpath, not the normpath data_dir() returns: the traversal guards
+        # compare against os.path.realpath() results, so a root reached through
+        # a symlink (macOS /tmp -> /private/tmp) would reject every lookup.
+        api_path = os.path.realpath(os.path.join(data_dir(), "api"))
 
         # Support partial match (glob).
         if identifier == "*" or identifier.endswith(".*"):

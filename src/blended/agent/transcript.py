@@ -65,7 +65,7 @@ class ChatTranscript:
         self.log_directory = Path(self.log_directory)
         self.log_directory.mkdir(parents=True, exist_ok=True)
         if not self.session_name:
-            stamp = datetime.now().strftime("%Y-%m-%d-%H%M%S")
+            stamp = datetime.now().astimezone().strftime("%Y-%m-%d-%H%M%S")
             self.session_name = f"chat-{stamp}"
         self._event_index = self._last_recorded_index()
         self._write_markdown_header()
@@ -94,7 +94,7 @@ class ChatTranscript:
     def _write_markdown_header(self) -> None:
         if self.markdown_path.exists():
             return
-        local_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        local_time = datetime.now().astimezone().strftime("%Y-%m-%d %H:%M:%S")
         self.markdown_path.write_text(
             f"# blended session — {self.session_name}\n\n"
             f"- Started: {local_time}\n"

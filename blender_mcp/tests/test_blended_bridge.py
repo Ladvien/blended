@@ -27,6 +27,7 @@ import time
 import types
 import unittest
 from pathlib import Path
+from typing import ClassVar
 from unittest import mock
 
 from blended.agent.outcome import ToolOutcome, outcome_to_json
@@ -242,7 +243,6 @@ class _HeldOpen:
 
     def __await__(self):  # type: ignore[no-untyped-def]
         yield
-        return None
 
 
 class TestSourceWatcher(unittest.TestCase):
@@ -264,7 +264,7 @@ class TestSourceWatcher(unittest.TestCase):
         self._server = blended_bridge.BlendedFastMCP("watcher-probe", instructions="probe")
         self._handoffs: list[int] = []
         self._server._blended = types.SimpleNamespace(call=self._blended_call, write_handoff=self._write_handoff)
-        self._tool_name = sorted(blended_bridge.BLENDED_TOOL_NAMES)[0]
+        self._tool_name = min(blended_bridge.BLENDED_TOOL_NAMES)
         self._now_s = 0.0
         self._timeline: list[tuple[float, str]] = []
         self._calls: list[tuple[float, float]] = []
@@ -396,7 +396,7 @@ class TestHandoff(unittest.TestCase):
 
     _CLIENT_PID = 4242
     _OTHER_CLIENT_PID = 4343
-    _BOX = {"name": "Crate", "width_m": 0.5, "depth_m": 0.5, "height_m": 0.5}
+    _BOX: ClassVar[dict[str, object]] = {"name": "Crate", "width_m": 0.5, "depth_m": 0.5, "height_m": 0.5}
 
     def setUp(self) -> None:
         self._directory = tempfile.TemporaryDirectory()

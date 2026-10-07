@@ -14,7 +14,7 @@ after the fact cannot support it.
 from __future__ import annotations
 
 import json
-from dataclasses import asdict, dataclass, field, replace
+from dataclasses import asdict, dataclass, field, fields, replace
 from pathlib import Path
 
 DEFAULT_LOG_PATH = Path("_evaluate/iterations.jsonl")
@@ -256,6 +256,21 @@ class IterationVerdict:
             )
 
 
+def _tuple_field_names(
+    record_type: type[IterationRecord | IterationVerdict],
+) -> tuple[str, ...]:
+    """Names of the dataclass fields declared with `default_factory=tuple`.
+    JSON has no tuple, so a line reads back as lists; the loaders restore
+    the declared top-level type (values nested inside `tool_events` dicts
+    stay as JSON read them).
+    """
+    return tuple(
+        item.name
+        for item in fields(record_type)
+        if item.default_factory is tuple
+    )
+
+
 class VerdictLog:
     """Append-only JSONL of examiner verdicts."""
 
@@ -274,9 +289,14 @@ class VerdictLog:
         for line in self.path.read_text(encoding="utf-8").splitlines():
             if line.strip():
                 payload = json.loads(line)
-                payload["visual_deviations"] = tuple(
-                    payload.get("visual_deviations", ())
-                )
+                for tuple_field in _tuple_field_names(IterationVerdict):
+                    if tuple_field in payload:
+                        payload[tuple_field] = tuple(payload[tuple_field])
+                if "view_tags" in payload:
+                    payload["view_tags"] = tuple(
+                        (view_name, tuple(tags))
+                        for view_name, tags in payload["view_tags"]
+                    )
                 loaded.append(IterationVerdict(**payload))
         return loaded
 
@@ -308,7 +328,11 @@ class IterationLog:
         loaded: list[IterationRecord] = []
         for line in self.path.read_text(encoding="utf-8").splitlines():
             if line.strip():
-                loaded.append(IterationRecord(**json.loads(line)))
+                payload = json.loads(line)
+                for tuple_field in _tuple_field_names(IterationRecord):
+                    if tuple_field in payload:
+                        payload[tuple_field] = tuple(payload[tuple_field])
+                loaded.append(IterationRecord(**payload))
         return loaded
 
     def next_iteration_number(self) -> int:
@@ -424,9 +448,9 @@ def converged_suite_cycles(
                 # Older run of a brief already seen in this cycle: it
                 # belongs to the previous cycle, not this one.
                 continue
-            verdict = verdict_by_key.get((record.iteration, record.brief_name))
-            current[record.brief_name] = fold_verdict(record, verdict)
-            current_verdicts[record.brief_name] = verdict
+            run_verdict = verdict_by_key.get((record.iteration, record.brief_name))
+            current[record.brief_name] = fold_verdict(record, run_verdict)
+            current_verdicts[record.brief_name] = run_verdict
         if set(current) == wanted:
             cycles.append(_cycle_verdict(current, current_verdicts))
             current = {}

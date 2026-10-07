@@ -37,6 +37,18 @@ PLAN_STEP_ARGUMENT = "plan_step"
 # A plan longer than this is a plan the user cannot hold in their head.
 # Magentic-UI's plans are short sequences; eight is the ceiling.
 MAXIMUM_PLAN_STEPS = 8
+
+
+class PlanArgumentError(ValueError):
+    """A declare_plan / plan_step / plan-event payload is malformed.
+
+    A ValueError subclass: every caller that catches ValueError keeps
+    working, while the type check on model-supplied JSON (a wrong JSON
+    type is a malformed value here, not a programmer's TypeError) is
+    named instead of silenced.
+    """
+
+
 # The JSON-schema property every plan-requiring tool carries.
 PLAN_STEP_SCHEMA = {
     "type": "integer",
@@ -119,42 +131,42 @@ class TurnPlan:
 def parse_plan_arguments(arguments: dict) -> TurnPlan:
     """Build a ``TurnPlan`` from the ``declare_plan`` tool arguments.
 
-    Raises ``ValueError`` on every malformed input — missing steps,
+    Raises ``PlanArgumentError`` (a ``ValueError``) on every malformed input — missing steps,
     a non-list, empty or whitespace-only step strings, and more than
     ``MAXIMUM_PLAN_STEPS`` steps. Never guesses, never truncates: a
     nine-step plan is a nine-step plan, not a silently-shortened eight.
     Step strings are stripped of surrounding whitespace.
     """
     if not isinstance(arguments, dict):
-        raise ValueError(
+        raise PlanArgumentError(
             f"declare_plan arguments must be an object, got "
             f"{type(arguments).__name__}"
         )
     raw_steps = arguments.get("steps")
     if raw_steps is None:
-        raise ValueError("declare_plan requires a 'steps' array.")
+        raise PlanArgumentError("declare_plan requires a 'steps' array.")
     if not isinstance(raw_steps, list):
-        raise ValueError(
+        raise PlanArgumentError(
             f"declare_plan 'steps' must be an array of strings, got "
             f"{type(raw_steps).__name__}"
         )
     if not raw_steps:
-        raise ValueError("declare_plan 'steps' must not be empty.")
+        raise PlanArgumentError("declare_plan 'steps' must not be empty.")
     if len(raw_steps) > MAXIMUM_PLAN_STEPS:
-        raise ValueError(
+        raise PlanArgumentError(
             f"declare_plan has {len(raw_steps)} steps; the maximum is "
             f"{MAXIMUM_PLAN_STEPS}."
         )
     cleaned: list[str] = []
     for position, step in enumerate(raw_steps, start=1):
         if not isinstance(step, str):
-            raise ValueError(
+            raise PlanArgumentError(
                 f"declare_plan step {position} is not a string: "
                 f"{type(step).__name__}."
             )
         stripped = step.strip()
         if not stripped:
-            raise ValueError(
+            raise PlanArgumentError(
                 f"declare_plan step {position} is empty or whitespace-only."
             )
         cleaned.append(stripped)
@@ -164,12 +176,12 @@ def parse_plan_arguments(arguments: dict) -> TurnPlan:
 def plan_step_of(arguments: dict) -> int | None:
     """Extract the ``plan_step`` argument from a tool call.
 
-    Returns ``None`` when absent. Raises ``ValueError`` when the value
+    Returns ``None`` when absent. Raises ``PlanArgumentError`` (a ``ValueError``) when the value
     is present but not a positive integer — an integer-valued string is
     accepted, because some lanes stringify tool arguments.
     """
     if not isinstance(arguments, dict):
-        raise ValueError(
+        raise PlanArgumentError(
             f"tool arguments must be an object, got "
             f"{type(arguments).__name__}"
         )
@@ -179,34 +191,34 @@ def plan_step_of(arguments: dict) -> int | None:
     if isinstance(value, bool):
         # bool is an int subclass in Python; a plan_step of True is a
         # bug, not step 1.
-        raise ValueError(
+        raise PlanArgumentError(
             f"plan_step must be a positive integer, got bool {value!r}."
         )
     if isinstance(value, str):
         try:
             value = int(value)
         except ValueError:
-            raise ValueError(
+            raise PlanArgumentError(
                 f"plan_step must be a positive integer, got {value!r}."
             )
     if not isinstance(value, int):
-        raise ValueError(
+        raise PlanArgumentError(
             f"plan_step must be a positive integer, got "
             f"{type(value).__name__} {value!r}."
         )
     if value < 1:
-        raise ValueError(
+        raise PlanArgumentError(
             f"plan_step must be a positive integer (1-based), got {value}."
         )
     return value
 
 
 def plan_step_or_none(arguments: dict) -> int | None:
-    """The call's plan_step for the record; a malformed one is None here
-    and reported by `plan_step_of` where the loop reads it."""
+    """The call's plan_step for the record; a malformed one is None here.
+    The loop reports it on the tool result where it reads the step."""
     try:
         return plan_step_of(arguments)
-    except ValueError:
+    except PlanArgumentError:
         return None
 
 
@@ -231,38 +243,38 @@ def encode_plan_event(plan: TurnPlan) -> str:
 def decode_plan_event(text: str) -> TurnPlan:
     """Recover a ``TurnPlan`` from a ``plan`` event's text.
 
-    Raises ``ValueError`` on malformed JSON, missing keys, or steps that
+    Raises ``PlanArgumentError`` (a ``ValueError``) on malformed JSON, missing keys, or steps that
     fail the same validation ``parse_plan_arguments`` enforces.
     """
     try:
         payload = json.loads(text)
     except json.JSONDecodeError as error:
-        raise ValueError(f"plan event is not valid JSON: {error.msg}.")
+        raise PlanArgumentError(f"plan event is not valid JSON: {error.msg}.") from error
     if not isinstance(payload, dict):
-        raise ValueError(
+        raise PlanArgumentError(
             f"plan event payload must be an object, got "
             f"{type(payload).__name__}."
         )
     if _PLAN_EVENT_STEPS_KEY not in payload:
-        raise ValueError(
+        raise PlanArgumentError(
             f"plan event payload missing '{_PLAN_EVENT_STEPS_KEY}'."
         )
     if _PLAN_EVENT_CURRENT_STEP_KEY not in payload:
-        raise ValueError(
+        raise PlanArgumentError(
             f"plan event payload missing "
             f"'{_PLAN_EVENT_CURRENT_STEP_KEY}'."
         )
     steps = payload[_PLAN_EVENT_STEPS_KEY]
     current_step = payload[_PLAN_EVENT_CURRENT_STEP_KEY]
     if not isinstance(steps, list):
-        raise ValueError(
+        raise PlanArgumentError(
             f"plan event 'steps' must be an array, got "
             f"{type(steps).__name__}."
         )
     if not all(isinstance(step, str) for step in steps):
-        raise ValueError("plan event 'steps' must be an array of strings.")
+        raise PlanArgumentError("plan event 'steps' must be an array of strings.")
     if not isinstance(current_step, int) or isinstance(current_step, bool):
-        raise ValueError(
+        raise PlanArgumentError(
             f"plan event 'current_step' must be an integer, got "
             f"{type(current_step).__name__}."
         )

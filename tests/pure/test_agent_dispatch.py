@@ -183,16 +183,16 @@ def test_a_rebuilt_refinement_does_not_count_as_passed():
     """
     from blended.evaluate.iteration_log import IterationRecord
 
-    base = dict(
-        iteration=1,
-        brief_name="three_leg_stool",
-        prompt_identity="v6:deadbeef",
-        prompt_revision=6,
-        started_at="2026-08-22T00:00:00+00:00",
-        structural_gate_passed=True,
-        form_gate_passed=True,
-        visual_inspected=True,
-    )
+    base = {
+        "iteration": 1,
+        "brief_name": "three_leg_stool",
+        "prompt_identity": "v6:deadbeef",
+        "prompt_revision": 6,
+        "started_at": "2026-08-22T00:00:00+00:00",
+        "structural_gate_passed": True,
+        "form_gate_passed": True,
+        "visual_inspected": True,
+    }
     assert IterationRecord(**base).passed
     assert not IterationRecord(
         **base,

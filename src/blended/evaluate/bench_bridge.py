@@ -84,7 +84,9 @@ def include_call(call: RecordedCall) -> bool:
 
 
 def emits_geometry(tool_name: str) -> bool:
-    """A run_python chunk or a facade op; the other service tools change nothing."""
+    """A run_python chunk or ANY facade op — the reader ops included, which
+    replay as scene no-ops but are counted in `op_call_count`; the service
+    tools (render, plan, list, ...) are not facade ops and are excluded."""
     from blended.agent.tools import OP_FUNCTIONS
 
     return tool_name == HATCH_TOOL_NAME or tool_name in OP_FUNCTIONS

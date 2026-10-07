@@ -41,9 +41,10 @@ class ArgumentError(TypeError):
     """The model's arguments do not fit the op's signature."""
 
 
-# The version an op call reports. `assert_supported_blender` has already
-# refused any other series by the time a tool runs, so the pinned series
-# is the running one at the precision the harness pins.
+# The version an op call reports: the series the harness pins. Only the
+# bench and convergence drivers call `assert_supported_blender` before
+# a tool runs; the MCP bridge does not, so there the pinned series is
+# what the harness targets, not a measured running version.
 PINNED_SERIES_TEXT = f"{TARGET_BLENDER_SERIES[0]}.{TARGET_BLENDER_SERIES[1]}"
 
 

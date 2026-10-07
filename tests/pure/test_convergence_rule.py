@@ -270,7 +270,7 @@ def test_the_preflight_refuses_an_examiner_that_flags_clean_runs(monkeypatch):
         Path(__file__).resolve().parents[2] / "scripts" / "converge_auto.py",
     )
     module = importlib.util.module_from_spec(specification)
-    sys.modules[specification.name] = module
+    monkeypatch.setitem(sys.modules, specification.name, module)
     specification.loader.exec_module(module)
 
     unlicensed = examiner_module.Calibration(

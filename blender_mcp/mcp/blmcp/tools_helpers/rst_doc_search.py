@@ -21,8 +21,7 @@ __all__ = (
 import math
 import os
 import re
-from typing import Callable, Iterator
-
+from collections.abc import Callable, Iterator
 
 # Shared description template for the search_*_docs tools. Both
 # tools have identical user-facing semantics; only the corpus
@@ -358,6 +357,7 @@ def search(
     hits: list[dict[str, object]] = []
     last_file: str | None = None
     last_idx = 0
+    last_lo = 0
     last_section: tuple[str, ...] = ()
     file_path_bonus = 0.0
     for rel, idx, paragraphs, per_tok_count in pre_hits:
@@ -403,7 +403,12 @@ def search(
             # endpoint. A section transition always starts a fresh
             # hit so the breadcrumb and title bonus reflect exactly
             # the scope of the merged cluster.
+            # The cluster's text grows with it, so the folded match and its
+            # context are in the hit, not only the seed's window.
             hits[-1]["score"] += tfidf_score  # type: ignore[operator]
+            hits[-1]["text"] = "\n\n".join(
+                p[0] for p in paragraphs[last_lo:min(len(paragraphs), idx + context + 1)]
+            )
             last_idx = idx
             continue
         lo = max(0, idx - context)
@@ -424,14 +429,14 @@ def search(
             # drift per-step; rounded once after the loop below.
             "score": tfidf_score + file_path_bonus + title_bonus,
         })
-        last_file, last_idx = rel, idx
+        last_file, last_idx, last_lo = rel, idx, lo
         last_section = section_stack
 
     # Round all scores once, after all folds are settled. Keeps
     # score an integer in the response as LLM consumers expect
     # while avoiding per-fold rounding drift.
     for hit in hits:
-        hit["score"] = int(round(hit["score"]))  # type: ignore[arg-type]
+        hit["score"] = round(hit["score"])  # type: ignore[arg-type]
 
     # Python's sort is stable, so equal-count hits preserve walk order.
     hits.sort(key=lambda h: -h["score"])  # type: ignore[operator,return-value]

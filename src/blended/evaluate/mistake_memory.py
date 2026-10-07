@@ -722,45 +722,6 @@ MISTAKES: tuple[MistakeRecord, ...] = (
         recorded_on="2026-08-22",
     ),
     MistakeRecord(
-        identifier="a-runtime-dependency-the-addon-could-not-install",
-        scope="harness_code",
-        failure=(
-            "Moving the prompts into Jinja templates added jinja2 as a "
-            "RUNTIME dependency of blended.agent.system_prompt. "
-            "AgentSession.__post_init__ builds the system prompt and "
-            "blender_addon/__init__.py builds an AgentSession, so the "
-            "addon reaches that import on its first turn — and measured "
-            "2026-08-22, jinja2 is absent from Blender's bundled Python, "
-            "which has no pip. Shipped unguarded, the addon would have "
-            "installed cleanly and then failed in someone else's Blender."
-        ),
-        cause=(
-            "The driver scripts prepend the venv's site-packages to "
-            "sys.path, so a venv-only dependency works there and hides "
-            "the problem completely. The addon lane gets no venv. Two "
-            "lanes into the same code, one of which is never exercised "
-            "by `make test-blender-app`, because that runs from the repo."
-        ),
-        fix=(
-            "package_addon.py vendors jinja2 and markupsafe into the zip "
-            "beside the library, and refuses to build with a named error "
-            "if either is missing from the venv rather than producing a "
-            "zip that is broken in a way nobody sees until install. The "
-            "prompt templates are vendored the same way — package data "
-            "is the classic thing to leave behind, where the code "
-            "imports fine and then cannot find its own text."
-        ),
-        guarded_by=(
-            "RETIRED 2026-09: guarded code deleted in the MCP cutover (tests/pure/test_addon_packaging.py). Was: "
-            "tests/pure/test_addon_packaging.py (5 assertions: the "
-            "library, every registered template, each vendored "
-            "dependency, and no __pycache__). Verified end to end by "
-            "unpacking the zip and rendering the prompt inside Blender "
-            "with ONLY the addon on sys.path."
-        ),
-        recorded_on="2026-08-22",
-    ),
-    MistakeRecord(
         identifier="the-critique-called-a-clean-rebuild-a-failure",
         scope="process",
         failure=(
@@ -921,7 +882,9 @@ MISTAKES: tuple[MistakeRecord, ...] = (
         identifier="the-vision-model-cannot-yet-guard-visible-defects",
         scope="process",
         failure=(
-            "Stage-7 measurement, 2026-08-22, scripts/measure_eye.py: "
+            "Stage-7 measurement, 2026-08-22, scripts/measure_eye.py "
+            "(since deleted, see the-eye-scorer-counted-a-denial-as-a-"
+            "sighting): "
             "7 fixtures x 2 conditions against minimax-m3:cloud. NoRef "
             "recall 3/5 (0.60) with 2/2 false positives; Ref recall 2/5 "
             "(0.40) with 2/2 false positives. The defect class that "
@@ -1132,81 +1095,27 @@ MISTAKES: tuple[MistakeRecord, ...] = (
             "REQUIRED_CONTROL_SPECIFICITY (1.0) were NOT moved and "
             "prompts/examiner.md.j2 was NOT softened; either would have "
             "bought a licence by lowering the bar the licence exists to "
-            "certify. _evaluate/eye_calibration.json records the "
+            "certify. _evaluate/eye_calibration.json recorded the "
             "measurement under identity "
             "qwen3-vl:8b-instruct+examiner:60a9920cb938, machine "
-            "verdicts stay unlicensed, and --examiner none remains the "
-            "driver default. The next lever is a stronger eye, not more "
+            "verdicts stayed unlicensed, and --examiner none remains the "
+            "driver default. The file has since been overwritten by the "
+            "calibrations of other eyes (git: 1c65544, 0cf56b6, de30d79) "
+            "and the 8B run is retained nowhere in the repository; this "
+            "record is its only trace. The next lever is a stronger eye, not more "
             "prompt engineering — BlenderGym's finding that verifier "
             "quality is the compute worth buying."
         ),
         guarded_by=(
-            "The driver itself: `run_agent_task.py --examiner auto` "
-            "against this calibration exits 1 in 0.7 s with "
-            "'sensitivity 0.20 < 0.6: not distinguishable from the "
-            "no-reference rubber stamp' and writes NO iteration row and "
-            "NO verdict row (run with --log/--verdicts under "
-            "_evaluate/local_eye/, both absent afterwards). "
             "tests/pure/test_examiner.py::"
-            "test_calibration_problems_are_loud pins the refusal."
-        ),
-        recorded_on="2026-08-22",
-    ),
-    MistakeRecord(
-        identifier="installing-over-an-enabled-addon-ran-a-stale-build",
-        scope="harness_code",
-        failure=(
-            "Live session 2026-08-22 20:18, Blender 5.2: 'Make a low poly "
-            "human' SIGSEGV'd about 20 s into the fifth tool call, which "
-            "never produced a result row. TWO faults, both in the "
-            "depsgraph: a TBB worker in BKE_object_sync_to_original "
-            "(Blender's own blender.crash.txt) and the main thread in "
-            "DepsgraphRelationBuilder::build_copy_on_write_relations under "
-            "wm_event_do_notifiers (the OS .ips report). No Python frame in "
-            "either. The crash is STILL UNEXPLAINED, and it cannot be "
-            "replayed from the record: every tool event in that transcript "
-            "is exactly 212 characters = 'run_python(' + 200 + ')', the old "
-            "emit's [:200] slice — a line that does not exist on disk — so "
-            "the script that was running when it died was never written "
-            "down. Replaying the reconstructable part (six unlinked parts, "
-            "link all, union five) survives headless, live, and live with "
-            "the same emptied scene."
-        ),
-        cause=(
-            "`blended` is a TOP-LEVEL package on sys.path, not a submodule "
-            "of the addon. Installing dist/blended_agent.zip over an "
-            "ENABLED addon rewrites every file and reloads only "
-            "blended_agent/__init__.py ('module changed on disk ... "
-            "reloading'), while sys.modules keeps every blended.* module "
-            "from the previous install. Measured by installing a zip whose "
-            "REQUEST_TIMEOUT_SECONDS was 12345: on disk 12345, in memory "
-            "300, same module object. So the session was executing code "
-            "nobody had installed, and its own log described a build that "
-            "was no longer there."
-        ),
-        fix=(
-            "blender_addon::_stale_library_refusal compares the fingerprint "
-            "taken at register() against the library files on disk and "
-            "REFUSES the turn when they differ — before a model call is "
-            "spent — naming the count and telling the user to restart "
-            "Blender (or, in developer mode, to click Reload). It does NOT "
-            "silently purge and re-import: an automatic mid-session swap of "
-            "the code under a running conversation is the magic-result path, "
-            "and developer_mode already owns that behaviour explicitly. "
-            "REVERSED 2026-09-27 for the MCP lane by "
-            "mcp-served-stale-code-until-restart: the bridge now purges and "
-            "re-imports blended in Blender whenever the source fingerprint "
-            "changes, and the add-on and developer_mode this refusal lived "
-            "in were deleted in the MCP cutover."
-        ),
-        guarded_by=(
-            "RETIRED 2026-09: guarded code deleted in the MCP cutover (tests/blender/test_addon_registration.py). Was: "
-            "tests/blender/test_addon_registration.py::"
-            "test_a_library_that_changed_on_disk_refuses_the_turn, plus the "
-            "matching-library, developer-mode and empty-baseline cases. "
-            "Proven live: after installing a different build over the "
-            "enabled addon, bpy.ops.blended.send_message() cancelled with "
-            "'58 library file(s) on disk no longer match'."
+            "test_calibration_problems_are_loud pins the refusal: a "
+            "sensitivity of 0.4 and a calibration for another eye each "
+            "yield a problem, and the driver exits 1 on a non-empty "
+            "problem list. The 2026-08-22 live check (`run_agent_task.py "
+            "--examiner auto` exited 1 in 0.7 s with 'sensitivity 0.20 < "
+            "0.6: not distinguishable from the no-reference rubber "
+            "stamp' and wrote no iteration or verdict row) is not "
+            "reproducible now: the calibration it ran against is gone."
         ),
         recorded_on="2026-08-22",
     ),
@@ -1358,44 +1267,6 @@ MISTAKES: tuple[MistakeRecord, ...] = (
         recorded_on="2026-08-23",
     ),
     MistakeRecord(
-        identifier="the-developer-lane-could-not-import-jinja2",
-        scope="harness_code",
-        failure=(
-            "Live session 2026-08-23: the first turn died with `No "
-            "module named 'jinja2'` the moment the prompt was set "
-            "(bpy.context.scene.blended_chat.prompt = ...). The addon "
-            "had installed cleanly and registered cleanly; only the "
-            "first real render of the system prompt reached the "
-            "dependency."
-        ),
-        cause=(
-            "The addon's dev lanes put <repo>/src on sys.path and "
-            "nothing else. jinja2 lives ONLY in the repo venv — "
-            "Blender's bundled Python has none and no pip, and the "
-            "packaged zip's vendored copy sits on a different path than "
-            "the repo sources. The driver scripts mask the hole by "
-            "prepending venv site-packages, and `make test-blender-app` "
-            "runs from the repo where that preamble is exactly what "
-            "makes the suite pass — so the lane that actually ships was "
-            "never exercised."
-        ),
-        fix=(
-            "_ensure_blended_importable's dev lanes now expose the "
-            "repository venv's site-packages via _dev_venv_site_packages "
-            "(the same glob the driver scripts use) with the repo "
-            "sources kept ahead, and the packaged lane is untouched."
-        ),
-        guarded_by=(
-            "RETIRED 2026-09: guarded code deleted in the MCP cutover (tests/blender/test_addon_registration.py). Was: "
-            "tests/blender/test_addon_registration.py::"
-            "test_developer_mode_resolves_jinja2_from_the_repo_venv, "
-            "plus the non-developer repository lane in "
-            "test_repository_lane_without_developer_mode_also_"
-            "resolves_jinja2"
-        ),
-        recorded_on="2026-08-23",
-    ),
-    MistakeRecord(
         identifier="extent-rank-tie-break-cannot-canonicalise-a-cube",
         scope="harness_code",
         failure=(
@@ -1492,44 +1363,6 @@ MISTAKES: tuple[MistakeRecord, ...] = (
         guarded_by=(
             "tests/pure/test_claude_code_lane.py::"
             "test_the_command_disables_every_built_in_capability"
-        ),
-        recorded_on="2026-09-05",
-    ),
-    MistakeRecord(
-        identifier="an-empty-enum-identifier-is-not-an-option",
-        scope="harness_code",
-        failure=(
-            "In a live GUI session, setting the Eye preference to \"no "
-            "eye\" raised TypeError: bpy_struct: item.attr = val: enum "
-            "\"\" not found in ('kimi-k2.7-code:cloud', "
-            "'qwen3.5:397b-cloud', 'kimi-k3:cloud', 'qwen3-vl', "
-            "'qwen3.8-27b', 'claude-code:haiku') — the "
-            "\"None - writer sees for itself\" row was absent from the "
-            "RNA item list entirely."
-        ),
-        cause=(
-            "That row spelled \"off\" as the empty identifier, which "
-            "Blender DROPS from an EnumProperty. Registration still "
-            "succeeded and the panel still drew, so nothing failed "
-            "loudly: the option was simply unreachable, and the eye "
-            "could not be switched off from the UI at all. It became "
-            "load-bearing with the Claude Code lane, whose recommended "
-            "setup is a vision-capable writer looking at its own "
-            "renders."
-        ),
-        fix=(
-            "The row carries a real token (_EYE_NONE_IDENTIFIER = "
-            "\"none\") and one function, _eye_model_id, turns it back "
-            "into the library's empty `vision_model` at the two places "
-            "that build a ModelConfig and in the routing hint — so the "
-            "token never reaches the library and \"\" never reaches an "
-            "enum."
-        ),
-        guarded_by=(
-            "RETIRED 2026-09: guarded code deleted in the MCP cutover (tests/blender/test_addon_registration.py). Was: "
-            "tests/blender/test_addon_registration.py::"
-            "test_no_dropdown_row_carries_an_empty_identifier and "
-            "test_the_eye_can_be_switched_off_and_that_means_no_eye"
         ),
         recorded_on="2026-09-05",
     ),
@@ -1723,252 +1556,6 @@ MISTAKES: tuple[MistakeRecord, ...] = (
         recorded_on="2026-09-05",
     ),
     MistakeRecord(
-        identifier="a-test-that-computed-an-answer-and-asserted-nothing",
-        scope="harness_code",
-        failure=(
-            "test_copy_buttons_address_the_transcript_not_the_visible_"
-            "slice built the list of copy-button indices and then "
-            "ended. No assert. It passed for any behaviour at all, "
-            "including the exact off-by-slice bug it was written to "
-            "catch, and it sat green in the suite."
-        ),
-        cause=(
-            "An earlier edit to the file dropped the final assertion "
-            "along with the blank line before the next `def`, which is "
-            "invisible to every check that matters: the module still "
-            "parses, pytest still collects the test, and the test "
-            "still passes. Nothing in a green suite distinguishes a "
-            "test that verifies something from one that does not."
-        ),
-        fix=(
-            "The assertion is restored with the absolute indices "
-            "spelled out ([7, 8, 9, 10] for a 4-message window over an "
-            "11-event transcript). The general guard: a range-based "
-            "edit near a test boundary must be re-read afterwards, and "
-            "any test whose body ends in an assignment is a defect."
-        ),
-        guarded_by=(
-            "RETIRED 2026-09: guarded code deleted in the MCP cutover (tests/blender/test_addon_draw.py). Was: "
-            "tests/blender/test_addon_draw.py::"
-            "test_copy_buttons_address_the_transcript_not_the_visible_slice"
-        ),
-        recorded_on="2026-09-05",
-    ),
-    MistakeRecord(
-        identifier="the-panel-woke-the-viewport-forever",
-        scope="harness_code",
-        failure=(
-            "The tool-drain timer called _redraw_sidebars() on every "
-            "tick, so every VIEW_3D area in every window was tagged for "
-            "redraw 6.7 times a second for the whole session — with no "
-            "conversation, no agent running, and nothing on screen "
-            "changing."
-        ),
-        cause=(
-            "The redraw was written for the streaming case, where the "
-            "panel genuinely has new text several times a second, and "
-            "the timer is the only main-thread hook available. Nothing "
-            "distinguished 'the transcript moved' from 'the timer "
-            "fired', so the expensive case became the only case."
-        ),
-        fix=(
-            "_SessionState.revision counts every change the panel can "
-            "see (log(), busy transitions, reset, revert) and the timer "
-            "redraws only when it moved. Streaming still repaints at "
-            "the timer's cadence; an idle sidebar costs one integer "
-            "comparison per tick."
-        ),
-        guarded_by=(
-            "RETIRED 2026-09: guarded code deleted in the MCP cutover (tests/blender/test_addon_registration.py). Was: "
-            "tests/blender/test_addon_registration.py::"
-            "test_an_idle_session_does_not_ask_for_a_redraw"
-        ),
-        recorded_on="2026-09-05",
-    ),
-    MistakeRecord(
-        identifier="the-preview-cache-held-the-struct-not-the-icon-id",
-        scope="harness_code",
-        failure=(
-            "Render thumbnails never appeared in the panel. "
-            "RenderPreviews.icon_for returned what "
-            "`bpy.utils.previews` collection.load() hands back — an "
-            "ImagePreview STRUCT — instead of its integer icon_id. "
-            "`template_icon(icon_value=<struct>)` raises, draw() "
-            "swallows the exception to stay alive, and the picture is "
-            "silently absent."
-        ),
-        cause=(
-            "Headless Blender has no GPU context, so every icon id is 0 "
-            "there. The test asserted the CACHE (that a second call did "
-            "not reload the file) rather than the VALUE, and 0 is what a "
-            "correct implementation returns headless too — so the wrong "
-            "type passed every assertion the background suite could "
-            "make. It took a live GUI session to see it."
-        ),
-        fix=(
-            "icon_for returns int(preview.icon_id); measured 1128 in a "
-            "GUI session. The general rule: when a value is degenerate "
-            "headless, assert its TYPE headless and its value under "
-            "skipif — a cache test proves caching, not correctness."
-        ),
-        guarded_by=(
-            "RETIRED 2026-09: guarded code deleted in the MCP cutover (tests/blender/test_render_previews.py). Was: "
-            "tests/blender/test_render_previews.py::"
-            "test_icon_for_returns_an_integer_id_not_the_preview_struct "
-            "(type, background) and "
-            "test_icon_for_real_png_returns_nonzero_in_gui (value, GUI)"
-        ),
-        recorded_on="2026-09-05",
-    ),
-    MistakeRecord(
-        identifier="the-sidebar-is-twenty-seven-rows-not-a-page",
-        scope="harness_code",
-        failure=(
-            "Three times in a row the panel's working controls — plan, "
-            "renders, prompt box, status — fell below the bottom edge of "
-            "the sidebar in a live GUI session. Each fix was based on an "
-            "ESTIMATE of how many rows the content cost, and each "
-            "estimate was too low: first no cap at all, then a cap of 8 "
-            "SOURCE LINES (one paragraph wraps to ten ROWS), then row "
-            "reserves that forgot the panel header and the record "
-            "panel's own header."
-        ),
-        cause=(
-            "A Blender region cannot be scrolled from code (View2D is "
-            "read-only through RNA; 5.2 has no scroll operator), so "
-            "anything unbounded drawn above a control puts that control "
-            "out of reach — and the region is far smaller than it looks: "
-            "561 x 1104 px at ui_scale 2.0 is 27 ROWS, because "
-            "UI_UNIT_Y is 20 px BEFORE ui_scale."
-        ),
-        fix=(
-            "The record moved into its own DEFAULT_CLOSED panel "
-            "(BLENDED_PT_history) so the working surface cannot grow "
-            "with the conversation, and the plan collapses to header + "
-            "progress bar once the turn ends. The row-budget half of "
-            "this fix — _answer_row_budget(region.height, ui_scale, …) "
-            "subtracting the cards above and the controls below — is "
-            "GONE as of 2026-09-06: the replies left the sidebar "
-            "entirely for a GPU overlay in the viewport, so there is no "
-            "unbounded content left to budget. Final measurement: the "
-            "whole 561 x 1104 px sidebar is 0 differing pixels between "
-            "a one-line reply and a sixty-line reply, while the overlay "
-            "column differs by 577,780 px (so the diff was sensitive)."
-        ),
-        guarded_by=(
-            "RETIRED 2026-09: guarded code deleted in the MCP cutover (tests/blender/test_addon_draw.py, tests/blender/test_chat_panel_heuristics.py). Was: "
-            "tests/blender/test_addon_draw.py::"
-            "test_the_working_surface_holds_the_prompt_and_no_reply_text "
-            "(no reply text on the pinned surface at all) and "
-            "tests/blender/test_chat_panel_heuristics.py::"
-            "test_the_working_surface_does_not_grow_with_the_turn, "
-            "::test_a_finished_plan_gives_its_rows_back_to_the_answer"
-        ),
-        recorded_on="2026-09-05",
-    ),
-    MistakeRecord(
-        identifier="a-hot-reload-dropped-the-turns-plan",
-        scope="harness_code",
-        failure=(
-            "Editing the library mid-session made the plan card vanish "
-            "from the panel while the transcript survived: the plan and "
-            "the right to revert the turn were gone."
-        ),
-        cause=(
-            "_hot_reload transplants a hand-listed set of _SessionState "
-            "fields into the fresh module. New state added to the panel "
-            "(plan, can_revert, undo_guard) was not on that list, so "
-            "every dev-mode reload silently reset it. The list is a "
-            "duplicate of the state's own definition — the kind that "
-            "rots the moment the state grows."
-        ),
-        fix=(
-            "plan, can_revert and undo_guard are carried across the "
-            "reload with the transcript. Any field added to "
-            "_SessionState that the panel reads must be added there too."
-        ),
-        guarded_by=(
-            "RETIRED 2026-09: guarded code deleted in the MCP cutover (tests/blender/test_addon_registration.py). Was: "
-            "tests/blender/test_addon_registration.py::"
-            "test_hot_reload_swaps_the_loaded_module_and_keeps_the_session"
-        ),
-        recorded_on="2026-09-05",
-    ),
-    MistakeRecord(
-        identifier="a-while-loop-around-an-operator-froze-blender",
-        scope="harness_code",
-        failure=(
-            "Clicking the workspace button hung Blender completely — no "
-            "traceback, no log line after 'Workspace blended ready', and "
-            "the main thread stopped servicing timers, so the whole "
-            "session had to be killed. The workspace layout builder "
-            "collapsed areas with `while len(screen.areas) > 1: "
-            "bpy.ops.screen.area_join(...)`."
-        ),
-        cause=(
-            "`area_join` can return without joining (it declines "
-            "geometry it cannot merge), and the loop's exit condition "
-            "depended on the operator making progress. An operator that "
-            "no-ops is not an error, so nothing raised — the loop simply "
-            "never ended, on the thread that draws the UI."
-        ),
-        fix=(
-            "The layout now splits the LARGEST area exactly once and "
-            "never joins: one operator call, no loop, and the user's "
-            "other editors survive (a better outcome anyway, since the "
-            "workspace is a copy of the layout they were using). The "
-            "general rule: never write a `while` whose exit depends on a "
-            "bpy operator making progress — bound the attempts and "
-            "report the failure."
-        ),
-        guarded_by=(
-            "RETIRED 2026-09: guarded code deleted in the MCP cutover (src/blended/ui/, tests/blender/test_workspace.py). Was: "
-            "src/blended/ui/workspace.py::arrange_workspace has no loop "
-            "and returns False when the split refuses; "
-            "tests/blender/test_workspace.py asserts the background "
-            "refusal and idempotence"
-        ),
-        recorded_on="2026-09-05",
-    ),
-    MistakeRecord(
-        identifier="an-area-was-chosen-by-position-not-identity",
-        scope="harness_code",
-        failure=(
-            "The blended workspace built a 91-pixel Image Editor and "
-            "left a stray second 3D viewport behind. `area_split` had "
-            "worked; the code then picked which area to retype by "
-            "POSITION — 'the lowest area sharing this x' — and the "
-            "lowest area in that column was the source layout's own "
-            "91 px timeline strip, not the half the split had just "
-            "created."
-        ),
-        cause=(
-            "A screen column can already hold areas the caller knows "
-            "nothing about, so geometry does not identify the operator's "
-            "product. Nothing failed loudly: every type assignment "
-            "succeeded, `_has_chat_layout` saw a VIEW_3D and an "
-            "IMAGE_EDITOR, and the function returned True on a layout "
-            "that was useless for looking at a render."
-        ),
-        fix=(
-            "Diff `{area.as_pointer() for area in screen.areas}` across "
-            "the split to find the CREATED area, and re-fetch the "
-            "survivor by its own pointer (the operator rebuilds the area "
-            "list). Only those two are retyped. Verified by geometry, "
-            "not by eye: VIEW_3D 2096x722 above IMAGE_EDITOR 2096x479 in "
-            "the same column, one viewport, the user's other editors "
-            "untouched."
-        ),
-        guarded_by=(
-            "RETIRED 2026-09: guarded code deleted in the MCP cutover (src/blended/ui/, tests/blender/test_workspace.py). Was: "
-            "src/blended/ui/workspace.py::arrange_workspace (pointer "
-            "diff + `return False` when the split creates nothing); "
-            "tests/blender/test_workspace.py asserts idempotence and the "
-            "background refusal"
-        ),
-        recorded_on="2026-09-05",
-    ),
-    MistakeRecord(
         identifier="an-experiment-displaced-the-pins-own-evidence",
         scope="process",
         failure=(
@@ -2046,11 +1633,21 @@ MISTAKES: tuple[MistakeRecord, ...] = (
             "of instrument as the examiner's."
         ),
         guarded_by=(
-            "src/blended/evaluate/examiner.py thresholds and "
+            "src/blended/evaluate/examiner.py thresholds "
+            "(MINIMUM_FIXTURE_SENSITIVITY, REQUIRED_CONTROL_SPECIFICITY, "
+            "CROSS_RUN_CONTROL_MINIMUM_SPECIFICITY) and "
             "_evaluate/eye_calibration.json bound how far ANY eye is "
-            "trusted (sensitivity 0.80, control specificity 1.00); "
-            "tests/pure/test_examiner.py::"
-            "test_the_shipped_eye_holds_the_licence_in_the_repository"
+            "trusted. Measured 2026-09-06: sensitivity 0.75, same-run "
+            "specificity 1.00, cross-run specificity 0.75 against a "
+            "required 1.0, so the shipped eye is NOT licensed for "
+            "fresh-vs-exemplar runs. Pinned by "
+            "tests/pure/test_examiner.py::test_calibration_problems_are_loud, "
+            "::test_the_licence_identity_still_matches_the_shipped_eye and "
+            "::test_a_licence_measured_on_identical_images_does_not_cover_a_fresh_run; "
+            "::test_the_shipped_eye_holds_the_licence_in_the_repository is "
+            "xfail(strict) until the Phase B decision "
+            "(docs/2026-09-06-token-budget-plan.md) and goes red the day "
+            "the licence is earned"
         ),
         recorded_on="2026-09-05",
     ),
@@ -2162,21 +1759,27 @@ MISTAKES: tuple[MistakeRecord, ...] = (
             "prompt, same brief, both gate-clean."
         ),
         fix=(
-            "NOT YET FIXED, and deliberately not worked around. The "
-            "measurement to make is cross-run control specificity: "
-            "clean run B against an exemplar minted from clean run A. "
-            "If that number is below REQUIRED_CONTROL_SPECIFICITY the "
-            "examiner may not judge unattended at all, which is a "
-            "decision about the loop, not a tuning knob. Until it is "
-            "measured, treat a machine verdict on a fresh run as "
-            "advisory and let the deterministic gates carry the "
-            "qualification (which is the existing order: tool feedback "
-            "outranks model feedback, 10.48550/arXiv.2409.02977)."
+            "The cross-run control class was added to "
+            "scripts/calibrate_examiner.py and measured 2026-09-06: "
+            "specificity 0.50 (see "
+            "the-examiner-was-asked-the-wrong-question), under "
+            "REQUIRED_CONTROL_SPECIFICITY, so the examiner is not "
+            "licensed for the regime the loop uses. "
+            "Calibration.problems() now reports "
+            "cross_run_control_specificity and a miss disqualifies the "
+            "examiner, so converge_auto refuses to gate on it "
+            "(docs/2026-09-06-token-budget-plan.md, Phase A). Machine "
+            "verdicts on a fresh run stay advisory and the "
+            "deterministic gates carry the qualification (which is the "
+            "existing order: tool feedback outranks model feedback, "
+            "10.48550/arXiv.2409.02977)."
         ),
         guarded_by=(
-            "_evaluate/verdicts.jsonl iterations 52-65 record the "
-            "hopping deviations; scripts/calibrate_examiner.py is where "
-            "the cross-run control class belongs"
+            "tests/pure/test_examiner.py::"
+            "test_a_licence_measured_on_identical_images_does_not_"
+            "cover_a_fresh_run (a cross-run specificity miss "
+            "disqualifies); _evaluate/verdicts.jsonl iterations 52-65 "
+            "record the hopping deviations"
         ),
         recorded_on="2026-09-05",
     ),
@@ -2253,363 +1856,37 @@ MISTAKES: tuple[MistakeRecord, ...] = (
             "rate set by how much the brief leaves unspecified."
         ),
         fix=(
-            "PENDING a human decision (plan Phase B). What is already "
-            "settled: my own first draft — count a deviation only if "
-            "it reproduces across independent examinations — is "
-            "REFUTED by this measurement, because a systematic true "
+            "B2', the plan's recommended branch, landed 2026-09-06 "
+            "(de30d79): MEASURED_DEVIATION_TAGS (wrong_proportion, "
+            "material_missing) were split out of HALTING_DEVIATION_TAGS "
+            "and are recorded as AssetVerdict.measured_property_reports "
+            "(evidence, never a gate); the reference stays paired, since "
+            "pairing is worth +0.32 F1 (10.48550/arXiv.2604.11082) and "
+            "tool feedback outranks model feedback "
+            "(10.48550/arXiv.2409.02977); fat_seat left the eye's zoo "
+            "for tests/blender/test_acceptance_gate.py after the gate "
+            "coverage was measured. Re-licence: sensitivity 0.75 (3/4), "
+            "same-run specificity 1.00, cross-run specificity 0.50 -> "
+            "0.75 (3/4) against a required 1.0 — improved, did NOT pass: "
+            "three_leg_stool still fires, as intersecting_parts + "
+            "surface_artifact, on geometric variation the brief leaves "
+            "free. The examiner stays unlicensed for the loop's regime; "
+            "the final branch (the plan recommends B4', machine "
+            "verdicts advisory on fresh-vs-exemplar) is still a human "
+            "decision, named by the xfail(strict) on "
+            "tests/pure/test_examiner.py::"
+            "test_the_shipped_eye_holds_the_licence_in_the_repository. "
+            "My own first draft — count a deviation only if it "
+            "reproduces across independent examinations — is REFUTED "
+            "by the 0.50 measurement, because a systematic true "
             "difference reproduces every time and the rule would have "
-            "doubled examiner calls for nothing. The recommended "
-            "branch is to stop asking the eye about properties a "
-            "deterministic gate measures (`wrong_proportion` -> form "
-            "gate, `material_missing` -> material gate) while keeping "
-            "the reference paired, since pairing is worth +0.32 F1 "
-            "(10.48550/arXiv.2604.11082) and tool feedback outranks "
-            "model feedback (10.48550/arXiv.2409.02977)."
+            "doubled examiner calls for nothing."
         ),
         guarded_by=(
             "make calibrate-eye ARGS=\"--cross-run-only\"; "
             "tests/pure/test_examiner.py::"
             "test_a_licence_measured_on_identical_images_does_not_"
             "cover_a_fresh_run; docs/2026-09-06-token-budget-plan.md"
-        ),
-        recorded_on="2026-09-06",
-    ),
-    MistakeRecord(
-        identifier="the-workspace-pushed-its-own-composer-off-screen",
-        scope="harness_code",
-        failure=(
-            "A live walkthrough of the shipped `blended` workspace, run "
-            "for the user's sign-off, found the prompt box, the Send "
-            "button and the Revert control BELOW the visible sidebar "
-            "after one finished turn. Fourth time the composer has been "
-            "lost, and the first time the harness's own workspace "
-            "caused it."
-        ),
-        cause=(
-            "Two faults compounding. (1) `arrange_workspace` split the "
-            "viewport HORIZONTALLY to give the Image Editor a wide "
-            "short home — and the chat sidebar is a REGION OF THAT "
-            "VIEWPORT, so the split halved it: 561x618 px, 15 rows at "
-            "ui_scale 2.0, measured live. (2) `_answer_row_budget` "
-            "shrank only the ANSWER and drew the cards unconditionally, "
-            "so the surface still wanted 12 composer + 6 renders + 2 "
-            "plan + 3 answer = 23 rows in a 15-row region. The budget "
-            "adapted to the region and still overflowed, because what "
-            "it adapted was the one part that was already at its floor."
-        ),
-        fix=(
-            "Split VERTICALLY (`IMAGE_EDITOR_WIDTH_FRACTION`), which "
-            "leaves the viewport full height and the sidebar its "
-            "measured 561x1104 px / 27 rows — and puts the enlarged "
-            "render beside the thumbnails that open it. Assign the two "
-            "products by WIDTH, not by `area.x`: read straight after "
-            "the operator, x returned them in the opposite order to "
-            "their final geometry. Two more ordering facts: "
-            "assigning `area.type` swaps the area's active space, so a "
-            "`show_region_ui` written right after the split lands on "
-            "the replaced space (sidebar came back 1x1) — it is set in "
-            "`activate_chat_tab`, which is already deferred a frame; "
-            "and the tab needs one frame MORE than the layout, so the "
-            "operator's timer re-arms until `active_panel_category` "
-            "takes, bounded by `_WORKSPACE_TAB_ATTEMPTS`. The row "
-            "budget this record originally added was later DELETED: "
-            "see `the-composer-moved-because-it-was-drawn-last`, which "
-            "replaced it with a draw-order guarantee."
-        ),
-        guarded_by=(
-            "RETIRED 2026-09: guarded code deleted in the MCP cutover (tests/blender/test_chat_panel_heuristics.py, tests/blender/test_workspace.py). Was: "
-            "tests/blender/test_chat_panel_heuristics.py::"
-            "test_the_composer_is_the_first_thing_the_surface_draws and "
-            "tests/blender/test_chat_panel_heuristics.py::workspace "
-            "coverage in tests/blender/test_workspace.py"
-        ),
-        recorded_on="2026-09-06",
-    ),
-    MistakeRecord(
-        identifier="the-composer-moved-because-it-was-drawn-last",
-        scope="harness_code",
-        failure=(
-            "The user reported it in one sentence: \"when you send a "
-            "message, it moves the input box down every response "
-            "message, so it forces the user to have to scroll down to "
-            "type again\". Measured on the shipped panel: the prompt "
-            "box was the LAST thing `BLENDED_PT_chat.draw` emitted, "
-            "after the render card, the plan card and the reply, so "
-            "its screen position was a function of the reply's length "
-            "— a 1-line reply and a 22-line reply put it ~21 rows "
-            "apart. Four live sessions had already lost the composer "
-            "off the bottom for the same reason."
-        ),
-        cause=(
-            "Every previous fix BUDGETED the composer instead of "
-            "placing it: reserve 12 rows, shrink the answer, make the "
-            "cards yield. A budget can only decide whether a control "
-            "FITS; it cannot make it STAY, because a widget drawn "
-            "after a variable-height widget has a variable position by "
-            "construction. Three rounds of arithmetic defended the "
-            "wrong property, and each round's test pinned the wrong "
-            "property too — test_the_working_surface_holds_the_answer_"
-            "and_the_prompt_but_not_the_record actually ASSERTED that "
-            "the answer reads above the composer."
-        ),
-        fix=(
-            "Draw the composer FIRST, unconditionally, then the "
-            "session controls, then the newest reply, then the cards, "
-            "then older replies. Replies stack ASCENDING: a new one "
-            "goes on top and its predecessors recede downward, off the "
-            "bottom, the one direction growth costs nothing. Position "
-            "is now a property of draw ORDER, so `_SurfaceBudget`, "
-            "`_pinned_surface_budget` and the four row constants were "
-            "DELETED rather than corrected — there is nothing left to "
-            "compute wrongly. The newest reply sits ABOVE the render "
-            "and plan cards for a second measured reason: with the "
-            "cards above it, a 22-line reply was clipped by the bottom "
-            "of the 1104 px sidebar, and the cards lose nothing (the "
-            "same renders are open in the Image Editor beside the "
-            "chat, every plan step is in the record). Proof: two live "
-            "turns, replies of 1 and 22 lines, screenshots diffed — "
-            "the composer strip is 0 differing pixels of 94,350, the "
-            "only change being a 6 px scrollbar stripe at x 1402-1407 "
-            "that spans 1101 of 1104 rows; a control band lower down "
-            "differed by 13.2 percent, so the diff was sensitive."
-        ),
-        guarded_by=(
-            "RETIRED 2026-09: guarded code deleted in the MCP cutover (tests/blender/test_addon_draw.py, tests/blender/test_chat_panel_heuristics.py). Was: "
-            "tests/blender/test_chat_panel_heuristics.py::"
-            "test_the_composer_is_the_first_thing_the_surface_draws "
-            "(the prompt box is at draw index 0 across empty, short, "
-            "long, and answer-plus-plan-plus-renders states), "
-            "::test_the_working_surface_does_not_grow_with_the_turn, "
-            "::test_the_record_keeps_every_message, and "
-            "tests/blender/test_addon_draw.py::"
-            "test_the_working_surface_holds_the_prompt_and_no_reply_text"
-        ),
-        recorded_on="2026-09-06",
-    ),
-    MistakeRecord(
-        identifier="ui-scale-is-zero-when-preferences-are-not-ready",
-        scope="harness_code",
-        failure=(
-            "The GPU transcript's column came out 56 px wide instead of "
-            "640 and the wheel hit test answered False for a point the "
-            "column visibly contained: "
-            "bpy.context.preferences.system.ui_scale reads 0.0 in "
-            "--background (measured 2026-09-06; pixel_size reads 1.0 in "
-            "the same call)."
-        ),
-        cause=(
-            "TranscriptStyle.scaled clamped with max(ui_scale, 0.1), "
-            "copying the addon's own _characters_per_line idiom. That "
-            "clamp treats 0.0 as a very small SCALE rather than as "
-            "'not told yet', so every _px field was multiplied by a "
-            "tenth: a 320 px minimum column became 32 px."
-        ),
-        fix=(
-            "A non-positive ui_scale is read as DEFAULT_UI_SCALE = 1.0. "
-            "The clamp constant was deleted rather than lowered — there "
-            "is no legitimate sub-unity scale to defend, and Blender's "
-            "own preference floor is 0.5."
-        ),
-        guarded_by=(
-            "RETIRED 2026-09: guarded code deleted in the MCP cutover (tests/pure/test_transcript_layout.py). Was: "
-            "tests/pure/test_transcript_layout.py::"
-            "test_an_uninitialised_ui_scale_is_read_as_one"
-        ),
-        recorded_on="2026-09-06",
-    ),
-    MistakeRecord(
-        identifier="a-purged-module-cannot-remove-its-own-draw-handler",
-        scope="harness_code",
-        failure=(
-            "After one hot reload, sys.modules held a DIFFERENT "
-            "blended.ui.transcript_overlay object than the earlier "
-            "import, with the live RNA_HANDLE capsule in the stale one "
-            "and _HANDLER None in the fresh one (measured 2026-09-06). "
-            "Every reload would therefore have added a second draw "
-            "handler, painting the pre-reload session's state from the "
-            "pre-reload code, forever."
-        ),
-        cause=(
-            "devreload.purge_library_modules() drops every blended.* "
-            "entry so the next import reads disk. The draw handler's "
-            "handle lived in the module's globals, which is exactly "
-            "what the purge throws away — so register_overlay's "
-            "'remove the previous handler first' rule could never see "
-            "a handler installed before the purge."
-        ),
-        fix=(
-            "The addon owns the lifetime, not the library: "
-            "_remove_overlay() runs immediately before BOTH purge "
-            "sites (_reload_library and _hot_reload_unlocked) while the "
-            "owning module is still importable, and _install_overlay() "
-            "runs after the re-import — including on the import-failure "
-            "path, so a failed reload reports itself in the panel's "
-            "alert row instead of silently leaving the viewport blank."
-        ),
-        guarded_by=(
-            "RETIRED 2026-09: guarded code deleted in the MCP cutover (tests/blender/test_transcript_overlay.py). Was: "
-            "tests/blender/test_transcript_overlay.py::"
-            "test_a_library_reload_never_orphans_the_overlay "
-            "(asserts the pre-reload module's _HANDLER is None AND the "
-            "post-reload module's is not)"
-        ),
-        recorded_on="2026-09-06",
-    ),
-    MistakeRecord(
-        identifier="an-absolute-colour-cannot-contrast-with-a-themed-one",
-        scope="harness_code",
-        failure=(
-            "The code band behind a fenced block was invisible in the "
-            "live screenshot. Blender's own dark theme reported "
-            "wcol_box.inner at 0.1137 and the band was pinned at 0.11 "
-            "— a 0.004 step (measured 2026-09-06, confirmed by a vision "
-            "read of the capture: 'no distinctly darker band')."
-        ),
-        cause=(
-            "Half the palette was theme-derived and half was pinned. A "
-            "pinned colour can be checked against the OTHER pinned "
-            "colours at authoring time, and against nothing at all once "
-            "a theme moves the value it was supposed to contrast with."
-        ),
-        fix=(
-            "shifted_for_contrast() derives the band from the agent "
-            "bubble by CODE_BAND_CONTRAST = 0.10, darkening by default "
-            "and lightening only when there is no room to darken, so a "
-            "light theme is not a second code path. The default "
-            "CODE_BAND_RGBA is now computed from AGENT_BUBBLE_RGBA "
-            "through the same function — one source of truth."
-        ),
-        guarded_by=(
-            "RETIRED 2026-09: guarded code deleted in the MCP cutover (tests/blender/test_transcript_overlay.py, tests/pure/test_transcript_layout.py). Was: "
-            "tests/blender/test_transcript_overlay.py::"
-            "test_the_code_band_contrasts_with_the_themed_bubble "
-            "(against the REAL theme, because that is the value that "
-            "was wrong) and tests/pure/test_transcript_layout.py::"
-            "test_the_code_band_always_contrasts_with_the_bubble"
-        ),
-        recorded_on="2026-09-06",
-    ),
-    MistakeRecord(
-        identifier="a-stream-capped-by-lines-loses-its-own-cursor",
-        scope="harness_code",
-        failure=(
-            "A 31-row streaming reply in a 28-row column rendered rows "
-            "0-27 and put the block cursor below the fold — the one "
-            "thing a stream exists to show was the one thing off-screen "
-            "(measured by screenshot, 2026-09-06; bubble height 1165 px "
-            "in a 1144 px column, bottom edge at y=-21)."
-        ),
-        cause=(
-            "prefer_tail was implemented as a TRUNCATION rule only: it "
-            "chose which end to keep once a body exceeded "
-            "maximum_lines_newest (40). Below that budget nothing was "
-            "capped at all, so the bubble was free to grow taller than "
-            "the column while its top stayed pinned to the column's "
-            "top edge. The replaced native panel had applied "
-            "_tail_lines unconditionally, so this was a regression the "
-            "line budget hid."
-        ),
-        fix=(
-            "_tail_row_budget(column, style) caps a tail-kept message "
-            "by what the COLUMN can show — min(line budget, rows that "
-            "fit) — holding TRUNCATION_NOTE_ROWS = 1 back because the "
-            "note is itself a row (forgetting it overflowed by exactly "
-            "one line). The note also moved ABOVE a tail-kept message, "
-            "since a note at the bottom of a stream points down at "
-            "rows that are actually above it. A FINISHED reply is "
-            "deliberately not capped this way: it keeps its full line "
-            "budget and is reached by scrolling, so nothing the model "
-            "said is dropped at a small window size."
-        ),
-        guarded_by=(
-            "RETIRED 2026-09: guarded code deleted in the MCP cutover (tests/pure/test_transcript_layout.py). Was: "
-            "tests/pure/test_transcript_layout.py::"
-            "test_a_streaming_reply_is_capped_to_what_the_column_can_show "
-            "(the cursor row is last AND the bubble fits the column), "
-            "::test_a_finished_reply_is_not_capped_by_the_column, and "
-            "::test_prefer_tail_keeps_the_last_lines"
-        ),
-        recorded_on="2026-09-06",
-    ),
-    MistakeRecord(
-        identifier="a-screenshot-lags-the-state-that-produced-it",
-        scope="process",
-        failure=(
-            "Three GUI verification rounds read the WRONG frame: a "
-            "screenshot taken in the same probe command that mutated "
-            "_STATE showed the PREVIOUS command's transcript, and a "
-            "vision read of it reported a missing code band that the "
-            "in-session layout dump proved was present."
-        ),
-        cause=(
-            "bpy.ops.screen.screenshot captures the swap chain, and one "
-            "bpy.ops.wm.redraw_timer(type='DRAW_WIN_SWAP') pass inside "
-            "the mutating command is not enough to land the new frame "
-            "in the buffer that gets read."
-        ),
-        fix=(
-            "Capture TWICE in the command — redraw_timer + screenshot, "
-            "then redraw_timer + screenshot to the same path — and keep "
-            "the second. Always cross-check a vision read against an "
-            "in-session dump of the laid-out runs; the numbers are "
-            "ground truth and the picture is the confirmation, never "
-            "the other way round."
-        ),
-        guarded_by=(
-            "No test can guard a screenshot harness, so the guard is "
-            "procedural and pinned here: every GUI verification in this "
-            "repository double-captures and asserts against an "
-            "in-session numeric dump (the layout dump that caught this "
-            "is layout_transcript(...).texts, printed through "
-            "outputs/gui_cmd.py)."
-        ),
-        recorded_on="2026-09-06",
-    ),
-    MistakeRecord(
-        identifier="writing-the-prompt-property-sends-a-real-turn",
-        scope="process",
-        failure=(
-            "A GUI check of the new reference-photo row set "
-            "scene.blended_chat.reference_image and then .prompt from "
-            "Python to stage a screenshot. The screenshot came back "
-            "with BOTH fields already empty, the operator the script "
-            "then called returned CANCELLED, and the stub session had "
-            "recorded nothing — because a turn had already run against "
-            "the configured writer and consumed the photo."
-        ),
-        cause=(
-            "`prompt` carries update=_on_prompt_confirmed, which is how "
-            "'Enter sends' reaches out of a Blender text field (a "
-            "focused field swallows keystrokes, so no keymap entry can "
-            "see them). An RNA write from Python is indistinguishable "
-            "from a user confirming the field, so it queued "
-            "bpy.ops.blended.send_message() on a 0 s timer — and "
-            "_STATE.session was still None at that moment, so the "
-            "operator built a REAL session from preferences."
-        ),
-        fix=(
-            "Install the stub session BEFORE writing any chat property, "
-            "and let the auto-send fire THROUGH it: the check then "
-            "exercises the real Enter-sends path instead of a "
-            "hand-called operator. Code that must fill the field "
-            "without sending sets _STATE.suppress_prompt_send first, "
-            "which is what prompt-history recall already does."
-        ),
-        guarded_by=(
-            "RETIRED 2026-09: guarded code deleted in the MCP cutover (tests/blender/test_chat_panel_heuristics.py). Was: "
-            "Partly procedural, and deliberately so: the auto-send "
-            "cannot fire headlessly (_on_prompt_confirmed returns early "
-            "when context.preferences.addons[__name__] raises KeyError, "
-            "which is every test that loads the addon as a plain "
-            "module), so no headless test can catch a GUI script doing "
-            "this. The executable part is that the surface is now "
-            "asserted WITHOUT writing `prompt` at all — "
-            "tests/blender/test_chat_panel_heuristics.py::"
-            "test_the_photo_picker_is_one_fixed_height_row_under_the_"
-            "composer and ::test_a_reference_photo_is_drawn_as_its_own_"
-            "picture_in_the_record set reference_image, show_details "
-            "and the transcript only. Any future GUI probe stubs "
-            "_STATE.session before touching a chat property."
         ),
         recorded_on="2026-09-06",
     ),
@@ -2783,46 +2060,6 @@ MISTAKES: tuple[MistakeRecord, ...] = (
         recorded_on="2026-09-06",
     ),
     MistakeRecord(
-        identifier="a-purged-module-is-still-patchable-and-still-dead",
-        scope="harness_code",
-        failure=(
-            "test_the_assembled_fingerprint_covers_the_drift_catalog "
-            "passed alone (pytest tests/pure/test_prompt_templates.py: "
-            "20 passed) and failed in the full suite (1 failed, 402 "
-            "passed) with 'a new drift row did not move the assembled "
-            "fingerprint' — asserting a10:ff1ac8f0e73c != "
-            "a10:ff1ac8f0e73c. Bisecting one file at a time against the "
-            "single test named exactly one interferer: "
-            "tests/pure/test_devreload.py."
-        ),
-        cause=(
-            "test_devreload calls devreload.purge_library_modules(), "
-            "which drops every blended.* entry from sys.modules. A "
-            "module-scope `import blended.drift.catalog` binding in "
-            "another test file survives the purge as a DEAD object, so "
-            "monkeypatch.setattr lands on a module nobody imports "
-            "again, while the deferred `from blended.drift.catalog "
-            "import DRIFT_ENTRIES` inside build_manifest re-imports a "
-            "fresh one. monkeypatch reported success: the attribute was "
-            "really set, on the wrong module. Same defect class as "
-            "a-purged-module-cannot-remove-its-own-draw-handler — a "
-            "purge orphans every reference held outside sys.modules."
-        ),
-        fix=(
-            "Tests resolve the module under test at CALL time through "
-            "_live(name) -> importlib.import_module(name), which "
-            "returns the live sys.modules entry and re-imports after a "
-            "purge, so the patch and the reader agree. The test also "
-            "asserts the probe is VISIBLE (the synthetic row's fix text "
-            "appears in build_manifest()) before interpreting its "
-            "effect: a patch that silently missed would otherwise read "
-            "as 'the drift catalog does not reach the prompt', which is "
-            "the opposite lesson."
-        ),
-        guarded_by="RETIRED 2026-09: guarded code deleted in the MCP cutover (src/blended/devreload.py, tests/pure/test_devreload.py). Was: " "tests/pure/test_prompt_templates.py::test_the_assembled_fingerprint_covers_the_drift_catalog, which asserts the synthetic row reached build_manifest before comparing fingerprints, and is green in file order, after test_devreload, and in the full suite",
-        recorded_on="2026-09-06",
-    ),
-    MistakeRecord(
         identifier="git-checkout-reverts-to-the-index-not-to-your-snapshot",
         scope="process",
         failure=(
@@ -2893,48 +2130,6 @@ MISTAKES: tuple[MistakeRecord, ...] = (
             "added for the dead assertion was removed with it."
         ),
         guarded_by="tests/blender/test_metamorphic.py::test_builders_satisfy_their_metamorphic_relations[barrel] and [pallet] carry construction_order_does_not_change_the_mesh. Negative control, run and reverted: making hoop z depend on sequence_position rather than hoop_index reddens it on surface_area_m2 (2.59578341525048 -> 2.5958127349149436, rel 1.1e-5, 11x the tolerance) while volume_m3 stays inside tolerance, because HOOP_POSITION_FRACTIONS 0.2 and 0.8 sit at equal radii on a sine-bulged barrel and the two shifts cancel in volume. Asserting both quantities is what catches it; either one alone would have missed it.",
-        recorded_on="2026-09-06",
-    ),
-    MistakeRecord(
-        identifier="a-file-loaded-addon-draws-nothing-and-every-pixel-diff-is-zero",
-        scope="process",
-        failure=(
-            "The live GUI check for shipping the transcript overlay "
-            "reported the sidebar as 0 differing pixels out of 619,344 "
-            "between a one-line and a sixty-line reply — the exact "
-            "'the composer did not move' result wanted. It also "
-            "reported 0 between an EMPTY session and a painted one, "
-            "which cannot be true: the empty-state box disappears. A "
-            "positive control (toggle _STATE.busy, which must change "
-            "the status row) also read 0, and the FULL-WINDOW diff read "
-            "0 as well."
-        ),
-        cause=(
-            "The harness loaded blender_addon/__init__.py by file path "
-            "(importlib.spec_from_file_location) and called register(). "
-            "That registers the classes but creates no "
-            "bpy.context.preferences.addons[<module>] entry, so "
-            "BLENDED_PT_chat.draw raised KeyError "
-            "('bpy_prop_collection[key]: key \"...\" not found') on "
-            "EVERY frame. Blender swallows a panel draw exception, so "
-            "the sidebar simply rendered no addon content and no "
-            "sidebar pixel could ever change. The overlay's numbers in "
-            "the same run were real — a draw handler does not read "
-            "preferences — which is what made the mixed result "
-            "believable."
-        ),
-        fix=(
-            "A GUI check installs the addon the way a user does: "
-            "package it, extract the zip into "
-            "bpy.utils.user_resource('SCRIPTS', path='addons'), verify "
-            "the installed __init__.py sha256 against the zip member "
-            "(addon_install has been seen keeping a stale build), then "
-            "bpy.ops.preferences.addon_enable(module=...). And every "
-            "pixel-zero claim ships with a POSITIVE CONTROL measured in "
-            "the same run: after the fix the control read 1,333 "
-            "differing sidebar pixels, which is what licenses the 0."
-        ),
-        guarded_by="No unit test can catch this — it is a property of the GUI harness, not of the addon. The guard is the rule: a pixel diff of 0 is reported only alongside a control diff > 0 measured in the same session. Live numbers for the overlay flip: control 1333/619344 differing, composer strip 0/619344, overlay column 64467/732160 empty-vs-painted and 13647/732160 short-vs-long reply.",
         recorded_on="2026-09-06",
     ),
     MistakeRecord(
@@ -3057,43 +2252,6 @@ MISTAKES: tuple[MistakeRecord, ...] = (
         recorded_on="2026-09-10",
     ),
     MistakeRecord(
-        identifier="a-typing-object-compared-by-identity-breaks-under-dev-reload",
-        scope="harness_code",
-        failure=(
-            "OT-5 introduced ObjectName = NewType('ObjectName', str) and "
-            "detected object-returning ops with `hint is ObjectName`. "
-            "tests/pure/test_tool_schemas.py and the contract test: 187 "
-            "passed alone; 24 failed in the full pure suite — every "
-            "object-returning op read as text-returning, and the three "
-            "ungated constructors tripped 'marked @op(gated=False) but its "
-            "return names no object'."
-        ),
-        cause=(
-            "test_devreload.py reloads the ops modules earlier in the run. "
-            "A reload re-executes _objects.py and mints a NEW NewType "
-            "object, while typing.get_type_hints on a function resolved "
-            "earlier still returns the OLD one; `is` between the two is "
-            "False. The same shape as the OT-3 fixture that patched a "
-            "collected-time module object — identity across a reload is "
-            "not a stable fact."
-        ),
-        fix=(
-            "Match the NewType structurally: __supertype__ is str, __name__ "
-            "== 'ObjectName', __module__ == 'blended.ops._objects'. Any "
-            "future typing marker must be compared the same way, never by "
-            "identity."
-        ),
-        guarded_by=(
-            "RETIRED 2026-09: guarded code deleted in the MCP cutover (src/blended/devreload.py, tests/pure/test_devreload.py). Was: "
-            "tests/pure/test_tool_schemas.py::"
-            "test_the_three_unlinked_constructors_are_the_only_ungated_object_returners "
-            "and ::test_the_description_is_the_summary_and_the_return, which "
-            "run AFTER test_devreload in the full suite and were the tests "
-            "that failed"
-        ),
-        recorded_on="2026-09-10",
-    ),
-    MistakeRecord(
         identifier="a-budget-derived-before-the-surface-changed-stops-honest-turns",
         scope="harness_code",
         failure=(
@@ -3141,8 +2299,9 @@ MISTAKES: tuple[MistakeRecord, ...] = (
         cause=(
             "The bench bakes with `blender --background --python "
             "core/render.py`, no --factory-startup, so the user's addons "
-            "load first: the installed blended_agent addon bundles a copy "
-            "of `blended` and imports it at startup (measured: "
+            "load first: the installed blended_agent addon (deleted in "
+            "the MCP cutover) bundled a copy "
+            "of `blended` and imported it at startup (measured: "
             "sys.modules['blended'] pointed at scripts/addons/blended_agent/"
             "blended/, with blended.ui already loaded). The script's "
             "sys.path inserts came too late; `import blended.agent.op_call` "
@@ -3236,51 +2395,6 @@ MISTAKES: tuple[MistakeRecord, ...] = (
             "tests/pure/test_bench_chain_guard.py::"
             "test_a_worktree_outside_the_freeze_root_is_refused_before_anything_runs, "
             "::test_a_real_freeze_logs_its_commit_first"
-        ),
-        recorded_on="2026-09-11",
-    ),
-    MistakeRecord(
-        identifier="the-retry-covered-one-of-two-transport-paths",
-        scope="harness_code",
-        failure=(
-            "OT-32 added the bounded gateway retry to OllamaClient._request "
-            "and its three tests drove _request. The streaming twin "
-            "_stream_lines — the only path the addon's stream_replies=True "
-            "lane uses — had no retry, and _chat_streamed returned before "
-            "the cost fold and the NFR-27 cap, so every streamed call's "
-            "turn record said 0 tokens and a streamed metered run could "
-            "never hit its cap. Found 2026-09-11 mapping the retry for the "
-            "bench lane; no roll was affected because no script driver "
-            "streams."
-        ),
-        cause=(
-            "Two openers of one socket. _request and _stream_lines each "
-            "called urlopen themselves, so a rule added to one did not "
-            "exist on the other, and the test that pinned the rule pinned "
-            "it on the path it was written for. The spec row (AGT-27) "
-            "named _request, so the gap did not even violate it as "
-            "written."
-        ),
-        fix=(
-            "One opener, OllamaClient._open, carries the retry; _request "
-            "reads the whole body through it and _stream_lines opens "
-            "EAGERLY through it, so an HTTPError surfaces before any frame "
-            "is delivered (the only point a replay is safe) and a stream "
-            "that dies after a delta is raised as it stands. The assemblers "
-            "keep the usage-bearing final frame; _chat_streamed folds it "
-            "and runs the cap exactly as the one-shot branch does. The "
-            "OpenAI wire is asked for its usage chunk "
-            "(stream_options.include_usage)."
-        ),
-        guarded_by=(
-            "RETIRED 2026-09: guarded code deleted in the MCP cutover (tests/pure/test_streaming.py). Was: "
-            "tests/pure/test_streaming.py::"
-            "test_a_streamed_call_refused_by_the_gateway_is_retried_then_streams_once, "
-            "::test_a_stream_that_dies_after_a_delta_is_not_replayed, "
-            "::test_an_ollama_stream_is_costed_from_its_done_frame, "
-            "::test_a_streamed_metered_call_is_stopped_by_the_run_cap; the "
-            "streaming tests stub _open, not _stream_lines, so the real "
-            "decoder and fold run"
         ),
         recorded_on="2026-09-11",
     ),
@@ -3524,11 +2638,1053 @@ MISTAKES: tuple[MistakeRecord, ...] = (
         ),
         recorded_on="2026-10-02",
     ),
+    MistakeRecord(
+        identifier="a-guard-that-names-deleted-code-still-validated",
+        scope="process",
+        failure=(
+            "Review 2026-10-07: 23 of 92 records were guarded by nothing. "
+            "21 carried a 'RETIRED 2026-09' guard naming test files, "
+            "modules and a draw handler deleted in 184095f and 22e1d87 "
+            "(the in-Blender chat client and its streamed transport), and 2 more named a GUI-verification rule for "
+            "that client (outputs/gui_cmd.py absent, layout_transcript "
+            "deleted). Four live records also asserted state the "
+            "repository had since replaced: the eye-calibration file "
+            "'records the qwen3-vl:8b-instruct measurement' (it holds "
+            "claude-code:sonnet), 'sensitivity 0.80' (0.75), 'NOT YET "
+            "FIXED' and 'PENDING a human decision' for a question "
+            "measured and decided in de30d79. validate_memory() returned "
+            "[] throughout."
+        ),
+        cause=(
+            "validate_memory() asks only that guarded_by is non-empty, and "
+            "nothing ran it: no test, script or Makefile target called "
+            "it, although the specification quotes 'validate_memory() == "
+            "[]' from hand runs. The cutover marked guards RETIRED in "
+            "place, which is a non-empty string, so a record guarded by "
+            "nothing was indistinguishable from a healthy one. Nothing "
+            "dated or re-measured a record's claims either, so measured "
+            "state that later moved stayed written as present tense."
+        ),
+        fix=(
+            "The 23 guard-less records were deleted (their lessons are in "
+            "git history; blended_bridge_toolcode.py's two citations were "
+            "reworded to state the bugs inline), the four stale records "
+            "were rewritten in place with the measured current state, and "
+            "DuplicateMistake (never raised) was deleted. A suite now "
+            "resolves every path, test name and make target a guard "
+            "cites against the tree and rejects a RETIRED marker."
+        ),
+        guarded_by=(
+            "tests/pure/test_review_mistake_memory.py::"
+            "test_a_guard_names_only_things_that_exist and "
+            "::test_a_guard_names_something_executable (run against the "
+            "pre-fix file they failed on exactly those 23 records)"
+        ),
+        recorded_on="2026-10-07",
+    ),
+    MistakeRecord(
+        identifier="constrained-decode-accepts-any-json-object",
+        scope="harness_code",
+        failure=(
+            "A bare {name, arguments} reply on the local llama-server lane "
+            "decoded to content='' and raised EmptyReply: the model's own "
+            "text was erased."
+        ),
+        cause=(
+            "The decode keyed only on isinstance(envelope, dict) and also "
+            "ran on tool-less requests, which carry no response_format."
+        ),
+        fix=(
+            "Decode only when the dict holds both ENVELOPE_REQUIRED_KEYS "
+            "and the request carried tools."
+        ),
+        guarded_by=(
+            "tests/pure/test_review_agent_loop.py::"
+            "test_a_bare_tool_call_object_is_not_mistaken_for_the_envelope"
+        ),
+        recorded_on="2026-10-07",
+    ),
+    MistakeRecord(
+        identifier="local-llama-server-300s-ceiling",
+        scope="harness_code",
+        failure=(
+            "ModelConfig.from_environment(model='blenderllm')."
+            "request_timeout_seconds was 300, not 2000: any completion over "
+            "300 s was retried across the whole ladder."
+        ),
+        cause=(
+            "The endpoint joined OPENAI_PROTOCOL_ENDPOINTS but not the "
+            "predicate that picks the long ceiling."
+        ),
+        fix="One LONG_CEILING_ENDPOINTS tuple keys the ceiling.",
+        guarded_by=(
+            "tests/pure/test_review_agent_loop.py::"
+            "test_the_local_llama_server_gets_the_long_ceiling"
+        ),
+        recorded_on="2026-10-07",
+    ),
+    MistakeRecord(
+        identifier="constrained-lane-exact-endpoint-match",
+        scope="harness_code",
+        failure=(
+            "http://127.0.0.1:8091/ took the OpenAI wire with "
+            "constrains_tool_calls False, so wire tools went to a model "
+            "that cannot emit them."
+        ),
+        cause=(
+            "constrains_tool_calls matched by equality beside a protocol "
+            "check that matches by substring."
+        ),
+        fix="Both checks match by containment.",
+        guarded_by=(
+            "tests/pure/test_review_agent_loop.py::"
+            "test_constrained_lane_matches_by_containment_like_the_protocol_check"
+        ),
+        recorded_on="2026-10-07",
+    ),
+    MistakeRecord(
+        identifier="malformed-openai-tool-arguments-crash-turn",
+        scope="harness_code",
+        failure=(
+            "A truncated arguments string raised JSONDecodeError out of "
+            "send(), stranding the assistant's tool calls without results."
+        ),
+        cause="json.loads ran unguarded on the model's own output.",
+        fix=(
+            "_parse_tool_arguments refuses a non-JSON or non-object value "
+            "as a tool result the model can correct."
+        ),
+        guarded_by=(
+            "tests/pure/test_review_agent_loop.py::"
+            "test_malformed_arguments_are_refused_not_raised"
+        ),
+        recorded_on="2026-10-07",
+    ),
+    MistakeRecord(
+        identifier="malformed-plan-step-raises-after-dispatch",
+        scope="harness_code",
+        failure="plan_step='abc' raised ValueError after the tool had already run.",
+        cause="plan_step_of was unguarded between dispatch and the tool result.",
+        fix="The step is ignored and a note is appended to the tool result.",
+        guarded_by=(
+            "tests/pure/test_review_agent_loop.py::"
+            "test_a_malformed_plan_step_is_reported_after_the_tool_ran"
+        ),
+        recorded_on="2026-10-07",
+    ),
+    MistakeRecord(
+        identifier="eye-spend-lost-on-failed-call",
+        scope="harness_code",
+        failure=(
+            "api_calls stayed 0 after a billed eye reply was cut at the "
+            "length limit, so the metered cap never saw the spend."
+        ),
+        cause="The spend was folded into the run record only after a successful chat.",
+        fix="Fold it in a finally block.",
+        guarded_by=(
+            "tests/pure/test_review_agent_loop.py::"
+            "test_an_eye_call_that_fails_after_billing_still_counts_against_the_run"
+        ),
+        recorded_on="2026-10-07",
+    ),
+    MistakeRecord(
+        identifier="gate-cap-render-before-answering-queued-calls",
+        scope="harness_code",
+        failure=(
+            "A render_views that raised at the gate cap left the queued "
+            "tool calls without a result."
+        ),
+        cause="The queued calls were answered after the render dispatch.",
+        fix="Answer them first; the exception still propagates.",
+        guarded_by=(
+            "tests/pure/test_review_agent_loop.py::"
+            "test_the_gate_cap_answers_queued_calls_before_it_renders"
+        ),
+        recorded_on="2026-10-07",
+    ),
+    MistakeRecord(
+        identifier="claude-code-stderr-pipe-deadlock",
+        scope="harness_code",
+        failure=(
+            "A child writing 512 KiB to stderr made chat() run to the "
+            "watchdog ('did not answer within 10 s')."
+        ),
+        cause=(
+            "stderr was read only after stdout reached EOF, so a full pipe "
+            "blocked the child while the parent waited on stdout."
+        ),
+        fix="A drain thread reads stderr as it arrives.",
+        guarded_by=(
+            "tests/pure/test_review_agent_surface.py::"
+            "test_a_stderr_flood_does_not_stall_the_turn"
+        ),
+        recorded_on="2026-10-07",
+    ),
+    MistakeRecord(
+        identifier="claude-code-child-leaked-on-frame-error",
+        scope="harness_code",
+        failure=(
+            "After a json.loads error in _consume the CLI process was still "
+            "alive and never waited on."
+        ),
+        cause="The kill and wait() sat after the call, not in a finally.",
+        fix="Kill on any exception; wait() and the stream closes in finally.",
+        guarded_by=(
+            "tests/pure/test_review_agent_surface.py::"
+            "test_a_malformed_frame_does_not_leave_the_cli_running"
+        ),
+        recorded_on="2026-10-07",
+    ),
+    MistakeRecord(
+        identifier="claude-code-thinking-duplicated",
+        scope="harness_code",
+        failure=(
+            "Streamed thinking read 'weighingweighing': the deltas "
+            "'weigh','ing it' came before the complete frame 'weighing it'."
+        ),
+        cause=(
+            "The dedupe tested the full string against a list of fragments, "
+            "so it never matched."
+        ),
+        fix="Compare against the joined text.",
+        guarded_by=(
+            "tests/pure/test_review_agent_surface.py::"
+            "test_streamed_thinking_is_not_repeated_by_the_complete_frame"
+        ),
+        recorded_on="2026-10-07",
+    ),
+    MistakeRecord(
+        identifier="rejected-op-call-recorded-empty",
+        scope="harness_code",
+        failure=(
+            "dispatch_tool('add_box', {..., 'bogus': 1}) recorded "
+            "validated_arguments == {}, so the candidate-op miner lost what "
+            "the model sent."
+        ),
+        cause="A failed bind has empty bound arguments and the code always used them.",
+        fix="Fall back to the op arguments as sent, plan_step stripped.",
+        guarded_by=(
+            "tests/pure/test_review_agent_surface.py::"
+            "test_a_rejected_op_call_is_recorded_with_what_the_model_sent"
+        ),
+        recorded_on="2026-10-07",
+    ),
+    MistakeRecord(
+        identifier="registry-string-block-corrupts-text",
+        scope="harness_code",
+        failure=(
+            "A hypothesis or outcome containing a double quote wrote an "
+            "unimportable registry; backslash-n became a real newline; "
+            "hyphen and long-word wraps gained a space ('state- of-the-art')."
+        ),
+        cause="The literal writer used textwrap defaults and no escaping.",
+        fix=(
+            "Wrap without breaking words or hyphens and escape each chunk "
+            "with json.dumps."
+        ),
+        guarded_by=(
+            "tests/pure/test_review_agent_prompts.py::"
+            "test_string_block_round_trips_quotes_backslashes_and_hyphens"
+        ),
+        recorded_on="2026-10-07",
+    ),
+    MistakeRecord(
+        identifier="record-outcome-no-rollback-on-import-failure",
+        scope="harness_code",
+        failure=(
+            "When the edited registry failed to import, _probe_registry "
+            "raised RevisionRejected and the broken file stayed on disk."
+        ),
+        cause="Only the 'problems' branch restored the original.",
+        fix="Restore the original on both paths, as write_revision does.",
+        guarded_by=(
+            "tests/pure/test_review_agent_prompts.py::"
+            "test_record_outcome_restores_the_registry_when_it_no_longer_imports"
+        ),
+        recorded_on="2026-10-07",
+    ),
+    MistakeRecord(
+        identifier="clear-axis-sweep-used-local-distance",
+        scope="harness_code",
+        failure=(
+            "A 2 m cube scaled 0.1 or 0.01 reported blocked_at=None on the "
+            "z axis through its centre (scale 1.0 gave -1.0): a through-hole "
+            "check passed on a solid."
+        ),
+        cause=(
+            "ray_cast distance is in the object's LOCAL space but the sweep "
+            "(start 50 m away) was defined in world metres, so for scale < "
+            "0.5 the ray ended before reaching the object."
+        ),
+        fix="Map both sweep ends to local space and use their local length.",
+        guarded_by=(
+            "tests/blender/test_review_eval_core.py::"
+            "test_a_scaled_solid_blocks_the_axis_through_its_centre"
+        ),
+        recorded_on="2026-10-07",
+    ),
+    MistakeRecord(
+        identifier="sole-bearing-drift-ignored-modulo-360",
+        scope="harness_code",
+        failure=(
+            "A foot moving 0.2 -> 359.9 deg read as a 359.7 deg swing in "
+            "preservation_failures: a false REFINEMENT FAIL."
+        ),
+        cause="The drift was a raw subtraction of angles in [0, 360).",
+        fix=(
+            "One signed_angle_difference_deg() serves the drift and "
+            "GroundContactMeasurement.angle_error_deg."
+        ),
+        guarded_by=(
+            "tests/pure/test_review_eval_core.py::"
+            "test_a_foot_straddling_the_plus_x_axis_has_not_swung"
+        ),
+        recorded_on="2026-10-07",
+    ),
+    MistakeRecord(
+        identifier="examiner-reply-brace-counting",
+        scope="harness_code",
+        failure=(
+            "A valid reply whose reasoning contained '{left}' or a lone '{' "
+            "raised ExaminerReplyUnparseable."
+        ),
+        cause="_first_json_object counted braces and ignored JSON string quoting.",
+        fix="json.JSONDecoder().raw_decode from the first '{'.",
+        guarded_by=(
+            "tests/pure/test_review_eval_core.py::"
+            "test_a_brace_inside_the_reasoning_string_does_not_reject_a_valid_reply"
+        ),
+        recorded_on="2026-10-07",
+    ),
+    MistakeRecord(
+        identifier="golden-manifest-allowed-unpinned-view",
+        scope="harness_code",
+        failure=(
+            "verify_golden_manifest passed a manifest with no hash for an "
+            "examined view, so that view could drift unnoticed."
+        ),
+        cause="It checked only the views the manifest recorded.",
+        fix="Require every EXAMINED_VIEW_NAMES entry in view_sha256.",
+        guarded_by=(
+            "tests/pure/test_review_eval_core.py::"
+            "test_a_view_the_manifest_does_not_pin_is_refused"
+        ),
+        recorded_on="2026-10-07",
+    ),
+    MistakeRecord(
+        identifier="jsonl-reload-lost-tuple-types",
+        scope="harness_code",
+        failure=(
+            "A reloaded IterationRecord.tool_calls was a list and "
+            "IterationVerdict.view_tags a list of lists, so comparisons "
+            "against () were False on reloaded data."
+        ),
+        cause="JSON has no tuple and the loaders passed **payload straight through.",
+        fix="The loaders restore tuples for default_factory=tuple fields and nested view_tags.",
+        guarded_by=(
+            "tests/pure/test_review_eval_core.py::"
+            "test_a_reloaded_verdict_has_tuple_view_tags"
+        ),
+        recorded_on="2026-10-07",
+    ),
+    MistakeRecord(
+        identifier="summary-hid-missing-part",
+        scope="harness_code",
+        failure=(
+            "A multi-part AcceptanceReport with a missing part printed only "
+            "failures[0], which could be another part's dimension failure."
+        ),
+        cause="The early return indexed failures[0].",
+        fix="Print every failure.",
+        guarded_by=(
+            "tests/pure/test_review_eval_core.py::"
+            "test_the_summary_names_a_missing_part_even_when_another_part_failed_first"
+        ),
+        recorded_on="2026-10-07",
+    ),
+    MistakeRecord(
+        identifier="visual-diff-zero-size-frame-index-error",
+        scope="harness_code",
+        failure=(
+            "compare_view_arrays on a (0, 0, 4) array raised a bare "
+            "IndexError from golden_array[0, 0] with no view name."
+        ),
+        cause="_background_rgb indexed the golden corners before any emptiness check.",
+        fix="Raise EmptyFrame(view_name) right after the size-mismatch check.",
+        guarded_by=(
+            "tests/blender/test_review_eval_rest.py::"
+            "test_a_zero_pixel_frame_is_refused_by_name_not_by_an_index_error"
+        ),
+        recorded_on="2026-10-07",
+    ),
+    MistakeRecord(
+        identifier="remove-by-name-type-blind",
+        scope="harness_code",
+        failure=(
+            "add_box('Rig') over an existing armature raised TypeError from "
+            "meshes.remove(<Armature>) after the armature was already deleted."
+        ),
+        cause="The removal assumed the object's data was a mesh.",
+        fix="batch_remove on any data type; rigging reuses remove_object_and_mesh.",
+        guarded_by=(
+            "tests/blender/test_review_ops.py::"
+            "test_a_constructor_replaces_an_object_of_another_type"
+        ),
+        recorded_on="2026-10-07",
+    ),
+    MistakeRecord(
+        identifier="armature-parent-order-in-edit-mode",
+        scope="harness_code",
+        failure=(
+            "A bone listed before its parent raised KeyError inside EDIT "
+            "mode and left the file stuck there with a half-built rig."
+        ),
+        cause="Validation checked 'parent exists', not 'parent is listed first'.",
+        fix="Validate the order up front; the EDIT build returns to OBJECT in finally.",
+        guarded_by=(
+            "tests/blender/test_review_ops.py::"
+            "test_a_parent_listed_after_its_child_is_rejected_before_any_mutation"
+        ),
+        recorded_on="2026-10-07",
+    ),
+    MistakeRecord(
+        identifier="bind-without-parent-inverse",
+        scope="harness_code",
+        failure=(
+            "bind_mesh_to_armature(automatic_weights=False) moved a box from "
+            "z 0..1 to z 1..2 under an armature at z=1."
+        ),
+        cause="Assigning .parent leaves matrix_parent_inverse at identity.",
+        fix="Set it to the armature's inverse world matrix after a view-layer update.",
+        guarded_by=(
+            "tests/blender/test_review_ops.py::"
+            "test_binding_without_automatic_weights_leaves_the_mesh_in_place"
+        ),
+        recorded_on="2026-10-07",
+    ),
+    MistakeRecord(
+        identifier="world-vs-local-location",
+        scope="harness_code",
+        failure=(
+            "move_object_to on a child of a parent at z=5 left the child at "
+            "world z=5 instead of the requested location."
+        ),
+        cause="The op claims a world location but wrote the parent-relative .location.",
+        fix="Parented objects set the world-matrix translation.",
+        guarded_by=(
+            "tests/blender/test_review_ops.py::"
+            "test_move_object_to_places_a_parented_object_in_world_space"
+        ),
+        recorded_on="2026-10-07",
+    ),
+    MistakeRecord(
+        identifier="normal-transform-needs-inverse-transpose",
+        scope="harness_code",
+        failure=(
+            "A 45 degree face under z-scale 10 selected as +z: the true "
+            "world normal is (-0.995, 0, 0.10), the code produced "
+            "(-0.10, 0, 0.995)."
+        ),
+        cause="The plain 3x3 matrix was applied to normals.",
+        fix="Use the inverse-transpose (equal to the rotation for rigid transforms).",
+        guarded_by=(
+            "tests/blender/test_review_ops.py::"
+            "test_axis_normal_selection_uses_true_world_normals_under_non_uniform_scale"
+        ),
+        recorded_on="2026-10-07",
+    ),
+    MistakeRecord(
+        identifier="stale-matrix-world-in-reader-ops",
+        scope="harness_code",
+        failure=(
+            "assign_weights_by_height returned 0 where 4 vertices were "
+            "expected, right after the box's location was set to z=10."
+        ),
+        cause="matrix_world is lazy and the op never refreshed it.",
+        fix="view_layer.update() first, in this op and in select_faces.",
+        guarded_by=(
+            "tests/blender/test_review_ops.py::"
+            "test_height_weights_see_a_location_set_a_moment_ago"
+        ),
+        recorded_on="2026-10-07",
+    ),
+    MistakeRecord(
+        identifier="internal-helper-leaks-on-failure",
+        scope="harness_code",
+        failure="A failed trim_soles_flat left its own <name>_SoleCutter linked in the scene.",
+        cause="Only the successful boolean consumed the cutter.",
+        fix="Remove the cutter in a finally block.",
+        guarded_by=(
+            "tests/blender/test_review_ops.py::"
+            "test_a_failed_sole_trim_does_not_leave_its_cutter_in_the_scene"
+        ),
+        recorded_on="2026-10-07",
+    ),
+    MistakeRecord(
+        identifier="unwrap-strands-edit-mode-and-masks-error",
+        scope="harness_code",
+        failure=(
+            "A failed unwrap operator left the object in EDIT mode, then "
+            "select_all raised an unrelated poll error that hid the real one."
+        ),
+        cause="Leaving EDIT mode was not the first statement of the finally block.",
+        fix="Leave EDIT mode first in finally.",
+        guarded_by=(
+            "tests/blender/test_review_ops.py::"
+            "test_a_failed_unwrap_leaves_the_object_out_of_edit_mode"
+        ),
+        recorded_on="2026-10-07",
+    ),
+    MistakeRecord(
+        identifier="empty-action-index-error",
+        scope="harness_code",
+        failure="animation_report raised IndexError on an action with no keyframes.",
+        cause="It assumed layers[0].strips[0] always exists.",
+        fix="An action with no layers or no slot has 0 fcurves.",
+        guarded_by=(
+            "tests/blender/test_review_ops.py::"
+            "test_animation_report_on_an_action_with_no_keyframes_is_empty_not_an_error"
+        ),
+        recorded_on="2026-10-07",
+    ),
+    MistakeRecord(
+        identifier="flat-colour-ignored-on-reused-textured-material",
+        scope="harness_code",
+        failure=(
+            "After a flat red assign_material on a reused name, "
+            "material_report still said base_color_linked=True and only "
+            "Workbench showed the colour."
+        ),
+        cause="A linked input ignores default_value and the old texture link stayed.",
+        fix="assign_material removes stale Base Color links.",
+        guarded_by=(
+            "tests/blender/test_review_ops.py::"
+            "test_a_flat_colour_replaces_a_texture_left_on_a_reused_material"
+        ),
+        recorded_on="2026-10-07",
+    ),
+    MistakeRecord(
+        identifier="rotation-mode-set-before-validation",
+        scope="harness_code",
+        failure=(
+            "A bad Euler order raised but left rotation_mode changed "
+            "(AXIS_ANGLE)."
+        ),
+        cause="The mutation preceded the call that validates the argument.",
+        fix="Build the Euler first.",
+        guarded_by=(
+            "tests/blender/test_review_ops.py::"
+            "test_a_rejected_euler_order_leaves_the_rotation_mode_alone"
+        ),
+        recorded_on="2026-10-07",
+    ),
+    MistakeRecord(
+        identifier="rename-return-vs-truncated-name",
+        scope="harness_code",
+        failure=(
+            "A 300-character new name returned a name absent from "
+            "bpy.data.objects."
+        ),
+        cause="Blender truncates object names at 255 bytes; the op echoed the request.",
+        fix="Return obj.name.",
+        guarded_by=(
+            "tests/blender/test_review_ops.py::"
+            "test_rename_returns_the_name_the_object_actually_has"
+        ),
+        recorded_on="2026-10-07",
+    ),
+    MistakeRecord(
+        identifier="contact-sheet-pillow-branch-returns-none",
+        scope="harness_code",
+        failure=(
+            "compose_contact_sheet returned None and wrote no file whenever "
+            "Pillow was installed; capture_contact_sheet handed the None on. "
+            "mypy had reported it as 'missing return statement'."
+        ),
+        cause=(
+            "The save and return lines were lost in an edit after commit "
+            "361d792 (the numpy fallback)."
+        ),
+        fix="Restored sheet.save and return output_path.",
+        guarded_by=(
+            "tests/pure/test_review_analyze_capture.py::"
+            "test_contact_sheet_pillow_branch_returns_the_written_sheet"
+        ),
+        recorded_on="2026-10-07",
+    ),
+    MistakeRecord(
+        identifier="cleanup-revert-snapshot-taken-before-writeback",
+        scope="harness_code",
+        failure=(
+            "On a folded hole plus 2 loose vertices the log said 'deleted 2 "
+            "loose vertices' then 'REVERTED'; 3 components remained and the "
+            "2 vertices were back."
+        ),
+        cause=(
+            "The 'pre-fill' snapshot was data.copy() taken before the "
+            "bmesh edits were written back, i.e. the untouched original."
+        ),
+        fix="Snapshot from working_mesh.to_mesh() right before the fill loop.",
+        guarded_by=(
+            "tests/blender/test_review_analyze_capture.py::"
+            "test_reverted_fill_keeps_the_cleanup_that_preceded_it"
+        ),
+        recorded_on="2026-10-07",
+    ),
+    MistakeRecord(
+        identifier="empty-mesh-passes-the-gate",
+        scope="harness_code",
+        failure=(
+            "analyze_object on a face-less mesh returned all zeros and "
+            "failures(MeshBudget()) == []."
+        ),
+        cause="Every check is 'count of bad things > 0'; zero faces yields zero of everything.",
+        fix="failures() fails when triangle_count == 0.",
+        guarded_by=(
+            "tests/blender/test_review_analyze_capture.py::"
+            "test_analyzer_gate_fails_an_empty_mesh"
+        ),
+        recorded_on="2026-10-07",
+    ),
+    MistakeRecord(
+        identifier="drift-signature-never-matches-real-error",
+        scope="harness_code",
+        failure=(
+            "The cone entry's signature 'is invalid' never appears in Blender "
+            "5.2.0's message ('keyword \"diameter1\" unrecognized')."
+        ),
+        cause="The signature was written from memory; no test raised the real error.",
+        fix="Corrected it and added a test that raises six real errors and requires a catalog match.",
+        guarded_by=(
+            "tests/blender/test_review_analyze_capture.py::"
+            "test_drift_signatures_match_the_error_blender_really_raises"
+        ),
+        recorded_on="2026-10-07",
+    ),
+    MistakeRecord(
+        identifier="glb-normalized-signed-decoded-raw",
+        scope="harness_code",
+        failure="Normalized int8/int16 accessors came back as raw integers.",
+        cause="_COMPONENT_MAXIMA held unsigned types only; the missing divisor fell through.",
+        fix="Added 5120 and 5122 with the glTF section 3.11 clamp to -1.0.",
+        guarded_by=(
+            "tests/pure/test_review_analyze_capture.py::"
+            "test_signed_normalized_short_decodes_and_clamps"
+        ),
+        recorded_on="2026-10-07",
+    ),
+    MistakeRecord(
+        identifier="system-exit-escapes-the-chunk-executor",
+        scope="harness_code",
+        failure=(
+            "run_source_in_process('import sys; sys.exit(3)') raised "
+            "SystemExit out of execute_captured instead of returning a "
+            "RunResult (measured in Blender 5.2 background)."
+        ),
+        cause="execute_captured caught Exception only; SystemExit is a BaseException.",
+        fix="Catch (Exception, SystemExit) in executor.execute_captured and run/_bootstrap.py.",
+        guarded_by=(
+            "tests/pure/test_review_harness_core.py::"
+            "test_a_chunk_that_calls_sys_exit_comes_back_as_a_failed_result"
+        ),
+        recorded_on="2026-10-07",
+    ),
+    MistakeRecord(
+        identifier="subprocess-executor-raises-and-drops-the-cause",
+        scope="harness_code",
+        failure=(
+            "run_script_subprocess raised TimeoutExpired past a 1 s cap, and "
+            "a Blender that exited 7 with stderr 'segfault in render' "
+            "produced only 'exited without writing a result file'."
+        ),
+        cause="The subprocess result was discarded and the timeout was not caught.",
+        fix="A timeout is a RunResult; a missing result file reports returncode and a bounded stderr tail.",
+        guarded_by=(
+            "tests/pure/test_review_harness_core.py::"
+            "test_subprocess_timeout_is_a_failed_result and "
+            "::test_subprocess_without_result_file_reports_status_and_stderr"
+        ),
+        recorded_on="2026-10-07",
+    ),
+    MistakeRecord(
+        identifier="run-agent-task-zero-rounds-unbound-result",
+        scope="harness_code",
+        failure=(
+            "run_agent_task(maximum_rounds=0) raised UnboundLocalError on "
+            "'result'; run_with_retries(maximum_retries=-1) raised "
+            "IndexError in final_result."
+        ),
+        cause="A cap was used as a range bound with no lower-bound check.",
+        fix="ValueError at both entry points.",
+        guarded_by=(
+            "tests/pure/test_review_harness_core.py::"
+            "test_zero_task_rounds_is_refused_not_an_unbound_variable and "
+            "::test_negative_retries_is_refused_not_an_index_error"
+        ),
+        recorded_on="2026-10-07",
+    ),
+    MistakeRecord(
+        identifier="locate-feedback-says-missing-when-object-exists",
+        scope="harness_code",
+        failure=(
+            "For a hidden, unlinked or collapsed object the retry feedback "
+            "said 'no object named X existed afterwards' while it existed, "
+            "so the agent rebuilt an object that was already there."
+        ),
+        cause="The locate stage serves missing-object and scene-state failures; the feedback assumed the first.",
+        fix="The text says 'not usable' and appends the execution_summary that carries the reason.",
+        guarded_by=(
+            "tests/pure/test_review_harness_core.py::"
+            "test_locate_feedback_carries_the_scene_state_reason"
+        ),
+        recorded_on="2026-10-07",
+    ),
+    MistakeRecord(
+        identifier="run-batch-shared-export-path",
+        scope="harness_code",
+        failure=(
+            "run_batch with export_glb_path set wrote one file: every "
+            "item's result.export_path named the same path."
+        ),
+        cause="The settings were copied verbatim to every item.",
+        fix="Per-item <stem>_<label><suffix>; duplicate labels are refused.",
+        guarded_by=(
+            "tests/blender/test_review_harness_core.py::"
+            "test_batch_exports_one_file_per_item and "
+            "::test_batch_refuses_duplicate_labels"
+        ),
+        recorded_on="2026-10-07",
+    ),
+    MistakeRecord(
+        identifier="sibling-script-import-went-stale",
+        scope="harness_code",
+        failure=(
+            "scripts/orientation_policy_sim.py raised ImportError on its "
+            "first import line (reproduced under the bench venv)."
+        ),
+        cause=(
+            "OT-36 moved signed_permutations from diagnose_3dcode to "
+            "bench_surface_metrics; test_import_integrity resolves only "
+            "blended-rooted imports, so nothing caught the sibling import."
+        ),
+        fix="Import from bench_surface_metrics and add an AST check over sibling-script imports.",
+        guarded_by=(
+            "tests/pure/test_review_scripts_bench.py::"
+            "test_every_sibling_script_import_names_something_the_sibling_binds"
+        ),
+        recorded_on="2026-10-07",
+    ),
+    MistakeRecord(
+        identifier="reference-render-passed-on-previous-runs-log",
+        scope="harness_code",
+        failure=(
+            "Under --overwrite a Blender that died before writing "
+            "render_log.json left the old OK log and four PNGs, so the "
+            "instance read as freshly rendered; a hung Blender stalled the sweep."
+        ),
+        cause="Success was read from artifacts a prior run had left, and there was no timeout.",
+        fix="Delete the stale log before the run; a per-instance timeout counts as a failed instance.",
+        guarded_by=(
+            "tests/pure/test_review_scripts_bench.py::"
+            "test_a_blender_that_dies_without_a_log_does_not_pass_on_the_stale_log and "
+            "::test_a_hung_blender_is_a_failed_instance_not_a_stalled_sweep"
+        ),
+        recorded_on="2026-10-07",
+    ),
+    MistakeRecord(
+        identifier="phase-b-counts-from-record-counters",
+        scope="harness_code",
+        failure=(
+            "The Phase B op/hatch rate line mixed completion-record n_ops "
+            "(reader ops included) with n_hatch (dispatched, collected or "
+            "not); Phase C reported 76 op-sequence pairs against 40 by baked labels."
+        ),
+        cause=(
+            "Counters named like measurements but defined by a different "
+            "instrument (emits_geometry includes readers; n_hatch counts dispatch)."
+        ),
+        fix="Count off the baked script labels via finetune_phase_a.baked_call_counts everywhere.",
+        guarded_by=(
+            "tests/pure/test_review_scripts_finetune.py::"
+            "test_funnel_hatch_and_op_calls_come_from_baked_labels_not_record_counters and "
+            "::test_phase_c_counts_ops_off_the_baked_script_not_the_meta_counters"
+        ),
+        recorded_on="2026-10-07",
+    ),
+    MistakeRecord(
+        identifier="sweep-reports-stale-record",
+        scope="harness_code",
+        failure=(
+            "The sweep printed a crashed re-run's outcome as the previous "
+            "run's parse_result (or SKIPPED); 'blender --python x.py' where "
+            "x raises exits 0 (measured)."
+        ),
+        cause=(
+            "last_completion() returned the newest matching record whether "
+            "or not this subprocess wrote it, and Blender needs --python-exit-code."
+        ),
+        fix="Only records appended by the subprocess count; skip is decided before spawn; ERR_NO_RECORD; --python-exit-code 1.",
+        guarded_by=(
+            "tests/pure/test_review_scripts_finetune.py::"
+            "test_sweep_reads_only_records_the_subprocess_wrote and "
+            "::test_blender_ops_command_turns_a_script_exception_into_a_nonzero_exit"
+        ),
+        recorded_on="2026-10-07",
+    ),
+    MistakeRecord(
+        identifier="judge-rerun-truncates-hand-verified-rows",
+        scope="process",
+        failure="Re-running the judge opens g3_judgements.jsonl 'w' and erases 20 hand-verified rows.",
+        cause="Generator output and human annotations share one file.",
+        fix="The judge refuses when any row has hand_verified true.",
+        guarded_by=(
+            "tests/pure/test_review_scripts_finetune.py::"
+            "test_judge_refuses_to_truncate_hand_verified_rows"
+        ),
+        recorded_on="2026-10-07",
+    ),
+    MistakeRecord(
+        identifier="stale-bake-artifacts-for-no-script-completion",
+        scope="harness_code",
+        failure=(
+            "A completion with script_written False read an old render_log "
+            "(status OK) from an earlier --overwrite run."
+        ),
+        cause="execution_row read the bake directory unconditionally.",
+        fix="No script means no artifacts are read; the status is NO_SCRIPT.",
+        guarded_by=(
+            "tests/pure/test_review_scripts_finetune.py::"
+            "test_execution_row_ignores_stale_artifacts_when_no_script_was_written"
+        ),
+        recorded_on="2026-10-07",
+    ),
+    MistakeRecord(
+        identifier="converge-auto-classified-a-crashed-run-by-an-older-record",
+        scope="harness_code",
+        failure=(
+            "run_one_brief discarded the driver exit code; a run that died "
+            "before writing its record left _newest_cycle returning an older "
+            "record of that brief, which classify treated as this run "
+            "(read from the code path, not a live repro)."
+        ),
+        cause="The loop assumed every run appends exactly one record.",
+        fix="Halt with a report when no record exists for the exact (iteration, brief); never blacklist a hunk for a crashed screening run.",
+        guarded_by=(
+            "tests/pure/test_review_scripts_misc.py::"
+            "test_record_for_run_is_none_when_only_an_older_run_of_the_brief_exists"
+        ),
+        recorded_on="2026-10-07",
+    ),
+    MistakeRecord(
+        identifier="pin-revision-pinned-an-empty-model",
+        scope="harness_code",
+        failure=(
+            "make pin accepted writer_model='' (emitted by converge_auto for "
+            "mixed-model runs) and wrote CONVERGENCE_WRITER_MODEL = ''; the "
+            "CONVERGENCE_RUNS rewrite did nothing and raised nothing."
+        ),
+        cause="The proposal was not validated and re.sub was used without a match check.",
+        fix="Refuse empty model names; subn with a loud failure on no match.",
+        guarded_by=(
+            "tests/pure/test_review_scripts_misc.py::"
+            "test_pin_refuses_a_proposal_that_names_no_writer_model"
+        ),
+        recorded_on="2026-10-07",
+    ),
+    MistakeRecord(
+        identifier="provider-smoke-typo-lane-ran-zero-lanes",
+        scope="harness_code",
+        failure="--only claude_code ran nothing and a lone typo crashed on max() of an empty list.",
+        cause="The lane filter never checked names, so 'every lane answers' held for zero lanes.",
+        fix="parse_lanes checks against KNOWN_LANES.",
+        guarded_by=(
+            "tests/pure/test_review_scripts_misc.py::"
+            "test_provider_smoke_rejects_an_unknown_lane"
+        ),
+        recorded_on="2026-10-07",
+    ),
+    MistakeRecord(
+        identifier="api-docs-realpath-root-guard",
+        scope="harness_code",
+        failure=(
+            "get_python_api_docs('foo') returned 'suggestions' instead of "
+            "'exact' when the API root was reached through a symlink "
+            "(/tmp -> /private/tmp)."
+        ),
+        cause="The traversal guard compared realpath results with an unresolved root.",
+        fix="api_path = os.path.realpath(...).",
+        guarded_by=(
+            "tests/pure/test_review_mcp_tools.py::"
+            "test_api_docs_exact_match_through_symlinked_data_root"
+        ),
+        recorded_on="2026-10-07",
+    ),
+    MistakeRecord(
+        identifier="usage-guess-stale-5x-node-tree",
+        scope="harness_code",
+        failure=(
+            "On Blender 5.2.0 scene.node_tree is missing, so Compositing "
+            "scored 0 and Render Layers was ignored on every file."
+        ),
+        cause="Code written against the pre-5.0 API.",
+        fix="Read scene.compositing_node_group.",
+        guarded_by=(
+            "tests/blender/test_review_mcp_tools.py::"
+            "test_usage_guess_sees_a_compositor_tree"
+        ),
+        recorded_on="2026-10-07",
+    ),
+    MistakeRecord(
+        identifier="stale-eevee-engine-id",
+        scope="harness_code",
+        failure="'BLENDER_EEVEE_NEXT' never matches on 5.x, so the thumbnail sample cap never applied.",
+        cause="The engine id was renamed away in 5.x and the string was compared blind.",
+        fix="Compare with 'BLENDER_EEVEE'; a test checks every engine id tool code compares against exists.",
+        guarded_by=(
+            "tests/blender/test_review_mcp_tools.py::"
+            "test_every_engine_id_tool_code_compares_against_exists_in_blender"
+        ),
+        recorded_on="2026-10-07",
+    ),
+    MistakeRecord(
+        identifier="image-downscale-silent-oversize",
+        scope="harness_code",
+        failure="A 16-byte size limit returned a 781,866-byte PNG from a tool that promises a cap.",
+        cause="The final return was the full-size encode when no downscale fit.",
+        fix="Raise RuntimeError when nothing fits.",
+        guarded_by=(
+            "tests/blender/test_review_mcp_tools.py::"
+            "test_image_downscale_raises_when_no_downscale_fits"
+        ),
+        recorded_on="2026-10-07",
+    ),
+    MistakeRecord(
+        identifier="folded-search-hit-text-not-extended",
+        scope="harness_code",
+        failure=(
+            "search(context=2) with matches at paragraphs 0, 2 and 5 "
+            "returned one hit scored 3 whose text ended at paragraph 2: "
+            "'needle_zz third' was scored but absent."
+        ),
+        cause="The fold branch added the later match's score but never rebuilt the text.",
+        fix="Rebuild the hit text over last_lo..idx+context+1 on every fold.",
+        guarded_by=(
+            "tests/pure/test_review_mcp_helpers.py::"
+            "test_folded_matches_are_all_in_the_hit_text"
+        ),
+        recorded_on="2026-10-07",
+    ),
+    MistakeRecord(
+        identifier="yield-inside-try-except-in-contextmanager",
+        scope="harness_code",
+        failure=(
+            "A ConnectionError raised in the with-body of "
+            "synced_blend_for_cli became 'RuntimeError: generator didn't "
+            "stop after throw()'."
+        ),
+        cause="The fallback yield sat inside try/except ConnectionError, so the thrown error was caught and the generator yielded twice.",
+        fix="Catch only around the call and yield outside the try.",
+        guarded_by=(
+            "tests/pure/test_review_mcp_helpers.py::"
+            "test_connection_error_in_the_with_body_is_not_swallowed"
+        ),
+        recorded_on="2026-10-07",
+    ),
+    MistakeRecord(
+        identifier="handoff-read-outside-try",
+        scope="harness_code",
+        failure=(
+            "A non-UTF-8 mcp-handoff-<pid>.json raised UnicodeDecodeError at "
+            "server start and stayed on disk, so every restart crashed."
+        ),
+        cause="read_text ran before the try with unlink after it, and exists()-then-read raced a concurrent start.",
+        fix="Read bytes (FileNotFoundError means no handoff), unlink(missing_ok=True), decode inside the try.",
+        guarded_by=(
+            "tests/pure/test_review_mcp_helpers.py::"
+            "test_handoff_that_is_not_utf8_is_refused_loudly_and_consumed"
+        ),
+        recorded_on="2026-10-07",
+    ),
+    MistakeRecord(
+        identifier="addon-code-runner-catches-only-exception",
+        scope="harness_code",
+        failure=(
+            "In Blender 5.2 background, exit(4) and raise SystemExit(3) "
+            "escaped _execute_code; the sandbox blocked only sys.exit."
+        ),
+        cause="except Exception does not catch SystemExit, and exit() or a raised SystemExit never goes through sys.exit.",
+        fix="Catch (Exception, SystemExit) in _execute_code and in the deferred check_fn call.",
+        guarded_by=(
+            "tests/blender/test_review_mcp_addon.py::"
+            "test_exiting_code_is_an_error_response_not_an_exit"
+        ),
+        recorded_on="2026-10-07",
+    ),
+    MistakeRecord(
+        identifier="select-on-buffered-reader-misses-lines",
+        scope="harness_code",
+        failure=(
+            "select() reported the second JSON line 'not ready' after "
+            "readline() returned the first, so the test client timed out on "
+            "a response it already held."
+        ),
+        cause="select sees the OS pipe, not Python's BufferedReader buffer.",
+        fix="Read with os.read into the client's own line buffer.",
+        guarded_by=(
+            "tests/pure/test_review_mcp_addon.py::"
+            "test_response_in_the_same_chunk_as_a_notification_is_not_missed"
+        ),
+        recorded_on="2026-10-07",
+    ),
+    MistakeRecord(
+        identifier="integration-test-home-only-sandbox",
+        scope="process",
+        failure=(
+            "The LLM integration test set only HOME, then ran 'extension "
+            "install-file --enable' and save_userpref(): on macOS that "
+            "overwrites the real userpref.blend."
+        ),
+        cause="HOME does not isolate Blender's config directory on macOS.",
+        fix="Set BLENDER_USER_RESOURCES and assert user_resource('CONFIG') is inside the tempdir before any install or save.",
+        guarded_by=(
+            "blender_mcp/tests/integration/test_blender_mcp_with_llm.py::"
+            "_assert_blender_config_isolated"
+        ),
+        recorded_on="2026-10-07",
+    ),
+    MistakeRecord(
+        identifier="test-file-embeds-real-api-key",
+        scope="process",
+        failure=(
+            "Commit 1c65544 put the real bmb llama-swap key (64 hex) in "
+            "tests/pure/test_openai_transport.py in a PUBLIC repository; the "
+            "same test compared against the real key file, so it passed only "
+            "on this machine. The key is in history and must be rotated."
+        ),
+        cause=(
+            "The test needed 'a bmb key' and the live one was pasted; the "
+            "assertion read it back through a name imported before the monkeypatch."
+        ),
+        fix="A fake key; an autouse fixture isolates _read_bmb_api_key, OLLAMA_HOST and OLLAMA_API_KEY.",
+        guarded_by=(
+            "tests/pure/test_openai_transport.py::"
+            "test_the_bmb_key_file_feeds_bmb_models_only"
+        ),
+        recorded_on="2026-10-07",
+    ),
+    MistakeRecord(
+        identifier="describer-routing-asserted-on-writer-client",
+        scope="harness_code",
+        failure="The describer routing assertions passed whatever the eye routing did.",
+        cause="VisionDescriber.client is the writer's client, so asserting its endpoint checks the writer.",
+        fix="Drive describe() through a captured _request and assert the endpoint the eye actually hit.",
+        guarded_by=(
+            "tests/pure/test_openai_transport.py::"
+            "test_the_eye_rides_the_daemon_when_the_writer_rides_bmb"
+        ),
+        recorded_on="2026-10-07",
+    ),
 )
-
-
-class DuplicateMistake(ValueError):
-    """Raised when two records share an identifier."""
 
 
 def validate_memory() -> list[str]:
@@ -3549,8 +3705,9 @@ def validate_memory() -> list[str]:
 def consult(scope: str = "") -> str:
     """Render the memory for reading BEFORE an adjustment.
 
-    Called at the top of every iteration. If this returns text nobody
-    reads, the memory is decoration.
+    Nothing in src/, scripts/, tests/ or blender_mcp/ calls this (grep,
+    2026-10-07): whoever consults the memory must run it or read this
+    file. If this returns text nobody reads, the memory is decoration.
     """
     selected = [
         record for record in MISTAKES if not scope or record.scope == scope

@@ -44,6 +44,10 @@ PARITY_MAXIMUM_CROSSINGS = 128
 # not a prop.
 PARITY_RAY_LENGTH_M = 100.0
 
+# Bearings are modulo one full turn; the shortest signed turn is at most half.
+FULL_TURN_DEG = 360.0
+HALF_TURN_DEG = 180.0
+
 
 @dataclass(frozen=True)
 class DimensionMeasurement:
@@ -113,6 +117,16 @@ class ClearAxisMeasurement:
         )
 
 
+def signed_angle_difference_deg(from_deg: float, to_deg: float) -> float:
+    """Smallest signed turn from `from_deg` to `to_deg`, in (-180, 180].
+
+    Bearings are modulo 360, so a foot that moves from 0.2 to 359.9 has
+    turned -0.3 degrees, not -359.7.
+    """
+    raw_deg = (to_deg - from_deg) % FULL_TURN_DEG
+    return raw_deg - FULL_TURN_DEG if raw_deg > HALF_TURN_DEG else raw_deg
+
+
 @dataclass(frozen=True)
 class GroundContactMeasurement:
     """How much flat sole this foot actually puts on the floor."""
@@ -136,13 +150,14 @@ class GroundContactMeasurement:
     @property
     def measured_angle_deg(self) -> float:
         y, x = self.centroid_xy_m[1], self.centroid_xy_m[0]
-        return math.degrees(math.atan2(y, x)) % 360.0
+        return math.degrees(math.atan2(y, x)) % FULL_TURN_DEG
 
     @property
     def angle_error_deg(self) -> float:
         """Smallest signed turn from the expected bearing to the measured."""
-        raw = (self.measured_angle_deg - self.probe.expected_angle_deg) % 360.0
-        return raw - 360.0 if raw > 180.0 else raw
+        return signed_angle_difference_deg(
+            self.probe.expected_angle_deg, self.measured_angle_deg
+        )
 
     @property
     def has_contact(self) -> bool:
@@ -391,7 +406,7 @@ class AcceptanceReport:
         failures = self.failures(brief)
         head = f"FORM {'PASS' if not failures else 'FAIL'}: {self.brief_name}"
         if not self.object_found or not self.linked_into_scene:
-            return f"{head}\n  - {failures[0]}"
+            return head + "".join(f"\n  - {failure}" for failure in failures)
         lines = [head]
         for part in self.part_reports:
             lines.append(f"  [{part.name}]")
@@ -432,15 +447,13 @@ def _count_surface_crossings(evaluated_object, world_point) -> int:
     local_origin = to_local @ Vector(world_point)
     local_direction = (to_local.to_3x3() @ Vector(PARITY_RAY_DIRECTION)).normalized()
 
-    crossing_count = 0
     cursor = local_origin.copy()
-    for _ in range(PARITY_MAXIMUM_CROSSINGS):
+    for crossing_count in range(PARITY_MAXIMUM_CROSSINGS):
         hit, location, _normal, _index = evaluated_object.ray_cast(
             cursor, local_direction, distance=PARITY_RAY_LENGTH_M
         )
         if not hit:
             return crossing_count
-        crossing_count += 1
         cursor = location + local_direction * PARITY_RESTART_OFFSET_M
     raise RuntimeError(
         f"Parity ray from {tuple(world_point)} crossed "
@@ -462,12 +475,19 @@ def _find_axis_blockage(evaluated_object, probe: ClearAxisProbe) -> float | None
     # so the answer covers BOTH half-spaces around the point.
     start_world = Vector(probe.point_m) - direction_world * (PARITY_RAY_LENGTH_M / 2.0)
 
+    # The sweep is defined in WORLD metres, so both ends are mapped into
+    # local space and the ray distance is the local length between them.
+    # A fixed local distance covers PARITY_RAY_LENGTH_M * scale metres,
+    # which for an object scaled below 0.5 stops short of the object and
+    # reports a solid axis as clear (measured: unit cube at scale 0.1).
+    end_world = start_world + direction_world * PARITY_RAY_LENGTH_M
     to_local = evaluated_object.matrix_world.inverted()
     local_origin = to_local @ start_world
-    local_direction = (to_local.to_3x3() @ direction_world).normalized()
+    local_sweep = (to_local @ end_world) - local_origin
+    local_direction = local_sweep.normalized()
 
     hit, location, _normal, _index = evaluated_object.ray_cast(
-        local_origin, local_direction, distance=PARITY_RAY_LENGTH_M
+        local_origin, local_direction, distance=local_sweep.length
     )
     if not hit:
         return None
@@ -929,26 +949,28 @@ class RefinementOutcome:
                     f"({was:.4f} -> {measurement.measured_m:.4f})"
                 )
         before_by_name = {m.probe.name: m for m in self.before.ground_contacts}
-        for measurement in self.after.ground_contacts:
-            was = before_by_name.get(measurement.probe.name)
-            if was is None:
+        for after_contact in self.after.ground_contacts:
+            before_contact = before_by_name.get(after_contact.probe.name)
+            if before_contact is None:
                 continue
-            radius_drift_m = measurement.measured_radius_m - was.measured_radius_m
+            radius_drift_m = (
+                after_contact.measured_radius_m - before_contact.measured_radius_m
+            )
             if abs(radius_drift_m) > PRESERVED_DIMENSION_TOLERANCE_M:
                 found.append(
-                    f"{measurement.probe.name} moved {radius_drift_m:+.4f} m "
-                    f"off its circle ({was.measured_radius_m:.4f} -> "
-                    f"{measurement.measured_radius_m:.4f})"
+                    f"{after_contact.probe.name} moved {radius_drift_m:+.4f} m "
+                    f"off its circle ({before_contact.measured_radius_m:.4f} -> "
+                    f"{after_contact.measured_radius_m:.4f})"
                 )
-            bearing_drift_deg = (
-                measurement.measured_angle_deg - was.measured_angle_deg
+            bearing_drift_deg = signed_angle_difference_deg(
+                before_contact.measured_angle_deg, after_contact.measured_angle_deg
             )
             if abs(bearing_drift_deg) > PRESERVED_SOLE_BEARING_TOLERANCE_DEG:
                 found.append(
-                    f"{measurement.probe.name} swung "
+                    f"{after_contact.probe.name} swung "
                     f"{bearing_drift_deg:+.1f} deg "
-                    f"({was.measured_angle_deg:.1f} -> "
-                    f"{measurement.measured_angle_deg:.1f})"
+                    f"({before_contact.measured_angle_deg:.1f} -> "
+                    f"{after_contact.measured_angle_deg:.1f})"
                 )
         return found
 

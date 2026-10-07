@@ -28,13 +28,12 @@ from __future__ import annotations
 import hashlib
 
 SYSTEM_PROMPT_TEMPLATE = "system_prompt"
-# Everything from the operations heading up to the one-shot output
-# contract, which tells a script writer to "return only Python" and is
-# wrong in a chat where the agent also talks to the user.
-# The manifest headings the prompt slices between. `OPERATIONS_HEADING`
-# is no longer rendered into the prompt (OT-24) and stays here for the
-# composition script, which measures what the manifest still holds.
-OPERATIONS_HEADING = "## Available operations"
+# The manifest headings the prompt slices between: the gate's fields and
+# budget, then the drift catalog, up to the one-shot output contract,
+# which tells a script writer to "return only Python" and is wrong in a
+# chat where the agent also talks to the user. The operations section
+# between the manifest's operations heading and the gate heading is NOT
+# rendered (OT-24): the tool schemas carry the ops.
 GATE_HEADING = "## What the gate measures"
 OUTPUT_CONTRACT_HEADING = "## Your output"
 

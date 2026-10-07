@@ -56,7 +56,9 @@ REPOSITORY_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPOSITORY_ROOT / "scripts"))
 sys.path.insert(0, str(REPOSITORY_ROOT / "src"))
 
+from finetune_decision_thresholds import EXCLUDED_CODES, model_directory
 from finetune_phase_a import PHASE_A_DIRECTORY, WORKING_DIRECTORY, included_model_dirs
+from finetune_phase_b import completions
 
 from blended.agent.tool_disclosure import core_ops, offered_tools
 from blended.agent.tool_schemas import tool_schemas_fingerprint
@@ -64,7 +66,6 @@ from blended.agent.tools import SERVICE_TOOL_NAMES, TOOL_SCHEMAS
 from blended.evaluate.bench_bridge import HATCH_TOOL_NAME
 from blended.ops._contract import changes_scene, facade_ops
 
-PHASE_B_DIRECTORY = PHASE_A_DIRECTORY.parent / "phaseB"
 MEASURED_PATH = WORKING_DIRECTORY / "hatch_mechanism.json"
 SUMMARY_PATH = PHASE_A_DIRECTORY / "hatch_mechanism.md"
 # The arm whose single-shot op usage is the contrast case: same bench,
@@ -204,27 +205,19 @@ def single_shot_rows(bench_root: Path, results_root: str, scene_ops, readers) ->
     side is the baked script. That pair is the instrument the archive is
     compared on, so both sides measure the same thing.
     """
-    directory = PHASE_B_DIRECTORY / SINGLE_SHOT_ARM
-    newest: dict[tuple[int, str], dict] = {}
-    for path in sorted(directory.glob("completions*.jsonl")):
-        for line in path.read_text().splitlines():
-            if line.strip():
-                record = json.loads(line)
-                newest[(record["draw"], record["instance"])] = record
     rows = []
-    for key in sorted(newest):
-        record = newest[key]
+    for record in completions(SINGLE_SHOT_ARM):
         reply = json.loads(record["raw_output"]) if record["raw_output"].startswith("{") else {}
         names = [
             call.get("function", {}).get("name", "")
             for call in reply.get("tool_calls", [])
         ]
-        model_directory = (
-            bench_root / results_root / f"ft-{SINGLE_SHOT_ARM}-k{record['draw']}"
+        arm_directory = (
+            bench_root / results_root / model_directory(SINGLE_SHOT_ARM, record["draw"])
             / record["instance"]
         )
         baked_ops, baked_chunks = baked_labels(
-            model_directory / f"{record['instance']}.py"
+            arm_directory / f"{record['instance']}.py"
         )
         first_scene = next(
             (i for i, name in enumerate(names, start=1) if name in scene_ops), None
@@ -396,6 +389,31 @@ def assert_probe_varies(rolls: dict) -> None:
         )
 
 
+def assert_hypothesis_refuted(archive_drop: dict, single_drop: dict, mechanism: dict) -> None:
+    """Section 2 of the summary states that BOTH predictions fail; check it.
+
+    The prose is fixed text, so a changed archive must not silently print
+    a refutation the numbers no longer support. Prediction 1: the archive
+    drops a HIGHER share of scene-op calls than A1. Prediction 2: an op
+    failure precedes the first chunk more often than not.
+    """
+    archive_rate = archive_drop["scene_ops"]["drop_rate"]
+    single_rate = single_drop["scene_ops"]["drop_rate"]
+    if archive_rate is None or single_rate is None:
+        raise SystemExit("op drop rate unmeasured: cannot state the mechanism result")
+    if archive_rate > single_rate:
+        raise SystemExit(
+            f"archive drops {archive_rate:.3f} of scene ops against A1's "
+            f"{single_rate:.3f}: the summary's 'both predictions fail' is false"
+        )
+    if mechanism["failure_before_first_chunk"] >= mechanism["failure_after_first_chunk"]:
+        raise SystemExit(
+            f"{mechanism['failure_before_first_chunk']} op failures preceded the "
+            f"first chunk against {mechanism['failure_after_first_chunk']} after "
+            f"it: the summary's 'both predictions fail' is false"
+        )
+
+
 def render_summary(measured: dict) -> str:
     archive = measured["archive"]
     single = measured["single_shot"]
@@ -415,7 +433,7 @@ def render_summary(measured: dict) -> str:
         "",
         (
             f"{archive['bake_cannot_record_ops']['attempts']} of "
-            f"{archive['all_rolls']['passing']['attempts'] + archive['all_rolls']['failing']['attempts']} "
+            f"{archive['labelled_attempts']} "
             f"harness attempts come from rolls whose `.agent_meta.json` carries "
             f"no `{OP_COLLECTION_KEY}` key at all: that era's bridge collected "
             f"`run_python` and nothing else, so those attempts CANNOT show an op "
@@ -573,7 +591,11 @@ def main(argv) -> int:
                 "baked_scene_ops",
             ),
             "failing": geometry_split(
-                [row for row in subset if row["code"] != "PASS"],
+                [
+                    row
+                    for row in subset
+                    if row["code"] != "PASS" and row["code"] not in EXCLUDED_CODES
+                ],
                 "baked_chunks",
                 "baked_scene_ops",
             ),
@@ -637,7 +659,7 @@ def main(argv) -> int:
                 "chunk": sum(
                     1
                     for row in single
-                    if row["first_chunk_index"]
+                    if row["first_chunk_index"] is not None
                     and (
                         row["first_scene_op_index"] is None
                         or row["first_chunk_index"] < row["first_scene_op_index"]
@@ -646,7 +668,7 @@ def main(argv) -> int:
                 "op": sum(
                     1
                     for row in single
-                    if row["first_scene_op_index"]
+                    if row["first_scene_op_index"] is not None
                     and (
                         row["first_chunk_index"] is None
                         or row["first_scene_op_index"] < row["first_chunk_index"]
@@ -668,6 +690,11 @@ def main(argv) -> int:
         },
         "per_roll": per_roll,
     }
+    assert_hypothesis_refuted(
+        measured["archive"]["drop"],
+        measured["single_shot"]["drop"],
+        measured["mechanism"],
+    )
 
     WORKING_DIRECTORY.mkdir(parents=True, exist_ok=True)
     MEASURED_PATH.write_text(json.dumps(measured, indent=2) + "\n")

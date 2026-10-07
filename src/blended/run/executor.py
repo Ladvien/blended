@@ -97,7 +97,10 @@ def execute_captured(
     try:
         with contextlib.redirect_stdout(stdout_buffer):
             returned = thunk()
-    except Exception as error:  # noqa: BLE001 - we report, not swallow
+    # SystemExit is not an Exception: a chunk that ends with `sys.exit()` or
+    # `exit()` would otherwise unwind through the caller and quit the host
+    # Blender instead of coming back as a failed result.
+    except (Exception, SystemExit) as error:  # noqa: BLE001 - we report, not swallow
         traceback_text = traceback_module.format_exc()
         return (
             RunResult(
@@ -155,29 +158,42 @@ def run_script_subprocess(
     started_at = time.perf_counter()
     with tempfile.TemporaryDirectory(prefix="blended_run_") as scratch_directory:
         result_path = Path(scratch_directory) / "result.json"
-        subprocess.run(
-            [
-                resolved_binary,
-                "--background",
-                "--factory-startup",
-                "--python",
-                str(bootstrap_path),
-                "--",
-                str(script_path),
-                str(result_path),
-            ],
-            capture_output=True,
-            text=True,
-            timeout=SUBPROCESS_TIMEOUT_SECONDS,
-            check=False,
-        )
+        try:
+            completed = subprocess.run(
+                [
+                    resolved_binary,
+                    "--background",
+                    "--factory-startup",
+                    "--python",
+                    str(bootstrap_path),
+                    "--",
+                    str(script_path),
+                    str(result_path),
+                ],
+                capture_output=True,
+                text=True,
+                timeout=SUBPROCESS_TIMEOUT_SECONDS,
+                check=False,
+            )
+        except subprocess.TimeoutExpired:
+            return RunResult(
+                ok=False,
+                duration_s=time.perf_counter() - started_at,
+                error_type="TimeoutExpired",
+                error_message=f"Blender did not finish within {SUBPROCESS_TIMEOUT_SECONDS} s and was killed.",
+            )
         duration_s = time.perf_counter() - started_at
         if not result_path.exists():
+            # Blender's own stderr (or stdout) is the only record of why.
+            diagnostic = _bounded_stdout(completed.stderr or completed.stdout or "")
             return RunResult(
                 ok=False,
                 duration_s=duration_s,
                 error_type="HarnessError",
-                error_message="Blender exited without writing a result file.",
+                error_message=(
+                    f"Blender exited with status {completed.returncode} without writing a result file."
+                    + (f"\n{diagnostic}" if diagnostic else "")
+                ),
             )
         result_payload = json.loads(result_path.read_text())
 

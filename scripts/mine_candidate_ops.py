@@ -37,13 +37,19 @@ def main(argv) -> int:
     parser.add_argument("--out", default=None)
     arguments = parser.parse_args(argv)
 
-    today = _datetime.date.today()
+    today = _datetime.datetime.now(_datetime.UTC).date()
     records = load_records(Path(arguments.log), arguments.from_iteration)
     transcripts = {}
     try:
         for path in arguments.transcript:
             rows = [json.loads(line) for line in Path(path).read_text().splitlines() if line.strip()]
-            transcripts[Path(path).name] = hatch_events_from_transcript(Path(path).name, rows)
+            name = Path(path).name
+            if name in transcripts:
+                raise SystemExit(
+                    f"two --transcript files are named {name!r}: the report keys "
+                    f"events by file name, so one would silently replace the other"
+                )
+            transcripts[name] = hatch_events_from_transcript(name, rows)
         report = render_report(records, transcripts, today)
     except UnminableRecord as error:
         print(f"[mine] REFUSED: {error}", file=sys.stderr)

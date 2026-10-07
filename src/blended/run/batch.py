@@ -12,7 +12,7 @@ process, the loaded modules, and the render engine setup are shared.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 from blended.harness import HarnessResult, HarnessSettings
@@ -39,16 +39,24 @@ def run_batch(
 
     from blended.harness import run_chunk
 
+    labels = [item.label for item in items]
+    if len(set(labels)) != len(labels):
+        raise ValueError(f"run_batch labels must be unique; got {labels}")
     base_settings = settings or HarnessSettings()
     results: dict[str, HarnessResult] = {}
     for item in items:
         bpy.ops.wm.read_factory_settings(use_empty=True)
-        item_settings = HarnessSettings(
-            budget=base_settings.budget,
+        export_glb_path = base_settings.export_glb_path
+        item_settings = replace(
+            base_settings,
             output_directory=Path(base_settings.output_directory) / item.label,
-            maximum_retries=base_settings.maximum_retries,
-            export_glb_path=base_settings.export_glb_path,
-            session_log_path=base_settings.session_log_path,
+            # One file per item: a shared path would be overwritten by each
+            # item and every result would point at the last one's export.
+            export_glb_path=(
+                export_glb_path.with_name(f"{export_glb_path.stem}_{item.label}{export_glb_path.suffix}")
+                if export_glb_path is not None
+                else None
+            ),
         )
         results[item.label] = run_chunk(
             item.source_code,

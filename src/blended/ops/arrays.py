@@ -36,4 +36,4 @@ def linear_array(
     array_modifier.use_constant_offset = True
     array_modifier.constant_offset_displace = offset_m
     apply_all_modifiers(object_name)
-    return object_name
+    return ObjectName(object_name)

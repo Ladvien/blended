@@ -51,6 +51,12 @@ LANE_EXHAUSTED_EXIT = 3
 # agentic run; the same ceiling here is generous on purpose, so a slow
 # cold model load on a 7B F16 is not recorded as a hang.
 COMPLETION_TIMEOUT_SECONDS = 1500
+# `blender --python` exits 0 when the script RAISES unless told otherwise
+# (measured 2026-10-07: `raise RuntimeError` -> exit 0 plain, 7 with the
+# flag), which made a crashed op-arm completion look like a clean run.
+BLENDER_SCRIPT_FAILURE_EXIT = 1
+# The runner exited without writing the record it owes the arm.
+OUTCOME_NO_RECORD = "ERR_NO_RECORD"
 COMPLETIONS_ROOT = (
     REPOSITORY_ROOT / "docs" / "research" / "2026-09-19-finetune-decision" / "phaseB"
 )
@@ -105,6 +111,8 @@ def completion_command(arguments, draw: int, instance: str) -> list[str]:
             arguments.blender,
             "--background",
             "--factory-startup",
+            "--python-exit-code",
+            str(BLENDER_SCRIPT_FAILURE_EXIT),
             "--python",
             str(RUNNER),
             "--",
@@ -113,12 +121,12 @@ def completion_command(arguments, draw: int, instance: str) -> list[str]:
     return [str(DEV_PYTHON), str(RUNNER), *runner_arguments]
 
 
-def last_completion(arm: str, draw: int, instance: str, per_draw: bool) -> dict:
-    """The newest recorded completion for this (arm, draw, instance)."""
+def matching_completions(arm: str, draw: int, instance: str, per_draw: bool) -> list[dict]:
+    """Every recorded completion for this (arm, draw, instance), oldest first."""
     path = completions_path(arm, draw, per_draw)
     if not path.exists():
-        return {}
-    found: dict = {}
+        return []
+    found: list[dict] = []
     for line in path.read_text().splitlines():
         if not line.strip():
             continue
@@ -128,8 +136,21 @@ def last_completion(arm: str, draw: int, instance: str, per_draw: bool) -> dict:
             and record.get("instance") == instance
             and record.get("arm") == arm
         ):
-            found = record
+            found.append(record)
     return found
+
+
+def completion_outcome(fresh: list[dict], returncode: int) -> tuple[dict, str]:
+    """(the record THIS subprocess wrote, its outcome word).
+
+    `fresh` is only what the subprocess appended. An older record for the
+    same (draw, instance) is not evidence about this run: reading it
+    would report a crashed re-run as whatever the previous run said.
+    """
+    if fresh:
+        record = fresh[-1]
+        return record, record.get("parse_result") or f"ERR_EXIT_{returncode}"
+    return {}, f"ERR_EXIT_{returncode}" if returncode != 0 else OUTCOME_NO_RECORD
 
 
 def write_timeout_completion(arguments, draw: int, instance: str, duration: float) -> None:
@@ -193,12 +214,28 @@ def main(argv) -> int:
     results: Counter[str] = Counter()
     total = len(draws) * len(instances)
     position = 0
+    bench_root = Path(arguments.bench_root).resolve()
     for draw in draws:
         model_dir = model_directory(arguments.arm, draw)
         for instance in instances:
             position += 1
             started = time.monotonic()
             print(f"=== [{position}/{total}] {model_dir}/{instance}", flush=True)
+            script = (
+                bench_root / arguments.results_root / model_dir / instance
+                / f"{instance}.py"
+            )
+            if script.exists() and not arguments.overwrite:
+                # The runner's own skip condition, decided here so a skip
+                # is never confused with a crash that wrote no record.
+                results["SKIPPED"] += 1
+                print(f"[RESULT] {instance} SKIPPED", flush=True)
+                continue
+            recorded_before = len(
+                matching_completions(
+                    arguments.arm, draw, instance, arguments.per_draw_files
+                )
+            )
             try:
                 completed = subprocess.run(
                     completion_command(arguments, draw, instance),
@@ -222,11 +259,11 @@ def main(argv) -> int:
                 )
                 continue
             duration = time.monotonic() - started
-            record = last_completion(
-                arguments.arm, draw, instance, arguments.per_draw_files
-            )
-            outcome = record.get("parse_result") or (
-                "SKIPPED" if completed.returncode == 0 else f"ERR_EXIT_{completed.returncode}"
+            record, outcome = completion_outcome(
+                matching_completions(
+                    arguments.arm, draw, instance, arguments.per_draw_files
+                )[recorded_before:],
+                completed.returncode,
             )
             results[outcome] += 1
             print(f"[RESULT] {instance} {outcome} {duration:.1f}s", flush=True)
@@ -241,10 +278,9 @@ def main(argv) -> int:
                 )
                 _print_histogram(results)
                 return LANE_EXHAUSTED_EXIT
-            if outcome.startswith("ERR_EXIT_"):
+            if outcome.startswith("ERR_EXIT_") or outcome == OUTCOME_NO_RECORD:
                 print(completed.stdout[-2000:], flush=True)
                 print(completed.stderr[-2000:], flush=True)
-
     _print_histogram(results)
     return 0
 

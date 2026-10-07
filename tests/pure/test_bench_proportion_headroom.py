@@ -22,13 +22,13 @@ trimesh = pytest.importorskip("trimesh")
 SCRIPTS = Path(__file__).resolve().parents[2] / "scripts"
 sys.path.insert(0, str(SCRIPTS))
 
-from bench_proportion_headroom import (  # noqa: E402
+from bench_proportion_headroom import (
     axis_log2_errors,
     component_counts,
     extents_at_percentiles,
     oracle_rescaled,
 )
-from bench_thresholds import PROPORTION_EXTENT_PERCENTILES  # noqa: E402
+from bench_thresholds import PROPORTION_EXTENT_PERCENTILES
 
 
 class _Scorer:

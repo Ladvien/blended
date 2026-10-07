@@ -641,7 +641,7 @@ def test_an_unresolved_intermediate_blocks_the_answer_until_resolved(empty_scene
     assert "Cutter" not in bpy.data.objects
 
 
-def test_a_gated_op_on_a_missing_object_fails_at_locate(empty_scene, tmp_path):
+def test_a_gated_op_on_a_missing_object_fails_at_execute(empty_scene, tmp_path):
     from blended.agent.tools import dispatch_tool
 
     text = dispatch_tool("link_into_scene", {"object_name": "Ghost"}, tmp_path).text

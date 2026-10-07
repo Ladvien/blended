@@ -165,17 +165,18 @@ def _names_from_file(path: Path) -> set[str]:
             for target in node.targets:
                 if isinstance(target, ast.Name):
                     names.add(target.id)
-        elif isinstance(node, ast.AnnAssign):
-            if isinstance(node.target, ast.Name):
-                names.add(node.target.id)
+        elif isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
+            names.add(node.target.id)
     # Also harvest __all__ if it's a list/tuple of string literals.
     for node in tree.body:
-        if isinstance(node, ast.Assign):
-            if any(isinstance(t, ast.Name) and t.id == "__all__" for t in node.targets):
-                if isinstance(node.value, (ast.List, ast.Tuple)):
-                    for elt in node.value.elts:
-                        if isinstance(elt, ast.Constant) and isinstance(elt.value, str):
-                            names.add(elt.value)
+        if (
+            isinstance(node, ast.Assign)
+            and any(isinstance(t, ast.Name) and t.id == "__all__" for t in node.targets)
+            and isinstance(node.value, (ast.List, ast.Tuple))
+        ):
+            for elt in node.value.elts:
+                if isinstance(elt, ast.Constant) and isinstance(elt.value, str):
+                    names.add(elt.value)
     return names
 
 
@@ -213,7 +214,8 @@ def test_all_blended_imports_resolve():
     for py_file in _python_files():
         try:
             tree = ast.parse(py_file.read_text(encoding="utf-8"))
-        except SyntaxError:
+        except SyntaxError as error:
+            problems.append(f"{py_file.relative_to(_REPOSITORY_ROOT)}: unparseable, its imports were not checked — {error}")
             continue
         for node in ast.walk(tree):
             if isinstance(node, ast.Import):
@@ -291,9 +293,8 @@ def _imported_name_exists(module_dotted: str, name: str) -> bool:
     """
     if name in _package_submodules(module_dotted):
         return True
-    if name in _module_level_names(module_dotted):
-        return True
-    return False
+    return name in _module_level_names(module_dotted)
+
 
 def test_the_harness_imports_first_in_a_fresh_interpreter():
     """`blended.harness` must be importable BEFORE anything under
@@ -309,10 +310,14 @@ def test_the_harness_imports_first_in_a_fresh_interpreter():
     import subprocess
     import sys
 
+    # A fresh interpreter has none of conftest's sys.path edits: name the
+    # src tree explicitly so the probe does not depend on an editable install.
+    environment = {**os.environ, "PYTHONPATH": str(_SRC_ROOT)}
     completed = subprocess.run(
         [sys.executable, "-c", "import blended.harness; import blended.agent.tools"],
         capture_output=True,
         text=True,
         check=False,
+        env=environment,
     )
     assert completed.returncode == 0, completed.stderr[-1500:]

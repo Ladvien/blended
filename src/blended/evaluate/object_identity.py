@@ -37,11 +37,6 @@ from dataclasses import dataclass
 # writes to the object.
 IDENTITY_PROPERTY_NAME = "blended_object_identity"
 
-# Stamped AFTER the .glb export so the exported asset never carries it.
-# Recorded here rather than in the driver because the ordering is part
-# of the contract, not a detail of one caller.
-STAMP_AFTER_EXPORT = True
-
 
 class ObjectHasNoIdentity(KeyError):
     """Raised when a stamp was expected and the object carries none.
@@ -66,7 +61,9 @@ def stamp_identity(blender_object, identity: str) -> str:
 
 
 def has_identity(blender_object) -> bool:
-    return IDENTITY_PROPERTY_NAME in blender_object.keys()
+    # `.keys()`, not `in blender_object`: the test double implements only
+    # the keys()/[] surface of a bpy ID-property owner.
+    return IDENTITY_PROPERTY_NAME in blender_object.keys()  # noqa: SIM118
 
 
 def read_identity(blender_object) -> str:

@@ -9,7 +9,7 @@ Every number here is read from artifacts already on disk: the schema-2 `tool_eve
 | corpus | attempts | chunks | scene ops | hatch share | attempts using an op |
 |---|---|---|---|---|---|
 | all rolls, passing | 154 | 1271 | 34 | 97.4% | 17 |
-| all rolls, failing | 131 | 1147 | 99 | 92.1% | 22 |
+| all rolls, failing | 111 | 1054 | 99 | 91.4% | 22 |
 | op-collecting rolls, passing | 72 | 321 | 34 | 90.4% | 17 |
 | op-collecting rolls, failing | 49 | 235 | 99 | 70.4% | 22 |
 

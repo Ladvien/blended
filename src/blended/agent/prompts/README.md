@@ -6,9 +6,9 @@ module.
 
 | File | What it is |
 |---|---|
-| `system_prompt.md.j2` | The outer shell. Takes `blender_series`, `working_agreement`, `conventions`, `operations`. |
+| `system_prompt.md.j2` | The outer shell. Takes `blender_series`, `working_agreement`, `skills` (empty when no lane is selected), `conventions`, `gate_and_traps`. The manifest's operations section is not rendered (OT-24); the tool schemas carry the ops. |
 | `working_agreement_v{n}.md.j2` | Revision `n` of the working agreement — the part the convergence loop tunes. |
-| `examiner.md.j2` | What the EYE is asked when comparing a render against its signed-off golden view. Takes `reference_position` (`"first"`/`"second"`, so the same view is examined in both image orders) and `view_name`. Closed tag vocabulary, JSON output contract — `../../evaluate/examiner.py` refuses anything else. Its hash is half of `examiner_identity()`, so editing this file invalidates the calibration that licensed machine verdicts. |
+| `examiner.md.j2` | What the EYE is asked when comparing a render against its signed-off golden view. Takes `reference_position` (`"first"`/`"second"`, so the same view is examined in both image orders); `examiner.py` also passes `view_name`, which the template does not render. Closed tag vocabulary, JSON output contract — `../../evaluate/examiner.py` refuses anything else. Its hash is half of `examiner_identity()`, so editing this file invalidates the calibration that licensed machine verdicts. |
 | `gradient.md.j2` | ProTeGi's `LLM∇`: given the working agreement and the MEASURED gate failures, name what the text allowed. Takes `body`, `evidence`. Never sees the examiner's tags. |
 | `skills/*.md.j2` | One capability module each — the procedural knowledge a LANE needs, kept out of the working agreement because it is dead weight on every turn in another lane. Registry: `../skill_modules.py`. |
 | `revise.md.j2` | ProTeGi's `LLM_δ`: return the whole working agreement with exactly ONE contiguous region changed. Takes `body`, `gradient`. |
@@ -16,7 +16,7 @@ module.
 ## Two registries, two disciplines
 
 The working agreement is ONE text, tuned as a monolith, versioned by
-revision. A capability module is one of SEVEN texts, selected by lane,
+revision. A capability module is one of the texts in `SKILL_MODULES`, selected by lane,
 versioned by identity. They are separate because they answer different
 questions — the agreement says how to work with the user, a module says
 how this lane fails — and because a module must be able to not load.
@@ -52,9 +52,12 @@ These files hold the **text**. `../prompt_versions.py` holds the
 **provenance**: which revisions exist, the one element each changed, the
 hypothesis stated before it ran, and the outcome measured after. A file
 cannot carry why it exists; the registry cannot be read as prose. Both
-are needed, so both exist, and `validate_revisions()` checks they agree.
+are needed, so both exist. `validate_revisions()` checks every registered
+revision renders, and `test_every_registered_revision_has_a_template`
+checks no template on disk is unregistered.
 
-`../prompt_templates.py` renders them. Nothing else opens these files.
+`../prompt_templates.py` renders them. Nothing else reads these files;
+`../prompt_search.py` writes new revisions.
 
 ## Adding a revision
 
@@ -67,7 +70,7 @@ are needed, so both exist, and `validate_revisions()` checks they agree.
    the form "changed X because Y; expect Z".
 3. Run it: `make converge BRIEF=... REVISION={n+1} ITERATION=...`.
    Fill `outcome` from the measurement, not from impression.
-4. Move `ACTIVE_PROMPT_REVISION` only once the measurement supports it.
+4. Move `PINNED_PROMPT_REVISION` (`ACTIVE_PROMPT_REVISION` follows it) only once the measurement supports it, through `make pin REVISION={n+1}` — the one human act.
 
 `validate_revisions()` enforces the parts of that a reader would
 otherwise have to take on trust: revisions consecutive from 1, every

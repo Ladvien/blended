@@ -16,6 +16,7 @@ hatch calls". Pure: JSON in, Markdown out.
 from __future__ import annotations
 
 import ast
+import builtins
 import datetime as _datetime
 import re
 from collections import defaultdict
@@ -31,7 +32,7 @@ _WORD_PATTERN = re.compile(r"[^a-z0-9]+")
 # every op imported from the facade. Literals, variable names and
 # comments are not part of the shape.
 _FACADE_PREFIX = "blended.ops"
-_BUILTIN_NAMES = frozenset(dir(__builtins__)) if isinstance(__builtins__, dict) is False else frozenset(__builtins__)
+_BUILTIN_NAMES = frozenset(dir(builtins))
 
 
 class UnminableRecord(ValueError):
@@ -187,7 +188,7 @@ def render_report(
     events: list[HatchEvent] = []
     for record in records:
         events.extend(hatch_events_from_record(record))
-    for name, transcript in transcript_events.items():
+    for transcript in transcript_events.values():
         events.extend(transcript)
     by_reason = group_candidates(events, lambda event: normalize_reason(event.reason) or "<no reason>")
     by_shape = group_candidates(events, lambda event: source_shape(event.source))
@@ -205,8 +206,10 @@ def render_report(
         "",
         f"- Iteration records: {len(records)} ({iterations[0]}–{iterations[-1]})" if records else "- Iteration records: 0",
         f"- Chat transcripts: {len(transcript_events)}",
-        f"- Hatch calls: {len(events)} ({sum(1 for e in events if e.gated)} gated, "
-        f"{sum(1 for e in events if e.passed)} gate-passing)",
+        (
+            f"- Hatch calls: {len(events)} ({sum(1 for e in events if e.gated)} gated, "
+            f"{sum(1 for e in events if e.passed)} gate-passing)"
+        ),
         "",
         "## Hatch calls per gate-passing brief (the v12 hypothesis, OT-7)",
         "",

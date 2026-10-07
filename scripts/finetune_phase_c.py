@@ -19,8 +19,12 @@ Four sources, each counted on its own terms:
   of DISTINCT instructions: the frozen holdout's 20 prompts recur across
   every roll, so 300 attempts can carry 20 instructions.
 * **Op-sequence pairs**, which rule 4 of §3 would make the training
-  target: recoverable only from attempts whose emitted script contains
-  op calls at all (`.agent_meta.json: n_op_calls_included > 0`).
+  target: recoverable only from attempts whose BAKED script carries
+  `# --- op N: name ---` labels for scene-changing ops. Counted off the
+  script, never from `.agent_meta.json`: its `n_op_calls_included`
+  counts the reader ops as geometry-emitting, and its key is absent on
+  rolls whose bridge collected no op calls at all
+  (`scripts/finetune_hatch_mechanism.py`).
 * **`_evaluate/iterations.jsonl`**, the convergence loop's own records:
   only those carrying schema-2 `tool_events` are minable, and
   `blended.agent.tool_event.decode_tool_event` refuses any other
@@ -63,6 +67,7 @@ from finetune_decision_thresholds import (
     SFT_PAIRS_COMFORTABLE,
     SFT_PAIRS_MINIMUM,
 )
+from finetune_phase_a import baked_call_counts
 
 PHASE_C_DIRECTORY = (
     REPOSITORY_ROOT / "docs" / "research" / "2026-09-19-finetune-decision" / "phaseC"
@@ -117,8 +122,8 @@ def archive_pairs(bench_root: Path, results_root_argument: str) -> dict:
                     "script_chars": len(script_text),
                     "render_status": log.get("status", "MISSING"),
                     "has_glb": (directory / "glb" / f"{instance}.glb").exists(),
-                    "n_op_calls": meta.get("n_op_calls_included"),
-                    "n_chunks": meta.get("n_chunks_included"),
+                    "bake_records_ops": "n_op_calls_included" in meta,
+                    **baked_call_counts(script_path),
                     "writer": meta.get("writer") or meta.get("model") or "",
                 }
             )
@@ -162,9 +167,20 @@ def summarise_pairs(pairs: list[dict]) -> dict:
         "deduplicated_execution_verified_pairs": len(verified_dedup),
         "distinct_instructions": len({pair["instance"] for pair in pairs}),
         "distinct_instructions_executed": len({pair["instance"] for pair in executed}),
-        "op_sequence_pairs": sum(1 for pair in pairs if (pair["n_op_calls"] or 0) > 0),
-        "op_calls_total": sum(pair["n_op_calls"] or 0 for pair in pairs),
-        "chunks_total": sum(pair["n_chunks"] or 0 for pair in pairs),
+        "op_sequence_pairs": sum(
+            1
+            for pair in pairs
+            if pair["bake_records_ops"] and pair["baked_scene_ops"] > 0
+        ),
+        "scene_op_calls_baked": sum(
+            pair["baked_scene_ops"] for pair in pairs if pair["bake_records_ops"]
+        ),
+        "chunks_baked": sum(
+            pair["baked_chunks"] for pair in pairs if pair["bake_records_ops"]
+        ),
+        "pairs_before_op_collection": sum(
+            1 for pair in pairs if not pair["bake_records_ops"]
+        ),
         "writers": dict(Counter(pair["writer"] for pair in pairs if pair["writer"])),
     }
 
@@ -250,18 +266,20 @@ def transcript_hatches() -> dict:
     }
 
 
-def op_coverage(archive_pairs_list: list[dict], iterations: dict) -> dict:
-    """How much of the 48-op facade this corpus actually exercises."""
+def op_coverage(iterations: dict, scripts: dict) -> dict:
+    """How much of the 48-op facade this corpus actually exercises.
+
+    The corpus is both halves counted on their own terms: the decoded
+    tool events of the convergence log, and the ops the archived scripts
+    call (`op_calls_in_scripts`, read off the emitted text).
+    """
     from blended.agent.tools import OP_FUNCTIONS
 
     seen = Counter()
-    # The emitted scripts name each op call through the bridge's helper.
-    for pair in archive_pairs_list:
-        if not (pair["n_op_calls"] or 0):
-            continue
-    for name, count in iterations.get("tool_histogram", {}).items():
-        if name in OP_FUNCTIONS:
-            seen[name] += count
+    for histogram in (iterations.get("tool_histogram", {}), scripts["histogram"]):
+        for name, count in histogram.items():
+            if name in OP_FUNCTIONS:
+                seen[name] += count
     return {
         "ops_total": len(OP_FUNCTIONS),
         "ops_seen": len([name for name in OP_FUNCTIONS if seen.get(name)]),
@@ -374,8 +392,8 @@ def render_report(measured: dict) -> str:
         "## Op-sequence pairs (the target rule 4 would name)",
         "",
         (
-            f"- attempts whose emitted script calls facade ops: "
-            f"**{scripts['attempts_with_op_calls']}**"
+            f"- attempts whose emitted script calls any facade op (reader "
+            f"ops included): **{scripts['attempts_with_op_calls']}**"
         ),
         f"- op calls in those scripts: **{scripts['op_calls']}**",
         (
@@ -383,9 +401,13 @@ def render_report(measured: dict) -> str:
             f"{coverage['ops_total']}"
         ),
         (
-            f"- `run_python` chunks across the same archive: "
-            f"**{archive['chunks_total']}** against "
-            f"{archive['op_calls_total']} op calls counted in metadata"
+            f"- baked `run_python` chunks against baked scene-changing op "
+            f"calls, over the pairs whose bridge could record an op: "
+            f"**{archive['chunks_baked']}** against "
+            f"**{archive['scene_op_calls_baked']}**; "
+            f"{archive['pairs_before_op_collection']} earlier pairs come from "
+            f"a bridge that collected no op calls, so their chunk counts are "
+            f"not comparable"
         ),
         "",
         "## Convergence log (`_evaluate/iterations.jsonl`)",
@@ -423,8 +445,8 @@ def render_report(measured: dict) -> str:
         "",
         f"- ops in the facade: **{coverage['ops_total']}**",
         (
-            f"- ops appearing anywhere in the mined records: "
-            f"**{coverage['ops_seen']}**"
+            f"- ops appearing anywhere in the archived scripts or the "
+            f"convergence log: **{coverage['ops_seen']}**"
         ),
         (
             f"- ops appearing fewer than {OP_COVERAGE_THIN} times: "
@@ -458,12 +480,13 @@ def main(argv) -> int:
     bench_root = Path(arguments.bench_root).resolve()
     pairs = archive_pairs(bench_root, arguments.results_root)["pairs"]
     iterations = iteration_records()
+    scripts_measured = op_calls_in_scripts(bench_root, arguments.results_root)
     measured = {
         "archive": summarise_pairs(pairs),
         "iterations": iterations,
         "transcripts": transcript_hatches(),
-        "op_calls_in_scripts": op_calls_in_scripts(bench_root, arguments.results_root),
-        "op_coverage": op_coverage(pairs, iterations),
+        "op_calls_in_scripts": scripts_measured,
+        "op_coverage": op_coverage(iterations, scripts_measured),
     }
     PHASE_C_DIRECTORY.mkdir(parents=True, exist_ok=True)
     WORKING_DIRECTORY.mkdir(parents=True, exist_ok=True)

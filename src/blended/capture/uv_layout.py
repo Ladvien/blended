@@ -64,8 +64,6 @@ def render_uv_layout(
             return output_path
 
         # Group faces into islands so each gets its own color.
-        from blended.analyze.mesh_checks import _count_uv_islands  # noqa: F401
-
         island_index_by_face: dict = {}
         unvisited_faces = set(working_mesh.faces)
         island_index = 0

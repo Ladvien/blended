@@ -45,7 +45,7 @@ import numpy as np
 import trimesh
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from diagnose_3dcode import signed_permutations  # its rotation helpers, reused
+from bench_surface_metrics import signed_permutations  # the shared rotation helpers
 
 SIMULATION_N_POINTS = 4096          # cheaper than the scorer's 8192; ranks and
                                     # policy means are stable at this density
@@ -93,7 +93,7 @@ def sampled_points(glb_path: Path):
         return None
     try:
         mesh = trimesh.load(glb_path, force="mesh")
-    except Exception:
+    except Exception:  # noqa: BLE001 — an unloadable GLB is reported as unavailable by the callers
         return None
     if mesh.is_empty or mesh.faces is None or len(mesh.faces) == 0:
         return None

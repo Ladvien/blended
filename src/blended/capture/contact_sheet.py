@@ -81,6 +81,12 @@ def compose_contact_sheet(
         drawing.text((cell_x_px, cell_y_px), view_name, fill=TEXT_COLOR)
         sheet.paste(view_image, (cell_x_px, cell_y_px + LABEL_HEIGHT_PX))
 
+    output_path = Path(output_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    sheet.save(output_path)
+    return output_path
+
+
 def capture_contact_sheet(
     blender_object,
     output_directory: Path,

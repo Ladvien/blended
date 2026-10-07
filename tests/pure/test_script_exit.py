@@ -7,7 +7,6 @@ gates on exit codes, including the closing rule for a backlog item, so a
 crash that reads as a success is the worst possible failure mode.
 """
 
-import pytest
 
 from blended.run.script_exit import UNCAUGHT_EXCEPTION_EXIT_CODE, run_script_main
 
@@ -66,7 +65,7 @@ def test_every_blender_hosted_script_is_guarded():
     hosted = [
         "run_agent_task.py", "chat_e2e.py", "calibrate_examiner.py",
         "calibrate_visual_gate.py", "pin_golden_views.py", "replay_iteration.py",
-        "photo_to_model.py",
+        "photo_to_model.py", "run_3dcode_instance.py",
     ]
     for name in hosted:
         source = (scripts / name).read_text()
@@ -76,5 +75,3 @@ def test_every_blender_hosted_script_is_guarded():
 
 def test_the_code_is_the_conventional_software_error():
     assert UNCAUGHT_EXCEPTION_EXIT_CODE == 70  # EX_SOFTWARE
-    with pytest.raises(SystemExit):
-        raise SystemExit(UNCAUGHT_EXCEPTION_EXIT_CODE)

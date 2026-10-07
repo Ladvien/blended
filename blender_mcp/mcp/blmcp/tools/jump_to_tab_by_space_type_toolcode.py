@@ -56,6 +56,18 @@ def main(params: Params) -> Result:
         return Result(status="ok", workspace=found.name, space_type=params.space_type)
 
     if params.allow_edits:
+        # Reject an unknown space type before duplicating anything: the
+        # `area.type` assignment below would raise AFTER the duplicate
+        # workspace was made and activated, leaving it behind.
+        valid_space_types = sorted(
+            item.identifier for item in bpy.types.Area.bl_rna.properties["type"].enum_items
+        )
+        if params.space_type not in valid_space_types:
+            return Result(
+                status="error",
+                message="Unknown space type {!r}".format(params.space_type),
+                available_space_types=valid_space_types,
+            )
         # Duplicate the current workspace and change its main area type.
         try:
             bpy.ops.workspace.duplicate()

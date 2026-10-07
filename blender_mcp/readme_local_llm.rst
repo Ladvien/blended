@@ -58,7 +58,7 @@ Build the Blender Extension:
    .. code-block::
 
       blender -c extension build --source-dir ./addon/blender_mcp_addon
-      blender -c extension install-file blender_mcp_addon-0.1.0.zip --repo=user_default
+      blender -c extension install-file mcp-1.0.0.zip --repo=user_default
 
 Download a Model via LLAMA.cpp:
    .. code-block::

@@ -408,8 +408,6 @@ def collect(bench_root: Path, results_root_argument: str, refresh: bool) -> list
                 "delta_orient": score.get("delta_orient"),
                 "fscore_005": score.get("fscore_005"),
                 "cd_pca_aspect_oracle": oracle.get("cd_pca_aspect_oracle"),
-                "n_ops": meta.get("n_op_calls_included"),
-                "n_chunks": meta.get("n_chunks_included"),
                 "num_turns": meta.get("num_turns"),
                 "duration_s": meta.get("duration_s"),
                 # Ground truth for what the score saw, and whether this
@@ -503,7 +501,8 @@ def hatch_table(attempts: list[dict]) -> dict:
 CSV_COLUMNS = (
     "model_dir", "instance", "writer", "render_status", "agent_status", "code",
     "b5_category", "error_fingerprint", "cd_pca", "cd_yawmin", "delta_orient",
-    "fscore_005", "cd_pca_aspect_oracle", "n_ops", "n_chunks", "score_provenance",
+    "fscore_005", "cd_pca_aspect_oracle", "baked_scene_ops", "baked_chunks",
+    "score_provenance",
     "third_party", "excluded_reason",
 )
 

@@ -31,9 +31,9 @@ timers, handlers or draw handlers (grep for ``bpy.app.handlers``,
 ``src/blended`` found none on 2026-09-26). That covers this checkout's
 copy only, so a ``blended`` imported from anywhere else is refused before
 the purge could drop it. Purging the whole package, not single modules,
-avoids the partial-reload bugs in mistake records
-``a-typing-object-compared-by-identity-breaks-under-dev-reload`` and
-``a-purged-module-cannot-remove-its-own-draw-handler``.
+avoids two partial-reload bugs: a ``typing.NewType`` compared by ``is``
+across a re-executed module, and a handle kept in a purged module's
+globals that the next import can no longer find.
 
 References: MCP (DOI 10.48550/arXiv.2503.23278);
 LL3M, agentic Blender code generation (DOI 10.48550/arXiv.2508.08228).
@@ -111,10 +111,13 @@ def main(params: Params) -> Result:
 
     # pylint: disable-next=import-outside-toplevel
     from blended.agent.outcome import outcome_to_json
+
     # pylint: disable-next=import-outside-toplevel
     from blended.agent.plan import plan_required_for
+
     # pylint: disable-next=import-outside-toplevel
     from blended.agent.tools import dispatch_tool
+
     # pylint: disable-next=import-outside-toplevel
     from blended.viewport_follow import follow_viewport
 

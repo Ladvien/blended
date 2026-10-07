@@ -64,8 +64,10 @@ DEVIATION_TAGS: tuple[str, ...] = (
 # 0.4000 +/- 0.0200, so `wrong_proportion` is fully covered by a
 # measurement. `material_missing` is covered by the material gate's
 # assignment check plus `DistinctMaterialSpec`'s colour-contrast probe.
-# Tool feedback outranks model feedback (10.48550/arXiv.2409.02977),
-# and a 0.66-alignment judge must not adjudicate what a gate measures
+# A gate's number is exact feedback from execution, while a judge's
+# reply can carry hallucinated errors that cascade (the survey weighs the
+# two as trade-offs, not a ranking: 10.48550/arXiv.2409.02977), and a
+# 0.66-alignment judge must not adjudicate what a gate measures
 # exactly (10.48550/arXiv.2504.01786).
 MEASURED_DEVIATION_TAGS: tuple[str, ...] = (
     "wrong_proportion",
@@ -174,8 +176,10 @@ class AssetVerdict:
 
     def summary(self) -> str:
         lines = [
-            f"EXAMINER {self.examiner_identity}: {self.brief_name} vs golden "
-            f"{self.golden_identity}"
+            (
+                f"EXAMINER {self.examiner_identity}: {self.brief_name} vs golden "
+                f"{self.golden_identity}"
+            )
         ]
         for view in self.views:
             consistent = ", ".join(view.order_consistent_tags) or "(none)"
@@ -303,22 +307,18 @@ def calibration_file_identity(path: Path = CALIBRATION_PATH) -> str:
 
 
 def _first_json_object(reply_text: str) -> str:
+    """The first top-level JSON value that starts at the first `{`.
+
+    Decoded with the JSON grammar, not by counting braces: a brace inside
+    a string ("the handle {left} is gone }") is not an object boundary.
+    """
     start = reply_text.find("{")
     if start == -1:
         raise ExaminerReplyUnparseable(
             f"reply contains no JSON object: {reply_text[:200]!r}"
         )
-    depth = 0
-    for index in range(start, len(reply_text)):
-        if reply_text[index] == "{":
-            depth += 1
-        elif reply_text[index] == "}":
-            depth -= 1
-            if depth == 0:
-                return reply_text[start : index + 1]
-    raise ExaminerReplyUnparseable(
-        f"reply opens a JSON object that never closes: {reply_text[:200]!r}"
-    )
+    _payload, end = json.JSONDecoder().raw_decode(reply_text, start)
+    return reply_text[start:end]
 
 
 def parse_tags(reply_text: str) -> tuple[str, ...]:
@@ -429,6 +429,12 @@ def verify_golden_manifest(golden_directory: Path, brief_name: str) -> str:
     if not recorded:
         raise GoldenReferenceMismatch(
             f"golden manifest {manifest_path} records no view hashes"
+        )
+    unpinned = [name for name in EXAMINED_VIEW_NAMES if name not in recorded]
+    if unpinned:
+        raise GoldenReferenceMismatch(
+            f"golden manifest {manifest_path} pins no hash for examined "
+            f"view(s) {unpinned}: an unpinned view can drift unnoticed"
         )
     for view_name, expected in recorded.items():
         png = Path(golden_directory) / f"{view_name}.png"

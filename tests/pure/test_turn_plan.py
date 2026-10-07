@@ -10,8 +10,7 @@ between user and agent, not an approval gate (DOI
 
 The test uses a scripted client (no network) and binds ONE live module
 object — ``from blended.agent import loop as live_loop`` — for both the
-monkeypatch target and construction, following the recorded trap from
-test_streaming: a re-import makes a REAL network call.
+monkeypatch target and construction.
 """
 
 from __future__ import annotations
@@ -253,6 +252,7 @@ def test_require_plan_refuses_run_python_without_plan(tmp_path):
     session.dispatch = dispatch
     events = []
     answer = session.send("build it", on_event=lambda k, t: events.append((k, t)))
+    assert answer == "done"  # the conversation ran to the scripted final answer
     # The first run_python was refused — dispatch was never called for it.
     # declare_plan IS dispatched (it goes through the same channel), so
     # filter to the action tool.

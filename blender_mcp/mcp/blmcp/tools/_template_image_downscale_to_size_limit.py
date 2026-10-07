@@ -77,7 +77,11 @@ def _image_downscale_to_size_limit(
                 break
 
         if max_idx < 0:
-            return data
+            raise RuntimeError(
+                "Image is {:d} bytes and too small to downscale under the {:d} byte limit".format(
+                    len(data), size_limit_in_bytes,
+                )
+            )
 
         # Binary search for the lowest divisor whose output fits.
         # Each probe estimates the next midpoint from the actual encoded size.
@@ -116,5 +120,12 @@ def _image_downscale_to_size_limit(
 
     finally:
         im.free()
+
+    if len(data) > size_limit_in_bytes:
+        raise RuntimeError(
+            "No downscale fits the image under the {:d} byte limit (full size is {:d} bytes)".format(
+                size_limit_in_bytes, len(data),
+            )
+        )
 
     return data

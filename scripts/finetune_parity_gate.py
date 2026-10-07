@@ -69,6 +69,9 @@ OUTPUT_JSON = OUTPUT_DIRECTORY / "parity_gate.json"
 DEFAULT_RESULTS_ROOT = "results/text_to_3D_agent"
 COMPARED_METRICS = ("cd_pca", "cd_yawmin", "delta_orient", "fscore_005")
 MISMATCH_EXIT = 4
+# Floor under the volume scale of a relative difference, so two empty
+# solids divide by this instead of by zero.
+VOLUME_SCALE_FLOOR_M3 = 1e-12
 
 
 def parse_arguments(argv):
@@ -259,7 +262,9 @@ def main(argv) -> int:
                 "abs_difference": abs(a - b),
                 "within_tolerance": abs(a - b) <= tolerance,
             }
-            if abs(a - b) > tolerance:
+            # `not <=`, never `>`: a NaN metric is within nobody's tolerance
+            # and must fail the gate rather than compare False both ways.
+            if not row[metric]["within_tolerance"]:
                 stage_one_failed.append(f"{instance}.{metric}")
         # The archived score for the same artifacts, as a third witness.
         row["cd_pca_archived"] = rows[instance]["cd_pca"]
@@ -298,7 +303,7 @@ def main(argv) -> int:
     for instance in instances:
         volume_a = volumes[left][instance]["volume"]
         volume_b = volumes[right][instance]["volume"]
-        scale = max(abs(volume_a), abs(volume_b), 1e-12)
+        scale = max(abs(volume_a), abs(volume_b), VOLUME_SCALE_FLOOR_M3)
         relative = abs(volume_a - volume_b) / scale
         row = {
             "instance": instance,

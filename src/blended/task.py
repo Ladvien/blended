@@ -19,10 +19,11 @@ escalates to a human with the contact sheet attached.
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 from blended.analyze.mesh_checks import MeshBudget
 from blended.harness import HarnessResult, HarnessSettings, run_chunk
+from blended.stages import STAGE_EXECUTE, STAGE_EXPORT, STAGE_GATE, STAGE_LOCATE
 
 MAXIMUM_TASK_ROUNDS = 3
 
@@ -82,17 +83,21 @@ def build_gate_feedback(
     lines = [
         f"Your previous attempt FAILED at the `{result.stage_reached}` stage.",
     ]
-    if result.stage_reached == "execute":
+    if result.stage_reached == STAGE_EXECUTE:
         lines.append(
             f"The code did not run. Full execution detail:\n{result.execution_summary}"
         )
-    elif result.stage_reached == "locate":
+    elif result.stage_reached == STAGE_LOCATE:
+        # `locate` is also where the scene-state gate stops an object that
+        # EXISTS but is hidden, unlinked or has a broken transform; the
+        # execution summary carries which one.
         lines.append(
-            f"The code ran without error but no object named "
-            f"`{task.object_name}` existed afterwards. Build the object "
-            f"under exactly that name."
+            f"The code ran without error but `{task.object_name}` was not "
+            f"usable afterwards. Build the object under exactly that name, "
+            f"linked into the scene and visible. Detail:\n"
+            f"{result.execution_summary}"
         )
-    elif result.stage_reached == "gate":
+    elif result.stage_reached == STAGE_GATE:
         lines.append("The code ran, but the mesh failed the analyzer gate:")
         lines.extend(f"  - {failure}" for failure in result.gate_failures)
         if result.report is not None:
@@ -106,7 +111,7 @@ def build_gate_feedback(
                 f"triangles."
             )
         lines.append("\n" + _structural_hints(result))
-    elif result.stage_reached == "export":
+    elif result.stage_reached == STAGE_EXPORT:
         lines.append("The mesh passed the gate but failed export verification:")
         lines.extend(f"  - {failure}" for failure in result.export_failures)
 
@@ -182,15 +187,14 @@ def run_agent_task(
     `write_code(prompt) -> python_source` is the model boundary: called
     once with the full brief, then once per round with gate feedback.
     """
-    settings = settings or HarnessSettings(budget=task.budget)
-    if settings.budget is not task.budget:
-        settings = HarnessSettings(
-            budget=task.budget,
-            output_directory=settings.output_directory,
-            maximum_retries=settings.maximum_retries,
-            export_glb_path=settings.export_glb_path,
-            session_log_path=settings.session_log_path,
+    if maximum_rounds < 1:
+        raise ValueError(
+            f"maximum_rounds must be at least 1, got {maximum_rounds}: "
+            f"a task that never runs has no result to return"
         )
+    settings = settings or HarnessSettings(budget=task.budget)
+    if settings.budget != task.budget:
+        settings = replace(settings, budget=task.budget)
 
     sources: list[str] = []
     feedback_given: list[str] = []
@@ -217,7 +221,7 @@ def run_agent_task(
             # Structural failures mean the agent needs the capability
             # list, not just the diagnosis.
             structural = (
-                result.stage_reached == "gate"
+                result.stage_reached == STAGE_GATE
                 and result.report is not None
                 and (
                     result.report.connected_component_count > 1

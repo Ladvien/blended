@@ -106,6 +106,18 @@ def main(argv) -> int:
 
     brief = get_brief(arguments.brief)
     revision = get_revision(arguments.revision)
+    # A second record for the same (iteration, brief) would be read as
+    # the same run by every consumer keyed on that pair, and its render
+    # directory would overwrite the first run's. `make converge` defaults
+    # ITERATION to 1, which the pinned log already holds.
+    if any(
+        existing.iteration == arguments.iteration and existing.brief_name == brief.name
+        for existing in IterationLog(Path(arguments.log)).records()
+    ):
+        raise SystemExit(
+            f"iteration {arguments.iteration} {brief.name} is already in "
+            f"{arguments.log}: pass an unused --iteration (ITERATION=N)"
+        )
     render_directory = Path(arguments.renders) / (
         f"iteration{arguments.iteration:02d}_{brief.name}_v{revision.revision}"
     )

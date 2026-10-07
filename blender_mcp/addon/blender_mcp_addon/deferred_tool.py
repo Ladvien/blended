@@ -150,7 +150,7 @@ def poll() -> bool:
         # Call the checker.
         try:
             result = dc.check_fn()
-        except Exception:  # pylint: disable=broad-exception-caught
+        except (Exception, SystemExit):  # pylint: disable=broad-exception-caught
             _send_and_close(dc, {
                 "status": "error",
                 "message": traceback.format_exc(),

@@ -272,8 +272,6 @@ def _finish_raw(assistant: dict, record: dict, script_path: Path) -> int:
     record["script_chars"] = len(source)
     if not ok:
         record["parse_result"] = PARSE_SYNTAX_ERROR
-        record["finish_reason"] = record["finish_reason"] or ""
-        record["raw_output"] = reply
         print(f"[SYNTAX_ERROR] {detail}", flush=True)
         return 0
     # No prelude and no epilogue: a raw script must stand alone.
@@ -397,6 +395,10 @@ def _finish_ops(
         prelude(str(venv_site_packages()), str(REPOSITORY_ROOT / "src")),
         canonical_orientation_epilogue(),
     )
+    # `op_call_count` counts every facade op the script replays, READER ops
+    # included, and `n_hatch` above counts chunks DISPATCHED, collected or
+    # not. Neither is "what the score saw": Phase B counts that off the
+    # baked script's labels (`finetune_phase_a.baked_call_counts`).
     record["n_ops"] = script.op_call_count
     record["script_chars"] = len(script.text)
     if script.included_count:

@@ -6,15 +6,19 @@ A lightweight MCP (Model Context Protocol) server for Blender.
 Allows LLM assistants to interact with a running Blender instance – inspecting scenes, executing Python code, rendering, and navigating the interface.
 
 ## Features
-It supports running arbitrary Python code within Blender. This allows for advanced scene analysis and debugging. It also contains the complete API and user manual as resources, helping the LLM to access the latest version of both documentations.
+It supports running arbitrary Python code within Blender. This allows for advanced scene analysis and debugging. It also bundles the complete API and user manual, served through the `get_python_api_docs`, `search_api_docs` and `search_manual_docs` tools, helping the LLM to access the latest version of both documentations.
 
 ## Installation
 
-The MCP Server can be installed via: `pip install git+https://projects.blender.org/lab/blender_mcp.git#subdirectory=mcp`. It requires an add-on in Blender for this to work.
+In this repository the server is a workspace member of the root `pyproject.toml`, installed editable into `.venv` (entry point `blender-mcp`); this fork also serves blended's own tool surface, which the upstream package lacks. It requires an add-on in Blender for this to work.
 
 ### Add-on
-* Install the Blender Lab [Extensions repository](https://docs.blender.org/manual/en/latest/editors/preferences/extensions.html#repositories): `https://lab.blender.org/`
-* Find the MCP add-on, install and enable it.
+* Run `make install-mcp-addon` from the repository root: it symlinks `blender_mcp/addon/blender_mcp_addon` into Blender, enables it and allows online access (its socket needs it).
+* The add-on listens on `localhost:9876` (override with `BLENDER_MCP_HOST` / `BLENDER_MCP_PORT` on the server).
+
+### Server options
+* `--transport stdio|http` (default `stdio`); `--host` / `--port` apply to `http` only.
+* `--exit-on-source-change` / `--no-exit-on-source-change` (default: off): exit once `src/blended` or `blmcp` changed and held still, so a client that restarts a server that exits (omp) re-lists fresh tools. Needs `--transport stdio`.
 
 ## Examples
 

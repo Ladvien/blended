@@ -32,20 +32,32 @@ review is a failure you will repeat.
 ```
 src/blended/
   harness.py     run_chunk / run_builder - the one-call loop
+  stages.py      the one stage vocabulary (execute, locate, gate, export, done)
+  task.py        the 3-round agent task loop with agent-shaped failure feedback
+  manifest.py    the capability manifest, generated from live code
+  viewport_follow.py  frames what a scene-changing MCP call touched in the 3D viewport
   version.py     Blender series pin (5.2) + skew assertion
   reset.py       wipe to a canonical empty scene, with the wipe ASSERTED
   drift/         API drift catalog — grows with every instructive traceback
-  ops/           reusable construction vocabulary (bmesh/data API, no bpy.ops)
-  builders/      Parameters + Builder pairs (first prop: the crate)
-  analyze/       the mesh analyzer (the hard gate) + metamorphic relations
-  capture/       front/right/top/three-quarter renders
+  ops/           reusable construction vocabulary: the data API, with bpy.ops only in
+                 uv and rigging, each wrapped once
+  builders/      Parameters + Builder pairs (crate, barrel, pallet)
+  analyze/       the mesh analyzer (the hard gate) + pair checks + metamorphic relations
+  capture/       front/right/top/three-quarter renders, contact sheets, reference photos
   run/           executor, retry loop, JSONL session log
   ingest/        GLB import + bounded cleanup (the generated-mesh lane)
   export/        glTF export with welded round-trip verification
-  evaluate/      briefs, acceptance, mistake memory, reproducibility digest
+  evaluate/      briefs, acceptance, examiner, iteration log, mistake memory,
+                 reproducibility digest, the 3DCodeBench bridge
+  agent/         AgentSession (model lanes, plan gate, caps), TOOL_SCHEMAS and
+                 dispatch_tool, prompts and their revisions
+blender_mcp/     Blender Lab's MCP server (vendored subtree) extended to serve the
+                 tool surface; its add-on and unit tests
+scripts/         entry points: converge, replay, calibrate, pin, 3DCodeBench sweep
 tests/pure/      no Blender required, runs anywhere
 tests/blender/   requires `import bpy` (pip wheel or Blender's Python)
-docs/            roadmap + research
+tests/gui/       the viewport-framing check, run by `make test-viewport-gui`
+docs/            specification, roadmap, plans, research
 ```
 
 ## Chat (Claude Code over MCP)
@@ -64,22 +76,27 @@ claude                         # in this directory; .mcp.json registers
                                # .venv/bin/blender-mcp as server `blended`
 ```
 
+`.mcp.json` and `.omp/mcp.json` name this machine's absolute paths
+(`/Users/ladvien/blended/.venv/bin/blender-mcp` and `BLENDER_PATH`);
+a checkout elsewhere must edit both files before the server starts.
+
 The add-on executes any code sent to localhost:9876.
 
 **What the agent is told.** Claude Code delivers only the first 2,048
-characters of an MCP server's instructions (measured: blended sends about
-23,000). So the instructions open with a must-read head
-(`MCP_INSTRUCTIONS_HEAD`) that condenses working-agreement revision 10;
-the full text follows it. A test fails when the active revision moves,
-so the head gets reviewed along with it.
+characters of an MCP server's instructions (measured 2026-10-07: blended
+sends 24,721). So the instructions open with a must-read head
+(`MCP_INSTRUCTIONS_HEAD`, 1,823 characters) that condenses
+working-agreement revision 10; the full text follows it. A test fails
+when the active revision moves, so the head gets reviewed along with it.
 
 **The user's view.** After every scene-changing blended call, the server
 frames the objects that call touched in every 3D viewport. Their result
 ends with a `viewport:` line saying what was framed, or why nothing was:
 background Blender, no 3D viewport, or nothing in the scene yet. An
 object made by `add_box` is framed once `link_into_scene` puts it in the
-scene. Framing moves only the view's pivot and distance. Selection, the
-active object, the mode and the view rotation stay as they were.
+scene. Framing moves the view's pivot and distance; a viewport in camera
+view is switched to perspective first. Selection, the active object, the
+mode and the view rotation stay as they were.
 `make test-viewport-gui` checks the result against Blender's own
 projection in a GUI Blender; a window opens for a few seconds.
 
@@ -138,7 +155,16 @@ the wheel's (Blender 5.2 is cp313; this repo's `.venv` is 3.11, so
 `pip install bpy` there cannot produce 5.2), and a bare run with no
 wheel collects nothing and exits 5 — which is not a pass.
 
+The remaining targets (`converge`, `converge-local`, `converge-auto`, `replay`,
+`calibrate-eye`, `calibrate-visual-gate`, `pin-golden-views`, `pin`,
+`mine-ops`, `bench-3dcode`, `chat-e2e`, `photo-to-model`, `provider-smoke`)
+are listed with what each proves in
+`docs/2026-09-10-specification-and-requirements.md` §2.4.
+
 ## Read
 
 - `docs/2026-08-21-harness-roadmap.md` — the staged plan and design commitments.
 - `docs/research/2026-08-20-agentic-blender-game-asset-harness-research.md` — the evidence.
+- `docs/2026-09-10-specification-and-requirements.md` — what the system is and must do, with evidence per requirement.
+- `BACKLOG.md` / `BACKLOG_DONE.md` — open and closed work on the agent's tool surface.
+- `docs/2026-10-02-mcp-viewport-head-restart-plan.md` — why the MCP server frames, leads with a head, restarts only on request, and hands off its plan.

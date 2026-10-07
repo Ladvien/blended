@@ -65,7 +65,9 @@ def _replace_assignment(text: str, name: str, value: str) -> str:
     pattern = re.compile(rf"^{name} = .*$", re.MULTILINE)
     if not pattern.search(text):
         raise PinRefused(f"{REGISTRY_PATH} has no `{name} = ...` to rewrite")
-    return pattern.sub(f"{name} = {value}", text, count=1)
+    # A function, not a template: `value` is data, and re.sub would read
+    # a backslash in it as an escape.
+    return pattern.sub(lambda _match: f"{name} = {value}", text, count=1)
 
 
 def _runs_source(runs) -> str:
@@ -74,6 +76,19 @@ def _runs_source(runs) -> str:
         lines.append(f'    ({iteration}, "{brief_name}"),')
     lines.append(")")
     return "\n".join(lines)
+
+
+def _replace_runs(text: str, runs) -> str:
+    rewritten, replaced = re.subn(
+        r"^CONVERGENCE_RUNS = \(\n(?:.*\n)*?\)$",
+        lambda _match: f"CONVERGENCE_RUNS = {_runs_source(runs)}",
+        text,
+        count=1,
+        flags=re.MULTILINE,
+    )
+    if not replaced:
+        raise PinRefused(f"{REGISTRY_PATH} has no `CONVERGENCE_RUNS = (...)` to rewrite")
+    return rewritten
 
 
 def main(argv=None) -> int:
@@ -111,6 +126,14 @@ def main(argv=None) -> int:
             f"must carry what it measured"
         )
 
+    # converge_auto records "" when the runs used more than one model, and
+    # an empty name would pin "the runs happened nowhere".
+    for model_field in ("writer_model", "vision_model"):
+        if not str(proposal[model_field]).strip():
+            raise PinRefused(
+                f"the proposal names no {model_field}: the runs recorded "
+                f"more than one, so there is no single model to pin"
+            )
     runs = [(int(iteration), str(brief)) for iteration, brief in proposal["runs"]]
     text = REGISTRY_PATH.read_text(encoding="utf-8")
     text = _replace_assignment(
@@ -119,13 +142,7 @@ def main(argv=None) -> int:
     text = _replace_assignment(
         text, "CONVERGED_ON", f'"{proposal["proposed_at"][:10]}"'
     )
-    text = re.sub(
-        r"^CONVERGENCE_RUNS = \(\n(?:.*\n)*?\)$",
-        f"CONVERGENCE_RUNS = {_runs_source(runs)}",
-        text,
-        count=1,
-        flags=re.MULTILINE,
-    )
+    text = _replace_runs(text, runs)
     text = _replace_assignment(
         text, "CONVERGENCE_WRITER_MODEL", f'"{proposal["writer_model"]}"'
     )

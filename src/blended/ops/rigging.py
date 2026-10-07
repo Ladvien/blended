@@ -64,24 +64,6 @@ class RigReport:
     disabled_modifier_mesh_names: tuple[str, ...] = ()
 
 
-def _remove_armature_and_data(name: str) -> None:
-    """Remove an existing armature object and its orphaned armature data.
-
-    The idempotency primitive for armatures: constructors call this first
-    so a rerun replaces the stale rig instead of creating a `.001`
-    sibling.  Only removes the armature *data* when no other object
-    references it (users == 0), matching the mesh-removal convention.
-    """
-    import bpy
-
-    existing = bpy.data.objects.get(name)
-    if existing is not None:
-        armature_data = existing.data
-        bpy.data.objects.remove(existing)
-        if armature_data is not None and armature_data.users == 0:
-            bpy.data.armatures.remove(armature_data)
-
-
 def add_armature(
     name: str,
     bones: tuple[BoneSpec, ...],
@@ -97,10 +79,12 @@ def add_armature(
 
     Raises:
         ValueError: on empty bones, duplicate bone names, unknown parent
-            references, or zero-length bones (below
-            ``MINIMUM_BONE_LENGTH_M``).
+            references, a parent listed after its child, or zero-length
+            bones (below ``MINIMUM_BONE_LENGTH_M``).
     """
     import bpy
+
+    from blended.ops.primitives import remove_object_and_mesh
 
     if not bones:
         raise ValueError("add_armature requires at least one bone")
@@ -109,12 +93,23 @@ def add_armature(
     if len(set(bone_names)) != len(bone_names):
         raise ValueError(f"Duplicate bone names in add_armature({name!r}): {bone_names}")
 
+    # Parents are resolved in order during edit-bone construction, so a
+    # parent must be listed BEFORE its child (BoneSpec contract). Checked
+    # here: found mid-build it would be a KeyError inside EDIT mode.
+    bones_listed_so_far: set[str] = set()
     for spec in bones:
-        if spec.parent_name and spec.parent_name not in bone_names:
-            raise ValueError(
-                f"Bone {spec.name!r} references unknown parent "
-                f"{spec.parent_name!r}"
-            )
+        if spec.parent_name:
+            if spec.parent_name not in bone_names:
+                raise ValueError(
+                    f"Bone {spec.name!r} references unknown parent "
+                    f"{spec.parent_name!r}"
+                )
+            if spec.parent_name not in bones_listed_so_far:
+                raise ValueError(
+                    f"Bone {spec.name!r} lists parent {spec.parent_name!r} "
+                    f"at or after itself; parents must come first"
+                )
+        bones_listed_so_far.add(spec.name)
 
     for spec in bones:
         dx = spec.tail_m[0] - spec.head_m[0]
@@ -127,7 +122,7 @@ def add_armature(
                 f"{MINIMUM_BONE_LENGTH_M:.2e} m)"
             )
 
-    _remove_armature_and_data(name)
+    remove_object_and_mesh(name)
 
     armature_data = bpy.data.armatures.new(name)
     armature_object = bpy.data.objects.new(name, armature_data)
@@ -145,18 +140,19 @@ def add_armature(
         selected_objects=[armature_object],
     ):
         bpy.ops.object.mode_set(mode="EDIT")
-
-        created: dict[str, object] = {}
-        for spec in bones:
-            edit_bone = armature_data.edit_bones.new(spec.name)
-            edit_bone.head = spec.head_m
-            edit_bone.tail = spec.tail_m
-            if spec.parent_name:
-                edit_bone.parent = created[spec.parent_name]
-                edit_bone.use_connect = spec.connected
-            created[spec.name] = edit_bone
-
-        bpy.ops.object.mode_set(mode="OBJECT")
+        try:
+            created: dict[str, object] = {}
+            for spec in bones:
+                edit_bone = armature_data.edit_bones.new(spec.name)
+                edit_bone.head = spec.head_m
+                edit_bone.tail = spec.tail_m
+                if spec.parent_name:
+                    edit_bone.parent = created[spec.parent_name]
+                    edit_bone.use_connect = spec.connected
+                created[spec.name] = edit_bone
+        finally:
+            # A failure mid-build must not strand the file in EDIT mode.
+            bpy.ops.object.mode_set(mode="OBJECT")
 
     armature_object.select_set(False)
     return armature_object.name
@@ -196,6 +192,13 @@ def bind_mesh_to_armature(
             mesh_object.modifiers.remove(mod)
 
     mesh_object.parent = armature_object
+    # Setting `.parent` leaves the parent-inverse as it was (identity on a
+    # fresh mesh), so a mesh bound to an armature that is not at the world
+    # origin would jump by the armature's transform (measured: armature at
+    # z=1, automatic_weights=False, box moved from z 0..1 to z 1..2). The
+    # inverse of the armature's world matrix keeps the mesh where it is.
+    bpy.context.view_layer.update()
+    mesh_object.matrix_parent_inverse = armature_object.matrix_world.inverted()
 
     if automatic_weights:
         # parent_set with ARMATURE_AUTO generates vertex groups + heat
@@ -227,7 +230,7 @@ def bind_mesh_to_armature(
         mod = mesh_object.modifiers.new(name="Armature", type=ARMATURE_MODIFIER_TYPE)
         mod.object = armature_object
 
-    return mesh_name
+    return ObjectName(mesh_name)
 
 
 @op(reads_only=True)

@@ -28,6 +28,9 @@ _REQUEST_TIMEOUT = int(30 * _TIMEOUT_SCALE)
 # Maximum time to wait for a local process to respond or exit (seconds).
 _TIMEOUT_LOCAL_PROC = int(5 * _TIMEOUT_SCALE)
 
+# Bytes read from the server's stdout per `os.read` call.
+_READ_CHUNK_BYTES = 65536
+
 
 class MCPClient:
     """
@@ -46,6 +49,40 @@ class MCPClient:
             env=env,
         )
         self._next_id = 1
+        # Bytes read from stdout, not yet split into lines. `select` cannot see
+        # data already pulled into a `BufferedReader`, so the pipe is read with
+        # `os.read` and split here: two JSON lines arriving in one chunk would
+        # otherwise leave the second unseen until the timeout.
+        self._stdout_buffer = bytearray()
+
+    def _read_line(self, deadline: float, method: str) -> bytes:
+        """
+        Return the next complete stdout line, without its newline.
+
+        Raises ``RuntimeError`` once *deadline* passes or the server closes stdout.
+        """
+        assert self._proc.stdout is not None
+        fd = self._proc.stdout.fileno()
+        while True:
+            newline_index = self._stdout_buffer.find(b"\n")
+            if newline_index >= 0:
+                line = bytes(self._stdout_buffer[:newline_index])
+                del self._stdout_buffer[:newline_index + 1]
+                return line
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise RuntimeError(
+                    "Timeout ({:d}s) waiting for response to {:s}".format(_REQUEST_TIMEOUT, method)
+                )
+            ready, _, _ = select.select([fd], [], [], remaining)
+            if not ready:
+                raise RuntimeError(
+                    "Timeout ({:d}s) waiting for response to {:s}".format(_REQUEST_TIMEOUT, method)
+                )
+            chunk = os.read(fd, _READ_CHUNK_BYTES)
+            if not chunk:
+                raise RuntimeError("MCP server closed stdout unexpectedly")
+            self._stdout_buffer.extend(chunk)
 
     def _send_request(self, method: str, params: dict[str, object] | None = None) -> dict[str, Any]:
         """
@@ -72,20 +109,7 @@ class MCPClient:
         # Read lines until a response with matching id arrives.
         deadline = time.monotonic() + _REQUEST_TIMEOUT
         while True:
-            remaining = deadline - time.monotonic()
-            if remaining <= 0:
-                raise RuntimeError(
-                    "Timeout ({:d}s) waiting for response to {:s}".format(_REQUEST_TIMEOUT, method)
-                )
-            ready, _, _ = select.select([self._proc.stdout], [], [], remaining)
-            if not ready:
-                raise RuntimeError(
-                    "Timeout ({:d}s) waiting for response to {:s}".format(_REQUEST_TIMEOUT, method)
-                )
-            line = self._proc.stdout.readline()
-            if not line:
-                raise RuntimeError("MCP server closed stdout unexpectedly")
-            line = line.strip()
+            line = self._read_line(deadline, method).strip()
             if not line:
                 continue
             try:

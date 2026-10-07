@@ -101,7 +101,7 @@ Verification:
 
 - On a watcher exit, under the in-flight lock just before `os._exit`, the
   server writes `logs/mcp-handoff-<parent pid>.json` containing
-  `plan_declared`, `session_name` and `written_at`.
+  `plan_declared`, `session_name` and `written_at_s`.
 - On start, `BlendedSession` consumes the handoff for `os.getppid()` only
   when it is younger than `HANDOFF_MAX_AGE_S`. It restores the plan,
   continues the same session's `jsonl` and output directory, and records

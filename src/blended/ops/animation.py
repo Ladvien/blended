@@ -195,8 +195,12 @@ def _action_fcurves(obj):
         return []
     action = ad.action
     slot = ad.action_slot
-    # keyframe_insert always creates exactly one layer and one strip,
-    # so index [0] is safe after any keyframe has been inserted.
+    # An action assigned without any keyframe (or with no slot bound) has
+    # no layer/strip/channelbag: that is zero fcurves, not an IndexError.
+    # keyframe_insert creates one layer and one strip, so [0] is the
+    # whole structure once anything has been keyed.
+    if slot is None or not action.layers or not action.layers[0].strips:
+        return []
     channelbag = action.layers[0].strips[0].channelbag(slot)
     if channelbag is None:
         return []

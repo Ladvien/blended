@@ -248,7 +248,7 @@ that caught the invisible crate lid instead of discarding it.
 ## Phase C — batch the views: 10 calls -> 2 per brief
 
 **Files.** `src/blended/evaluate/examiner.py`,
-`src/blended/prompts/examiner.md.j2`, `tests/pure/test_examiner.py`.
+`src/blended/agent/prompts/examiner.md.j2`, `tests/pure/test_examiner.py`.
 
 **Change.** `examine_asset` sends all five views in ONE call per
 ordering, with the reference paired to each candidate view and the

@@ -10,6 +10,7 @@ boundary, the same interception point the vision-transport tests use.
 
 import io
 import urllib.error
+from dataclasses import replace
 
 import pytest
 
@@ -21,6 +22,17 @@ from blended.agent.loop import (
 )
 
 TOOL_CALL_ID = "call_abc123"
+
+
+@pytest.fixture(autouse=True)
+def isolated_lane_environment(monkeypatch):
+    """Config construction reads ~/.blended/bmb_api_key for bmb models,
+    and OLLAMA_HOST overrides every model's implied server. These tests
+    must pass on a machine with either set and never touch the real key.
+    Tests that care set them again."""
+    monkeypatch.setattr("blended.agent.loop._read_bmb_api_key", lambda: "a" * 64)
+    monkeypatch.delenv("OLLAMA_HOST", raising=False)
+    monkeypatch.delenv("OLLAMA_API_KEY", raising=False)
 
 
 @pytest.fixture
@@ -308,31 +320,21 @@ def test_the_bmb_key_file_feeds_bmb_models_only(monkeypatch):
     """A bmb model with no api_key reads the key file. Non-bmb models
     must NEVER read it (the Ollama env key is the wrong credential for
     llama-swap and vice versa)."""
-    from blended.agent.loop import _read_bmb_api_key
-
-    captured: list[dict] = []
-
-    def capture(self, path, payload, timeout_seconds):
-        captured.append({"path": path, "headers": self.config.api_key})
-        return {"message": {"role": "assistant", "content": "ok"}}
-
+    fake_bmb_key = "c" * 64
     monkeypatch.delenv("OLLAMA_API_KEY", raising=False)
-    monkeypatch.setattr(
-        "blended.agent.loop._read_bmb_api_key",
-        lambda: "a4d18f185e689d64351b51f508255abea08c66f7227cda22912dffc7783d5b47",
-    )
-    monkeypatch.setattr(OllamaClient, "_request", capture)
+    monkeypatch.setattr("blended.agent.loop._read_bmb_api_key", lambda: fake_bmb_key)
 
     bmb_config = ModelConfig.from_environment(model="qwen3.8-27b", api_key="")
-    assert bmb_config.api_key == _read_bmb_api_key()
+    assert bmb_config.api_key == fake_bmb_key
 
+    # The patched file would put its key here if this lane read it.
     ollama_config = ModelConfig.from_environment(
         model="deepseek-v4-pro:cloud", api_key=""
     )
     assert ollama_config.api_key == ""
 
 
-def test_the_eye_rides_the_daemon_when_the_writer_rides_bmb():
+def test_the_eye_rides_the_daemon_when_the_writer_rides_bmb(monkeypatch):
     """A cloud eye does not live on bmb: when the writer is on bmb and
     the eye is a non-bmb model, the eye's config must point at the
     Ollama daemon. (The qwen3.8 eye, by contrast, rides bmb — see
@@ -349,12 +351,24 @@ def test_the_eye_rides_the_daemon_when_the_writer_rides_bmb():
     eye = writer.eye_config()
     assert eye.endpoint == "http://localhost:11434"
     assert eye.model == "kimi-k2.7-code:cloud"
-    # The vision describer follows the same rule.
-    from blended.agent.loop import VisionDescriber
+    # The vision describer follows the same rule: its call lands on the
+    # daemon, not on the writer's bmb endpoint.
+    from blended.agent import loop as live_loop
 
-    client = OllamaClient(writer)
-    describer = VisionDescriber(client, writer.vision_model)
-    assert describer.client.config.uses_openai_protocol
+    captured: list[tuple[str, str]] = []
+
+    def capture(self, path, payload, timeout_seconds):
+        captured.append((self.config.endpoint, self.config.model))
+        return {"message": {"role": "assistant", "content": "a render"}}
+
+    monkeypatch.setattr(live_loop.OllamaClient, "_request", capture)
+    # The Ollama wire needs a window, which preflight discovers in real runs.
+    sighted_writer = replace(writer, eye_context_length=8_192)
+    describer = live_loop.VisionDescriber(
+        live_loop.OllamaClient(sighted_writer), writer.vision_model
+    )
+    assert describer.describe([]) == "a render"
+    assert captured == [("http://localhost:11434", "kimi-k2.7-code:cloud")]
 
 
 def test_reasoning_content_maps_to_thinking(monkeypatch):
@@ -378,7 +392,7 @@ def test_reasoning_content_maps_to_thinking(monkeypatch):
     assert reply["thinking"] == "think step by step"
 
 
-def test_the_qwen3_8_eye_rides_the_bmb_lane():
+def test_the_qwen3_8_eye_rides_the_bmb_lane(monkeypatch):
     """Picking the bmb model as the eye routes it to bmb's OpenAI lane —
     the same server that serves the writer — so one local model covers
     text and vision. This is the replacement for the qwen3.5:27b local
@@ -390,12 +404,24 @@ def test_the_qwen3_8_eye_rides_the_bmb_lane():
     assert eye.endpoint == BMB_ENDPOINT
     assert eye.model == "qwen3.8-27b"
     assert eye.uses_openai_protocol
-    # The describer routes the same way.
-    from blended.agent.loop import VisionDescriber
+    # The describer routes the same way: a cloud writer's describer call
+    # leaves the daemon for bmb.
+    from blended.agent import loop as live_loop
 
-    client = OllamaClient(writer)
-    describer = VisionDescriber(client, "qwen3.8-27b")
-    assert describer.client.config.endpoint == BMB_ENDPOINT
+    captured: list[str] = []
+
+    def capture(self, path, payload, timeout_seconds):
+        captured.append(self.config.endpoint)
+        return {"choices": [{"message": {"role": "assistant", "content": "a crate"}}]}
+
+    monkeypatch.setattr(live_loop.OllamaClient, "_request", capture)
+    cloud_writer = ModelConfig.from_environment(
+        model="deepseek-v4-pro:cloud", vision_model="qwen3.8-27b", context_length=8_192
+    )
+    assert cloud_writer.endpoint != BMB_ENDPOINT
+    describer = live_loop.VisionDescriber(OllamaClient(cloud_writer), "qwen3.8-27b")
+    assert describer.describe([]) == "a crate"
+    assert captured == [BMB_ENDPOINT]
 
 
 def test_the_401_hint_names_the_bmb_key_for_openai_lanes(monkeypatch):

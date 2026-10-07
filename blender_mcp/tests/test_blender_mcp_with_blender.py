@@ -136,7 +136,7 @@ def _run_blender(args: list[str], env: dict[str, str]) -> None:
     """
     Run a Blender command and raise on failure, including stderr in the message.
     """
-    result = subprocess.run(args, capture_output=True, env=env)
+    result = subprocess.run(args, capture_output=True, env=env, check=False)
     if result.returncode != 0:
         raise RuntimeError(
             "Command failed (exit {:d}):\n  {:s}\n{:s}".format(
@@ -164,6 +164,7 @@ def _assert_blender_config_isolated(blender_bin: str, env: dict[str, str], tmpdi
         ],
         capture_output=True,
         env=env,
+        check=False,
     )
     lines = result.stdout.decode("utf-8", errors="replace").splitlines()
     config_dirs = [line[len(_CONFIG_MARKER):] for line in lines if line.startswith(_CONFIG_MARKER)]
@@ -915,7 +916,7 @@ class _TestServerMixin:
             import time
             deadline = time.monotonic() + 0.3
 
-            def check_is_finished():  # noqa: F841 (read by the exec namespace)
+            def check_is_finished():
                 if time.monotonic() < deadline:
                     return None
                 return {'deferred': True, 'value': 42}
@@ -930,7 +931,7 @@ class _TestServerMixin:
             return
 
         def deferred_code() -> None:
-            def check_is_finished():  # noqa: F841 (read by the exec namespace)
+            def check_is_finished():
                 return {'deferred': True, 'value': 42}
             result = {}  # noqa: F841
         data = self._execute_code(_python_fn_body_as_string(deferred_code))
@@ -999,7 +1000,7 @@ class _TestServerMixin:
             return
 
         def deferred_error_code() -> None:
-            def check_is_finished():  # noqa: F841
+            def check_is_finished():
                 raise RuntimeError('checker failed')
             result = {}  # noqa: F841
         data = self._execute_code(_python_fn_body_as_string(deferred_error_code))
@@ -1224,6 +1225,7 @@ def test_blender_version() -> bool:
     result = subprocess.run(
         [blender_bin, "--version"],
         capture_output=True,
+        check=False,
     )
     output = result.stdout.decode("utf-8", errors="replace")
     match = re.search(r"Blender\s+(\d+)\.(\d+)", output)

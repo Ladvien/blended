@@ -34,7 +34,7 @@ def main() -> None:
         # Executing agent-authored source is the whole point of the executor.
         with contextlib.redirect_stdout(stdout_buffer):
             exec(compiled, {"__name__": "__main__"})  # noqa: S102
-    except Exception as error:  # noqa: BLE001
+    except (Exception, SystemExit) as error:  # noqa: BLE001
         result.update(
             ok=False,
             error_type=type(error).__name__,

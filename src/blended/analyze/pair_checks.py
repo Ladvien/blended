@@ -18,8 +18,11 @@ every penetrating face pair touches the other solid along a
 zero-depth line. So the measurement is the object-level penetration —
 the minimum translation depth between the two evaluated meshes' world
 AABBs — and a pair count is reported only when that depth exceeds the
-contact tolerance. The count itself is the BVH AABB-overlap pair list,
-the same broad phase `_count_self_intersecting_pairs` uses.
+contact tolerance. The count itself is the
+`BVHTree.overlap` pair list, the same query `_count_self_intersecting_pairs`
+uses; it reports triangle pairs that actually intersect (measured in
+Blender 5.2: disjoint triangles whose bounding boxes overlap are NOT
+reported, and exactly-coplanar triangles are never reported).
 
 MAIN THREAD ONLY: everything below touches bpy/mathutils.
 """
@@ -136,9 +139,10 @@ def _sampled_minimum_distance_m(
 def analyze_pair(first_object, second_object) -> PairReport:
     """Measure one object against another.
 
-    ``intersecting_face_pair_count``: the BVH broad-phase face pairs of
-    the two evaluated meshes' world-space triangles, but only when the
-    object-level penetration depth exceeds
+    ``intersecting_face_pair_count``: the `BVHTree.overlap` triangle pairs
+    of the two evaluated meshes' world-space triangles (pairs that
+    actually intersect, not merely pairs with overlapping bounding boxes),
+    but only when the object-level penetration depth exceeds
     ``CONTACT_DEPTH_TOLERANCE_M``. Resting contact (a lidar on its
     crate, sink within 2 mm) reads zero.
 
@@ -206,9 +210,9 @@ def analyze_pair(first_object, second_object) -> PairReport:
 
         intersecting_pair_count = 0
         if penetration_m > CONTACT_DEPTH_TOLERANCE_M:
-            # The solids really overlap: count the face pairs whose
-            # bounding volumes overlap — the same broad phase the
-            # self-intersection checker uses.
+            # The solids really overlap: count the triangle pairs that
+            # intersect — the same query the self-intersection checker
+            # uses.
             first_vertex_coordinates = [
                 tuple(first_to_world @ vertex.co) for vertex in first_mesh.vertices
             ]

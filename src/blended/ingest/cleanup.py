@@ -125,9 +125,15 @@ def cleanup_mesh(
             bmesh.ops.delete(working_mesh, geom=loose_vertices, context="VERTS")
             actions.append(f"deleted {len(loose_vertices)} loose vertices")
 
-        # Copy the mesh BEFORE the fill pass, so a fill that costs more
-        # than it buys can be undone to exactly this state.
-        original_mesh = blender_object.data.copy()
+        # Snapshot the mesh as it stands AFTER weld/dissolve/loose-vertex
+        # deletion and BEFORE the fill pass, so a fill that costs more
+        # than it buys can be undone to exactly this state. (Copying
+        # blender_object.data here would snapshot the untouched
+        # original — the bmesh edits above are not written back yet —
+        # and a revert would silently undo the weld and loose-vertex
+        # deletion the actions log claims.)
+        pre_fill_mesh = blender_object.data.copy()
+        working_mesh.to_mesh(pre_fill_mesh)
 
         for hole_edges, perimeter_m in _boundary_hole_groups(working_mesh):
             if perimeter_m <= settings.maximum_hole_perimeter_m:
@@ -161,15 +167,26 @@ def cleanup_mesh(
         or filled_report.inverted_facet_count > before_report.inverted_facet_count
     ):
         edited_mesh = blender_object.data
-        blender_object.data = original_mesh
+        blender_object.data = pre_fill_mesh
         bpy.data.meshes.remove(edited_mesh)
+        # The reverted mesh is the pre-fill state; the normals pass the
+        # actions log reports still has to hold for it.
+        reverted_mesh = bmesh.new()
+        try:
+            reverted_mesh.from_mesh(pre_fill_mesh)
+            bmesh.ops.recalc_face_normals(
+                reverted_mesh, faces=list(reverted_mesh.faces)
+            )
+            reverted_mesh.to_mesh(pre_fill_mesh)
+        finally:
+            reverted_mesh.free()
         reverted_hole_fills = 1
         actions.append(
             "REVERTED hole fill(s): filling created non-manifold edges or "
             "inverted facets, so the holes stay open"
         )
     else:
-        bpy.data.meshes.remove(original_mesh)
+        bpy.data.meshes.remove(pre_fill_mesh)
 
     if settings.decimate_to_budget:
         for _ in range(MAXIMUM_DECIMATE_PASSES):

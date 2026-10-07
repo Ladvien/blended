@@ -1,130 +1,152 @@
-# ISSUES.md — code review of the fine-tune-decision + local-llama-server changes
+# ISSUES.md — open findings from the full-repo review of 2026-10-07
 
-**Date:** 2026-09-19
-**Reviewers:** `CharmingPelican` (reviewer, local llama-server lane + transport test) · `VariedPigeon` (reviewer, bench scripts + markdown)
-**Object:** the change described in the request, judged against the **working tree** (the change request's diff for the local lane is an *earlier* form — see F-I0, the disk code is canonical).
-**Overall:** no critical findings. **3 major, 3 minor, 4 info.**
-- CharmingPelican verdict: **minor** (3 major, 2 minor, 1 info)
-- VariedPigeon verdict: **pass** (2 minor, 3 info)
+Branch `review/full-repo-2026-10-07`. Every slice of the repo was read by a
+reviewer (19 slices: `src/blended`, `tests/`, `scripts/`, the vendored
+`blender_mcp/` subtree, docs). Defects with a fix that needed no sign-off were
+fixed in the same branch, each with a regression test and a record in
+`src/blended/evaluate/mistake_memory.py`. This file lists only what is
+**still open**: things that need a decision, a rotation, a re-pin, or a
+measurement. It replaces the 2026-09-19 review: its M2, M3, Mi1, Mi2, Mi3, I1
+and I2 are fixed in this branch, M1 went with the deleted streamed transport,
+and Mi4 (a split report bullet) and I3 (an optional design row) were
+cosmetic and are not carried over.
 
-The three **major** findings are all in `src/blended/agent/loop.py` and are worth fixing before merge.
+Baseline before the review: pure 713 passed / 2 skipped / 1 xfailed; Blender
+247 passed / 1 skipped; `mypy src` 54 errors. After: see the commit message.
 
-## Verified facts (no action needed)
-Independently confirmed by both reviewers (and by direct string checks):
+## Needs the owner (outside the repo)
 
-1. **`OPS_TASK_TEMPLATE` is byte-identical to the `TASK_TEMPLATE` this patch deleted** from `scripts/run_3dcode_instance.py` — both **1,100 chars**. The production multi-turn runner's prompt is unchanged; `SINGLE_SHOT_RULE` reaches only `SINGLE_SHOT_OPS_TASK_TEMPLATE` (`bench_task_prompt.py:85-87`), never the runner (formats `OPS_TASK_TEMPLATE` at `run_3dcode_instance.py:233`). The "archive stays comparable to itself" claim is **true**.
-2. **`RAW_TASK_TEMPLATE == OPS_TASK_TEMPLATE` with exactly `CHUNK_RULE` removed** (`bench_task_prompt.py:81-82`, string-equality verified).
-3. **`canonical_orientation_epilogue()` move is clean:** the 28-line block in `bench_bridge.py:118-145` is identical to the block removed from the runner; `bench_bridge.py` adds no import for it; the runner imports it and the call site is intact (`run_3dcode_instance.py:275-277`); `scripts/run_finetune_arm.py:295-299` consumes the same definition — no duplicate.
-4. **`diagnose_3dcode.py` divide-by-zero is genuinely fixed** by a short-circuiting conditional; no code parses the printed line.
-5. **`shape_error_decompose.py --json`** emits a valid JSON object with the keys the consumers read; `rows` and `checked` both in scope.
-6. **Routing wiring verified by running the config:** both local ids → `http://127.0.0.1:8091`, `uses_openai_protocol=True`, `constrains_tool_calls=True`, `api_key=""`; `qwen3.8-27b` (bmb) and `qwen3-vl` (big) → `constrains_tool_calls=False`. Envelope confined to the one lane.
-7. **Seed on both wires** — the single test `test_a_pinned_seed_reaches_both_wires_and_an_unset_one_is_not_sent` (`test_openai_transport.py:243-272`) asserts seed on both wires and **absence** (not falsiness) on both; seed 0 passes through; the new test passes (21 passed, 0 failures).
-8. **Empty-content risk is loud, not silent:** `ReplyTruncated` on `finish_reason length` before decode; schema-valid empty envelope → `EmptyReply`. The 7B empty-content/length failure is caught.
+### S1 — A live API key is in a public repository's history
+`tests/pure/test_openai_transport.py` carried the real bmb llama-swap key (64
+hex) since commit `1c65544` ("Working"). The repository is PUBLIC
+(`gh repo view`: `visibility PUBLIC`). The working tree no longer has it, but
+the key is still in history and must be treated as exposed.
+**Action:** add a new key to `apiKeys:` in bmb's `~/llm/llama-swap.yaml`,
+re-mint `~/.blended/bmb_api_key`, delete the old entry. A history rewrite is a
+separate, destructive decision and was not done. The key's host is a LAN
+address (`192.168.1.233`), which limits who can use it; it does not make it
+safe to leave. A scan of all history for provider-format tokens (GitHub, AWS,
+Anthropic, `sk-`, Ollama `hex.alnum`) found nothing else.
 
-## MAJOR
+## Security decisions
 
-### M1 — Streamed path never decodes the constrained envelope
-`src/blended/agent/loop.py:1737` (CharmingPelican)
+### S2 — MCP HTTP transport has no DNS-rebinding protection, CORS `*`, no auth
+`blender_mcp/mcp/blmcp/__init__.py:73-130`. With `run_python` this is code
+execution in Blender for any page that can reach the port; `--host 0.0.0.0`
+exposes it to the LAN. Upstream behaviour, opt-in (stdio is the default and is
+what `.mcp.json` uses). Needs a design decision, not a patch.
 
-`_chat_payload` attaches `response_format` for any constrained lane with tools (`loop.py:1434-1452`), and `chat()` sets `payload["stream"]=True` afterwards (`loop.py:1687-1690`), so a **streamed** call on this lane still carries the envelope schema. The streamed consumer has no matching branch: `_chat_streamed` → `_assemble_openai_stream` (`loop.py:1120-1137`) only folds `delta.content`, `delta.reasoning` and wire `delta.tool_calls` and **never reaches `assistant_message_from_envelope`**.
+### S3 — The add-on's `host` is not validated
+`blender_mcp/addon/blender_mcp_addon/mcp_to_blender_server.py` binds
+`("localhost", 9876)` by default (loopback only; browser cross-site requests
+fail at `json.loads`). The `host` preference and `--host` accept any string, so
+`0.0.0.0` would expose unauthenticated remote code execution. A guard in
+`start` that refuses a non-loopback host would close it; upstream may rely on
+the flag for containers.
 
-**Effect:** the envelope JSON is returned verbatim as `content` with `tool_calls==[]` — every tool call is silently dropped and the raw JSON is appended as the assistant's answer. Only the one-shot branch passes `constrained=self.config.constrains_tool_calls` (`loop.py:1715-1717`). Trigger: `AgentSession(stream_replies=True)` (`loop.py:2174-2180`), set unconditionally by the addon (`blender_addon/__init__.py:746`). Latent today only because the two ids are absent from the addon writer enum (`blender_addon/__init__.py:2053-2124`) and `run_finetune_arm.py:231` calls `chat()` without `on_delta` — but `chat()` is a public entry point whose two paths now **disagree for the same config**.
+## Pinned text and gates (a fix moves a fingerprint or a golden)
 
-**Fix:** have `_chat_streamed` run the same envelope decode over the assembled message when `self.config.constrains_tool_calls` and no wire tool calls arrived.
+### P1 — The drift catalog's `Action.fcurves` text is wrong, and it is in the prompt
+`src/blended/drift/catalog.py:35-40` says reading `action.fcurves` "returns
+empty and silently does nothing". Measured on Blender 5.2.0: it raises
+`AttributeError: 'Action' object has no attribute 'fcurves'`
+(`src/blended/ops/animation.py:10` already says so). The text feeds the
+assembled prompt, pinned as `a10:c68237772de1`
+(`_evaluate/golden/pinned_assembled_fingerprint.txt`). Replace the sentence
+with "action.fcurves does not exist in 5.x: reading it raises AttributeError
+('Action' object has no attribute 'fcurves'; measured 5.2.0 LTS)" and re-pin.
 
-### M2 — Decoder accepts any JSON object as an envelope (erases non-envelope dicts)
-`src/blended/agent/loop.py:1026` (CharmingPelican)
+### P2 — A wire edge passes the mesh gate
+`src/blended/analyze/mesh_checks.py:621-626`: edges with zero faces count as
+neither boundary nor non-manifold. Measured: a cube with one hanging wire edge
+returns `failures() == []`; only disconnected wire edges are caught, by the
+component count. Counting them changes the gate every golden and bench score
+was measured under.
 
-The constrained decode accepts **any** top-level JSON object: `json.loads` succeeds, the only guard is `isinstance(envelope, dict)` (`loop.py:1026`); `assistant_message_from_envelope` then reads `envelope.get("message") or ""` and `envelope.get("tool_calls") or []` (`claude_code.py:389-403`). A dict that is **not** the harness envelope returns `content=""` and `tool_calls=[]`, **discarding the model's actual text**, and `check_reply_is_a_turn` raises `EmptyReply` ("produced nothing") while the real text is gone from the record.
+### P3 — Splayed legs end 0.35 mm short of the top
+`src/blended/ops/legs.py:177`: `SplayedLegSpec.length_m` adds the drop, but the
+axial drop is `drop / cos(splay)`. Measured for the stool spec: leg axis ends
+at z=0.40965 against `top_z_m` 0.41; the foot circle is exact. The fix is
+`hypot(rise, run) + sole_drop_m / cos(splay_rad)`, which moves golden geometry
+and `test_the_leg_regains_the_length_the_drop_spent`.
 
-This contradicts the function's own docstring (promises a non-parsing reply is left alone — the promise holds for non-JSON and JSON scalars, **not** the dict case). Reachable because `constrained` is derived from the **endpoint**, not the request: `response_format` is only added when tools are present (`loop.py:1434`), yet `chat()` passes `constrained=True` for **every** reply on this lane, including tool-less raw-format arms where no grammar constrains output. The documented checkpoint shape is a bare JSON call object (`loop.py:1441-1448`) — exactly a dict-but-not-envelope.
+### P4 — `import_glb` recentres on the vertex mean, not the bbox centre
+`src/blended/ingest/import_glb.py:76-80`. The result depends on tessellation
+density. `_evaluate/visual_gate_calibration.json` and the golden views were
+measured with the current recentring (`scripts/calibrate_visual_gate.py:13`).
 
-**Fix:** decode only when the parsed dict carries the envelope's two required keys; otherwise fall through to the raw-text path.
+### P5 — `examiner.py` passes `view_name`; the template never renders it
+`src/blended/evaluate/examiner.py:372` vs `prompts/examiner.md.j2` (pinned).
+Harmless (jinja ignores extras); drop the argument or render it.
 
-### M3 — New lane inherits the 300 s cloud ceiling, not the local one
-`src/blended/agent/loop.py:828` (CharmingPelican)
+## Dead code and spec
 
-`request_timeout_seconds` returns `LLAMA_SWAP_REQUEST_TIMEOUT_SECONDS` only for `LLAMA_SWAP_ENDPOINTS` (bmb+big, `loop.py:826-828`); the new endpoint was added to `OPENAI_PROTOCOL_ENDPOINTS` but **not** that predicate, so it falls back to `REQUEST_TIMEOUT_SECONDS=300` (`loop.py:91`). Verified by running the config: `ModelConfig.from_environment(model="blenderllm").request_timeout_seconds` is **300** vs 2000 for `qwen3.8-27b`.
+### D1 — `run_batch`, `run_script_subprocess`, `run/_bootstrap.py` have no callers
+Nothing in `src/`, `scripts/`, `blender_mcp/` or the Makefile calls them; the
+spec's EXE-9/EXE-10 require them. They now have tests
+(`tests/*/test_review_harness_core.py`). One-path rule: delete them and the
+two spec rows, or keep them on purpose.
 
-A non-streamed llama.cpp reply arrives in one blocking read after generation completes; any completion >300 s raises `TimeoutError` at the status line — the exact failure this file already records for the same lane class (`loop.py:96-99`, `247-252`). `TimeoutError` is retryable (`loop.py:253`), so the request is **re-sent ~5× across 1655 s** before the error is raised. Measured cost on the arms this lane was added for: constrained arm — longest returned completion 276.11 s, 11 synthesized timeout rows; raw arm — the only two completions >300 s were **886.0 s** and **1162.73 s**, both exact sums of the retry ladder, with 15 synthesized timeout rows.
+### D2 — `reset_scene` leaves frame range, unit scale and render resolution
+Measured in Blender 5.2 after `reset_scene`: `frame_start/end/current`
+(5/99/42), `unit_settings.scale_length` (0.01) and `render.resolution_x` (321)
+survive. Harm to rebuild digests is PROPOSED (both builds inherit the same
+leak); measure before changing.
 
-**Fix:** key the long ceiling on "a llama.cpp server we run" rather than the two llama-swap hosts, so this endpoint gets it too.
+### D3 — Tests that never run in the matrix
+`tests/pure/test_bench_proportion_headroom.py` calls `importorskip("numpy")`;
+`.venv` has neither numpy nor trimesh, so its four tests are the skipped file in
+`make test-pure`. Run directly under system python they pass. Add numpy and
+trimesh to the dev group, or move the test to `tests/blender/`.
 
-## MINOR
+### D4 — Vendored MCP package declares neither `blended` nor `anyio`
+`blender_mcp/mcp/pyproject.toml`: `blmcp.tools_helpers.blended_bridge` imports
+`blended` and `anyio`, and `requires-python >=3.10` differs from the root's
+`>=3.11`. Declaring `blended` would be circular with the root's `blender-mcp`
+dependency and touches `uv.lock`.
 
-### Mi1 — Constrained lane matched by exact equality, not containment
-`src/blended/agent/loop.py:815` (CharmingPelican)
+### D5 — Upstream tool quirks pinned by upstream tests
+`get_objects_summary_toolcode.py:36` fills `hide_viewport` from
+`obj.hide_get()` (view-layer hide); `render_*` tools reduce `output_path` to its
+basename under `bpy.app.tempdir/blender_mcp` and let Blender append `.png`
+(the returned path then does not exist). Pinned by
+`test_blender_mcp_with_blender.py:752-810` and `test_tool_listing.py`.
 
-`uses_openai_protocol` matches by **substring** across `OPENAI_PROTOCOL_ENDPOINTS` (`loop.py:785`); `constrains_tool_calls` matches by **exact equality** against `LOCAL_LLAMA_SERVER_ENDPOINT` (`loop.py:815`). The two disagree for any non-byte-identical spelling of the same server (trailing slash, `localhost` vs `127.0.0.1`) — and one-sided in the dangerous direction: the config still takes the OpenAI wire but passes `constrains_tool_calls=False`, so it emits wire `tools` to a model that answers with a `<function_call>` tag llama.cpp will not parse. The endpoint is user-settable free text in the addon prefs (`blender_addon/__init__.py:2197-2200`) and via the host env var (`loop.py:754-758`).
+### D6 — `bench_bridge` re-indents multi-line string literals
+`src/blended/evaluate/bench_bridge.py` (~184): a chunk that raised after
+changing the scene is wrapped with `textwrap.indent`, which also indents the
+inside of triple-quoted strings, so the replayed text differs from the live
+run. A fix changes the script format `tests/pure/test_bench_bridge.py` pins.
 
-**Fix:** match this endpoint with the same containment test the protocol check uses.
+### D7 — The tool-call cap is checked at the top of the loop
+`src/blended/agent/loop.py`: one reply carrying several calls can exceed
+`maximum_tool_calls_per_turn` while the stop text still says "budget N".
+`tests/pure/test_turn_caps.py` may pin the current behaviour.
 
-### Mi2 — No test pins the constrained lane
-`tests/pure/test_openai_transport.py:267` (CharmingPelican)
+### D8 — `tests/pure/test_agent_cancel.py` is named for a deleted method
+It tests the token-budget seam since `AgentSession.cancel` was deleted. Not
+renamed because `BACKLOG_DONE.md`, the spec and a mistake-memory guard cite the
+path.
 
-Grep over `tests/` for `constrains_tool_calls`, `response_format`, `CONSTRAINED_ENVELOPE_NAME` and the two new ids returns only the seed assertions (`:252`, `:265`) — the ids appear solely as a vehicle for the seed tests. Nothing asserts: constrained ⇒ `response_format.json_schema` (name `blended_harness_turn`, strict `True`) with **no** `tools`; non-constrained ⇒ `tools` with **no** `response_format`; that the lane's envelope content becomes `tool_calls`; or that the lane is the **only** one with `constrains_tool_calls=True`. The file pins every other lane at that granularity — the new lane is the one transport behaviour shipping unpinned, and **two of the M1/M2 defects would each be caught by a single such test**.
+## PROPOSED (unmeasured; nothing was changed for these)
 
-**Fix:** add a payload + decode test for the constrained lane.
-
-### Mi3 — Comment understates the experiment's op-vs-raw prompt delta
-`scripts/run_3dcode_instance.py:51` (VariedPigeon)
-
-The comment asserts "the raw-bpy arms … differ from this one in exactly the `run_python` bullet and nothing else." Strictly, `RAW_TASK_TEMPLATE == OPS_TASK_TEMPLATE` minus `CHUNK_RULE` (verified), **but no arm sends `OPS_TASK_TEMPLATE`**: the op arms send `SINGLE_SHOT_OPS_TASK_TEMPLATE` (`run_finetune_arm.py:164-169`), the raw arms send `RAW_TASK_TEMPLATE` (`raw_bpy_arm.py:63-64`). So the experiment's op-vs-raw text differs by `CHUNK_RULE` **and** the 5-line `SINGLE_SHOT_RULE`, not one bullet. The generated report does print the true diff (`finetune_decision_report.py:138-143` diffs `SINGLE_SHOT_OPS` against `RAW`), so the published artifact is honest — the defect is confined to the comment, whose purpose is the prompt-parity assurance a future reader trusts.
-
-**Fix:** correct the comment to state the actual delta (chunk rule + single-shot rule).
-
-### Mi4 — Budget report bullet split in two for every run, not just the empty case
-`scripts/diagnose_3dcode.py:385` (VariedPigeon)
-
-The divide-by-zero is genuinely fixed. But the unintended side effect is wider than the empty case the comment (`:382-385`) justifies: the list element that was **ONE** bullet (`- turns: mean X, max Y, turns>=20: Z`) is now **TWO** for **every run** (`- turns: mean X` at `:385-386`, `- max turns: Y, turns>=20: Z` at `:387-388`). Every `outputs/bench/diagnose_*.md` produced by `bench_chain.sh:97-98` and `score_finetune_arm.py:144-152` changes shape. Nothing parses the markdown (all downstream consumers read `--json` only), so no consumer breaks. Secondary nit: in the empty case the two bullets read `- turns: — (no meta)` then `- max turns: —, turns>=20: 0`, which prints a measured-looking `0` for a model dir with no meta.
-
-**Fix (cosmetic):** if the intent was to change the report for the empty case only, restore the single-bullet form for non-empty runs; otherwise document the new shape.
-
-## INFO
-
-### I0 — Change request and disk disagree on the lane's constants; disk is canonical
-`src/blended/agent/loop.py:520` (CharmingPelican)
-
-The change request's diff introduces a `LOCAL_MODEL_ENDPOINTS` **dict** and `LOCAL_LLAMA_SERVER_ENDPOINT="http://localhost:8081"`. **Neither ships.** Disk has `LOCAL_LLAMA_SERVER_ENDPOINT="http://127.0.0.1:8091"` (`loop.py:85`) and `LOCAL_LLAMA_SERVER_MODEL_IDS=("qwen2.5-coder-7b-instruct","blenderllm")` (`loop.py:520`), wired through `OPENAI_PROTOCOL_ENDPOINTS`, `_implied_endpoint`, `_implied_api_key`. The disk form is the right one and is reviewed here: the id tuple matches the `BMB_MODEL_IDS`/`BIG_MODEL_IDS` convention; literal `127.0.0.1` avoids the macOS `localhost`-resolves-to-`::1`-first trap; port 8091 keeps the endpoint string distinct from `BIG_ENDPOINT`'s `:8081` (which matters because `uses_openai_protocol` matches by substring). **This is why the two reviewers' "diff" and "file" differ — treat the disk code as canonical.**
-
-### I1 — `--json` payload omits the summary means the help text implies
-`scripts/shape_error_decompose.py:94` (VariedPigeon)
-
-The payload is well-formed and correctly scoped, but its help text says "the way `diagnose_3dcode.py --json` does," and that document carries both `per_instance` **and** a `means` block; this one stops at `per_instance`. The three summary means printed at `:378-380` (mean `cd_pca`, mean Δ_orient, mean oracle) remain markdown-only — the same "markdown is not a data path" problem the flag was added to solve. No current consumer needs them.
-
-**Fix:** add a `means` block to the JSON (or trim the help text to match).
-
-### I2 — New graph edges gate OT-12, which the backlog records as closed
-`BACKLOG.md:351` (VariedPigeon)
-
-The dependency graph gains `OT43 --> OT12` (`:351`) and `OT41 --> OT12` (`:352`), and OT-41's prose says "Settle it BEFORE the candidate-op miner (OT-12/OT-13)." But OT-12 is **not open**: `BACKLOG.md:79` says all Phase 4 items (OT-12, OT-13, OT-14) are closed (see `BACKLOG_DONE.md`), and `BACKLOG_DONE.md:221-233` records OT-12 Missing-op mining closed (commit `2e7e2ac`). The new edges assert a shipped item depends on two unstarted ones and contradict the pre-existing `OT8 --> OT12 --> OT13` edge (`:335`). Everything else in the new Phase 11 checks out: `OT43 --> OT40` present; OT-42's "Superseded in part by OT-43" line present; OT-39 references resolve; every number grounded; no `26×` remains.
-
-**Fix:** correct the OT-41/OT-43 edge targets to reflect OT-12's closed status.
-
-### I3 — No design row records the one-definition task-text contract
-`docs/harness_design.md:41` (VariedPigeon)
-
-The single added row is #31 (grammar-constrained tool calls), **not** the prompt-contract rule. Row 31's own claims all verify (no over-statement). The under-statement is what's absent: this patch also introduces a design decision of the same weight as rows 14/15 — one definition of the bench task text in `src/blended/evaluate/bench_task_prompt.py`, with OPS/RAW/SINGLE_SHOT composed from shared constants (`:81-87`) so an op-vs-raw experiment diffs real strings, and the report carrying the unified diff — and the table records no row for it.
-
-**Fix (optional):** add a design row for the single-definition task-text contract.
-
-### I (seed) — Seed coverage correct on disk (brief expectation superseded)
-`tests/pure/test_openai_transport.py:243` (CharmingPelican)
-
-The brief expected `test_seed_omitted_when_unset` + a sibling and an Ollama-side gap. **Neither matches disk.** One test covers all four cases and asserts **absence** (not falsiness) on both wires; production matches. The two seed expressions are semantically identical (one a statement, one an inline dict member). No defect. (Also notes the non-streamed OpenAI decoder doesn't copy `finish_reason` onto the returned message, unlike the streamed assembler — **predates** this change.)
-
-## Summary of action items (before merge)
-| # | Severity | File | Action |
-|---|----------|------|--------|
-| M1 | major | `loop.py` | Decode envelope in `_chat_streamed` (streamed/one-shot parity) |
-| M2 | major | `loop.py` | Decode only if dict carries envelope's two required keys |
-| M3 | major | `loop.py` | Key the long timeout ceiling on the llama.cpp server, not just llama-swap hosts |
-| Mi1 | minor | `loop.py` | Match constrained lane by containment, not exact equality |
-| Mi2 | minor | `test_openai_transport.py` | Add a payload + decode test pinning the constrained lane |
-| Mi3 | minor | `run_3dcode_instance.py:51` | Correct the op-vs-raw delta comment |
-| Mi4 | minor | `diagnose_3dcode.py` | Decide if the split bullet is intended; restore single-bullet for non-empty or document |
-| I1 | info | `shape_error_decompose.py` | Add `means` to `--json` or trim help text |
-| I2 | info | `BACKLOG.md` | Fix OT-41/OT-43 edge targets (OT-12 closed) |
-| I3 | info | `harness_design.md` | (optional) add design row for the task-text contract |
-
-M1, M2, M3 are the must-fix items; Mi1–Mi4 are cheap follow-ups; I1–I3 are documentation/consistency cleanups.
+- `src/blended/evaluate/digest.py:105` `_uv_component` hashes UVs in raw loop
+  order while faces are sorted; whether loop order is nondeterministic is not
+  measured.
+- `src/blended/evaluate/visual_diff.py` `CALIBRATION_PATH` is relative to the
+  working directory; a launch from another directory prints "uncalibrated"
+  and skips the gate instead of failing.
+- `src/blended/agent/claude_code.py` `check_connection`: `claude auth status`
+  printing valid JSON that is not an object would raise `AttributeError`; a
+  watchdog kill mid-frame surfaces as `JSONDecodeError`.
+- `src/blended/agent/prompt_search.py:129` rejected-hunk memory keys on
+  line-range strings, so the same edit at a shifted line is not recognised.
+- `src/blended/agent/skill_modules.py:119` `validate_modules()` does not check
+  duplicate names.
+- `src/blended/evaluate/examiner.py` numeric claims ("0.66-alignment", the RESP
+  recall figures) were not re-checked against the cited papers; the DOIs were.
+- `.mcp.json` hardcodes `/Users/ladvien/blended/.venv/bin/blender-mcp`; the
+  README says both `.mcp.json` and `.omp/mcp.json` need editing on another
+  checkout.
+- `src/blended/ops/heal.py` (~55) dedupes sliver edges by `edge.index` after
+  `remove_doubles`; could not make indices collide in a probe.
