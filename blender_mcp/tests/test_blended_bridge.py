@@ -634,7 +634,8 @@ class TestToolcodeReimport(unittest.TestCase):
             encoding="utf-8",
         )
         (src / "blended" / "viewport_follow.py").write_text(
-            "def follow_viewport(outcome):\n    raise AssertionError('framed a read-only probe')\n",
+            "def snapshot_scene():\n    raise AssertionError('snapshotted for a read-only probe')\n\n\n"
+            "def follow_viewport(outcome, *, before=None):\n    raise AssertionError('framed a read-only probe')\n",
             encoding="utf-8",
         )
         return src

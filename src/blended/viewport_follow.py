@@ -1,9 +1,12 @@
 """Keep the part being worked on in the user's 3D viewport (MCP only).
 
 The MCP bridge calls `follow_viewport` after every scene-changing tool
-call, so a user watching Blender sees the object the agent just touched
-without the agent spending a tool call on it. The bench never imports
-this: it runs headless, with no viewport and no one watching.
+call, so a user watching Blender sees what the agent just worked on
+without the agent spending a tool call on it. What it worked on is what
+the call named plus whatever it created or changed, found by comparing
+`snapshot_scene()` before the call with the scene after it: a `run_python`
+chunk that moves an object without naming it is framed too. The bench
+never imports this: it runs headless, with no viewport and no one watching.
 
 Framing moves each 3D viewport's pivot (`view_location`) to the centre
 of the touched objects' world bounding sphere and sets `view_distance`
@@ -19,7 +22,10 @@ every corner of each framed bounding box must project inside the region.
 from __future__ import annotations
 
 import dataclasses
+import hashlib
 import math
+from array import array
+from collections.abc import Mapping
 from dataclasses import dataclass
 
 from blended.agent.outcome import ToolOutcome
@@ -30,6 +36,24 @@ _WINDOW_REGION_TYPE = "WINDOW"
 _CAMERA_PERSPECTIVE = "CAMERA"
 _PERSPECTIVE = "PERSP"
 _ORTHOGRAPHIC = "ORTHO"
+# An object whose transform or bounding box differs by less than 10^-N m is
+# unchanged: a micrometre is far under any modelling tolerance.
+_SIGNATURE_DECIMALS = 6
+_GEOMETRY_OBJECT_TYPES = (
+    "MESH",
+    "CURVE",
+    "SURFACE",
+    "META",
+    "FONT",
+    "CURVES",
+    "POINTCLOUD",
+    "VOLUME",
+)
+_FLOATS_PER_VERTEX = 3
+_COORDINATE_DIGEST_BYTES = 8
+# The `viewport:` line names this many framed objects, then counts the rest, so a
+# call that changed two hundred objects does not answer with two hundred names.
+MAXIMUM_NAMES_ON_LINE = 8
 
 
 @dataclass(frozen=True)
@@ -61,20 +85,116 @@ def frame_target_names(outcome: ToolOutcome) -> tuple[str, ...]:
     return tuple(dict.fromkeys(names))
 
 
+def snapshot_scene() -> dict[str, tuple]:
+    """A comparable signature for every object in the file, keyed by name.
+    MAIN THREAD ONLY.
+
+    Two signatures differ when the object's type, parent, world transform,
+    data-block, material slots, modifier stack, base-mesh coordinates or
+    evaluated bounding box differ. A setting that changes none of those (a
+    modifier property that leaves the evaluated bounds as they were) is not
+    seen."""
+    import bpy
+
+    bpy.context.view_layer.update()
+    depsgraph = bpy.context.evaluated_depsgraph_get()
+    in_view_layer = set(bpy.context.view_layer.objects.keys())
+    return {
+        obj.name: _object_signature(obj, depsgraph, obj.name in in_view_layer)
+        for obj in bpy.data.objects
+    }
+
+
+def changed_object_names(before: Mapping[str, tuple]) -> tuple[str, ...]:
+    """The objects created or changed since `before` was taken. MAIN THREAD ONLY."""
+    return tuple(
+        name
+        for name, signature in snapshot_scene().items()
+        if before.get(name) != signature
+    )
+
+
+def names_to_frame(
+    outcome: ToolOutcome, before: Mapping[str, tuple] | None
+) -> tuple[str, ...]:
+    """What a call touched: the objects it named, then (given the scene as it
+    was before the call) every object it created or changed, named or not."""
+    names = list(frame_target_names(outcome))
+    if before is not None:
+        names.extend(changed_object_names(before))
+    return tuple(dict.fromkeys(names))
+
+
 def follow_viewport(
-    outcome: ToolOutcome, config: ViewportFollowConfig = ViewportFollowConfig()
+    outcome: ToolOutcome,
+    config: ViewportFollowConfig = ViewportFollowConfig(),
+    *,
+    before: Mapping[str, tuple] | None = None,
 ) -> ToolOutcome:
-    """The outcome with a `viewport:` line appended after framing what it
-    touched. A framing error is reported on that line, not raised: the
-    tool call already changed the scene, and an error result would invite
-    the agent to repeat it."""
+    """The outcome with a `viewport:` line appended after framing what the
+    call touched (see `names_to_frame`). A framing error is reported on that
+    line, not raised: the tool call already changed the scene, and an error
+    result would invite the agent to repeat it."""
     try:
-        line = frame_in_viewports(frame_target_names(outcome), config).line
+        line = frame_in_viewports(names_to_frame(outcome, before), config).line
     except Exception as error:  # noqa: BLE001 — reported on the viewport line, not swallowed
         line = (
             f"{VIEWPORT_LINE_PREFIX} FAILED to frame: {type(error).__name__}: {error}"
         )
     return dataclasses.replace(outcome, text=f"{outcome.text}\n{line}")
+
+
+def _framed_line(framed: tuple[str, ...], viewport_count: int) -> str:
+    shown = framed[:MAXIMUM_NAMES_ON_LINE]
+    unlisted = len(framed) - len(shown)
+    names = ", ".join(shown) + (f" and {unlisted} more" if unlisted else "")
+    return f"{VIEWPORT_LINE_PREFIX} framed {names} in {viewport_count} 3D viewport(s)"
+
+
+def _object_signature(obj, depsgraph, in_view_layer: bool) -> tuple:
+    data = obj.data
+    signature = [
+        obj.type,
+        obj.parent.name if obj.parent else "",
+        tuple(
+            round(value, _SIGNATURE_DECIMALS)
+            for row in obj.matrix_world
+            for value in row
+        ),
+        data.name if data is not None else "",
+        tuple(
+            slot.material.name if slot.material else "" for slot in obj.material_slots
+        ),
+        tuple(
+            (modifier.name, modifier.type, modifier.show_viewport)
+            for modifier in obj.modifiers
+        ),
+    ]
+    if obj.type == "MESH":
+        signature.append(_mesh_signature(data))
+    if in_view_layer and obj.type in _GEOMETRY_OBJECT_TYPES:
+        evaluated = obj.evaluated_get(depsgraph)
+        signature.append(
+            tuple(
+                round(coordinate, _SIGNATURE_DECIMALS)
+                for corner in evaluated.bound_box
+                for coordinate in corner
+            )
+        )
+    return tuple(signature)
+
+
+def _mesh_signature(mesh) -> tuple:
+    """Counts and a digest of the base mesh's vertex coordinates (exact: an
+    unchanged mesh is byte-identical)."""
+    vertex_count = len(mesh.vertices)
+    coordinates = array("f", [0.0]) * (vertex_count * _FLOATS_PER_VERTEX)
+    if vertex_count:
+        mesh.vertices.foreach_get("co", coordinates)
+    digest = hashlib.blake2b(
+        coordinates.tobytes(), digest_size=_COORDINATE_DIGEST_BYTES
+    ).hexdigest()
+    return (vertex_count, len(mesh.edges), len(mesh.polygons), digest)
 
 
 def frame_in_viewports(
@@ -116,7 +236,7 @@ def frame_in_viewports(
     elif not framed:
         line = f"{VIEWPORT_LINE_PREFIX} unchanged: nothing this call touched is in the scene yet"
     else:
-        line = f"{VIEWPORT_LINE_PREFIX} framed {', '.join(framed)} in {viewport_count} 3D viewport(s)"
+        line = _framed_line(tuple(framed), viewport_count)
     return ViewportFraming(tuple(framed), viewport_count, line)
 
 

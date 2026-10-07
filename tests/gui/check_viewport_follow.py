@@ -29,8 +29,9 @@ import bpy
 from bpy_extras.view3d_utils import location_3d_to_region_2d
 from mathutils import Vector
 
+from blended.agent.outcome import ToolOutcome
 from blended.ops import add_box, link_into_scene
-from blended.viewport_follow import frame_in_viewports
+from blended.viewport_follow import follow_viewport, frame_in_viewports, snapshot_scene
 
 # The window has drawn at least once by then, so regions have sizes.
 FIRST_CHECK_DELAY_S = 2.0
@@ -47,6 +48,7 @@ UNLINKED_BOX_NAME = "viewport_follow_unlinked"
 # Factory startup's default cube: selected and active before framing.
 BYSTANDER_NAME = "Cube"
 STARTING_PERSPECTIVES = ("PERSP", "ORTHO", "CAMERA")
+UNNAMED_MOVE_M = 3.0
 
 
 def _viewport():
@@ -126,6 +128,31 @@ def run_checks() -> list[str]:
         or "nothing this call touched is in the scene" not in unlinked.line
     ):
         failures.append(f"unlinked object: {unlinked}")
+
+    # A chunk moves an object without naming it. Without the before-snapshot the
+    # call frames nothing (the control: this is what the viewport did before the
+    # diff); with it, the moved object is framed and fits the region.
+    region_3d.view_perspective = STARTING_PERSPECTIVES[0]
+    snapshot = snapshot_scene()
+    bpy.data.objects[LARGE_BOX_NAME].location.x += UNNAMED_MOVE_M
+    distance_before = region_3d.view_distance
+    without_diff = follow_viewport(ToolOutcome("ok")).text
+    if "unchanged: nothing this call touched" not in without_diff:
+        failures.append(
+            f"control: a call naming nothing framed something: {without_diff!r}"
+        )
+    if region_3d.view_distance != distance_before:
+        failures.append("control: the view moved with no names and no snapshot")
+    with_diff = follow_viewport(ToolOutcome("ok"), before=snapshot).text
+    print(f"viewport_follow_check: unnamed move: {with_diff.splitlines()[-1]}")
+    if (
+        with_diff.splitlines()[-1]
+        != f"viewport: framed {LARGE_BOX_NAME} in 1 3D viewport(s)"
+    ):
+        failures.append(f"unnamed move: {with_diff!r}")
+    outside = _corners_outside_region(LARGE_BOX_NAME, region, region_3d)
+    if outside:
+        failures.append(f"unnamed move: corners outside the region: {outside}")
     if _state() != before:
         failures.append(f"selection/active/mode changed: {before} -> {_state()}")
     return failures

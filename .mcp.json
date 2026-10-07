@@ -3,10 +3,7 @@
     "blended": {
       "type": "stdio",
       "command": "/Users/ladvien/blended/.venv/bin/blender-mcp",
-      "args": [],
-      "env": {
-        "BLENDER_PATH": "/Applications/Blender.app/Contents/MacOS/Blender"
-      }
+      "args": []
     }
   }
 }

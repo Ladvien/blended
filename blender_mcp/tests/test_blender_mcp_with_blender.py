@@ -51,6 +51,7 @@ if _REPO_DIR not in sys.path:
 
 from blmcp.tools_helpers.blended_bridge import SOURCE_ROOTS
 from blmcp.tools_helpers.connection import send_code
+from blmcp.tools_helpers.live_blender import PAUSE_PREFIX
 from tests.mcp_client import MCPClient
 
 from blended.agent.plan import MISSING_PLAN_REFUSAL
@@ -452,7 +453,6 @@ class _TestServerMixin:
 
         mcp_env = _blender_env(tmpdir)
         mcp_env["BLENDER_MCP_PORT"] = str(cls._port)
-        mcp_env["BLENDER_PATH"] = blender_bin
 
         cls._mcp_command = shlex.split(blender_mcp)
         cls._mcp_env = mcp_env
@@ -766,9 +766,26 @@ class _TestServerMixin:
             self.assertIn("name", data["active_object"])
 
     # -----------------------------------------------------------------
-    # CLI tools.
+    # File tools: answered by the open Blender, which must have the file open.
+
+    def _open_test_file(self) -> None:
+        """
+        Open the saved test file in the running Blender (``setUp`` left it on
+        an unsaved default scene): the ``*_for_cli`` tools answer from the
+        open Blender only when it has that file open.
+        """
+        opened = self._execute_code(
+            "import bpy\n"
+            "bpy.ops.wm.open_mainfile(filepath={!r})\n"
+            "result = {{'filepath': bpy.data.filepath}}\n".format(self._blend_path)
+        )
+        self.assertEqual(
+            os.path.realpath(str(opened["filepath"])),
+            os.path.realpath(self._blend_path),
+        )
 
     def test_get_blendfile_summary_datablocks_for_cli(self) -> None:
+        self._open_test_file()
         data = self._test_tool(
             "get_blendfile_summary_datablocks_for_cli",
             {
@@ -779,6 +796,7 @@ class _TestServerMixin:
         self.assertIsInstance(data["datablock_counts"], dict)
 
     def test_get_blendfile_summary_missing_files_for_cli(self) -> None:
+        self._open_test_file()
         data = self._test_tool(
             "get_blendfile_summary_missing_files_for_cli",
             {
@@ -788,6 +806,7 @@ class _TestServerMixin:
         self.assertEqual(data["missing_files"], [])
 
     def test_get_blendfile_summary_of_linked_libraries_for_cli(self) -> None:
+        self._open_test_file()
         data = self._test_tool(
             "get_blendfile_summary_of_linked_libraries_for_cli",
             {
@@ -797,6 +816,7 @@ class _TestServerMixin:
         self.assertEqual(data["total_library_count"], 0)
 
     def test_get_blendfile_summary_path_info_for_cli(self) -> None:
+        self._open_test_file()
         data = self._test_tool(
             "get_blendfile_summary_path_info_for_cli",
             {
@@ -807,6 +827,7 @@ class _TestServerMixin:
         self.assertTrue(data["filepath"].endswith(".blend"))
 
     def test_get_blendfile_summary_usage_guess_for_cli(self) -> None:
+        self._open_test_file()
         data = self._test_tool(
             "get_blendfile_summary_usage_guess_for_cli",
             {
@@ -816,6 +837,41 @@ class _TestServerMixin:
         guesses = data["usage_guesses"]
         self.assertIn("Animation", guesses)
         self.assertIn("Modeling", guesses)
+
+    def test_a_for_cli_tool_answers_from_unsaved_edits(self) -> None:
+        """
+        The open Blender is the truth for its file: an edit that was never
+        saved is in the answer (the headless path read the file on disk).
+        """
+        self._open_test_file()
+        arguments = {"blend_file": self._blend_path}
+        objects_before = self._test_tool(
+            "get_blendfile_summary_datablocks_for_cli", arguments
+        )["datablock_counts"]["objects"]
+        self._execute_code(
+            "import bpy\n"
+            "bpy.ops.mesh.primitive_cube_add()\n"
+            "result = {'objects': len(bpy.data.objects)}\n"
+        )
+        objects_after = self._test_tool(
+            "get_blendfile_summary_datablocks_for_cli", arguments
+        )["datablock_counts"]["objects"]
+        self.assertEqual(objects_after, objects_before + 1)
+
+    def test_a_for_cli_tool_pauses_when_the_open_blender_has_another_file(self) -> None:
+        """
+        A path the open Blender does not have open pauses the call and names
+        both files; no headless Blender is started for it.
+        """
+        self._open_test_file()
+        other = os.path.join(os.path.dirname(self._blend_path), "somewhere_else.blend")
+        content = self._call_tool_expect_error(
+            "get_blendfile_summary_path_info_for_cli", {"blend_file": other}
+        )
+        text = str(content[0]["text"])
+        self.assertTrue(text.startswith(PAUSE_PREFIX), text)
+        self.assertIn(other, text)
+        self.assertIn(os.path.basename(self._blend_path), text)
 
     # -----------------------------------------------------------------
     # Object inspection tools.
