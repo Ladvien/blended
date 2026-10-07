@@ -82,28 +82,39 @@ OUTPUT_DIRECTORY = Path("outputs/bench")
 
 def parse_arguments(argv):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--baseline", required=True,
-                        help="diagnose JSON of the roll that set the guard.")
-    parser.add_argument("--candidate", nargs="+", required=True,
-                        help="One or more diagnose JSONs of the current "
-                             "configuration; their per-instance mean is the "
-                             "candidate.")
-    parser.add_argument("--label", required=True,
-                        help="Comparison label, used in the output filename.")
-    parser.add_argument("--instances-file", default="",
-                        help="Restrict to this instance list; every listed "
-                             "instance must be scoreable in every roll.")
-    parser.add_argument("--out", default="",
-                        help="Markdown report path (default "
-                             "outputs/bench/paired_delta_<label>.md)")
+    parser.add_argument(
+        "--baseline",
+        required=True,
+        help="diagnose JSON of the roll that set the guard.",
+    )
+    parser.add_argument(
+        "--candidate",
+        nargs="+",
+        required=True,
+        help="One or more diagnose JSONs of the current "
+        "configuration; their per-instance mean is the "
+        "candidate.",
+    )
+    parser.add_argument(
+        "--label", required=True, help="Comparison label, used in the output filename."
+    )
+    parser.add_argument(
+        "--instances-file",
+        default="",
+        help="Restrict to this instance list; every listed "
+        "instance must be scoreable in every roll.",
+    )
+    parser.add_argument(
+        "--out",
+        default="",
+        help="Markdown report path (default outputs/bench/paired_delta_<label>.md)",
+    )
     return parser.parse_args(argv)
 
 
 def instance_mean(rolls, instance, metric) -> float:
     """One instance's metric, averaged over the rolls of one configuration."""
-    return statistics.fmean(
-        roll["per_instance"][instance][metric] for roll in rolls
-    )
+    return statistics.fmean(roll["per_instance"][instance][metric] for roll in rolls)
 
 
 def set_mean(rolls, instances, metric) -> float:
@@ -132,8 +143,11 @@ def paired_delta(baseline_rolls, candidate_rolls, instances, metric) -> dict:
     # disagree about what "better" means.
     sign = worsening_sign(metric)
     deltas = [
-        sign * (instance_mean(candidate_rolls, instance, metric)
-                - instance_mean(baseline_rolls, instance, metric))
+        sign
+        * (
+            instance_mean(candidate_rolls, instance, metric)
+            - instance_mean(baseline_rolls, instance, metric)
+        )
         for instance in instances
     ]
     mean_delta = statistics.fmean(deltas)
@@ -176,22 +190,23 @@ def movers(baseline_rolls, candidate_rolls, instances, metric) -> list[dict]:
     for instance in instances:
         baseline_value = instance_mean(baseline_rolls, instance, metric)
         candidate_value = instance_mean(candidate_rolls, instance, metric)
-        rows.append({
-            "instance": instance,
-            "baseline": baseline_value,
-            "candidate": candidate_value,
-            "delta": candidate_value - baseline_value,
-            "baseline_delta_orient": instance_mean(
-                baseline_rolls, instance, ORIENTATION_METRIC
-            ),
-        })
+        rows.append(
+            {
+                "instance": instance,
+                "baseline": baseline_value,
+                "candidate": candidate_value,
+                "delta": candidate_value - baseline_value,
+                "baseline_delta_orient": instance_mean(
+                    baseline_rolls, instance, ORIENTATION_METRIC
+                ),
+            }
+        )
     rows.sort(key=lambda row: abs(row["delta"]), reverse=True)
     return rows
 
 
 def render_report(baseline_rolls, candidate_rolls, instances, arguments) -> str:
-    primary = paired_delta(baseline_rolls, candidate_rolls, instances,
-                           PRIMARY_METRIC)
+    primary = paired_delta(baseline_rolls, candidate_rolls, instances, PRIMARY_METRIC)
     # The guard is the BASELINE'S OWN MEASURED MEAN, computed here, and
     # the target is a fraction of it. The retired literals (0.0706 guard,
     # 0.060 target on cd_yawmin) came from a single roll of an axis whose
@@ -200,25 +215,28 @@ def render_report(baseline_rolls, candidate_rolls, instances, arguments) -> str:
     # with the incumbent and cannot go stale.
     guard = set_mean(baseline_rolls, instances, PRIMARY_METRIC)
     effect = guard * TARGET_RELATIVE_IMPROVEMENT
-    target = (guard + effect if higher_is_better(PRIMARY_METRIC)
-              else guard - effect)
+    target = guard + effect if higher_is_better(PRIMARY_METRIC) else guard - effect
     baseline_names = [roll["model_dir"] for roll in baseline_rolls]
     candidate_names = [roll["model_dir"] for roll in candidate_rolls]
-    scope = (f"the {len(instances)} instances named in "
-             f"`{arguments.instances_file}`"
-             if arguments.instances_file
-             else f"{len(instances)} shared instances")
-    verdict = ("REGRESSION" if primary["regression"]
-               else "no regression detected")
+    scope = (
+        f"the {len(instances)} instances named in `{arguments.instances_file}`"
+        if arguments.instances_file
+        else f"{len(instances)} shared instances"
+    )
+    verdict = "REGRESSION" if primary["regression"] else "no regression detected"
     lines = [
         f"# Paired bench delta — {arguments.label}",
         "",
-        (f"Baseline `{', '.join(baseline_names)}` against candidate "
-         f"`{', '.join(candidate_names)}` over {scope}. Every value read "
-         f"from `diagnose_3dcode.py --json`; nothing rescored."),
+        (
+            f"Baseline `{', '.join(baseline_names)}` against candidate "
+            f"`{', '.join(candidate_names)}` over {scope}. Every value read "
+            f"from `diagnose_3dcode.py --json`; nothing rescored."
+        ),
         "",
-        (f"**Verdict: {verdict}** at {REGRESSION_SIGMA:.0f} sigma "
-         f"one-sided on {PRIMARY_METRIC}."),
+        (
+            f"**Verdict: {verdict}** at {REGRESSION_SIGMA:.0f} sigma "
+            f"one-sided on {PRIMARY_METRIC}."
+        ),
         "",
         "## Set means",
         "",
@@ -236,13 +254,16 @@ def render_report(baseline_rolls, candidate_rolls, instances, arguments) -> str:
         "",
         "## Paired difference, per metric",
         "",
-        ("| metric | mean delta (+ is worse) | paired SD | SE of the mean "
-         "| sigma | worse/better |"),
+        (
+            "| metric | mean delta (+ is worse) | paired SD | SE of the mean "
+            "| sigma | worse/better |"
+        ),
         "|---|---|---|---|---|---|",
     ]
     for metric in REPORT_METRICS:
-        statistics_row = paired_delta(baseline_rolls, candidate_rolls,
-                                      instances, metric)
+        statistics_row = paired_delta(
+            baseline_rolls, candidate_rolls, instances, metric
+        )
         lines.append(
             f"| {metric} | {statistics_row['mean_delta']:+.4f} "
             f"| {statistics_row['paired_stdev']:.4f} "
@@ -255,12 +276,12 @@ def render_report(baseline_rolls, candidate_rolls, instances, arguments) -> str:
         "",
         f"## Biggest movers on {PRIMARY_METRIC}",
         "",
-        ("| instance | baseline | candidate | delta | baseline "
-         "delta_orient |"),
+        ("| instance | baseline | candidate | delta | baseline delta_orient |"),
         "|---|---|---|---|---|",
     ]
-    for row in movers(baseline_rolls, candidate_rolls, instances,
-                      PRIMARY_METRIC)[:MOVERS_SHOWN]:
+    for row in movers(baseline_rolls, candidate_rolls, instances, PRIMARY_METRIC)[
+        :MOVERS_SHOWN
+    ]:
         lines.append(
             f"| {row['instance']} | {row['baseline']:.4f} "
             f"| {row['candidate']:.4f} | {row['delta']:+.4f} "
@@ -270,20 +291,21 @@ def render_report(baseline_rolls, candidate_rolls, instances, arguments) -> str:
         "",
         "## Could this benchmark see the target?",
         "",
-        (f"The guard is the baseline's own measured mean on "
-         f"`{PRIMARY_METRIC}`, {guard:.4f}, and the target is "
-         f"{TARGET_RELATIVE_IMPROVEMENT:.0%} better than it, {target:.4f} "
-         f"— an effect of {effect:.4f} against a measured paired SD of "
-         f"{primary['paired_stdev']:.4f}. Neither number is a literal in "
-         f"this file: a guard quoted from one roll of a noisy axis is the "
-         f"minimum of the draws taken, not an expected value."),
+        (
+            f"The guard is the baseline's own measured mean on "
+            f"`{PRIMARY_METRIC}`, {guard:.4f}, and the target is "
+            f"{TARGET_RELATIVE_IMPROVEMENT:.0%} better than it, {target:.4f} "
+            f"— an effect of {effect:.4f} against a measured paired SD of "
+            f"{primary['paired_stdev']:.4f}. Neither number is a literal in "
+            f"this file: a guard quoted from one roll of a noisy axis is the "
+            f"minimum of the draws taken, not an expected value."
+        ),
         "",
         "| requirement | instance-rolls | rolls of this set |",
         "|---|---|---|",
     ]
     for sigma in RESOLUTION_SIGMA_LEVELS:
-        needed = instance_rolls_for_resolution(primary["paired_stdev"],
-                                               effect, sigma)
+        needed = instance_rolls_for_resolution(primary["paired_stdev"], effect, sigma)
         lines.append(
             f"| resolve {effect:.4f} at {sigma:.0f} sigma | {needed:.0f} "
             f"| {needed / len(instances):.0f} |"
@@ -297,13 +319,15 @@ def render_report(baseline_rolls, candidate_rolls, instances, arguments) -> str:
         f"{REGRESSION_SIGMA:.0f} is unresolvable here"
         if primary["standard_error"]
         else "the paired difference has no spread at all, so any effect "
-             "this set can produce is resolvable"
+        "this set can produce is resolvable"
     )
     lines += [
         "",
-        (f"At the current {len(instances)} instances and "
-         f"{len(candidate_rolls)} candidate roll(s), the standard error is "
-         f"{primary['standard_error']:.4f}, so {resolution}."),
+        (
+            f"At the current {len(instances)} instances and "
+            f"{len(candidate_rolls)} candidate roll(s), the standard error is "
+            f"{primary['standard_error']:.4f}, so {resolution}."
+        ),
         "",
     ]
     return "\n".join(lines)
@@ -325,8 +349,7 @@ def requested_instances(instances_file: str):
     path = Path(instances_file)
     if not path.exists():
         raise SystemExit(f"No such instance list: {path}")
-    requested = [line.strip() for line in path.read_text().splitlines()
-                 if line.strip()]
+    requested = [line.strip() for line in path.read_text().splitlines() if line.strip()]
     if not requested:
         raise SystemExit(f"Empty instance list: {path}")
     return requested
@@ -372,32 +395,39 @@ def main(argv) -> int:
             f"a paired comparison needs {MINIMUM_PAIRED_INSTANCES}"
         )
 
-    out_path = (Path(arguments.out) if arguments.out
-                else OUTPUT_DIRECTORY / f"paired_delta_{arguments.label}.md")
+    out_path = (
+        Path(arguments.out)
+        if arguments.out
+        else OUTPUT_DIRECTORY / f"paired_delta_{arguments.label}.md"
+    )
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(
         render_report(baseline_rolls, candidate_rolls, instances, arguments)
     )
     print(f"wrote {out_path}")
 
-    primary = paired_delta(baseline_rolls, candidate_rolls, instances,
-                           PRIMARY_METRIC)
+    primary = paired_delta(baseline_rolls, candidate_rolls, instances, PRIMARY_METRIC)
     guard = set_mean(baseline_rolls, instances, PRIMARY_METRIC)
-    print(f"{PRIMARY_METRIC}: baseline {guard:.4f} -> candidate "
-          f"{set_mean(candidate_rolls, instances, PRIMARY_METRIC):.4f}")
-    print(f"paired mean delta {primary['mean_delta']:+.4f}  "
-          f"SD {primary['paired_stdev']:.4f}  "
-          f"SE {primary['standard_error']:.4f}  "
-          f"{primary['sigma']:.2f} sigma  "
-          f"worse/better {primary['worse_count']}/{primary['better_count']}")
+    print(
+        f"{PRIMARY_METRIC}: baseline {guard:.4f} -> candidate "
+        f"{set_mean(candidate_rolls, instances, PRIMARY_METRIC):.4f}"
+    )
+    print(
+        f"paired mean delta {primary['mean_delta']:+.4f}  "
+        f"SD {primary['paired_stdev']:.4f}  "
+        f"SE {primary['standard_error']:.4f}  "
+        f"{primary['sigma']:.2f} sigma  "
+        f"worse/better {primary['worse_count']}/{primary['better_count']}"
+    )
     print("REGRESSION" if primary["regression"] else "no regression detected")
     effect = guard * TARGET_RELATIVE_IMPROVEMENT
     for sigma in RESOLUTION_SIGMA_LEVELS:
-        needed = instance_rolls_for_resolution(primary["paired_stdev"],
-                                               effect, sigma)
-        print(f"resolving {effect:.4f} at {sigma:.0f} sigma needs "
-              f"{needed:.0f} instance-rolls "
-              f"({needed / len(instances):.0f} rolls of {len(instances)})")
+        needed = instance_rolls_for_resolution(primary["paired_stdev"], effect, sigma)
+        print(
+            f"resolving {effect:.4f} at {sigma:.0f} sigma needs "
+            f"{needed:.0f} instance-rolls "
+            f"({needed / len(instances):.0f} rolls of {len(instances)})"
+        )
     return 0
 
 

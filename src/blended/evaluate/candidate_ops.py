@@ -64,7 +64,11 @@ def source_shape(source: str) -> str:
             # is what the chunk asked BLENDER or the facade to do.
             if dotted and dotted not in _BUILTIN_NAMES:
                 names.add(dotted)
-        elif isinstance(node, ast.ImportFrom) and node.module and node.module.startswith(_FACADE_PREFIX):
+        elif (
+            isinstance(node, ast.ImportFrom)
+            and node.module
+            and node.module.startswith(_FACADE_PREFIX)
+        ):
             names.update(f"{_FACADE_PREFIX}:{alias.name}" for alias in node.names)
     return " ".join(sorted(names)) or "<no calls>"
 
@@ -134,11 +138,14 @@ def hatch_events_from_transcript(name: str, rows: list[dict]) -> list[HatchEvent
     """The run_python events of one chat transcript (JSONL rows, schema 2)."""
     tool_rows = [row for row in rows if row.get("kind") == TOOL_EVENT_KIND]
     if not tool_rows:
-        raise UnminableRecord(f"transcript {name!r} has no {TOOL_EVENT_KIND} rows: schema 1, cannot be mined")
+        raise UnminableRecord(
+            f"transcript {name!r} has no {TOOL_EVENT_KIND} rows: schema 1, cannot be mined"
+        )
     return [
         _hatch_event(name, "", row["data"])
         for row in tool_rows
-        if row["data"].get("tool_name") == HATCH_TOOL_NAME and not row["data"].get("refusal")
+        if row["data"].get("tool_name") == HATCH_TOOL_NAME
+        and not row["data"].get("refusal")
     ]
 
 
@@ -156,7 +163,8 @@ def _hatch_event(iteration, brief_name: str, event: dict) -> HatchEvent:
         source_sha256=event.get("source_sha256", ""),
         source=str(event.get("arguments", {}).get("source", "")),
         gated=bool(gates),
-        passed=bool(gates) and all(gate.get("stage_reached") == STAGE_DONE for gate in gates),
+        passed=bool(gates)
+        and all(gate.get("stage_reached") == STAGE_DONE for gate in gates),
         wall_time_s=float(event.get("wall_time_s", 0.0)),
     )
 
@@ -167,7 +175,10 @@ def group_candidates(events: list[HatchEvent], key) -> list[Candidate]:
         group_key = key(event)
         groups[group_key].key = group_key
         groups[group_key].events.append(event)
-    return sorted(groups.values(), key=lambda candidate: (-candidate.score, -candidate.count, candidate.key))
+    return sorted(
+        groups.values(),
+        key=lambda candidate: (-candidate.score, -candidate.count, candidate.key),
+    )
 
 
 def hatch_calls_per_gate_passing_brief(records: list[dict]) -> tuple[float | None, int]:
@@ -190,7 +201,9 @@ def render_report(
         events.extend(hatch_events_from_record(record))
     for transcript in transcript_events.values():
         events.extend(transcript)
-    by_reason = group_candidates(events, lambda event: normalize_reason(event.reason) or "<no reason>")
+    by_reason = group_candidates(
+        events, lambda event: normalize_reason(event.reason) or "<no reason>"
+    )
     by_shape = group_candidates(events, lambda event: source_shape(event.source))
     per_brief, passing_count = hatch_calls_per_gate_passing_brief(records)
     iterations = sorted({record["iteration"] for record in records})
@@ -204,7 +217,9 @@ def render_report(
         "",
         "## Inputs",
         "",
-        f"- Iteration records: {len(records)} ({iterations[0]}–{iterations[-1]})" if records else "- Iteration records: 0",
+        f"- Iteration records: {len(records)} ({iterations[0]}–{iterations[-1]})"
+        if records
+        else "- Iteration records: 0",
         f"- Chat transcripts: {len(transcript_events)}",
         (
             f"- Hatch calls: {len(events)} ({sum(1 for e in events if e.gated)} gated, "
@@ -226,7 +241,9 @@ def render_report(
         "|---|---|---|---|---|---|---|",
     ]
     for rank, candidate in enumerate(by_reason, 1):
-        briefs = ", ".join(sorted({f"{e.brief_name or e.iteration}" for e in candidate.events}))
+        briefs = ", ".join(
+            sorted({f"{e.brief_name or e.iteration}" for e in candidate.events})
+        )
         lines.append(
             f"| {rank} | {candidate.key} | {candidate.count} | {candidate.gated_count} | "
             f"{candidate.gate_pass_rate:.2f} | {candidate.score:.2f} | {briefs} |"
@@ -251,7 +268,13 @@ def render_report(
 def load_records(log_path: Path, from_iteration: int | None) -> list[dict]:
     import json
 
-    records = [json.loads(line) for line in Path(log_path).read_text().splitlines() if line.strip()]
+    records = [
+        json.loads(line)
+        for line in Path(log_path).read_text().splitlines()
+        if line.strip()
+    ]
     if from_iteration is not None:
-        records = [record for record in records if record["iteration"] >= from_iteration]
+        records = [
+            record for record in records if record["iteration"] >= from_iteration
+        ]
     return records

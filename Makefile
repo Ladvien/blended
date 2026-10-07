@@ -1,7 +1,7 @@
 .PHONY: test test-pure test-blender test-blender-app converge converge-local \
 	replay calibrate-eye calibrate-visual-gate pin-golden-views converge-auto \
 	mine-ops pin bench-3dcode chat-e2e photo-to-model provider-smoke test-repro \
-	test-mcp test-mcp-blender install-mcp-addon test-viewport-gui
+	test-mcp test-mcp-blender install-mcp-addon test-viewport-gui test-bench-scripts
 PY ?= .venv/bin/python
 BLENDER ?= /Applications/Blender.app/Contents/MacOS/Blender
 
@@ -10,11 +10,17 @@ BLENDER ?= /Applications/Blender.app/Contents/MacOS/Blender
 # the installed Blender (the environment blended runs in over MCP), and
 # the MCP server's unit layer. A bare `pytest tests/blender` with no bpy
 # wheel skips every module and exits 5 (nothing ran), which is not a pass.
-test: test-pure test-blender-app test-mcp
+test: test-pure test-blender-app test-bench-scripts test-mcp
 
 # Pure-Python layer: must pass on any machine, no Blender required.
 test-pure:
 	$(PY) -m pytest tests/pure -q
+
+# Bench-script and Pillow tests in a throwaway env: numpy/scipy/trimesh/Pillow
+# never enter .venv, whose site-packages Blender (Python 3.13) puts first on sys.path.
+test-bench-scripts:
+	uv run --isolated --no-project --python 3.11 --with pytest --with numpy --with scipy --with trimesh --with pillow \
+		python -m pytest -q -p no:cacheprovider tests/bench_scripts
 
 # Blender layer: requires `import bpy` to work (pip-installed bpy wheel,
 # or Blender's own Python). With no bpy every module skips and pytest

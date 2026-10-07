@@ -6,9 +6,7 @@
 Verify that source files contain only ASCII characters.
 """
 
-__all__ = (
-    "main",
-)
+__all__ = ("main",)
 
 import os
 import sys
@@ -21,9 +19,7 @@ _SCAN_DIRS = (
 )
 
 # Directories to skip (relative to the repository root).
-_SKIP_DIRS = (
-    os.path.join("mcp", "blmcp", "data", "api", "examples"),
-)
+_SKIP_DIRS = (os.path.join("mcp", "blmcp", "data", "api", "examples"),)
 
 # File extensions to check.
 _EXTENSIONS = (
@@ -40,7 +36,10 @@ def main() -> int:
         scan_dir_abs = os.path.join(repo_root, scan_dir)
         for dirpath, _dirnames, filenames in os.walk(scan_dir_abs):
             dirpath_rel = os.path.relpath(dirpath, repo_root)
-            if any(dirpath_rel == d or dirpath_rel.startswith(d + os.sep) for d in _SKIP_DIRS):
+            if any(
+                dirpath_rel == d or dirpath_rel.startswith(d + os.sep)
+                for d in _SKIP_DIRS
+            ):
                 continue
             for filename in filenames:
                 if not any(filename.endswith(ext) for ext in _EXTENSIONS):
@@ -52,9 +51,13 @@ def main() -> int:
                         try:
                             line.decode("ascii")
                         except UnicodeDecodeError:
-                            print("{:s}:{:d}:{:s}".format(
-                                filepath_rel, line_number, line.decode("utf-8", errors="replace").rstrip(),
-                            ))
+                            print(
+                                "{:s}:{:d}:{:s}".format(
+                                    filepath_rel,
+                                    line_number,
+                                    line.decode("utf-8", errors="replace").rstrip(),
+                                )
+                            )
                             fail = 1
 
     if fail:

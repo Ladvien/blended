@@ -67,7 +67,9 @@ def estimate_request_tokens(messages: list[dict], tools: list[dict] | None) -> i
     for message in messages:
         images = message.get(IMAGES_KEY) or []
         image_count += len(images)
-        text_only.append({key: value for key, value in message.items() if key != IMAGES_KEY})
+        text_only.append(
+            {key: value for key, value in message.items() if key != IMAGES_KEY}
+        )
     return (
         estimate_tokens(json.dumps(text_only))
         + (estimate_tokens(json.dumps(tools)) if tools else 0)
@@ -89,7 +91,9 @@ def preflight(
     """
     estimated = estimate_request_tokens(messages, tools)
     if context_tokens is None:
-        return PreflightReport(False, estimated, None, f"no measured context for this model on {lane}")
+        return PreflightReport(
+            False, estimated, None, f"no measured context for this model on {lane}"
+        )
     if estimated + reserved_completion_tokens > context_tokens:
         raise ContextExceeded(
             f"refusing to send on {lane}: estimated prompt {estimated:,} tokens "
@@ -117,11 +121,17 @@ def check_reply_fits(body: dict, context_tokens: int | None, lane: str) -> None:
             f"the text is cut, not an answer. Raise max_completion_tokens or narrow the task."
         )
     if body.get("done_reason") == OLLAMA_LENGTH_DONE:
-        raise ReplyTruncated(f"{lane} stopped the reply at the completion ceiling (done_reason=length).")
+        raise ReplyTruncated(
+            f"{lane} stopped the reply at the completion ceiling (done_reason=length)."
+        )
     if body.get("truncated"):
-        raise ContextExceeded(f"{lane} truncated the PROMPT to fit its context (truncated=true).")
+        raise ContextExceeded(
+            f"{lane} truncated the PROMPT to fit its context (truncated=true)."
+        )
     usage = body.get("usage") or {}
-    prompt_tokens = int(usage.get("prompt_tokens") or body.get("prompt_eval_count") or 0)
+    prompt_tokens = int(
+        usage.get("prompt_tokens") or body.get("prompt_eval_count") or 0
+    )
     if context_tokens is not None and prompt_tokens > context_tokens:
         raise ContextExceeded(
             f"{lane} reports {prompt_tokens:,} prompt tokens against a context of "

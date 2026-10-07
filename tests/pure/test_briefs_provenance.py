@@ -66,9 +66,7 @@ def test_the_provenance_floor_does_not_slip():
     """
     from blended.evaluate.briefs import BRIEFS
 
-    instrumented = sorted(
-        name for name, brief in BRIEFS.items() if brief.provenance
-    )
+    instrumented = sorted(name for name, brief in BRIEFS.items() if brief.provenance)
     assert len(instrumented) >= MINIMUM_BRIEFS_WITH_PROVENANCE, (
         f"only {instrumented} carry provenance, expected at least "
         f"{MINIMUM_BRIEFS_WITH_PROVENANCE}"
@@ -94,8 +92,7 @@ def test_a_registry_key_that_disagrees_with_the_brief_name_is_reported():
     finally:
         del BRIEFS["some_other_key"]
     assert any(
-        "some_other_key" in problem and "not_the_key" in problem
-        for problem in problems
+        "some_other_key" in problem and "not_the_key" in problem for problem in problems
     ), problems
 
 

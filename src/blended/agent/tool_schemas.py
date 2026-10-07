@@ -95,7 +95,9 @@ def json_schema_for_type(hint) -> dict:
     if origin is typing.Literal:
         # A closed set of strings (a selector's `kind`): an enum.
         if not arguments or not all(isinstance(member, str) for member in arguments):
-            raise UnsupportedAnnotation(f"Literal {hint!r}: only string literals map to an enum")
+            raise UnsupportedAnnotation(
+                f"Literal {hint!r}: only string literals map to an enum"
+            )
         return {"type": "string", "enum": list(arguments)}
     if origin in (types.UnionType, typing.Union):
         return {"anyOf": [json_schema_for_type(member) for member in arguments]}
@@ -192,7 +194,9 @@ def op_tool_schema(op_name: str, function) -> dict:
         properties[PLAN_STEP_ARGUMENT] = dict(PLAN_STEP_SCHEMA)
     description = f"{_summary(function)} Returns {return_text}."
     if returns_object_names(function):
-        description += " " + (GATED_DESCRIPTION if is_gated(function) else UNGATED_DESCRIPTION)
+        description += " " + (
+            GATED_DESCRIPTION if is_gated(function) else UNGATED_DESCRIPTION
+        )
     return {
         "type": "function",
         "function": {

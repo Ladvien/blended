@@ -266,9 +266,7 @@ def read_accessor(gltf: dict, binary: bytes, index: int) -> list[tuple[float, ..
         # glTF 2.0 §3.11: signed normalized c/MAX clamps at -1.0 (the
         # most negative integer is one step beyond -1.0); unsigned
         # values are never negative so the clamp is inert for them.
-        values.append(
-            tuple(max(v / divisor, -1.0) for v in raw) if divisor else raw
-        )
+        values.append(tuple(max(v / divisor, -1.0) for v in raw) if divisor else raw)
     return values
 
 
@@ -325,8 +323,7 @@ def mesh_reports(gltf: dict, binary: bytes) -> dict[str, GlbMeshReport]:
             weight_set_count = max(weight_set_count, len(weight_keys))
             if weight_keys:
                 weights_all = [
-                    read_accessor(gltf, binary, attributes[key])
-                    for key in weight_keys
+                    read_accessor(gltf, binary, attributes[key]) for key in weight_keys
                 ]
                 vertex_count = len(weights_all[0])
                 for vertex_index in range(vertex_count):
@@ -339,13 +336,14 @@ def mesh_reports(gltf: dict, binary: bytes) -> dict[str, GlbMeshReport]:
                     non_zero_influences = sum(
                         1 for w in vertex_weights if w > WEIGHT_INFLUENCE_FLOOR
                     )
-                    per_vertex_tolerance = (
-                        WEIGHT_SUM_TOLERANCE_PER_INFLUENCE
-                        * max(1, non_zero_influences)
+                    per_vertex_tolerance = WEIGHT_SUM_TOLERANCE_PER_INFLUENCE * max(
+                        1, non_zero_influences
                     )
                     if not math.isclose(
-                        weight_sum, 1.0,
-                        rel_tol=0.0, abs_tol=per_vertex_tolerance,
+                        weight_sum,
+                        1.0,
+                        rel_tol=0.0,
+                        abs_tol=per_vertex_tolerance,
                     ):
                         weight_sum_violation_count += 1
                     if non_zero_influences == 1:
@@ -362,7 +360,10 @@ def mesh_reports(gltf: dict, binary: bytes) -> dict[str, GlbMeshReport]:
                 for first, second in ((0, 1), (1, 2), (2, 0)):
                     edge = tuple(
                         sorted(
-                            (remap[corner_indices[first]], remap[corner_indices[second]])
+                            (
+                                remap[corner_indices[first]],
+                                remap[corner_indices[second]],
+                            )
                         )
                     )
                     edge_uses[edge] = edge_uses.get(edge, 0) + 1
@@ -405,7 +406,9 @@ def _face_disagrees_with_itself(positions, normals, corner_indices) -> bool:
         edge_1[2] * edge_2[0] - edge_1[0] * edge_2[2],
         edge_1[0] * edge_2[1] - edge_1[1] * edge_2[0],
     )
-    stored_normal = [sum(normals[i][axis] for i in corner_indices) / 3.0 for axis in range(3)]
+    stored_normal = [
+        sum(normals[i][axis] for i in corner_indices) / 3.0 for axis in range(3)
+    ]
     return sum(winding_normal[axis] * stored_normal[axis] for axis in range(3)) < 0.0
 
 
@@ -429,12 +432,10 @@ def asset_report(path: Path) -> GlbAssetReport:
                     f"has no min/max — glTF requires them"
                 )
             minimum_corner = tuple(
-                min(existing, value)
-                for existing, value in zip(minimum_corner, minimum)
+                min(existing, value) for existing, value in zip(minimum_corner, minimum)
             )
             maximum_corner = tuple(
-                max(existing, value)
-                for existing, value in zip(maximum_corner, maximum)
+                max(existing, value) for existing, value in zip(maximum_corner, maximum)
             )
 
     return GlbAssetReport(
@@ -448,9 +449,7 @@ def asset_report(path: Path) -> GlbAssetReport:
         node_names=[node.get("name", "") for node in nodes],
         minimum_corner_m=minimum_corner,
         maximum_corner_m=maximum_corner,
-        animation_names=[
-            anim.get("name", "") for anim in gltf.get("animations", [])
-        ],
+        animation_names=[anim.get("name", "") for anim in gltf.get("animations", [])],
     )
 
 
@@ -485,7 +484,7 @@ def format_glb_report(
             f"{sum(m.weight_sum_violation_count for m in report.meshes.values())}/"
             f"{sum(m.negative_weight_vertex_count for m in report.meshes.values())}"
         ),
-        ]
+    ]
     if baseline is not None:
         removed = sorted(set(baseline.mesh_names) - set(report.mesh_names))
         added = sorted(set(report.mesh_names) - set(baseline.mesh_names))

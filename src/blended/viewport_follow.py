@@ -61,7 +61,9 @@ def frame_target_names(outcome: ToolOutcome) -> tuple[str, ...]:
     return tuple(dict.fromkeys(names))
 
 
-def follow_viewport(outcome: ToolOutcome, config: ViewportFollowConfig = ViewportFollowConfig()) -> ToolOutcome:
+def follow_viewport(
+    outcome: ToolOutcome, config: ViewportFollowConfig = ViewportFollowConfig()
+) -> ToolOutcome:
     """The outcome with a `viewport:` line appended after framing what it
     touched. A framing error is reported on that line, not raised: the
     tool call already changed the scene, and an error result would invite
@@ -69,7 +71,9 @@ def follow_viewport(outcome: ToolOutcome, config: ViewportFollowConfig = Viewpor
     try:
         line = frame_in_viewports(frame_target_names(outcome), config).line
     except Exception as error:  # noqa: BLE001 — reported on the viewport line, not swallowed
-        line = f"{VIEWPORT_LINE_PREFIX} FAILED to frame: {type(error).__name__}: {error}"
+        line = (
+            f"{VIEWPORT_LINE_PREFIX} FAILED to frame: {type(error).__name__}: {error}"
+        )
     return dataclasses.replace(outcome, text=f"{outcome.text}\n{line}")
 
 
@@ -81,16 +85,24 @@ def frame_in_viewports(
     import bpy
 
     if bpy.app.background:
-        return ViewportFraming((), 0, f"{VIEWPORT_LINE_PREFIX} not framed: background Blender has no viewport")
+        return ViewportFraming(
+            (),
+            0,
+            f"{VIEWPORT_LINE_PREFIX} not framed: background Blender has no viewport",
+        )
 
     framed: dict[str, None] = {}
     viewport_count = 0
     open_viewport_count = 0
     for window in bpy.context.window_manager.windows:
-        areas = [area for area in window.screen.areas if area.type == _VIEW_3D_AREA_TYPE]
+        areas = [
+            area for area in window.screen.areas if area.type == _VIEW_3D_AREA_TYPE
+        ]
         open_viewport_count += len(areas)
         view_layer = window.view_layer
-        targets = [bpy.data.objects[name] for name in names if name in view_layer.objects]
+        targets = [
+            bpy.data.objects[name] for name in names if name in view_layer.objects
+        ]
         if not targets or not areas:
             continue
         center, radius_m = _bounding_sphere(targets, view_layer.depsgraph)
@@ -116,7 +128,9 @@ def _bounding_sphere(targets, depsgraph):
     corners = []
     for target in targets:
         evaluated = target.evaluated_get(depsgraph)
-        corners.extend(evaluated.matrix_world @ Vector(corner) for corner in evaluated.bound_box)
+        corners.extend(
+            evaluated.matrix_world @ Vector(corner) for corner in evaluated.bound_box
+        )
     low = Vector(tuple(min(corner[axis] for corner in corners) for axis in range(3)))
     high = Vector(tuple(max(corner[axis] for corner in corners) for axis in range(3)))
     center = (low + high) / 2.0
@@ -135,7 +149,10 @@ def _fit_area(area, center, radius_m: float, config: ViewportFollowConfig) -> No
     fitted_radius_m = radius_m * config.margin_factor
     if region_3d.view_perspective == _ORTHOGRAPHIC:
         # An ortho view's half extents grow linearly with view_distance.
-        half_extent_per_distance = min(1.0 / projection[0][0], 1.0 / projection[1][1]) / region_3d.view_distance
+        half_extent_per_distance = (
+            min(1.0 / projection[0][0], 1.0 / projection[1][1])
+            / region_3d.view_distance
+        )
         distance_m = fitted_radius_m / half_extent_per_distance
     else:
         # The narrower field of view decides; the sphere is tangent to it.

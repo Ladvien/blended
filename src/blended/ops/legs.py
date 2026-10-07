@@ -21,8 +21,9 @@ So the arithmetic lives here instead:
   drop        = leg_radius / cos(splay) + margin   whole cap clears z=0
   base_radius = foot_radius + drop * tan(splay)    axis crosses z=0 ON
                                                    the foot circle
-  length      = hypot(rise, run) + drop            regains what the
-                                                   drop spent
+  length      = hypot(rise, run) + drop / cos(splay)
+                                                   regains what the
+                                                   drop spent, along the axis
 
 `add_splayed_leg` applies all three together. There is no argument
 combination that reproduces the trap, which is the point: the failure
@@ -90,9 +91,7 @@ class SplayedLegSpec:
 
     def __post_init__(self) -> None:
         if self.top_z_m <= 0.0:
-            raise ImpossibleLeg(
-                f"top_z_m must be above the floor, got {self.top_z_m}"
-            )
+            raise ImpossibleLeg(f"top_z_m must be above the floor, got {self.top_z_m}")
         if self.leg_radius_m <= 0.0:
             raise ImpossibleLeg(
                 f"leg_radius_m must be positive, got {self.leg_radius_m}"
@@ -126,8 +125,7 @@ class SplayedLegSpec:
     def sole_drop_m(self) -> float:
         """How far below z=0 the base sits so the WHOLE cap clears it."""
         return (
-            self.leg_radius_m / math.cos(self.splay_rad)
-            + self.sole_clearance_margin_m
+            self.leg_radius_m / math.cos(self.splay_rad) + self.sole_clearance_margin_m
         )
 
     @property
@@ -142,8 +140,15 @@ class SplayedLegSpec:
 
     @property
     def length_m(self) -> float:
-        """Hypotenuse plus the drop: it has to regain what it spent."""
-        return math.hypot(self.rise_m, self.run_m) + self.sole_drop_m
+        """Hypotenuse plus the drop along the axis: it has to regain what it spent.
+
+        The drop is measured straight down, the leg runs along the splayed
+        axis, so the axis must lengthen by drop / cos(splay), not by drop:
+        only then does its top end exactly on (`top_radius_m`, `top_z_m`).
+        """
+        return math.hypot(self.rise_m, self.run_m) + self.sole_drop_m / math.cos(
+            self.splay_rad
+        )
 
     @property
     def bearing_rad(self) -> float:

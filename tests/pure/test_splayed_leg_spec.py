@@ -62,28 +62,43 @@ def test_the_whole_end_cap_clears_the_cut_plane():
     )
 
 
-def test_the_leg_regains_the_length_the_drop_spent():
-    """Dropped and not lengthened, the leg no longer reaches the seat."""
-    hypotenuse_m = math.hypot(STOOL_SPEC.rise_m, STOOL_SPEC.run_m)
-    assert STOOL_SPEC.length_m == pytest.approx(
-        hypotenuse_m + STOOL_SPEC.sole_drop_m
-    )
+def _axis_top(spec: SplayedLegSpec) -> tuple[float, float]:
+    """(z, radius) where the leg's axis ends, walking `length_m` up from the base.
+
+    The base sits at `base_radius_m`, `-sole_drop_m`; each metre along the
+    axis climbs cos(splay) and moves inward sin(splay).
+    """
+    top_z_m = -spec.sole_drop_m + spec.length_m * math.cos(spec.splay_rad)
+    top_radius_m = spec.base_radius_m - spec.length_m * math.sin(spec.splay_rad)
+    return top_z_m, top_radius_m
+
+
+def test_the_axis_top_lands_on_the_top_circle():
+    """Lengthening by the drop alone leaves the axis short: the drop is
+    vertical, the length is along the splayed axis, so it must regain
+    drop / cos(splay). Measured on STOOL_SPEC before the fix: the axis ended
+    0.37 mm below `top_z_m` and 0.06 mm outboard of `top_radius_m`."""
+    for spec in (STOOL_SPEC, VERTICAL_SPEC):
+        top_z_m, top_radius_m = _axis_top(spec)
+        assert top_z_m == pytest.approx(spec.top_z_m, abs=1e-12)
+        assert top_radius_m == pytest.approx(spec.top_radius_m, abs=1e-12)
+
+
+VERTICAL_SPEC = SplayedLegSpec(
+    foot_radius_m=0.1,
+    foot_bearing_deg=0.0,
+    top_radius_m=0.1,
+    top_z_m=0.4,
+    leg_radius_m=0.02,
+)
 
 
 def test_a_vertical_leg_needs_no_outboard_offset():
     """Zero splay is not a special case, it is the same formula at 0."""
-    vertical = SplayedLegSpec(
-        foot_radius_m=0.1,
-        foot_bearing_deg=0.0,
-        top_radius_m=0.1,
-        top_z_m=0.4,
-        leg_radius_m=0.02,
-    )
+    vertical = VERTICAL_SPEC
     assert vertical.splay_rad == pytest.approx(0.0)
     assert vertical.base_radius_m == pytest.approx(vertical.foot_radius_m)
-    assert _axis_radius_at_ground(vertical) == pytest.approx(
-        vertical.foot_radius_m
-    )
+    assert _axis_radius_at_ground(vertical) == pytest.approx(vertical.foot_radius_m)
 
 
 @pytest.mark.parametrize(

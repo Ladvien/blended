@@ -17,7 +17,7 @@ In this repository the server is a workspace member of the root `pyproject.toml`
 * The add-on listens on `localhost:9876` (override with `BLENDER_MCP_HOST` / `BLENDER_MCP_PORT` on the server).
 
 ### Server options
-* `--transport stdio|http` (default `stdio`); `--host` / `--port` apply to `http` only.
+* `--transport stdio|http` (default `stdio`); `--host` / `--port` apply to `http` only. `--host` must be a loopback address (`127.0.0.1`, `localhost`, `::1`): the tools run arbitrary Python in Blender with no authentication, so any other host exits with an error, and the HTTP transport rejects non-loopback `Host` and `Origin` headers (DNS-rebinding protection).
 * `--exit-on-source-change` / `--no-exit-on-source-change` (default: off): exit once `src/blended` or `blmcp` changed and held still, so a client that restarts a server that exits (omp) re-lists fresh tools. Needs `--transport stdio`.
 
 ## Examples

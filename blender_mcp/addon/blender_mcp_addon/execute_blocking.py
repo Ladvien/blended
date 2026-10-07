@@ -12,9 +12,7 @@ Background mode does not support deferred responses; requests must complete
 before returning.
 """
 
-__all__ = (
-    "run",
-)
+__all__ = ("run",)
 
 from . import mcp_to_blender_server
 

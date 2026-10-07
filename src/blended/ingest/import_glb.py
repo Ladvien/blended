@@ -69,12 +69,18 @@ def import_glb(glb_path: Path, object_name: str):
                 bpy.data.armatures.remove(object_data)
 
     # Normalize into repo conventions: identity matrix, base at z=0,
-    # centered on X/Y — baked into the mesh, not hidden in the matrix.
+    # centered on X/Y (the bounding-box centre, not the vertex mean, which
+    # a mesh that is denser on one side drags off-centre) — baked into the
+    # mesh, not hidden in the matrix.
     joined_object.matrix_world = Matrix.Identity(4)
     vertex_coordinates = [vertex.co for vertex in joined_mesh.vertices]
     minimum_z_m = min(coordinate.z for coordinate in vertex_coordinates)
-    center_x_m = sum(c.x for c in vertex_coordinates) / len(vertex_coordinates)
-    center_y_m = sum(c.y for c in vertex_coordinates) / len(vertex_coordinates)
+    center_x_m = (
+        min(c.x for c in vertex_coordinates) + max(c.x for c in vertex_coordinates)
+    ) / 2
+    center_y_m = (
+        min(c.y for c in vertex_coordinates) + max(c.y for c in vertex_coordinates)
+    ) / 2
     joined_mesh.transform(
         Matrix.Translation(Vector((-center_x_m, -center_y_m, -minimum_z_m)))
     )

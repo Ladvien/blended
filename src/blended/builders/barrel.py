@@ -46,9 +46,7 @@ class BarrelParameters:
             raise ValueError("Barrel needs at least two profile rings.")
         if self.hoop_height_m <= 0.0 or self.hoop_protrusion_m <= 0.0:
             raise ValueError("Hoop dimensions must be positive.")
-        if sorted(self.hoop_build_order) != list(
-            range(len(HOOP_POSITION_FRACTIONS))
-        ):
+        if sorted(self.hoop_build_order) != list(range(len(HOOP_POSITION_FRACTIONS))):
             raise ValueError(
                 "Hoop build order must be a permutation of the hoop positions."
             )

@@ -55,7 +55,9 @@ def test_joined_overlap_trips_self_intersection_and_components(empty_scene):
 
     first_box = bpy.data.objects[add_box("JoinA", 1.0, 1.0, 1.0)]
     link_into_scene(first_box.name)
-    second_box = bpy.data.objects[add_box("JoinB", 1.0, 1.0, 1.0, location_m=(0.5, 0.3, 0.2))]
+    second_box = bpy.data.objects[
+        add_box("JoinB", 1.0, 1.0, 1.0, location_m=(0.5, 0.3, 0.2))
+    ]
     link_into_scene(second_box.name)
     joined_object = _join_into_one_mesh("JoinedOverlap", first_box, second_box)
 

@@ -78,23 +78,25 @@ NOT_MEASURED_IMAGE_SIMILARITY = (
 def parse_arguments(argv):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
-        "--group", action="append", required=True,
-        help="LABEL=path1,path2,... — one configuration's rolls. Repeatable."
+        "--group",
+        action="append",
+        required=True,
+        help="LABEL=path1,path2,... — one configuration's rolls. Repeatable.",
     )
     parser.add_argument(
-        "--reported-roll", action="append", default=[],
+        "--reported-roll",
+        action="append",
+        default=[],
         help="A roll listed on the panel but belonging to no group: it is "
-             "reported and never ranked. Repeatable."
+        "reported and never ranked. Repeatable.",
     )
     parser.add_argument(
-        "--instances-file", default="",
+        "--instances-file",
+        default="",
         help="The frozen set, reported for its size only; the comparison "
-             "set comes from the rolls themselves."
+        "set comes from the rolls themselves.",
     )
-    parser.add_argument(
-        "--out", default="",
-        help="Markdown path; default is stdout."
-    )
+    parser.add_argument("--out", default="", help="Markdown path; default is stdout.")
     return parser.parse_args(argv)
 
 
@@ -102,8 +104,7 @@ def load_group(specification: str) -> dict:
     """`LABEL=path,path,...` into a group of loaded rolls."""
     if "=" not in specification:
         raise SystemExit(
-            f"--group needs LABEL=path1,path2,...; got {specification!r} "
-            f"with no '='"
+            f"--group needs LABEL=path1,path2,...; got {specification!r} with no '='"
         )
     label, _, joined = specification.partition("=")
     label = label.strip()
@@ -131,7 +132,8 @@ def executability(roll: dict) -> tuple[int, int]:
     """
     rows = roll["rows"]
     executed = sum(
-        1 for row in rows
+        1
+        for row in rows
         if str(row.get("status", "")).startswith(EXECUTABLE_STATUS_PREFIX)
     )
     return executed, len(rows)
@@ -170,10 +172,12 @@ def roll_mean(roll: dict, instances, metric: str) -> float:
 def roll_run_columns(roll: dict) -> dict:
     """Turns and seconds per instance, averaged over the rows that carry
     them. Absent in a synthetic roll, so they are optional, never faked."""
-    turns = [row["num_turns"] for row in roll["rows"]
-             if row.get("num_turns") is not None]
-    seconds = [row["duration_s"] for row in roll["rows"]
-               if row.get("duration_s") is not None]
+    turns = [
+        row["num_turns"] for row in roll["rows"] if row.get("num_turns") is not None
+    ]
+    seconds = [
+        row["duration_s"] for row in roll["rows"] if row.get("duration_s") is not None
+    ]
     return {
         "turns": statistics.fmean(turns) if turns else None,
         "seconds": statistics.fmean(seconds) if seconds else None,
@@ -212,15 +216,14 @@ def group_statistics(group: dict, instances) -> dict:
             [roll["per_instance"][instance][metric] for roll in rolls]
             for instance in instances
         ]
-        instance_sds = [statistics.stdev(values)
-                        for values in per_instance_values]
+        instance_sds = [statistics.stdev(values) for values in per_instance_values]
         spans = [max(values) - min(values) for values in per_instance_values]
-        standard_error_one_roll = (
-            statistics.fmean(instance_sds) / math.sqrt(len(instances))
+        standard_error_one_roll = statistics.fmean(instance_sds) / math.sqrt(
+            len(instances)
         )
         standard_error = standard_error_one_roll / math.sqrt(len(rolls))
-        standard_error_at_floor = (
-            standard_error_one_roll / math.sqrt(MINIMUM_PAIRED_ROLLS)
+        standard_error_at_floor = standard_error_one_roll / math.sqrt(
+            MINIMUM_PAIRED_ROLLS
         )
         mean = statistics.fmean(roll_means)
         target_effect = TARGET_RELATIVE_IMPROVEMENT * mean
@@ -228,8 +231,9 @@ def group_statistics(group: dict, instances) -> dict:
         axes[metric] = {
             "mean": mean,
             "roll_means": roll_means,
-            "between_roll_stdev": (statistics.stdev(roll_means)
-                                   if len(roll_means) > 1 else 0.0),
+            "between_roll_stdev": (
+                statistics.stdev(roll_means) if len(roll_means) > 1 else 0.0
+            ),
             "median_instance_span": statistics.median(spans),
             "mean_instance_stdev": statistics.fmean(instance_sds),
             "standard_error_one_roll": standard_error_one_roll,
@@ -287,10 +291,12 @@ def group_instances(group: dict) -> list[str]:
         for roll in rankable:
             extra = sorted(set(roll["per_instance"]) - shared)
             if extra:
-                print(f"INSTANCE SET MISMATCH in group {group['label']}: "
-                      f"{roll['model_dir']} carries {len(extra)} instance(s) "
-                      f"the others do not: {', '.join(extra)}",
-                      file=sys.stderr)
+                print(
+                    f"INSTANCE SET MISMATCH in group {group['label']}: "
+                    f"{roll['model_dir']} carries {len(extra)} instance(s) "
+                    f"the others do not: {', '.join(extra)}",
+                    file=sys.stderr,
+                )
         raise SystemExit(
             f"rolls in group {group['label']} disagree on their instance "
             f"sets; a mean over different sets is not a comparison"
@@ -299,47 +305,60 @@ def group_instances(group: dict) -> list[str]:
 
 
 def render_rule(instances_file: str, frozen_size) -> list[str]:
-    frozen = (f" The frozen set named in `{instances_file}` holds "
-              f"{frozen_size} instances." if instances_file else "")
+    frozen = (
+        f" The frozen set named in `{instances_file}` holds {frozen_size} instances."
+        if instances_file
+        else ""
+    )
     return [
         "## Pre-registered rule",
         "",
-        (f"Ranking is on **`{RANKING_METRIC}`** alone "
-         f"({'higher' if higher_is_better(RANKING_METRIC) else 'lower'} is "
-         f"better). `{'`, `'.join(REPORTED_METRICS)}` are reported on every "
-         f"panel and rank nothing."),
+        (
+            f"Ranking is on **`{RANKING_METRIC}`** alone "
+            f"({'higher' if higher_is_better(RANKING_METRIC) else 'lower'} is "
+            f"better). `{'`, `'.join(REPORTED_METRICS)}` are reported on every "
+            f"panel and rank nothing."
+        ),
         "",
-        (f"**Executability is lexicographically first.** A group whose "
-         f"executability is below another's cannot rank better, however "
-         f"good its `{RANKING_METRIC}` is: a configuration that declines "
-         f"to produce a mesh scores nothing on the instances it skipped, "
-         f"so a shape mean is only comparable between groups that "
-         f"attempted the same work."),
+        (
+            f"**Executability is lexicographically first.** A group whose "
+            f"executability is below another's cannot rank better, however "
+            f"good its `{RANKING_METRIC}` is: a configuration that declines "
+            f"to produce a mesh scores nothing on the instances it skipped, "
+            f"so a shape mean is only comparable between groups that "
+            f"attempted the same work."
+        ),
         "",
-        (f"A candidate is a mean over at least **{MINIMUM_PAIRED_ROLLS} "
-         f"paired rolls** of the same instance set, each attempting at "
-         f"least **{MINIMUM_INSTANCES_FOR_RANKING} instances** and "
-         f"executing **all of them** (§P8a). A roll below that instance "
-         f"count, or with any failed instance, is reported and never "
-         f"ranked.{frozen}"),
+        (
+            f"A candidate is a mean over at least **{MINIMUM_PAIRED_ROLLS} "
+            f"paired rolls** of the same instance set, each attempting at "
+            f"least **{MINIMUM_INSTANCES_FOR_RANKING} instances** and "
+            f"executing **all of them** (§P8a). A roll below that instance "
+            f"count, or with any failed instance, is reported and never "
+            f"ranked.{frozen}"
+        ),
         "",
-        (f"The target is **relative**: "
-         f"{TARGET_RELATIVE_IMPROVEMENT:.0%} better than the incumbent's "
-         f"own measured mean, so it moves with the incumbent instead of "
-         f"being a literal that goes stale. A regression is a one-sided "
-         f"move of more than **{REGRESSION_SIGMA:.0f} sigma** on the "
-         f"ranking metric's standard error."),
+        (
+            f"The target is **relative**: "
+            f"{TARGET_RELATIVE_IMPROVEMENT:.0%} better than the incumbent's "
+            f"own measured mean, so it moves with the incumbent instead of "
+            f"being a literal that goes stale. A regression is a one-sided "
+            f"move of more than **{REGRESSION_SIGMA:.0f} sigma** on the "
+            f"ranking metric's standard error."
+        ),
         "",
     ]
 
 
 def render_rolls(rows) -> list[str]:
-    header = ("| roll | n | exec_ok | "
-              + " | ".join(
-                  metric if metric == RANKING_METRIC
-                  else f"{metric} (reported)"
-                  for metric in PANEL_METRICS)
-              + " | turns | sec/inst |")
+    header = (
+        "| roll | n | exec_ok | "
+        + " | ".join(
+            metric if metric == RANKING_METRIC else f"{metric} (reported)"
+            for metric in PANEL_METRICS
+        )
+        + " | turns | sec/inst |"
+    )
     lines = ["## Rolls", "", header, "|" + "---|" * (5 + len(PANEL_METRICS))]
     lines.extend(rows)
     lines.append("")
@@ -361,9 +380,10 @@ def roll_row(roll: dict, instances) -> str:
     ]
     turns = f"{run['turns']:.1f}" if run["turns"] is not None else "—"
     seconds = f"{run['seconds']:.0f}" if run["seconds"] is not None else "—"
-    return (f"| {name} | {len(roll['per_instance'])} | "
-            f"{executed}/{attempted} | " + " | ".join(cells)
-            + f" | {turns} | {seconds} |")
+    return (
+        f"| {name} | {len(roll['per_instance'])} | "
+        f"{executed}/{attempted} | " + " | ".join(cells) + f" | {turns} | {seconds} |"
+    )
 
 
 def render_groups(statistics_rows) -> list[str]:
@@ -372,14 +392,19 @@ def render_groups(statistics_rows) -> list[str]:
     described."""
     ranked = sorted(
         statistics_rows,
-        key=lambda row: (-row["executability"],
-                         ranked_key(row["axes"][RANKING_METRIC]["mean"])),
+        key=lambda row: (
+            -row["executability"],
+            ranked_key(row["axes"][RANKING_METRIC]["mean"]),
+        ),
     )
     lines = [
         "## Groups",
         "",
-        ("| rank | group | rolls | exec | "
-         + " | ".join(PANEL_METRICS) + f" | SE({RANKING_METRIC}) |"),
+        (
+            "| rank | group | rolls | exec | "
+            + " | ".join(PANEL_METRICS)
+            + f" | SE({RANKING_METRIC}) |"
+        ),
         "|" + "---|" * (5 + len(PANEL_METRICS)),
     ]
     for position, row in enumerate(ranked, 1):
@@ -399,12 +424,14 @@ def render_power(statistics_rows) -> list[str]:
     lines = [
         "## Power",
         "",
-        (f"The detectable effect is quoted at the RULE'S FLOOR of "
-         f"{MINIMUM_PAIRED_ROLLS} rolls, not at the roll count an "
-         f"incumbent happens to have: a future candidate is bound by the "
-         f"floor, so a verdict computed on six accumulated rolls would "
-         f"promise resolution nobody has to buy. The group's own SE is "
-         f"printed beside it."),
+        (
+            f"The detectable effect is quoted at the RULE'S FLOOR of "
+            f"{MINIMUM_PAIRED_ROLLS} rolls, not at the roll count an "
+            f"incumbent happens to have: a future candidate is bound by the "
+            f"floor, so a verdict computed on six accumulated rolls would "
+            f"promise resolution nobody has to buy. The group's own SE is "
+            f"printed beside it."
+        ),
         "",
     ]
     for row in statistics_rows:
@@ -412,11 +439,13 @@ def render_power(statistics_rows) -> list[str]:
         lines += [
             f"### {row['label']} — {rolls} ranking-eligible rolls",
             "",
-            ("| axis | mean | median per-instance span | mean per-instance "
-             "SD | SE of a 20-mean | SE of the "
-             f"{rolls}-roll mean | SE at the {MINIMUM_PAIRED_ROLLS}-roll "
-             f"floor | target ({TARGET_RELATIVE_IMPROVEMENT:.0%}) "
-             f"| detectable at {REGRESSION_SIGMA:.0f}σ | margin |"),
+            (
+                "| axis | mean | median per-instance span | mean per-instance "
+                "SD | SE of a 20-mean | SE of the "
+                f"{rolls}-roll mean | SE at the {MINIMUM_PAIRED_ROLLS}-roll "
+                f"floor | target ({TARGET_RELATIVE_IMPROVEMENT:.0%}) "
+                f"| detectable at {REGRESSION_SIGMA:.0f}σ | margin |"
+            ),
             "|---|---|---|---|---|---|---|---|---|---|",
         ]
         for metric in PANEL_METRICS:
@@ -464,19 +493,25 @@ def render_not_measured() -> list[str]:
         "**Image similarity.** Absent for two independent reasons:",
         "",
     ]
-    lines += [f"{index}. {reason}"
-              for index, reason in enumerate(NOT_MEASURED_IMAGE_SIMILARITY, 1)]
+    lines += [
+        f"{index}. {reason}"
+        for index, reason in enumerate(NOT_MEASURED_IMAGE_SIMILARITY, 1)
+    ]
     lines += [
         "",
-        ("The generated meshes are NOT gone: every `model_dir` above "
-         "resolves with its `glb/<instance>.glb` present, and the reference "
-         "GLBs survive under `data/<instance>/glb/`. So the axis is missing "
-         "its packages and its reference images, not its geometry."),
+        (
+            "The generated meshes are NOT gone: every `model_dir` above "
+            "resolves with its `glb/<instance>.glb` present, and the reference "
+            "GLBs survive under `data/<instance>/glb/`. So the axis is missing "
+            "its packages and its reference images, not its geometry."
+        ),
         "",
-        ("**Requirement on the next roll:** retain `glb/` and `renders/`. "
-         "With both kept, image similarity can be added to this panel "
-         "without re-running a single instance; discard them and the axis "
-         "costs a full sweep to recover."),
+        (
+            "**Requirement on the next roll:** retain `glb/` and `renders/`. "
+            "With both kept, image similarity can be added to this panel "
+            "without re-running a single instance; discard them and the axis "
+            "costs a full sweep to recover."
+        ),
         "",
     ]
     return lines
@@ -518,7 +553,9 @@ def main(argv) -> int:
     refuse_unrankable_groups(groups)
     reported_rolls = [load_json(path) for path in arguments.reported_roll]
     panel = render_panel(
-        groups, reported_rolls, arguments,
+        groups,
+        reported_rolls,
+        arguments,
         frozen_set_size(arguments.instances_file),
     )
     if arguments.out:

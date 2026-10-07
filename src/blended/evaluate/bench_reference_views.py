@@ -17,12 +17,18 @@ error, never a silent fall-back to text: RESP (DOI 10.48550/arXiv.2604.11082)
 measures an irrelevant reference as worse than none, and an instance run
 without its views would be scored beside instances run with them.
 """
+
 from __future__ import annotations
 
 from pathlib import Path
 
 # In render order; frame index times 9 degrees is the azimuth.
-REFERENCE_VIEW_FILENAMES = ("Image_005.png", "Image_015.png", "Image_025.png", "Image_035.png")
+REFERENCE_VIEW_FILENAMES = (
+    "Image_005.png",
+    "Image_015.png",
+    "Image_025.png",
+    "Image_035.png",
+)
 # Where the bench README keeps them, relative to the bench root.
 REFERENCE_IMAGES_SUBDIR = Path("benchmark") / "categories"
 

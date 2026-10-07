@@ -110,9 +110,7 @@ def test_a_regressing_fill_is_reverted(empty_scene):
         rim_centre /= len(rim_vertices)
         # Mirror one rim vertex through the hole plane: the fan cannot
         # fill it without folding.
-        rim_vertices[0].co = (
-            rim_centre * 2.0 - mathutils.Vector(rim_vertices[0].co)
-        )
+        rim_vertices[0].co = rim_centre * 2.0 - mathutils.Vector(rim_vertices[0].co)
         working_mesh.to_mesh(mesh_data)
     finally:
         working_mesh.free()

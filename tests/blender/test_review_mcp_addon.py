@@ -78,3 +78,33 @@ def test_deferred_checker_that_exits_gets_an_error_response(addon_modules):
     response = json.loads(bytes(received).rstrip(b"\0"))
     assert response["status"] == "error"
     assert "SystemExit" in response["message"]
+
+
+def _free_loopback_port() -> int:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+        probe.bind(("127.0.0.1", 0))
+        return probe.getsockname()[1]
+
+
+def test_the_server_refuses_a_non_loopback_host(addon_modules):
+    """`_execute_code` runs arbitrary Python with no authentication, so
+    binding 0.0.0.0 hands that to the whole LAN. Measured before the fix:
+    `start("0.0.0.0", port)` bound and listened."""
+    server, _deferred = addon_modules
+    port = _free_loopback_port()
+    try:
+        with pytest.raises(ValueError, match="not loopback"):
+            server.start("0.0.0.0", port)
+        assert not server.is_running()
+    finally:
+        server.stop()
+
+
+def test_the_server_still_binds_loopback(addon_modules):
+    server, _deferred = addon_modules
+    server.start("127.0.0.1", _free_loopback_port())
+    try:
+        assert server.is_running()
+    finally:
+        server.stop()
+    assert not server.is_running()

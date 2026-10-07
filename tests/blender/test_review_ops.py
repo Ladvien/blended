@@ -69,7 +69,9 @@ def test_binding_without_automatic_weights_leaves_the_mesh_in_place(empty_scene)
     from blended.ops.rigging import add_armature, bind_mesh_to_armature
     from blended.ops.transforms import world_bounds
 
-    armature = add_armature("Rig", _one_bone(), location_m=(0.0, 0.0, ARMATURE_HEIGHT_M))
+    armature = add_armature(
+        "Rig", _one_bone(), location_m=(0.0, 0.0, ARMATURE_HEIGHT_M)
+    )
     mesh = _linked_box("Subject")
     before_m = world_bounds(mesh)["min_m"]
 
@@ -96,7 +98,9 @@ def test_move_object_to_places_a_parented_object_in_world_space(empty_scene):
     assert translation_m == pytest.approx((0.0, 0.0, 0.0), abs=PLACEMENT_TOLERANCE_M)
 
 
-def test_axis_normal_selection_uses_true_world_normals_under_non_uniform_scale(empty_scene):
+def test_axis_normal_selection_uses_true_world_normals_under_non_uniform_scale(
+    empty_scene,
+):
     # Old: a 45-degree face under z-scale 10 read as a +z face (normal
     # (-0.10, 0, 0.995)); its true world normal is (-0.995, 0, 0.10).
     import bmesh
@@ -120,11 +124,19 @@ def test_axis_normal_selection_uses_true_world_normals_under_non_uniform_scale(e
 
     selects_up = select_faces(
         "Slant",
-        FaceSelector(kind="axis_normal", axis="+z", normal_tolerance_deg=SLANTED_FACE_TOLERANCE_DEG),
+        FaceSelector(
+            kind="axis_normal",
+            axis="+z",
+            normal_tolerance_deg=SLANTED_FACE_TOLERANCE_DEG,
+        ),
     )
     selects_left = select_faces(
         "Slant",
-        FaceSelector(kind="axis_normal", axis="-x", normal_tolerance_deg=SLANTED_FACE_TOLERANCE_DEG),
+        FaceSelector(
+            kind="axis_normal",
+            axis="-x",
+            normal_tolerance_deg=SLANTED_FACE_TOLERANCE_DEG,
+        ),
     )
     assert selects_up == ()
     assert selects_left == (0,)
@@ -143,7 +155,9 @@ def test_height_weights_see_a_location_set_a_moment_ago(empty_scene):
     assert assigned == 4
 
 
-def test_animation_report_on_an_action_with_no_keyframes_is_empty_not_an_error(empty_scene):
+def test_animation_report_on_an_action_with_no_keyframes_is_empty_not_an_error(
+    empty_scene,
+):
     # Old: IndexError from action.layers[0] on an action nobody keyed.
     from blended.ops.animation import animation_report
 
@@ -220,4 +234,6 @@ def test_a_failed_sole_trim_does_not_leave_its_cutter_in_the_scene(empty_scene):
     with pytest.raises(BooleanNoOp):
         trim_soles_flat(floating, span_m=1.0)
 
-    assert sorted(blender_object.name for blender_object in bpy.data.objects) == ["Float"]
+    assert sorted(blender_object.name for blender_object in bpy.data.objects) == [
+        "Float"
+    ]

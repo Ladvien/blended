@@ -94,13 +94,20 @@ def completions_path(arm: str, draw: int, per_draw: bool) -> Path:
 def completion_command(arguments, draw: int, instance: str) -> list[str]:
     arm_format = ARMS[arguments.arm]["format"]
     runner_arguments = [
-        "--arm", arguments.arm,
-        "--format", arm_format,
-        "--model", ARMS[arguments.arm]["model"],
-        "--draw", str(draw),
-        "--instance", instance,
-        "--bench-root", arguments.bench_root,
-        "--results-root", arguments.results_root,
+        "--arm",
+        arguments.arm,
+        "--format",
+        arm_format,
+        "--model",
+        ARMS[arguments.arm]["model"],
+        "--draw",
+        str(draw),
+        "--instance",
+        instance,
+        "--bench-root",
+        arguments.bench_root,
+        "--results-root",
+        arguments.results_root,
         "--completions-out",
         str(completions_path(arguments.arm, draw, arguments.per_draw_files)),
     ]
@@ -121,7 +128,9 @@ def completion_command(arguments, draw: int, instance: str) -> list[str]:
     return [str(DEV_PYTHON), str(RUNNER), *runner_arguments]
 
 
-def matching_completions(arm: str, draw: int, instance: str, per_draw: bool) -> list[dict]:
+def matching_completions(
+    arm: str, draw: int, instance: str, per_draw: bool
+) -> list[dict]:
     """Every recorded completion for this (arm, draw, instance), oldest first."""
     path = completions_path(arm, draw, per_draw)
     if not path.exists():
@@ -153,7 +162,9 @@ def completion_outcome(fresh: list[dict], returncode: int) -> tuple[dict, str]:
     return {}, f"ERR_EXIT_{returncode}" if returncode != 0 else OUTCOME_NO_RECORD
 
 
-def write_timeout_completion(arguments, draw: int, instance: str, duration: float) -> None:
+def write_timeout_completion(
+    arguments, draw: int, instance: str, duration: float
+) -> None:
     """The completion record a killed subprocess could not write itself.
 
     Carries the same keys the runner writes, so Phase B reads one shape,
@@ -222,7 +233,10 @@ def main(argv) -> int:
             started = time.monotonic()
             print(f"=== [{position}/{total}] {model_dir}/{instance}", flush=True)
             script = (
-                bench_root / arguments.results_root / model_dir / instance
+                bench_root
+                / arguments.results_root
+                / model_dir
+                / instance
                 / f"{instance}.py"
             )
             if script.exists() and not arguments.overwrite:
@@ -267,9 +281,10 @@ def main(argv) -> int:
             )
             results[outcome] += 1
             print(f"[RESULT] {instance} {outcome} {duration:.1f}s", flush=True)
-            if outcome in ("ERR_CONNECTION", "ERR_MODEL_CALL") and exhausted_credits_error(
-                str(record.get("raw_output", ""))
-            ):
+            if outcome in (
+                "ERR_CONNECTION",
+                "ERR_MODEL_CALL",
+            ) and exhausted_credits_error(str(record.get("raw_output", ""))):
                 print(
                     f"\n[SWEEP STOPPED] {instance}: the lane is exhausted — "
                     f"{str(record.get('raw_output'))[:200]}; "

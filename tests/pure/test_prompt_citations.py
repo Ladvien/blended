@@ -41,14 +41,14 @@ _BACKTICK_IDENTIFIER = re.compile(r"`([a-z_][a-z0-9_]*)`")
 # A tool-call-shaped identifier — the narrow pattern explained in the
 # module docstring.  Anything matching this but NOT in the registry is a
 # prompt citing a tool that no longer exists.
-_TOOL_CALL_PATTERN = re.compile(r"^(run|inspect|render|search|list|export|declare)_[a-z_]+$")
+_TOOL_CALL_PATTERN = re.compile(
+    r"^(run|inspect|render|search|list|export|declare)_[a-z_]+$"
+)
 
 # Registered tool names, read from the schema the agent dispatches
 # against.  TOOL_SCHEMAS entries are ``{"type": "function", "function":
 # {"name": …}}``, so the name lives one level inside each entry.
-_REGISTERED_TOOL_NAMES: set[str] = {
-    entry["function"]["name"] for entry in TOOL_SCHEMAS
-}
+_REGISTERED_TOOL_NAMES: set[str] = {entry["function"]["name"] for entry in TOOL_SCHEMAS}
 # The hand-written service tools: the only ones the verb-prefix pattern
 # below is about. Op tools are named by the facade (OT-3) and checked
 # against it instead.
@@ -57,11 +57,7 @@ _SERVICE_TOOL_NAMES: set[str] = {
 }
 
 _PROMPTS_DIR = (
-    Path(__file__).resolve().parents[2]
-    / "src"
-    / "blended"
-    / "agent"
-    / "prompts"
+    Path(__file__).resolve().parents[2] / "src" / "blended" / "agent" / "prompts"
 )
 
 
@@ -70,11 +66,10 @@ def _harvest_citations() -> dict[str, set[str]]:
     citations: dict[str, set[str]] = {}
     for path in sorted(_PROMPTS_DIR.rglob("*.md.j2")):
         text = path.read_text(encoding="utf-8")
-        identifiers = {
-            match.group(1)
-            for match in _BACKTICK_IDENTIFIER.finditer(text)
+        identifiers = {match.group(1) for match in _BACKTICK_IDENTIFIER.finditer(text)}
+        tool_call_ids = {
+            ident for ident in identifiers if _TOOL_CALL_PATTERN.match(ident)
         }
-        tool_call_ids = {ident for ident in identifiers if _TOOL_CALL_PATTERN.match(ident)}
         if tool_call_ids:
             citations[str(path.relative_to(_PROMPTS_DIR))] = tool_call_ids
     return citations

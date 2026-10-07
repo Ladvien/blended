@@ -160,6 +160,7 @@ name = "blender-mcp"
 version = "1.0.2"
 source = { editable = "blender_mcp/mcp" }
 dependencies = [
+    { name = "anyio" },
     { name = "docutils" },
     { name = "mcp", extra = ["cli"] },
     { name = "pyyaml" },
@@ -167,6 +168,7 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
+    { name = "anyio" },
     { name = "docutils" },
     { name = "mcp", extras = ["cli"], specifier = ">=1.2.0,<2" },
     { name = "pyyaml" },

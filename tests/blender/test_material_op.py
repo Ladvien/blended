@@ -68,6 +68,7 @@ def test_a_shared_material_name_survives_reassignment(empty_scene):
     keeps its assignment."""
     from blended.ops.materials import assign_material
     from blended.ops.primitives import add_box, link_into_scene
+
     body = bpy.data.objects[add_box("Body", 0.5, 0.5, 0.4)]
     link_into_scene(body.name)
     lid = bpy.data.objects[add_box("Lid", 0.5, 0.5, 0.06)]
@@ -103,5 +104,7 @@ def test_the_render_actually_shows_the_colour(empty_scene, tmp_path):
     assert alpha == pytest.approx(1.0), "centre pixel is background, not the box"
     # Workbench applies studio lighting, so absolute values shift — but a
     # terracotta box must still be unmistakably redder than it is blue.
-    assert red > blue, f"render is not showing the material colour: {(red, green, blue)}"
+    assert red > blue, (
+        f"render is not showing the material colour: {(red, green, blue)}"
+    )
     assert red > green > blue

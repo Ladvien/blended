@@ -103,7 +103,6 @@ def _resolve_relative_import(
     return ".".join(full_parts)
 
 
-
 def _module_exists_on_disk(dotted: str) -> bool:
     """Check whether a dotted module path exists under ``src/`` as a file or package."""
     if not dotted:
@@ -215,7 +214,9 @@ def test_all_blended_imports_resolve():
         try:
             tree = ast.parse(py_file.read_text(encoding="utf-8"))
         except SyntaxError as error:
-            problems.append(f"{py_file.relative_to(_REPOSITORY_ROOT)}: unparseable, its imports were not checked — {error}")
+            problems.append(
+                f"{py_file.relative_to(_REPOSITORY_ROOT)}: unparseable, its imports were not checked — {error}"
+            )
             continue
         for node in ast.walk(tree):
             if isinstance(node, ast.Import):
@@ -230,7 +231,9 @@ def test_all_blended_imports_resolve():
                             )
             elif isinstance(node, ast.ImportFrom):
                 if node.level and node.level > 0:
-                    resolved = _resolve_relative_import(node.level, node.module, py_file)
+                    resolved = _resolve_relative_import(
+                        node.level, node.module, py_file
+                    )
                     if resolved is None:
                         continue
                     root = resolved.split(".")[0]

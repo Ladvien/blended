@@ -8,9 +8,7 @@ Simple synchronous MCP client for testing.
 Speaks newline-delimited JSON-RPC 2.0 over stdio to a subprocess.
 """
 
-__all__ = (
-    "MCPClient",
-)
+__all__ = ("MCPClient",)
 
 import json
 import os
@@ -67,24 +65,30 @@ class MCPClient:
             newline_index = self._stdout_buffer.find(b"\n")
             if newline_index >= 0:
                 line = bytes(self._stdout_buffer[:newline_index])
-                del self._stdout_buffer[:newline_index + 1]
+                del self._stdout_buffer[: newline_index + 1]
                 return line
             remaining = deadline - time.monotonic()
             if remaining <= 0:
                 raise RuntimeError(
-                    "Timeout ({:d}s) waiting for response to {:s}".format(_REQUEST_TIMEOUT, method)
+                    "Timeout ({:d}s) waiting for response to {:s}".format(
+                        _REQUEST_TIMEOUT, method
+                    )
                 )
             ready, _, _ = select.select([fd], [], [], remaining)
             if not ready:
                 raise RuntimeError(
-                    "Timeout ({:d}s) waiting for response to {:s}".format(_REQUEST_TIMEOUT, method)
+                    "Timeout ({:d}s) waiting for response to {:s}".format(
+                        _REQUEST_TIMEOUT, method
+                    )
                 )
             chunk = os.read(fd, _READ_CHUNK_BYTES)
             if not chunk:
                 raise RuntimeError("MCP server closed stdout unexpectedly")
             self._stdout_buffer.extend(chunk)
 
-    def _send_request(self, method: str, params: dict[str, object] | None = None) -> dict[str, Any]:
+    def _send_request(
+        self, method: str, params: dict[str, object] | None = None
+    ) -> dict[str, Any]:
         """
         Send a JSON-RPC request and wait for the matching response.
         """
@@ -126,7 +130,9 @@ class MCPClient:
 
             return response.get("result", {})
 
-    def _send_notification(self, method: str, params: dict[str, object] | None = None) -> None:
+    def _send_notification(
+        self, method: str, params: dict[str, object] | None = None
+    ) -> None:
         """
         Send a JSON-RPC notification (no id, no response expected).
         """
@@ -147,11 +153,14 @@ class MCPClient:
         """
         Perform the MCP initialize handshake.
         """
-        result = self._send_request("initialize", {
-            "protocolVersion": "2024-11-05",
-            "capabilities": {},
-            "clientInfo": {"name": "test-client", "version": "0.1.0"},
-        })
+        result = self._send_request(
+            "initialize",
+            {
+                "protocolVersion": "2024-11-05",
+                "capabilities": {},
+                "clientInfo": {"name": "test-client", "version": "0.1.0"},
+            },
+        )
         self._send_notification("notifications/initialized")
         return result
 

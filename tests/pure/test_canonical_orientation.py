@@ -154,14 +154,20 @@ def test_the_reading_agrees_with_the_rotation_about_the_source_axis():
     """A reading that named a different axis than the rotation uses would
     be worse than no reading: the writer would move the wrong extent."""
     for extents_m in [
-        (0.9, 0.3, 0.6), (0.3, 0.9, 0.6), (0.6, 0.3, 0.9),
-        (2.0, 0.5, 1.0), (1.0, 2.0, 0.5), (0.5, 1.0, 2.0),
+        (0.9, 0.3, 0.6),
+        (0.3, 0.9, 0.6),
+        (0.6, 0.3, 0.9),
+        (2.0, 0.5, 1.0),
+        (1.0, 2.0, 0.5),
+        (0.5, 1.0, 2.0),
     ]:
         reading = orientation_reading(extents_m)
         rotation = canonical_depth_axis_rotation_euler_rad(*extents_m)
         already_canonical = rotation == (0.0, 0.0, 0.0)
         assert ("(canonical)" in reading) is already_canonical, (
-            extents_m, reading, rotation
+            extents_m,
+            reading,
+            rotation,
         )
 
 

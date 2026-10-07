@@ -4,9 +4,10 @@
 
 # pylint: disable=C0114  # See tool doc-string.
 
-__all__ = (
-    "register",
-)
+__all__ = ("register",)
+
+from mcp.server.fastmcp import FastMCP  # pylint: disable=import-error,no-name-in-module
+from mcp.types import ToolAnnotations  # pylint: disable=import-error,no-name-in-module
 
 from blmcp.tools_helpers import (
     toolcode_format_call,
@@ -14,10 +15,10 @@ from blmcp.tools_helpers import (
     toolcode_wrap_with_calling_convention,
 )
 from blmcp.tools_helpers.connection import send_code
-from mcp.server.fastmcp import FastMCP  # pylint: disable=import-error,no-name-in-module
-from mcp.types import ToolAnnotations  # pylint: disable=import-error,no-name-in-module
 
-_TOOL_CALL = toolcode_wrap_with_calling_convention(toolcode_load_from_filepath(__file__))
+_TOOL_CALL = toolcode_wrap_with_calling_convention(
+    toolcode_load_from_filepath(__file__)
+)
 
 
 def register(mcp: FastMCP) -> None:

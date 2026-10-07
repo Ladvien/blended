@@ -70,11 +70,11 @@ FLOORED_EXECUTABILITY_MAXIMUM = 0.05
 # codes. Pre-registered vocabulary, one mapping, so the arm histogram and
 # Phase A's histogram are the same alphabet.
 PARSE_RESULT_CODES = {
-    "NO_CODE": "O2",           # empty or prose-only reply
-    "NO_TOOL_CALLS": "O2",     # tool calls, none of them geometry
-    "SYNTAX_ERROR": "E1",      # the reply's Python does not parse
-    "UNKNOWN_TOOL": "O1",      # a name that was never offered
-    "ARGUMENT_ERROR": "O1",    # malformed or refused arguments
+    "NO_CODE": "O2",  # empty or prose-only reply
+    "NO_TOOL_CALLS": "O2",  # tool calls, none of them geometry
+    "SYNTAX_ERROR": "E1",  # the reply's Python does not parse
+    "UNKNOWN_TOOL": "O1",  # a name that was never offered
+    "ARGUMENT_ERROR": "O1",  # malformed or refused arguments
     # The spec's E5: "timeout, hang, or crash". Here it is the SWEEP's
     # own wall-clock cap, not the bake's, and the row is synthesized by
     # `sweep_finetune_arms.write_timeout_completion`.
@@ -175,7 +175,9 @@ def execution_row(
         "model_dir": model_dir,
         "parse_result": completion["parse_result"],
         "script_written": completion["script_written"],
-        "render_status": log.get("status", "MISSING" if script_written else "NO_SCRIPT"),
+        "render_status": log.get(
+            "status", "MISSING" if script_written else "NO_SCRIPT"
+        ),
         "error_text": error_text,
         "error_fingerprint": bench_taxonomy.fingerprint(error_text),
         "b5_category": bench_taxonomy.categorize(error_text) if error_text else "",
@@ -277,8 +279,13 @@ def clustered_interval(rows: list[dict], predicate) -> dict:
         for instance_rows in by_instance.values()
     ]
     if len(means) < 2:
-        return {"rate": (means[0] if means else None), "se": None, "low": None,
-                "high": None, "clusters": len(means)}
+        return {
+            "rate": (means[0] if means else None),
+            "se": None,
+            "low": None,
+            "high": None,
+            "clusters": len(means),
+        }
     rate = sum(means) / len(means)
     standard_error = statistics.stdev(means) / (len(means) ** 0.5)
     half_width = 1.96 * standard_error
@@ -323,7 +330,9 @@ def funnel(rows: list[dict]) -> dict:
     non_degenerate = [row for row in executed if row["n_meshes"] > 0]
     passing = [row for row in non_degenerate if _passed(row)]
     scored = [row["cd_pca"] for row in non_degenerate if row["cd_pca"] is not None]
-    fscores = [row["fscore_005"] for row in non_degenerate if row["fscore_005"] is not None]
+    fscores = [
+        row["fscore_005"] for row in non_degenerate if row["fscore_005"] is not None
+    ]
     times = [row["wall_time_s"] for row in rows if row["wall_time_s"]]
     return {
         "completions": total,
@@ -552,12 +561,21 @@ def deltas(measured: dict) -> dict:
         ),
         "pass_rate_intervals_pp": {
             arm: {
-                "rate": (None if passing[arm].get("rate") is None
-                         else 100.0 * passing[arm]["rate"]),
-                "low": (None if passing[arm].get("low") is None
-                        else 100.0 * passing[arm]["low"]),
-                "high": (None if passing[arm].get("high") is None
-                         else 100.0 * passing[arm]["high"]),
+                "rate": (
+                    None
+                    if passing[arm].get("rate") is None
+                    else 100.0 * passing[arm]["rate"]
+                ),
+                "low": (
+                    None
+                    if passing[arm].get("low") is None
+                    else 100.0 * passing[arm]["low"]
+                ),
+                "high": (
+                    None
+                    if passing[arm].get("high") is None
+                    else 100.0 * passing[arm]["high"]
+                ),
             }
             for arm in sorted(measured)
         },
@@ -594,8 +612,10 @@ def fired_rule(phase_a: dict, computed: dict) -> tuple[str, list[str]]:
                 f"work and a fine-tune's target should be op-call sequences, "
                 f"not raw bpy."
             )
-        if computed["delta_size_agrees"] and delta_size_k is not None and (
-            delta_size_k <= DELTA_SIZE_MAXIMUM_PP
+        if (
+            computed["delta_size_agrees"]
+            and delta_size_k is not None
+            and (delta_size_k <= DELTA_SIZE_MAXIMUM_PP)
         ):
             notes.append(
                 f"Rule 5 also fires: Δ_size = {delta_size_k:.1f} pp <= "
@@ -699,17 +719,37 @@ def _number(value, digits: int = 4) -> str:
 
 
 CSV_COLUMNS = (
-    "arm", "format", "model", "draw", "seed", "temperature", "instance",
-    "parse_result", "script_written", "render_status", "code", "n_meshes",
-    "cd_pca", "cd_yawmin", "delta_orient", "fscore_005", "n_tool_calls",
-    "baked_scene_ops", "baked_chunks", "wall_time_s", "prompt_tokens",
-    "completion_tokens", "glb_path",
-    "renders_directory", "error_fingerprint",
+    "arm",
+    "format",
+    "model",
+    "draw",
+    "seed",
+    "temperature",
+    "instance",
+    "parse_result",
+    "script_written",
+    "render_status",
+    "code",
+    "n_meshes",
+    "cd_pca",
+    "cd_yawmin",
+    "delta_orient",
+    "fscore_005",
+    "n_tool_calls",
+    "baked_scene_ops",
+    "baked_chunks",
+    "wall_time_s",
+    "prompt_tokens",
+    "completion_tokens",
+    "glb_path",
+    "renders_directory",
+    "error_fingerprint",
 )
 
 
-def render_summary(measured: dict, computed: dict, phase_a: dict, verdict: str,
-                   notes: list[str]) -> str:
+def render_summary(
+    measured: dict, computed: dict, phase_a: dict, verdict: str, notes: list[str]
+) -> str:
     lines = [
         "# Phase B — the five arms, single-shot",
         "",
@@ -844,7 +884,9 @@ def main(argv) -> int:
 
     phase_a = read_json(PHASE_A_MEASURED)
     if not phase_a:
-        raise SystemExit(f"run scripts/finetune_phase_a.py first: no {PHASE_A_MEASURED}")
+        raise SystemExit(
+            f"run scripts/finetune_phase_a.py first: no {PHASE_A_MEASURED}"
+        )
 
     wanted = [arm for arm in arguments.arms.split(",") if arm.strip()]
     measured: dict[str, dict] = {}
@@ -920,7 +962,10 @@ def main(argv) -> int:
     print(f"[phaseB] {verdict}", flush=True)
     for note in notes:
         print(f"[phaseB] {note}", flush=True)
-    print(f"[phaseB] wrote {scores_path} and {PHASE_B_DIRECTORY / 'summary.md'}", flush=True)
+    print(
+        f"[phaseB] wrote {scores_path} and {PHASE_B_DIRECTORY / 'summary.md'}",
+        flush=True,
+    )
     return 0
 
 

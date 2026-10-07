@@ -141,8 +141,10 @@ def _weights_component(blender_object, mesh) -> list | None:
     per_vertex: list = []
     for vertex in mesh.vertices:
         entries = [
-            [group_names.get(element.group, f"<index {element.group}>"),
-             quantize(element.weight, WEIGHT_GRID)]
+            [
+                group_names.get(element.group, f"<index {element.group}>"),
+                quantize(element.weight, WEIGHT_GRID),
+            ]
             for element in vertex.groups
         ]
         per_vertex.append(sorted(entries))

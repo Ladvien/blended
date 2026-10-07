@@ -28,7 +28,9 @@ def test_an_outcome_round_trips_through_json_text():
         source_sha256="ab" * 32,
     )
 
-    assert outcome_from_json(json.loads(json.dumps(outcome_to_json(outcome)))) == outcome
+    assert (
+        outcome_from_json(json.loads(json.dumps(outcome_to_json(outcome)))) == outcome
+    )
 
 
 def test_a_payload_missing_ok_raises():

@@ -8,9 +8,7 @@ CLI command handler for running the MCP server in background mode.
 Started via ``blender --background file.blend --command blender_mcp``.
 """
 
-__all__ = (
-    "cli_execute",
-)
+__all__ = ("cli_execute",)
 
 import argparse
 
@@ -32,7 +30,7 @@ def cli_execute(argv: list[str]) -> int:
     parser.add_argument(
         "--host",
         default=mcp_to_blender_server.DEFAULT_HOST,
-        help="Host to bind to.",
+        help="Loopback address to bind to (127.0.0.1 or localhost); any other host is refused.",
     )
     parser.add_argument(
         "--port",

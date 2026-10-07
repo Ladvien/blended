@@ -145,10 +145,7 @@ link_into_scene(add_box("Linked", 1.0, 1.0, 1.0))
     assert result.stage_reached == "done"
 
 
-
-def test_the_summary_tells_the_writer_where_the_extents_landed(
-    empty_scene, tmp_path
-):
+def test_the_summary_tells_the_writer_where_the_extents_landed(empty_scene, tmp_path):
     """The orientation fact, in the text the writer reads every turn.
 
     The harness rotates the finished object by exactly this reading and
@@ -237,7 +234,9 @@ def test_inspect_object_and_list_scene_read_the_world_box(empty_scene, tmp_path)
     )
     assert result.ok, result.summary()
 
-    inspected = dispatch_tool("inspect_object", {"object_name": "Oblong"}, tmp_path).text
+    inspected = dispatch_tool(
+        "inspect_object", {"object_name": "Oblong"}, tmp_path
+    ).text
     assert "extents x 0.9000 y 0.6000 z 0.3000 m" in inspected, inspected
     assert "middle extent on y (canonical)" in inspected, inspected
 

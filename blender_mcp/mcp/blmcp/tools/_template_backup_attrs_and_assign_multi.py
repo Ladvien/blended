@@ -12,7 +12,7 @@ from collections.abc import Generator
 
 @contextlib.contextmanager
 def _backup_attrs_and_assign_multi(
-        *obj_attrs: tuple[object, dict[str, object]],
+    *obj_attrs: tuple[object, dict[str, object]],
 ) -> Generator[None, None, None]:
     """
     Context manager that saves and assigns attributes on multiple objects,

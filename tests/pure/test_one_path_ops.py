@@ -26,7 +26,9 @@ from blended.manifest import OP_MODULE_NAMES, _public_functions
 SOURCE_ROOT = Path(__file__).resolve().parents[2] / "src" / "blended"
 BUILDERS_ROOT = SOURCE_ROOT / "builders"
 # A builder reaching past the facade: `from blended.ops.<module> import`.
-_SUBMODULE_IMPORT_PATTERN = re.compile(r"^\s*from blended\.ops\.\w+ import", re.MULTILINE)
+_SUBMODULE_IMPORT_PATTERN = re.compile(
+    r"^\s*from blended\.ops\.\w+ import", re.MULTILINE
+)
 
 # The vocabulary an agent is handed. Every entry must be the only way
 # to do what it does — see CLAUDE.md, one path per feature.
@@ -71,7 +73,9 @@ def _op_module_names_on_disk():
     """Public ops submodules. Underscore modules (`_objects`) are shared
     plumbing: not facade, not manifest, not tool."""
     return {
-        m.name for m in pkgutil.iter_modules(ops_facade.__path__) if not m.name.startswith("_")
+        m.name
+        for m in pkgutil.iter_modules(ops_facade.__path__)
+        if not m.name.startswith("_")
     }
 
 

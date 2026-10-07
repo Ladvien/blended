@@ -47,7 +47,8 @@ def main(params: Params) -> Result:
         return Result(
             status="error",
             message="Object {!r} not found. Available objects: {:s}".format(
-                params.name, ", ".join(available) if available else "(none)",
+                params.name,
+                ", ".join(available) if available else "(none)",
             ),
         )
 
@@ -79,8 +80,7 @@ def main(params: Params) -> Result:
             for con in obj.constraints
         ],
         materials=[
-            slot.material.name if slot.material else None
-            for slot in obj.material_slots
+            slot.material.name if slot.material else None for slot in obj.material_slots
         ],
         visibility={
             "hide_viewport": obj.hide_viewport,

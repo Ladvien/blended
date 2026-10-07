@@ -205,7 +205,9 @@ def test_missing_manifest_raises(tmp_path):
 
 def test_examiner_identity_changes_with_the_model():
     assert examiner_identity("model-a") != examiner_identity("model-b")
-    assert examiner_identity("minimax-m3:cloud").startswith("minimax-m3:cloud+examiner:")
+    assert examiner_identity("minimax-m3:cloud").startswith(
+        "minimax-m3:cloud+examiner:"
+    )
 
 
 def test_calibration_problems_are_loud():

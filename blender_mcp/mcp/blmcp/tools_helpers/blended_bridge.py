@@ -136,7 +136,9 @@ _HANDOFF_SESSION_KEY = "session_name"
 _HANDOFF_WRITTEN_AT_KEY = "written_at_s"
 _RESUMED_EVENT_FORMAT = "resumed after a source-change restart; plan declared: {}"
 
-_TOOL_CALL = toolcode_wrap_with_calling_convention(toolcode_load_from_filepath(__file__))
+_TOOL_CALL = toolcode_wrap_with_calling_convention(
+    toolcode_load_from_filepath(__file__)
+)
 
 BLENDED_TOOLS: list[types.Tool] = [
     types.Tool(
@@ -206,7 +208,9 @@ is framed once it is linked into the scene. To show a different part, or one a
 
 def blended_instructions(upstream_instructions: str) -> str:
     """The must-read head, blended's working agreement, then upstream's instructions."""
-    return f"{MCP_INSTRUCTIONS_HEAD}\n\n{build_system_prompt()}\n\n{upstream_instructions}"
+    return (
+        f"{MCP_INSTRUCTIONS_HEAD}\n\n{build_system_prompt()}\n\n{upstream_instructions}"
+    )
 
 
 def source_fingerprint(
@@ -229,11 +233,14 @@ def source_fingerprint(
     entries: list[tuple[str, int, int]] = []
     for root in roots:
         if not root.is_dir():
-            raise FileNotFoundError("Source root is not a directory: {:s}".format(str(root)))
+            raise FileNotFoundError(
+                "Source root is not a directory: {:s}".format(str(root))
+            )
         for directory, directory_names, file_names in os.walk(root):
             directory_path = Path(directory)
             directory_names[:] = [
-                name for name in directory_names
+                name
+                for name in directory_names
                 if name not in SOURCE_SKIPPED_DIRECTORY_NAMES
                 and (directory_path / name).resolve() not in skipped
             ]
@@ -248,7 +255,9 @@ def source_fingerprint(
                 relative = (Path(root.name) / file_path.relative_to(root)).as_posix()
                 entries.append((relative, stat.st_mtime_ns, stat.st_size))
     entries.sort()
-    return hashlib.sha256(repr(entries).encode("utf-8")).hexdigest()[:_FINGERPRINT_HEX_CHARACTERS]
+    return hashlib.sha256(repr(entries).encode("utf-8")).hexdigest()[
+        :_FINGERPRINT_HEX_CHARACTERS
+    ]
 
 
 def _docstring_as_python_313(docstring: str) -> str:
@@ -263,7 +272,12 @@ def _docstring_as_python_313(docstring: str) -> str:
         (len(line) - len(line.lstrip()) for line in lines[1:] if line.strip()),
         default=0,
     )
-    return "\n".join([lines[0].lstrip(), *(line[margin:] if line.strip() else "" for line in lines[1:])])
+    return "\n".join(
+        [
+            lines[0].lstrip(),
+            *(line[margin:] if line.strip() else "" for line in lines[1:]),
+        ]
+    )
 
 
 def _image_content(path: Path) -> types.ImageContent:
@@ -300,7 +314,11 @@ class BlendedSession:
 
     @classmethod
     def resume(
-        cls, log_directory: Path, output_root: Path, parent_pid: int, now_s: float | None = None,
+        cls,
+        log_directory: Path,
+        output_root: Path,
+        parent_pid: int,
+        now_s: float | None = None,
     ) -> "BlendedSession":
         """
         The session a watcher exit handed to this client's next server, or a
@@ -329,7 +347,8 @@ class BlendedSession:
         except (ValueError, KeyError, TypeError) as error:
             print(
                 "blender-mcp: refused a malformed handoff {:s} ({:s}); starting a new session".format(
-                    str(path), str(error)),
+                    str(path), str(error)
+                ),
                 file=sys.stderr,
                 flush=True,
             )
@@ -338,23 +357,31 @@ class BlendedSession:
         if not 0.0 <= age_s <= HANDOFF_MAX_AGE_S:
             print(
                 "blender-mcp: discarded a handoff {:.0f} s old (limit {:.0f} s); starting a new session".format(
-                    age_s, HANDOFF_MAX_AGE_S),
+                    age_s, HANDOFF_MAX_AGE_S
+                ),
                 file=sys.stderr,
                 flush=True,
             )
             return cls(log_directory, output_root)
-        return cls(log_directory, output_root, plan_declared=plan_declared, session_name=session_name)
+        return cls(
+            log_directory,
+            output_root,
+            plan_declared=plan_declared,
+            session_name=session_name,
+        )
 
     def write_handoff(self, parent_pid: int) -> Path:
         """Leave the plan and the session log to this client's next server."""
         self.log_directory.mkdir(parents=True, exist_ok=True)
         path = handoff_path(self.log_directory, parent_pid)
         path.write_text(
-            json.dumps({
-                _HANDOFF_PLAN_KEY: self.plan_declared,
-                _HANDOFF_SESSION_KEY: self.session_name,
-                _HANDOFF_WRITTEN_AT_KEY: time.time(),
-            }),
+            json.dumps(
+                {
+                    _HANDOFF_PLAN_KEY: self.plan_declared,
+                    _HANDOFF_SESSION_KEY: self.session_name,
+                    _HANDOFF_WRITTEN_AT_KEY: time.time(),
+                }
+            ),
             encoding="utf-8",
         )
         return path
@@ -365,15 +392,23 @@ class BlendedSession:
         if self._transcript is None or self._output_directory is None:
             resumed = self.session_name is not None
             if self.session_name is None:
-                self.session_name = datetime.now().astimezone().strftime(_SESSION_NAME_FORMAT)
-            self._transcript = ChatTranscript(self.log_directory, session_name=self.session_name, routing=_ROUTING)
+                self.session_name = (
+                    datetime.now().astimezone().strftime(_SESSION_NAME_FORMAT)
+                )
+            self._transcript = ChatTranscript(
+                self.log_directory, session_name=self.session_name, routing=_ROUTING
+            )
             self._output_directory = (self.output_root / self.session_name).resolve()
             self._output_directory.mkdir(parents=True, exist_ok=True)
             if resumed:
-                self._transcript.record("session", _RESUMED_EVENT_FORMAT.format(self.plan_declared))
+                self._transcript.record(
+                    "session", _RESUMED_EVENT_FORMAT.format(self.plan_declared)
+                )
         return self._transcript, self._output_directory
 
-    async def call(self, tool_name: str, arguments: dict[str, Any] | None) -> types.CallToolResult:
+    async def call(
+        self, tool_name: str, arguments: dict[str, Any] | None
+    ) -> types.CallToolResult:
         arguments = arguments or {}
         transcript, output_directory = self._open()
         transcript.record("tool", "{:s}({:s})".format(tool_name, json.dumps(arguments)))
@@ -383,7 +418,12 @@ class BlendedSession:
             transcript.record(
                 TOOL_EVENT_KIND,
                 encode_tool_event(
-                    refused_tool_event(tool_name, arguments, MISSING_PLAN_REFUSAL, TOOL_SCHEMAS_FINGERPRINT)
+                    refused_tool_event(
+                        tool_name,
+                        arguments,
+                        MISSING_PLAN_REFUSAL,
+                        TOOL_SCHEMAS_FINGERPRINT,
+                    )
                 ),
             )
             return types.CallToolResult(
@@ -411,7 +451,8 @@ class BlendedSession:
 
         if response["status"] != "ok":
             outcome = ToolOutcome(
-                _RAISED_IN_BLENDER_PREFIX + str(response.get("message", ""))[:MAXIMUM_TRACEBACK_CHARACTERS],
+                _RAISED_IN_BLENDER_PREFIX
+                + str(response.get("message", ""))[:MAXIMUM_TRACEBACK_CHARACTERS],
                 ok=False,
             )
         else:
@@ -429,7 +470,9 @@ class BlendedSession:
         transcript.record(
             TOOL_EVENT_KIND,
             encode_tool_event(
-                dispatched_tool_event(tool_name, arguments, outcome, wall_time_s, TOOL_SCHEMAS_FINGERPRINT)
+                dispatched_tool_event(
+                    tool_name, arguments, outcome, wall_time_s, TOOL_SCHEMAS_FINGERPRINT
+                )
             ),
         )
         return types.CallToolResult(
@@ -459,7 +502,9 @@ class BlendedFastMCP(FastMCP):  # type: ignore[misc]
         self._last_call_returned_s = -math.inf
         self._in_flight_lock = threading.Lock()
 
-    def add_tool(self, fn: Any, *args: Any, description: str | None = None, **kwargs: Any) -> None:
+    def add_tool(
+        self, fn: Any, *args: Any, description: str | None = None, **kwargs: Any
+    ) -> None:
         if description is None and fn.__doc__:
             description = _docstring_as_python_313(fn.__doc__)
         super().add_tool(fn, *args, description=description, **kwargs)
@@ -468,7 +513,11 @@ class BlendedFastMCP(FastMCP):  # type: ignore[misc]
         upstream = await super().list_tools()
         overlap = BLENDED_TOOL_NAMES.intersection(tool.name for tool in upstream)
         if overlap:
-            raise RuntimeError("Upstream and blended tools share names: {:s}".format(", ".join(sorted(overlap))))
+            raise RuntimeError(
+                "Upstream and blended tools share names: {:s}".format(
+                    ", ".join(sorted(overlap))
+                )
+            )
         return [*upstream, *BLENDED_TOOLS]
 
     async def call_tool(self, name: str, arguments: dict[str, Any]) -> Any:
@@ -532,7 +581,10 @@ class BlendedFastMCP(FastMCP):  # type: ignore[misc]
                 latest = current
                 latest_since_s = time.monotonic()
                 continue
-            if current == baseline or time.monotonic() - latest_since_s < SOURCE_SETTLE_S:
+            if (
+                current == baseline
+                or time.monotonic() - latest_since_s < SOURCE_SETTLE_S
+            ):
                 continue
             if current != announced:
                 announced = current

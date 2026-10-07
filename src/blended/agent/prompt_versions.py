@@ -719,9 +719,7 @@ def get_revision(revision: int | None = None) -> PromptRevision:
         if entry.revision == wanted:
             return entry
     available = ", ".join(str(entry.revision) for entry in PROMPT_REVISIONS)
-    raise UnknownPromptRevision(
-        f"No prompt revision {wanted}. Available: {available}."
-    )
+    raise UnknownPromptRevision(f"No prompt revision {wanted}. Available: {available}.")
 
 
 def latest_revision() -> PromptRevision:

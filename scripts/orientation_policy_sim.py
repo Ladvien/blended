@@ -47,20 +47,20 @@ import trimesh
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from bench_surface_metrics import signed_permutations  # the shared rotation helpers
 
-SIMULATION_N_POINTS = 4096          # cheaper than the scorer's 8192; ranks and
-                                    # policy means are stable at this density
+SIMULATION_N_POINTS = 4096  # cheaper than the scorer's 8192; ranks and
+# policy means are stable at this density
 SIMULATION_SEED = 0
-SIMULATION_TOLERANCE = 0.005        # drift allowed against the pinned mean
-PINNED_RANK1_MEAN = 0.0311          # measured 2026-09-03 over 145 dev refs
-POLICY_RANKS = (0, 1, 2)            # 0 = largest extent on depth axis
-DEPTH_AXIS_GLTF_INDEX = 2           # glTF Z = -Blender Y; the penalised DOF
+SIMULATION_TOLERANCE = 0.005  # drift allowed against the pinned mean
+PINNED_RANK1_MEAN = 0.0311  # measured 2026-09-03 over 145 dev refs
+POLICY_RANKS = (0, 1, 2)  # 0 = largest extent on depth axis
+DEPTH_AXIS_GLTF_INDEX = 2  # glTF Z = -Blender Y; the penalised DOF
 UNIFORM_RANDOM_POLICY_WEIGHT = 1.0 / len(POLICY_RANKS)
 ANISOTROPY_BANDS = ((0.0, 0.3), (0.3, 0.6), (0.6, 1.01))
 EXACT_HIT_TOLERANCE = 1e-9
-POLICY_MEAN_MARGIN = 0.02           # required win over unconstrained choice
-AUDIT_TIE_TOLERANCE = 0.02          # audit mode: a depth extent within 2% of
-                                    # the middle one makes the rank arbitrary
-                                    # and the policy immaterial
+POLICY_MEAN_MARGIN = 0.02  # required win over unconstrained choice
+AUDIT_TIE_TOLERANCE = 0.02  # audit mode: a depth extent within 2% of
+# the middle one makes the rank arbitrary
+# and the policy immaterial
 
 PROPER_PERMUTATIONS = tuple(
     matrix for matrix in signed_permutations() if np.linalg.det(matrix) > 0.0
@@ -69,16 +69,28 @@ PROPER_PERMUTATIONS = tuple(
 
 def parse_arguments(argv):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--bench-root", required=True,
-                        help="3DCodeBench checkout (holds data/ and metrics/)")
-    parser.add_argument("--instances-file", default="bench_sets/instances_dev_all.txt",
-                        help="Instance list the policy is measured over")
-    parser.add_argument("--holdout-file", default="bench_sets/instances_holdout.txt",
-                        help="Holdout list, reported as a histogram only")
+    parser.add_argument(
+        "--bench-root",
+        required=True,
+        help="3DCodeBench checkout (holds data/ and metrics/)",
+    )
+    parser.add_argument(
+        "--instances-file",
+        default="bench_sets/instances_dev_all.txt",
+        help="Instance list the policy is measured over",
+    )
+    parser.add_argument(
+        "--holdout-file",
+        default="bench_sets/instances_holdout.txt",
+        help="Holdout list, reported as a histogram only",
+    )
     parser.add_argument("--results-root", default="results/text_to_3D_agent")
-    parser.add_argument("--generated-model", default="",
-                        help="Audit mode: model dir whose generated GLBs are "
-                             "checked for depth-axis rank instead")
+    parser.add_argument(
+        "--generated-model",
+        default="",
+        help="Audit mode: model dir whose generated GLBs are "
+        "checked for depth-axis rank instead",
+    )
     parser.add_argument("--out", default="outputs/bench/orientation_policy_sim.md")
     return parser.parse_args(argv)
 
@@ -98,7 +110,8 @@ def sampled_points(glb_path: Path):
     if mesh.is_empty or mesh.faces is None or len(mesh.faces) == 0:
         return None
     points, _ = trimesh.sample.sample_surface(
-        mesh, SIMULATION_N_POINTS, seed=SIMULATION_SEED)
+        mesh, SIMULATION_N_POINTS, seed=SIMULATION_SEED
+    )
     return np.asarray(points, dtype=np.float64)
 
 
@@ -125,8 +138,11 @@ def depth_axis_policy_rotation(points, policy_rank: int):
     """
     order = np.argsort(-extents_of(points), kind="stable")
     source_axis = int(order[policy_rank])
-    candidates = [matrix for matrix in PROPER_PERMUTATIONS
-                  if matrix[DEPTH_AXIS_GLTF_INDEX, source_axis] != 0.0]
+    candidates = [
+        matrix
+        for matrix in PROPER_PERMUTATIONS
+        if matrix[DEPTH_AXIS_GLTF_INDEX, source_axis] != 0.0
+    ]
     if not candidates:
         raise SystemExit("no proper permutation reaches the depth axis")
     return max(candidates, key=lambda matrix: float(np.trace(matrix)))
@@ -202,13 +218,17 @@ def audit_generated(sc, model_root: Path, instances: list[str]) -> int:
         gap = abs(float(extents[DEPTH_AXIS_GLTF_INDEX]) - middle) / float(extents.max())
         satisfied = rank == 1 or gap <= AUDIT_TIE_TOLERANCE
         marker = "ok" if rank == 1 else ("tie" if satisfied else "OFF-POLICY")
-        print(f"{instance:32s} depth_rank={rank} gap={gap:.4f} "
-              f"extents=({extents[0]:.4f}, {extents[1]:.4f}, {extents[2]:.4f}) "
-              f"{marker}")
+        print(
+            f"{instance:32s} depth_rank={rank} gap={gap:.4f} "
+            f"extents=({extents[0]:.4f}, {extents[1]:.4f}, {extents[2]:.4f}) "
+            f"{marker}"
+        )
         if not satisfied:
             off_policy.append(instance)
-    print(f"depth axis carries the middle extent: "
-          f"{len(instances) - len(off_policy) - len(missing)}/{len(instances)}")
+    print(
+        f"depth axis carries the middle extent: "
+        f"{len(instances) - len(off_policy) - len(missing)}/{len(instances)}"
+    )
     if missing:
         print(f"MISSING GLB: {missing}", file=sys.stderr)
     if off_policy:
@@ -216,8 +236,9 @@ def audit_generated(sc, model_root: Path, instances: list[str]) -> int:
     return 1 if (off_policy or missing) else 0
 
 
-def render_report(rows, summaries, uniform_mean, dev_histogram,
-                  holdout_histogram, instances_file) -> str:
+def render_report(
+    rows, summaries, uniform_mean, dev_histogram, holdout_histogram, instances_file
+) -> str:
     lines = [
         "# Depth-axis orientation policy simulation",
         "",
@@ -236,16 +257,18 @@ def render_report(rows, summaries, uniform_mean, dev_histogram,
         "| depth-axis policy | mean cd_yawmin | median | exact hits |",
         "|---|---|---|---|",
     ]
-    names = {0: "rank 0 - largest extent on depth",
-             1: "rank 1 - middle extent on depth",
-             2: "rank 2 - smallest extent on depth"}
+    names = {
+        0: "rank 0 - largest extent on depth",
+        1: "rank 1 - middle extent on depth",
+        2: "rank 2 - smallest extent on depth",
+    }
     for policy_rank in POLICY_RANKS:
         summary = summaries[policy_rank]
         lines.append(
             f"| {names[policy_rank]} | {summary['mean']:.4f} | "
-            f"{summary['median']:.4f} | {summary['exact_hits']}/{summary['count']} |")
-    lines.append(
-        f"| uniform-random (unconstrained) | {uniform_mean:.4f} | - | - |")
+            f"{summary['median']:.4f} | {summary['exact_hits']}/{summary['count']} |"
+        )
+    lines.append(f"| uniform-random (unconstrained) | {uniform_mean:.4f} | - | - |")
     lines += [
         "",
         "## By anisotropy min(extent)/max(extent)",
@@ -257,20 +280,26 @@ def render_report(rows, summaries, uniform_mean, dev_histogram,
         band_rows = [row for row in rows if low <= row["anisotropy"] < high]
         if not band_rows:
             continue
-        cells = [f"{policy_summary(band_rows, rank)['mean']:.4f}"
-                 for rank in POLICY_RANKS]
-        lines.append(f"| {band_label(low, high)} | {len(band_rows)} | "
-                     + " | ".join(cells) + " |")
+        cells = [
+            f"{policy_summary(band_rows, rank)['mean']:.4f}" for rank in POLICY_RANKS
+        ]
+        lines.append(
+            f"| {band_label(low, high)} | {len(band_rows)} | "
+            + " | ".join(cells)
+            + " |"
+        )
     lines += [
         "",
         "## Reference depth-axis extent rank",
         "",
         "| set | rank 0 (largest) | rank 1 (middle) | rank 2 (smallest) |",
         "|---|---|---|---|",
-        f"| dev ({sum(dev_histogram)}) | " + " | ".join(
-            str(count) for count in dev_histogram) + " |",
-        f"| holdout ({sum(holdout_histogram)}) | " + " | ".join(
-            str(count) for count in holdout_histogram) + " |",
+        f"| dev ({sum(dev_histogram)}) | "
+        + " | ".join(str(count) for count in dev_histogram)
+        + " |",
+        f"| holdout ({sum(holdout_histogram)}) | "
+        + " | ".join(str(count) for count in holdout_histogram)
+        + " |",
         "",
         (
             "There is no fixed facing convention to copy: the reference depth "
@@ -307,21 +336,28 @@ def main(argv) -> int:
         results_root = Path(arguments.results_root)
         if not results_root.is_absolute():
             results_root = bench_root / results_root
-        return audit_generated(
-            sc, results_root / arguments.generated_model, instances)
+        return audit_generated(sc, results_root / arguments.generated_model, instances)
 
     rows = simulate(sc, data_root, instances)
     summaries = {rank: policy_summary(rows, rank) for rank in POLICY_RANKS}
-    uniform_mean = sum(summaries[rank]["mean"] * UNIFORM_RANDOM_POLICY_WEIGHT
-                       for rank in POLICY_RANKS)
+    uniform_mean = sum(
+        summaries[rank]["mean"] * UNIFORM_RANDOM_POLICY_WEIGHT for rank in POLICY_RANKS
+    )
     dev_histogram = [0, 0, 0]
     for row in rows:
         dev_histogram[row["reference_depth_rank"]] += 1
     holdout_histogram = depth_rank_histogram(
-        sc, data_root, read_instances(Path(arguments.holdout_file)))
+        sc, data_root, read_instances(Path(arguments.holdout_file))
+    )
 
-    report = render_report(rows, summaries, uniform_mean, dev_histogram,
-                           holdout_histogram, arguments.instances_file)
+    report = render_report(
+        rows,
+        summaries,
+        uniform_mean,
+        dev_histogram,
+        holdout_histogram,
+        arguments.instances_file,
+    )
     out_path = Path(arguments.out)
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(report)
@@ -331,19 +367,24 @@ def main(argv) -> int:
     if best_rank != 1:
         raise SystemExit(
             f"argmin policy is rank {best_rank}, not rank 1 - re-derive "
-            "DEPTH_AXIS_EXTENT_RANK before proceeding")
+            "DEPTH_AXIS_EXTENT_RANK before proceeding"
+        )
     if summaries[1]["mean"] > uniform_mean - POLICY_MEAN_MARGIN:
         raise SystemExit(
             f"rank 1 mean {summaries[1]['mean']:.4f} does not beat the "
             f"unconstrained mean {uniform_mean:.4f} by "
-            f"{POLICY_MEAN_MARGIN}")
+            f"{POLICY_MEAN_MARGIN}"
+        )
     drift = abs(summaries[1]["mean"] - PINNED_RANK1_MEAN)
     if drift > SIMULATION_TOLERANCE:
         raise SystemExit(
             f"rank 1 mean {summaries[1]['mean']:.4f} drifted {drift:.4f} from "
-            f"the pinned {PINNED_RANK1_MEAN} - the bake set moved")
-    print(f"OK rank1_mean={summaries[1]['mean']:.4f} "
-          f"uniform={uniform_mean:.4f} drift={drift:.4f}")
+            f"the pinned {PINNED_RANK1_MEAN} - the bake set moved"
+        )
+    print(
+        f"OK rank1_mean={summaries[1]['mean']:.4f} "
+        f"uniform={uniform_mean:.4f} drift={drift:.4f}"
+    )
     return 0
 
 

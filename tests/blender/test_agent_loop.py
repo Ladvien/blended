@@ -240,7 +240,10 @@ def test_the_recorded_call_is_replayable(empty_scene, tmp_path):
                     {
                         "function": {
                             "name": "run_python",
-                            "arguments": {"source": long_source, "reason": "test fixture: exercising the hatch"},
+                            "arguments": {
+                                "source": long_source,
+                                "reason": "test fixture: exercising the hatch",
+                            },
                         }
                     }
                 ],
@@ -250,9 +253,10 @@ def test_the_recorded_call_is_replayable(empty_scene, tmp_path):
     )
     session = AgentSession(client=client, output_directory=tmp_path)
     recorded = []
-    session.send("Build it.", on_event=lambda kind, text: (
-        recorded.append(text) if kind == "tool" else None
-    ))
+    session.send(
+        "Build it.",
+        on_event=lambda kind, text: recorded.append(text) if kind == "tool" else None,
+    )
 
     assert len(recorded) == 1
     assert long_source.strip().splitlines()[-1] in recorded[0]
@@ -557,13 +561,32 @@ PLANTER_OP_CALLS = [
     # a material. Every number is the brief's.
     _op_call("add_box", name="PlanterBox", width_m=0.3, depth_m=0.2, height_m=0.25),
     _op_call("link_into_scene", object_name="PlanterBox"),
-    _op_call("add_box", name="InnerCavity", width_m=0.26, depth_m=0.16, height_m=0.28, location_m=[0.0, 0.0, 0.02]),
+    _op_call(
+        "add_box",
+        name="InnerCavity",
+        width_m=0.26,
+        depth_m=0.16,
+        height_m=0.28,
+        location_m=[0.0, 0.0, 0.02],
+    ),
     _op_call("link_into_scene", object_name="InnerCavity"),
     _op_call("boolean_difference", target_name="PlanterBox", cutter_name="InnerCavity"),
-    _op_call("add_cylinder", name="DrainCutter", radius_m=0.015, height_m=0.06, location_m=[0.0, 0.0, -0.01]),
+    _op_call(
+        "add_cylinder",
+        name="DrainCutter",
+        radius_m=0.015,
+        height_m=0.06,
+        location_m=[0.0, 0.0, -0.01],
+    ),
     _op_call("link_into_scene", object_name="DrainCutter"),
     _op_call("boolean_difference", target_name="PlanterBox", cutter_name="DrainCutter"),
-    _op_call("assign_material", object_name="PlanterBox", name="PlanterWood", base_color_rgb=[0.55, 0.35, 0.2], roughness=0.8),
+    _op_call(
+        "assign_material",
+        object_name="PlanterBox",
+        name="PlanterWood",
+        base_color_rgb=[0.55, 0.35, 0.2],
+        roughness=0.8,
+    ),
 ]
 
 
@@ -586,9 +609,13 @@ def test_a_brief_reaches_gate_pass_with_op_tools_only(empty_scene, tmp_path):
 
     assert "op tools" in answer
     tool_messages = [m for m in session.messages if m.get("role") == "tool"]
-    assert [m["tool_name"] for m in tool_messages] == [c["function"]["name"] for c in PLANTER_OP_CALLS]
+    assert [m["tool_name"] for m in tool_messages] == [
+        c["function"]["name"] for c in PLANTER_OP_CALLS
+    ]
     for message in tool_messages:
-        assert message["content"].startswith(f"OK: {message['tool_name']}"), message["content"]
+        assert message["content"].startswith(f"OK: {message['tool_name']}"), message[
+            "content"
+        ]
     assert 'returned: "PlanterBox"' in tool_messages[0]["content"]
     # OT-5: every GATED op result carries the gate verdict; an ungated
     # constructor (unlinked intermediate) carries none, and the material
@@ -610,14 +637,22 @@ def test_an_op_tool_failure_names_the_op_error_to_the_model(empty_scene, tmp_pat
     from blended.agent.tools import dispatch_tool
 
     for name in ("A", "B"):
-        dispatch_tool("add_box", {"name": name, "width_m": 0.1, "depth_m": 0.1, "height_m": 0.1}, tmp_path)
-    union_result = dispatch_tool("boolean_union", {"target_name": "A", "addend_name": "B"}, tmp_path).text
+        dispatch_tool(
+            "add_box",
+            {"name": name, "width_m": 0.1, "depth_m": 0.1, "height_m": 0.1},
+            tmp_path,
+        )
+    union_result = dispatch_tool(
+        "boolean_union", {"target_name": "A", "addend_name": "B"}, tmp_path
+    ).text
 
     assert union_result.startswith("FAILED at execute: boolean_union")
     assert "UnlinkedOperand" in union_result
 
 
-def test_an_unresolved_intermediate_blocks_the_answer_until_resolved(empty_scene, tmp_path):
+def test_an_unresolved_intermediate_blocks_the_answer_until_resolved(
+    empty_scene, tmp_path
+):
     """OT-5: add_box leaves an unlinked object; the answer is refused with
     the object named; removing it lets the same answer through."""
     from blended.agent import AgentSession
@@ -625,15 +660,31 @@ def test_an_unresolved_intermediate_blocks_the_answer_until_resolved(empty_scene
     answer = {"role": "assistant", "content": "Cutter made."}
     client = ScriptedClient(
         [
-            {"role": "assistant", "content": "", "tool_calls": [_op_call("add_box", name="Cutter", width_m=0.1, depth_m=0.1, height_m=0.1)]},
+            {
+                "role": "assistant",
+                "content": "",
+                "tool_calls": [
+                    _op_call(
+                        "add_box", name="Cutter", width_m=0.1, depth_m=0.1, height_m=0.1
+                    )
+                ],
+            },
             answer,
-            {"role": "assistant", "content": "", "tool_calls": [_op_call("remove_object_and_mesh", object_name="Cutter")]},
+            {
+                "role": "assistant",
+                "content": "",
+                "tool_calls": [
+                    _op_call("remove_object_and_mesh", object_name="Cutter")
+                ],
+            },
             answer,
         ]
     )
     session = AgentSession(client=client, output_directory=tmp_path)
     events = []
-    reply = session.send("Make a cutter.", on_event=lambda kind, text: events.append((kind, text)))
+    reply = session.send(
+        "Make a cutter.", on_event=lambda kind, text: events.append((kind, text))
+    )
 
     assert reply == "Cutter made."
     refusals = [text for kind, text in events if text.startswith("Cannot end the turn")]
@@ -654,9 +705,21 @@ def test_a_gate_failure_on_an_op_result_is_reported_at_gate(empty_scene, tmp_pat
     from blended.agent.tools import dispatch_tool
 
     for name, x in (("A", 0.0), ("B", 5.0)):
-        dispatch_tool("add_box", {"name": name, "width_m": 0.1, "depth_m": 0.1, "height_m": 0.1, "location_m": [x, 0.0, 0.0]}, tmp_path)
+        dispatch_tool(
+            "add_box",
+            {
+                "name": name,
+                "width_m": 0.1,
+                "depth_m": 0.1,
+                "height_m": 0.1,
+                "location_m": [x, 0.0, 0.0],
+            },
+            tmp_path,
+        )
         dispatch_tool("link_into_scene", {"object_name": name}, tmp_path)
-    text = dispatch_tool("boolean_union", {"target_name": "A", "addend_name": "B"}, tmp_path).text
+    text = dispatch_tool(
+        "boolean_union", {"target_name": "A", "addend_name": "B"}, tmp_path
+    ).text
 
     assert text.startswith("FAILED at gate: boolean_union"), text
     assert "gate: FAIL (24 tris, 2 components)" in text
@@ -667,7 +730,10 @@ def test_an_armature_is_gated_on_scene_state_only(empty_scene, tmp_path):
 
     text = dispatch_tool(
         "add_armature",
-        {"name": "Rig", "bones": [{"name": "root", "head_m": [0, 0, 0], "tail_m": [0, 0, 0.5]}]},
+        {
+            "name": "Rig",
+            "bones": [{"name": "root", "head_m": [0, 0, 0], "tail_m": [0, 0, 0.5]}],
+        },
         tmp_path,
     ).text
     assert text.startswith("OK: add_armature"), text
@@ -681,7 +747,13 @@ def test_an_action_op_accepts_plan_step_and_the_op_never_sees_it(empty_scene, tm
 
     text = dispatch_tool(
         "add_box",
-        {"name": "Crate", "width_m": 0.5, "depth_m": 0.5, "height_m": 0.5, "plan_step": 1},
+        {
+            "name": "Crate",
+            "width_m": 0.5,
+            "depth_m": 0.5,
+            "height_m": 0.5,
+            "plan_step": 1,
+        },
         tmp_path,
     ).text
     assert text.startswith("OK: add_box"), text
@@ -721,12 +793,18 @@ def test_a_builder_that_always_fails_the_gate_trips_the_cap(empty_scene, tmp_pat
             }
         ],
     }
-    client = ScriptedClient([failing_call] * 6 + [{"role": "assistant", "content": "Built."}])
+    client = ScriptedClient(
+        [failing_call] * 6 + [{"role": "assistant", "content": "Built."}]
+    )
     session = AgentSession(client=client, output_directory=tmp_path)
     events = []
-    answer = session.send("Build it.", on_event=lambda kind, text: events.append((kind, text)))
+    answer = session.send(
+        "Build it.", on_event=lambda kind, text: events.append((kind, text))
+    )
 
-    assert answer.startswith(f"Stopped: 'Bad' failed the gate {MAXIMUM_GATE_FAILURES_PER_OBJECT} times in a row")
+    assert answer.startswith(
+        f"Stopped: 'Bad' failed the gate {MAXIMUM_GATE_FAILURES_PER_OBJECT} times in a row"
+    )
     tool_messages = [m for m in session.messages if m.get("role") == "tool"]
     assert len(tool_messages) == MAXIMUM_GATE_FAILURES_PER_OBJECT
     assert all("FAILED at gate" in m["content"] for m in tool_messages)
@@ -734,7 +812,9 @@ def test_a_builder_that_always_fails_the_gate_trips_the_cap(empty_scene, tmp_pat
     assert renders and renders[-1].endswith("Bad_sheet.png")
 
 
-def test_an_undisclosed_op_found_by_search_ops_runs_through_the_real_dispatcher(empty_scene, tmp_path):
+def test_an_undisclosed_op_found_by_search_ops_runs_through_the_real_dispatcher(
+    empty_scene, tmp_path
+):
     """OT-25: the model is shown the core set only; `boolean_union` is
     not in it. Searching for it and then calling it by name binds, runs
     and gates like a disclosed op — the door never shrank."""
@@ -742,14 +822,37 @@ def test_an_undisclosed_op_found_by_search_ops_runs_through_the_real_dispatcher(
 
     client = ScriptedClient(
         [
-            {"role": "assistant", "content": "", "tool_calls": [
-                _op_call("add_box", name="Left", width_m=0.2, depth_m=0.2, height_m=0.2),
-                _op_call("link_into_scene", object_name="Left"),
-                _op_call("add_box", name="Right", width_m=0.2, depth_m=0.2, height_m=0.2, location_m=[0.15, 0.0, 0.0]),
-                _op_call("link_into_scene", object_name="Right"),
-            ]},
-            {"role": "assistant", "content": "", "tool_calls": [_op_call("search_ops", query="boolean union")]},
-            {"role": "assistant", "content": "", "tool_calls": [_op_call("boolean_union", target_name="Left", addend_name="Right")]},
+            {
+                "role": "assistant",
+                "content": "",
+                "tool_calls": [
+                    _op_call(
+                        "add_box", name="Left", width_m=0.2, depth_m=0.2, height_m=0.2
+                    ),
+                    _op_call("link_into_scene", object_name="Left"),
+                    _op_call(
+                        "add_box",
+                        name="Right",
+                        width_m=0.2,
+                        depth_m=0.2,
+                        height_m=0.2,
+                        location_m=[0.15, 0.0, 0.0],
+                    ),
+                    _op_call("link_into_scene", object_name="Right"),
+                ],
+            },
+            {
+                "role": "assistant",
+                "content": "",
+                "tool_calls": [_op_call("search_ops", query="boolean union")],
+            },
+            {
+                "role": "assistant",
+                "content": "",
+                "tool_calls": [
+                    _op_call("boolean_union", target_name="Left", addend_name="Right")
+                ],
+            },
             {"role": "assistant", "content": "Joined Left and Right."},
         ]
     )
@@ -762,7 +865,11 @@ def test_an_undisclosed_op_found_by_search_ops_runs_through_the_real_dispatcher(
     assert "Joined" in answer
     tool_messages = [m for m in session.messages if m.get("role") == "tool"]
     search, union = tool_messages[-2], tool_messages[-1]
-    assert search["tool_name"] == "search_ops" and "boolean_union: " in search["content"]
-    assert union["tool_name"] == "boolean_union" and union["content"].startswith("OK: boolean_union"), union["content"]
+    assert (
+        search["tool_name"] == "search_ops" and "boolean_union: " in search["content"]
+    )
+    assert union["tool_name"] == "boolean_union" and union["content"].startswith(
+        "OK: boolean_union"
+    ), union["content"]
     assert "gate: PASS" in union["content"]
     assert sorted(o.name for o in bpy.context.scene.objects) == ["Left"]

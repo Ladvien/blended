@@ -117,7 +117,12 @@ def bar_verdict(value, half_width, bar: float) -> str:
 
 def bands_overlap(first: dict, second: dict) -> bool:
     """Do two {low, high} bands share any point? None bounds never overlap."""
-    bounds = (first.get("low"), first.get("high"), second.get("low"), second.get("high"))
+    bounds = (
+        first.get("low"),
+        first.get("high"),
+        second.get("low"),
+        second.get("high"),
+    )
     if any(bound is None for bound in bounds):
         return False
     return first["low"] <= second["high"] and second["low"] <= first["high"]
@@ -171,10 +176,14 @@ def write_prompt_diff(bench_root: Path) -> dict:
         "raw_system_lines": len(raw_system.splitlines()),
         "system_diff_lines": len(system_diff),
         "system_added": sum(
-            1 for line in system_diff if line.startswith("+") and not line.startswith("+++")
+            1
+            for line in system_diff
+            if line.startswith("+") and not line.startswith("+++")
         ),
         "system_removed": sum(
-            1 for line in system_diff if line.startswith("-") and not line.startswith("---")
+            1
+            for line in system_diff
+            if line.startswith("-") and not line.startswith("---")
         ),
         "task_diff": "".join(task_diff),
     }
@@ -190,9 +199,7 @@ def spot_checks(phase_b: dict, phase_a_csv: Path, scores_csv: Path) -> list[str]
     harness = [row for row in rows if row["third_party"] == "False"]
     g_rows = [row for row in harness if row["code"].startswith("G")]
     syntax_rows = [
-        row
-        for row in harness
-        if row["code"].startswith("E") and row["code"] != "E6"
+        row for row in harness if row["code"].startswith("E") and row["code"] != "E6"
     ]
     checks.append(
         f"`phaseA/taxonomy.csv` holds {len(harness)} harness rows, of which "
@@ -271,7 +278,8 @@ def main(argv) -> int:
     disclosed_shares = [
         entry["baked_op_share"]
         for entry in mechanism_measured.get("per_roll", {}).values()
-        if entry.get("offered_disclosed_set") and entry.get("baked_op_share") is not None
+        if entry.get("offered_disclosed_set")
+        and entry.get("baked_op_share") is not None
     ]
     disclosed_op_share_low = min(disclosed_shares) if disclosed_shares else None
     disclosed_op_share_high = max(disclosed_shares) if disclosed_shares else None
@@ -316,7 +324,7 @@ def main(argv) -> int:
         "—"
         if delta_size_k is None or delta_size_half is None
         else f"[{delta_size_k - delta_size_half:.1f}, "
-             f"{delta_size_k + delta_size_half:.1f}]"
+        f"{delta_size_k + delta_size_half:.1f}]"
     )
     delta_size_zero_clause = (
         "excludes zero"
@@ -532,7 +540,7 @@ def main(argv) -> int:
         "",
         (
             "Rule 1's conclusion is therefore correctly scoped as \"where "
-            "should investment go to raise the pass CEILING\" — and the answer "
+            'should investment go to raise the pass CEILING" — and the answer '
             "is planning, not syntax. It is NOT the stronger claim that the "
             "harness has no syntactic failure mode: it has one, and it pays "
             "tokens and turns to avoid paying for it in the score. §5's note "
@@ -552,7 +560,7 @@ def main(argv) -> int:
             (
                 f"**Judge error, measured by hand on "
                 f"{judge.get('hand_verified')} of those rows** (same rule the "
-                f"judge was given, \"cannot tell -> false\"): "
+                f'judge was given, "cannot tell -> false"): '
                 f"{judge.get('hand_disagreements')} disagreements = "
                 f"**{percent(judge.get('hand_disagreement_rate'))}**. Every "
                 f"disagreement is a judge FALSE POSITIVE: precision on its "
@@ -690,8 +698,7 @@ def main(argv) -> int:
             lines.append(f"| {arm} | — | — |")
             continue
         lines.append(
-            f"| {arm} | {band['rate']:.1f}% | "
-            f"[{band['low']:.1f}, {band['high']:.1f}] |"
+            f"| {arm} | {band['rate']:.1f}% | [{band['low']:.1f}, {band['high']:.1f}] |"
         )
     lines += [
         "",
@@ -846,7 +853,7 @@ def main(argv) -> int:
             f"`scripts/finetune_hatch_mechanism.py`). Three faults in the old "
             f"instrument: `.agent_meta.json`'s `n_op_calls_included` counts "
             f"READER ops as geometry-emitting, because `emits_geometry` is "
-            f"\"the hatch or ANY facade op\"; `n_chunks_included` is the "
+            f'"the hatch or ANY facade op"; `n_chunks_included` is the '
             f"label COUNTER, which advances on op calls too; and "
             f"{hatch.get('passing', {}).get('attempts_before_op_collection')} "
             f"of {hatch.get('passing', {}).get('attempts')} passing attempts "
@@ -905,7 +912,7 @@ def main(argv) -> int:
             f"{percent(disclosed_op_share_low)}–"
             f"{percent(disclosed_op_share_high)} op share; rolls predating op "
             f"collection bake zero, and for rolls with no tool events at all "
-            f"\"did not call\" cannot be told from \"was not recorded\". "
+            f'"did not call" cannot be told from "was not recorded". '
             f"Against that, A1 — single-shot, all "
             f"{harness.get('tool_schema_count')} schemas offered — baked "
             f"{percent(single_baked_op_share)} ops. So the live axis is the "

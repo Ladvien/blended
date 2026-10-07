@@ -4,12 +4,13 @@
 
 # pylint: disable=C0114  # See tool doc-string.
 
-__all__ = (
-    "register",
-)
+__all__ = ("register",)
 
 import difflib
 import os
+
+from mcp.server.fastmcp import FastMCP  # pylint: disable=import-error,no-name-in-module
+from mcp.types import ToolAnnotations  # pylint: disable=import-error,no-name-in-module
 
 from blmcp.tools_helpers.rst_parse_docs import (
     data_dir,
@@ -17,9 +18,6 @@ from blmcp.tools_helpers.rst_parse_docs import (
     find_definition_in_doctree,
     list_doctree_definitions,
 )
-from mcp.server.fastmcp import FastMCP  # pylint: disable=import-error,no-name-in-module
-from mcp.types import ToolAnnotations  # pylint: disable=import-error,no-name-in-module
-
 
 _DOC_EXT = ".rst"
 
@@ -101,7 +99,7 @@ def _list_direct_child_identifiers(api_path: str, identifier: str) -> list[str]:
     for name in os.listdir(api_path):
         if not name.endswith(_DOC_EXT) or not name.startswith(prefix):
             continue
-        stem = name[:-len(_DOC_EXT)]
+        stem = name[: -len(_DOC_EXT)]
         if stem.count(".") != expected_dot_count:
             continue
         children.append(stem)
@@ -132,7 +130,7 @@ def _list_identifiers_containing_component(api_path: str, identifier: str) -> li
     for name in os.listdir(api_path):
         if not name.endswith(_DOC_EXT):
             continue
-        parts = tuple(name[:-len(_DOC_EXT)].split("."))
+        parts = tuple(name[: -len(_DOC_EXT)].split("."))
         if identifier not in parts:
             continue
         while len(buckets) <= len(parts):
@@ -144,7 +142,8 @@ def _list_identifiers_containing_component(api_path: str, identifier: str) -> li
     # shallower bucket - the agent can reach it from the shorter one.
     for depth in range(len(buckets) - 1, 1, -1):
         buckets[depth] = {
-            t for t in buckets[depth]
+            t
+            for t in buckets[depth]
             if not any(t[:k] in buckets[k] for k in range(1, depth))
         }
 
@@ -188,7 +187,7 @@ def _list_top_level_modules(api_path: str) -> list[str]:
     """
     names = os.listdir(api_path)
     rst_names = {name for name in names if name.endswith(_DOC_EXT)}
-    firsts = sorted({n[:-len(_DOC_EXT)].split(".", 1)[0] for n in rst_names})
+    firsts = sorted({n[: -len(_DOC_EXT)].split(".", 1)[0] for n in rst_names})
     modules: list[str] = []
     for first in firsts:
         prefix = first + "."
@@ -196,10 +195,7 @@ def _list_top_level_modules(api_path: str) -> list[str]:
         # `name.startswith(prefix)` matches `<first>.rst` itself because
         # the extension's dot overlaps with the namespace separator, so
         # exclude the root file from the child test.
-        if any(
-            name != root_rst and name.startswith(prefix)
-            for name in rst_names
-        ):
+        if any(name != root_rst and name.startswith(prefix) for name in rst_names):
             modules.append(first)
             continue
         if root_rst not in rst_names:
@@ -269,7 +265,7 @@ def _lines_option_after(content: str, start: int) -> str | None:
         if not stripped or not stripped.startswith(":"):
             return None
         if stripped.startswith(_LINES_OPTION_PREFIX):
-            return stripped[len(_LINES_OPTION_PREFIX):].strip()
+            return stripped[len(_LINES_OPTION_PREFIX) :].strip()
         pos = line_end + 1
     return None
 
@@ -296,7 +292,7 @@ def _apply_lines_spec(text: str, spec: str) -> str:
             continue
         if not sep:
             hi_i = lo_i
-        out.extend(source[max(0, lo_i - 1):hi_i])
+        out.extend(source[max(0, lo_i - 1) : hi_i])
     return "".join(out)
 
 
@@ -327,7 +323,7 @@ def _collect_examples(content: str, api_path: str) -> list[dict[str, str]]:
         # comment, not an RST directive at line start.
         if content[beg:index].strip():
             continue
-        tokens = content[index + len(_LITERALINCLUDE_PREFIX):end].split()
+        tokens = content[index + len(_LITERALINCLUDE_PREFIX) : end].split()
         if not tokens:
             continue
         filepath_rel = tokens[0].removeprefix("./")
@@ -430,7 +426,8 @@ def register(mcp: FastMCP) -> None:
                 submodules = _list_top_level_modules(api_path)
             else:
                 submodules = _list_direct_child_identifiers(
-                    api_path, identifier[:-2],
+                    api_path,
+                    identifier[:-2],
                 )
             return {
                 "kind": "namespace",
@@ -452,7 +449,9 @@ def register(mcp: FastMCP) -> None:
                     "found": True,
                     "identifier": identifier,
                     "content": _summarize_rst_for_size(
-                        identifier, candidate_path, len(content),
+                        identifier,
+                        candidate_path,
+                        len(content),
                     ),
                     "examples": [],
                 }
@@ -464,7 +463,7 @@ def register(mcp: FastMCP) -> None:
                 "examples": _collect_examples(content, api_path),
             }
 
-        if (submodules := _list_direct_child_identifiers(api_path, identifier)):
+        if submodules := _list_direct_child_identifiers(api_path, identifier):
             return {
                 "kind": "namespace",
                 "found": True,
@@ -484,7 +483,7 @@ def register(mcp: FastMCP) -> None:
             if prefix_path is None:
                 continue
             doctree = doctree_for_path(prefix_path)
-            if (rendered := find_definition_in_doctree(doctree, tail)):
+            if rendered := find_definition_in_doctree(doctree, tail):
                 return {
                     "kind": "definition",
                     "found": True,
@@ -502,7 +501,8 @@ def register(mcp: FastMCP) -> None:
                 "parent": prefix,
                 "available": list_doctree_definitions(doctree),
                 "submodules": _filter_submodules_by_tail(
-                    _list_direct_child_identifiers(api_path, prefix), tail,
+                    _list_direct_child_identifiers(api_path, prefix),
+                    tail,
                 ),
             }
 
@@ -510,7 +510,7 @@ def register(mcp: FastMCP) -> None:
         # file or resolve intra-file, but it appears as a dotted
         # component of other files - surface those as suggestions so
         # the agent can retry with a valid name.
-        if (suggestions := _list_identifiers_containing_component(api_path, identifier)):
+        if suggestions := _list_identifiers_containing_component(api_path, identifier):
             return {
                 "kind": "suggestions",
                 "found": False,

@@ -45,7 +45,9 @@ REPOSITORY_ROOT = Path(__file__).resolve().parent.parent
 
 def venv_site_packages() -> Path:
     """The dev venv's site-packages: jinja2 lives there, not in Blender."""
-    candidates = sorted((REPOSITORY_ROOT / ".venv" / "lib").glob("python3.*/site-packages"))
+    candidates = sorted(
+        (REPOSITORY_ROOT / ".venv" / "lib").glob("python3.*/site-packages")
+    )
     if not candidates:
         raise SystemExit(f"No .venv under {REPOSITORY_ROOT}.")
     return candidates[-1]
@@ -125,7 +127,9 @@ def _check_dimensions(obj, expected_m: tuple[float, float, float]) -> list[str]:
 def _check_on_ground(obj) -> list[str]:
     lowest_z = min((obj.matrix_world @ v.co).z for v in obj.data.vertices)
     if abs(lowest_z) > GROUND_TOLERANCE_M:
-        return [f"{obj.name} lowest vertex z = {lowest_z:.4f} m, expected 0 ± {GROUND_TOLERANCE_M}"]
+        return [
+            f"{obj.name} lowest vertex z = {lowest_z:.4f} m, expected 0 ± {GROUND_TOLERANCE_M}"
+        ]
     return []
 
 
@@ -151,7 +155,11 @@ def _collect(*checks: Callable[[], list[str]]) -> list[str]:
 def check_object() -> list[str]:
     def run():
         crate = _object("Crate", "MESH")
-        return _check_dimensions(crate, CRATE_SIZE_M) + _check_on_ground(crate) + _check_gate(crate)
+        return (
+            _check_dimensions(crate, CRATE_SIZE_M)
+            + _check_on_ground(crate)
+            + _check_gate(crate)
+        )
 
     return _collect(run)
 
@@ -178,9 +186,13 @@ def check_rig() -> list[str]:
         weights = weight_report(body.name)
         failures = _check_dimensions(body, BODY_SIZE_M)
         if rig.bone_count < SPINE_BONE_COUNT:
-            failures.append(f"Spine has {rig.bone_count} bones, expected ≥ {SPINE_BONE_COUNT}")
+            failures.append(
+                f"Spine has {rig.bone_count} bones, expected ≥ {SPINE_BONE_COUNT}"
+            )
         if "Body" not in rig.bound_mesh_names:
-            failures.append(f"Body is not bound to Spine (bound: {rig.bound_mesh_names})")
+            failures.append(
+                f"Body is not bound to Spine (bound: {rig.bound_mesh_names})"
+            )
         # A disabled Armature modifier looks like a finished rig and
         # deforms nothing, so "bound" must mean "deforming".
         if rig.disabled_modifier_mesh_names:
@@ -215,14 +227,22 @@ def check_weights() -> list[str]:
         failures = []
         top_count = report.nonzero_weight_counts.get("Top", 0)
         expected_top = sum(
-            1 for v in body.data.vertices if (body.matrix_world @ v.co).z > TOP_GROUP_THRESHOLD_M
+            1
+            for v in body.data.vertices
+            if (body.matrix_world @ v.co).z > TOP_GROUP_THRESHOLD_M
         )
         if top_count == 0:
-            failures.append(f"vertex group 'Top' has no non-zero weights (groups: {report.group_names})")
+            failures.append(
+                f"vertex group 'Top' has no non-zero weights (groups: {report.group_names})"
+            )
         elif top_count != expected_top:
-            failures.append(f"'Top' weights {top_count} vertices, expected {expected_top} above {TOP_GROUP_THRESHOLD_M} m")
+            failures.append(
+                f"'Top' weights {top_count} vertices, expected {expected_top} above {TOP_GROUP_THRESHOLD_M} m"
+            )
         if report.unweighted_vertex_count != 0:
-            failures.append(f"{report.unweighted_vertex_count} vertices carry no weight at all")
+            failures.append(
+                f"{report.unweighted_vertex_count} vertices carry no weight at all"
+            )
         if not _bone_backed_groups(body, report):
             failures.append(
                 f"no bone-named vertex group carries weight "
@@ -243,11 +263,17 @@ def check_animation() -> list[str]:
         report = animation_report(cube.name)
         failures = []
         if (report.frame_start, report.frame_end) != ANIMATION_FRAME_RANGE:
-            failures.append(f"frame range {report.frame_start}-{report.frame_end}, expected {ANIMATION_FRAME_RANGE}")
+            failures.append(
+                f"frame range {report.frame_start}-{report.frame_end}, expected {ANIMATION_FRAME_RANGE}"
+            )
         if report.keyframe_count < 2 * LOCATION_CHANNEL_COUNT:
-            failures.append(f"{report.keyframe_count} keyframes, expected ≥ {2 * LOCATION_CHANNEL_COUNT}")
+            failures.append(
+                f"{report.keyframe_count} keyframes, expected ≥ {2 * LOCATION_CHANNEL_COUNT}"
+            )
         if not any("location" in path for path in report.animated_data_paths):
-            failures.append(f"no location channel animated: {report.animated_data_paths}")
+            failures.append(
+                f"no location channel animated: {report.animated_data_paths}"
+            )
         if report.muted_fcurve_count:
             failures.append(
                 f"{report.muted_fcurve_count} of {report.fcurve_count} fcurves "
@@ -261,7 +287,9 @@ def check_animation() -> list[str]:
         bpy.context.scene.frame_set(ANIMATION_FRAME_RANGE[1])
         end_x = cube.matrix_world.translation.x
         if abs(end_x - ANIMATION_TRAVEL_X_M) > DIMENSION_TOLERANCE_M:
-            failures.append(f"at frame {ANIMATION_FRAME_RANGE[1]} x = {end_x:.3f}, expected {ANIMATION_TRAVEL_X_M}")
+            failures.append(
+                f"at frame {ANIMATION_FRAME_RANGE[1]} x = {end_x:.3f}, expected {ANIMATION_TRAVEL_X_M}"
+            )
         return failures
 
     return _collect(run)
@@ -287,7 +315,9 @@ def check_iterative() -> list[str]:
     def run():
         post = _object("Post", "MESH")
         taller = (POST_SIZE_M[0], POST_SIZE_M[1], POST_SIZE_M[2] * POST_TALLER_FACTOR)
-        return _check_dimensions(post, taller) + _check_on_ground(post) + _check_gate(post)
+        return (
+            _check_dimensions(post, taller) + _check_on_ground(post) + _check_gate(post)
+        )
 
     return _collect(run)
 
@@ -296,44 +326,54 @@ SCENARIOS = (
     Scenario(
         "object",
         (
-            ("Build a wooden crate named Crate: 0.6 m wide (x), 0.4 m deep (y), "
-            "0.5 m tall (z), standing on the floor at the origin."),
+            (
+                "Build a wooden crate named Crate: 0.6 m wide (x), 0.4 m deep (y), "
+                "0.5 m tall (z), standing on the floor at the origin."
+            ),
         ),
         check_object,
     ),
     Scenario(
         "rig",
         (
-            ("Build a box named Body, 0.3 x 0.3 x 1.5 m, standing on the floor, "
-            "then rig it with a vertical 5-bone spine armature named Spine "
-            "running from the floor to the top, bound with automatic weights."),
+            (
+                "Build a box named Body, 0.3 x 0.3 x 1.5 m, standing on the floor, "
+                "then rig it with a vertical 5-bone spine armature named Spine "
+                "running from the floor to the top, bound with automatic weights."
+            ),
         ),
         check_rig,
     ),
     Scenario(
         "weights",
         (
-            ("Build a box named Body, 0.3 x 0.3 x 1.5 m standing on the floor, "
-            "and rig it to a 2-bone vertical armature named Spine with automatic "
-            "weights. Then weight-paint: create a vertex group named Top holding "
-            "weight 1.0 on exactly the vertices above z = 1.0 m."),
+            (
+                "Build a box named Body, 0.3 x 0.3 x 1.5 m standing on the floor, "
+                "and rig it to a 2-bone vertical armature named Spine with automatic "
+                "weights. Then weight-paint: create a vertex group named Top holding "
+                "weight 1.0 on exactly the vertices above z = 1.0 m."
+            ),
         ),
         check_weights,
     ),
     Scenario(
         "animation",
         (
-            ("Build a 0.5 m cube named Cube standing on the floor. Set the frame "
-            "range to 1-48 and animate it sliding along +x: keyframe its location "
-            "at the origin on frame 1 and at x = 2.0 m on frame 48."),
+            (
+                "Build a 0.5 m cube named Cube standing on the floor. Set the frame "
+                "range to 1-48 and animate it sliding along +x: keyframe its location "
+                "at the origin on frame 1 and at x = 2.0 m on frame 48."
+            ),
         ),
         check_animation,
     ),
     Scenario(
         "material",
         (
-            ("Build a floor tile named Tile, 1.0 x 1.0 x 0.1 m on the floor, and "
-            "give it a procedural checker material named Tiles."),
+            (
+                "Build a floor tile named Tile, 1.0 x 1.0 x 0.1 m on the floor, and "
+                "give it a procedural checker material named Tiles."
+            ),
         ),
         check_material,
     ),
@@ -384,7 +424,9 @@ def run_scenario(
         client=OllamaClient(ModelConfig.from_environment(**overrides)),
         output_directory=output_directory / scenario.name,
         maximum_tool_calls_per_turn=MAXIMUM_TOOL_CALLS_PER_TURN,
-        messages=[{"role": "system", "content": build_system_prompt(revision=revision)}],
+        messages=[
+            {"role": "system", "content": build_system_prompt(revision=revision)}
+        ],
         # This gate stands in for the live UI, so it holds the UI's
         # contract: a turn that changes the scene declares its plan
         # first. The 3DCodeBench batch driver deliberately does not —
@@ -454,7 +496,9 @@ def main(argv) -> int:
     print("\n=== chat E2E ===")
     for r in results:
         status = "PASS" if r.passed else "FAIL"
-        print(f"{status} {r.name:<10} {r.tool_calls:>3} tool calls, {r.hatch_attempts} hatch")
+        print(
+            f"{status} {r.name:<10} {r.tool_calls:>3} tool calls, {r.hatch_attempts} hatch"
+        )
         for failure in r.failures:
             print(f"      - {failure}")
         if r.error:
@@ -463,14 +507,21 @@ def main(argv) -> int:
     print(f"{passed}/{len(results)} scenarios passed — {output_directory}")
     # OT-11: the scenarios the vocabulary did not carry. Under --no-hatch
     # a failure IS the evidence; with the hatch offered, an attempt is.
-    needing_hatch = [r for r in results if r.hatch_attempts or (arguments.no_hatch and not r.passed)]
+    needing_hatch = [
+        r for r in results if r.hatch_attempts or (arguments.no_hatch and not r.passed)
+    ]
     if needing_hatch:
-        print("MISSING-OP EVIDENCE (for OT-12): " + ", ".join(
-            f"{r.name} ({r.hatch_attempts} hatch attempt(s), {'PASS' if r.passed else 'FAIL'})"
-            for r in needing_hatch
-        ))
+        print(
+            "MISSING-OP EVIDENCE (for OT-12): "
+            + ", ".join(
+                f"{r.name} ({r.hatch_attempts} hatch attempt(s), {'PASS' if r.passed else 'FAIL'})"
+                for r in needing_hatch
+            )
+        )
     else:
-        print("MISSING-OP EVIDENCE (for OT-12): none — every scenario built on op tools alone")
+        print(
+            "MISSING-OP EVIDENCE (for OT-12): none — every scenario built on op tools alone"
+        )
     return 0 if passed == len(results) else 1
 
 

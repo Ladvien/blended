@@ -16,7 +16,15 @@ from dataclasses import dataclass
 
 from blended.agent.claude_code import NoBilledInput, cache_read_fraction
 
-__all__ = ["NoBilledInput", "RunCacheRow", "cache_read_fraction", "cache_rows", "paired_by_brief", "render_pairs", "render_rows"]
+__all__ = [
+    "NoBilledInput",
+    "RunCacheRow",
+    "cache_read_fraction",
+    "cache_rows",
+    "paired_by_brief",
+    "render_pairs",
+    "render_rows",
+]
 
 
 @dataclass(frozen=True)
@@ -46,7 +54,9 @@ def cache_rows(records) -> list[RunCacheRow]:
     accounting existed (all-zero counts) are skipped, not zeroed."""
     rows = []
     for record in records:
-        billed = record.input_tokens + record.cache_read_tokens + record.cache_write_tokens
+        billed = (
+            record.input_tokens + record.cache_read_tokens + record.cache_write_tokens
+        )
         if billed <= 0:
             continue
         rows.append(
@@ -59,22 +69,37 @@ def cache_rows(records) -> list[RunCacheRow]:
                 billed_input_tokens=billed,
                 cache_write_tokens=record.cache_write_tokens,
                 cache_read_fraction=cache_read_fraction(
-                    record.input_tokens, record.cache_read_tokens, record.cache_write_tokens
+                    record.input_tokens,
+                    record.cache_read_tokens,
+                    record.cache_write_tokens,
                 ),
             )
         )
     return rows
 
 
-def paired_by_brief(before: list[RunCacheRow], after: list[RunCacheRow]) -> list[tuple[RunCacheRow, RunCacheRow]]:
+def paired_by_brief(
+    before: list[RunCacheRow], after: list[RunCacheRow]
+) -> list[tuple[RunCacheRow, RunCacheRow]]:
     """The LATEST run of each brief on each side, for briefs on both sides."""
-    latest_before = {row.brief_name: row for row in sorted(before, key=lambda r: r.iteration)}
-    latest_after = {row.brief_name: row for row in sorted(after, key=lambda r: r.iteration)}
-    return [(latest_before[name], latest_after[name]) for name in sorted(latest_before) if name in latest_after]
+    latest_before = {
+        row.brief_name: row for row in sorted(before, key=lambda r: r.iteration)
+    }
+    latest_after = {
+        row.brief_name: row for row in sorted(after, key=lambda r: r.iteration)
+    }
+    return [
+        (latest_before[name], latest_after[name])
+        for name in sorted(latest_before)
+        if name in latest_after
+    ]
 
 
 def render_rows(rows: list[RunCacheRow]) -> str:
-    lines = ["| iteration | brief | writer | offered | api calls | billed input | tokens/call | writes/call | cache read |", "|---|---|---|---|---|---|---|---|---|"]
+    lines = [
+        "| iteration | brief | writer | offered | api calls | billed input | tokens/call | writes/call | cache read |",
+        "|---|---|---|---|---|---|---|---|---|",
+    ]
     for row in rows:
         lines.append(
             f"| {row.iteration} | {row.brief_name} | {row.writer_model} | {row.offered_tools_fingerprint or '(whole set)'} | {row.api_calls} | {row.billed_input_tokens:,} | {row.tokens_per_call:,.0f} | {row.cache_writes_per_call:,.0f} | {row.cache_read_fraction:.3f} |"
@@ -85,7 +110,10 @@ def render_rows(rows: list[RunCacheRow]) -> str:
 def render_pairs(pairs: list[tuple[RunCacheRow, RunCacheRow]]) -> str:
     if not pairs:
         return "no brief has a run on both sides"
-    lines = ["| brief | cache read before (iteration) | after (iteration) | delta | writes/call before | after | delta |", "|---|---|---|---|---|---|---|"]
+    lines = [
+        "| brief | cache read before (iteration) | after (iteration) | delta | writes/call before | after | delta |",
+        "|---|---|---|---|---|---|---|",
+    ]
     deltas = []
     write_deltas = []
     for before, after in pairs:

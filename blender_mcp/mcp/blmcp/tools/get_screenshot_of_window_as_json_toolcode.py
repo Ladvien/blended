@@ -97,13 +97,15 @@ def main(params: None) -> Result:
         regions: list[dict[str, object]] = []
         for region in area.regions:
             if region.width > 0 and region.height > 0:
-                regions.append({
-                    "type": region.type,
-                    "x": region.x,
-                    "y": region.y,
-                    "width": region.width,
-                    "height": region.height,
-                })
+                regions.append(
+                    {
+                        "type": region.type,
+                        "x": region.x,
+                        "y": region.y,
+                        "width": region.width,
+                        "height": region.height,
+                    }
+                )
         area_info["regions"] = regions
         areas.append(area_info)
 
@@ -117,7 +119,9 @@ def main(params: None) -> Result:
             "location": list(active.location),
         }
 
-    selected = [{"name": obj.name, "type": obj.type} for obj in context.selected_objects]
+    selected = [
+        {"name": obj.name, "type": obj.type} for obj in context.selected_objects
+    ]
 
     return Result(
         status="ok",

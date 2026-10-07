@@ -250,9 +250,7 @@ def analyze_pair(first_object, second_object) -> PairReport:
             )
             if distance_m is not None
         ]
-        minimum_world_distance = (
-            min(sampled_distances) if sampled_distances else None
-        )
+        minimum_world_distance = min(sampled_distances) if sampled_distances else None
     finally:
         first_evaluated.to_mesh_clear()
         second_evaluated.to_mesh_clear()

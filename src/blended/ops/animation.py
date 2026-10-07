@@ -182,6 +182,7 @@ def animation_report(object_name: str) -> AnimationReport:
 
 # -- internals -----------------------------------------------------------
 
+
 def _action_fcurves(obj):
     """Return the fcurves list for ``obj``'s action via the slotted API.
 

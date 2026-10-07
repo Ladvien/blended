@@ -8,10 +8,10 @@ on three corpus findings, cited in the code below:
   10.48550/arXiv.2604.11082), and an *irrelevant* reference is worse
   than none — so the reference is pinned per brief and its integrity is
   verified before every use (`GoldenReferenceMismatch`).
-- VLM critics are position-biased (BlenderGym, 10.48550/arXiv.2504.01786)
-  and judge order matters (MT-bench, 10.48550/arXiv.2306.05685): every
-  view is examined twice, reference-first and test-first, and only tags
-  consistent across both orders count.
+- VLM judges are sensitive to the order of what they are shown
+  (MT-bench, 10.48550/arXiv.2306.05685): every view is examined twice,
+  reference-first and test-first, and only tags consistent across both
+  orders count.
 - Strict aggregation wins: permissive OR over single calls is dominated
   by false alarms (RESP aggregation; TikZ, 10.48550/arXiv.2606.15693),
   so the deviation set is the order-consistent intersection, and the
@@ -88,11 +88,11 @@ VALID_TAGS = DEVIATION_TAGS + (NO_DEVIATION_TAG, CANNOT_TELL_TAG)
 EXAMINER_TEMPLATE = "examiner"  # prompts/examiner.md.j2
 EXAMINED_VIEW_NAMES = ("front", "right", "top", "bottom", "three_quarter")
 # A defect is licensed when at least this fraction of the fixture zoo is
-# detected. Justification: RESP measures oracle-reference recall 0.76
-# and auto-reference recall 0.69 for the small open model, against 0.28
-# for the no-reference rubber stamp; an examiner under 0.6 on a
-# five-defect zoo is not distinguishable from that stamp, so its verdict
-# is not allowed to replace the human's.
+# detected. Justification: RESP (Qwen3-VL-8B, its Tables 1-2) measures
+# oracle-reference recall 0.76 and auto-reference recall 0.69 for the
+# small open model, against 0.28 for the no-reference rubber stamp; an
+# examiner under 0.6 on a four-defect zoo is not distinguishable from
+# that stamp, so its verdict is not allowed to replace the human's.
 MINIMUM_FIXTURE_SENSITIVITY = 0.6
 # A single false alarm on a known-clean control ends refinement early
 # (TikZ §6.2: "False positives are harmful, as they prematurely
@@ -336,9 +336,7 @@ def parse_tags(reply_text: str) -> tuple[str, ...]:
             f"reply is not valid JSON: {error}. Reply: {reply_text[:200]!r}"
         ) from error
     if not isinstance(payload, dict):
-        raise ExaminerReplyUnparseable(
-            f"reply JSON is not an object: {payload!r}"
-        )
+        raise ExaminerReplyUnparseable(f"reply JSON is not an object: {payload!r}")
     reasoning = payload.get("reasoning")
     tags = payload.get("tags")
     if not isinstance(reasoning, str) or not reasoning.strip():
@@ -352,8 +350,7 @@ def parse_tags(reply_text: str) -> tuple[str, ...]:
     unknown = sorted(set(tags) - set(VALID_TAGS))
     if unknown:
         raise UnknownDeviationTag(
-            f"tags outside the closed vocabulary: {unknown}. "
-            f"Valid tags: {VALID_TAGS}"
+            f"tags outside the closed vocabulary: {unknown}. Valid tags: {VALID_TAGS}"
         )
     return tuple(tags)
 
@@ -369,30 +366,27 @@ def examiner_identity(vision_model: str) -> str:
     return f"{vision_model}+examiner:{digest[:12]}"
 
 
-def _examiner_prompt(view_name: str, reference_position: str) -> str:
-    return render(
-        EXAMINER_TEMPLATE,
-        view_name=view_name,
-        reference_position=reference_position,
-    )
+def _examiner_prompt(reference_position: str) -> str:
+    return render(EXAMINER_TEMPLATE, reference_position=reference_position)
 
 
-def examine_view(eye, golden_view: Path, test_view: Path, view_name: str) -> ViewVerdict:
+def examine_view(
+    eye, golden_view: Path, test_view: Path, view_name: str
+) -> ViewVerdict:
     """Compare one golden view against the render under review.
 
     Called twice with swapped image order (MT-bench position-bias
-    mitigation, 10.48550/arXiv.2306.05685; BlenderGym measured judge
-    position bias, 10.48550/arXiv.2504.01786) and only the
+    mitigation, 10.48550/arXiv.2306.05685) and only the
     order-consistent tags survive — the strictness that keeps false
     alarms out of the aggregate.
     """
     reference_first_reply = eye.describe(
         [golden_view, test_view],
-        prompt=_examiner_prompt(view_name, reference_position="first"),
+        prompt=_examiner_prompt(reference_position="first"),
     )
     test_first_reply = eye.describe(
         [test_view, golden_view],
-        prompt=_examiner_prompt(view_name, reference_position="second"),
+        prompt=_examiner_prompt(reference_position="second"),
     )
     reference_first_tags = parse_tags(reference_first_reply)
     test_first_tags = parse_tags(test_first_reply)
@@ -508,9 +502,7 @@ def examine_asset(
         for tag in view.order_consistent_tags
         if tag in MEASURED_DEVIATION_TAGS
     }
-    abstained = any(
-        CANNOT_TELL_TAG in view.order_consistent_tags for view in views
-    )
+    abstained = any(CANNOT_TELL_TAG in view.order_consistent_tags for view in views)
     return AssetVerdict(
         brief_name=brief.name,
         examiner_identity=examiner_identity(vision_model),

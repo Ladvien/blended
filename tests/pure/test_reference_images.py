@@ -60,7 +60,12 @@ def photo(tmp_path) -> Path:
 
 def _session(tmp_path: Path, vision_model: str) -> AgentSession:
     client = OllamaClient(
-        ModelConfig.from_environment(context_length=WINDOW, eye_context_length=WINDOW, model="writer", vision_model=vision_model)
+        ModelConfig.from_environment(
+            context_length=WINDOW,
+            eye_context_length=WINDOW,
+            model="writer",
+            vision_model=vision_model,
+        )
     )
     return AgentSession(
         client=client,
@@ -86,9 +91,7 @@ def test_a_vision_writer_is_shown_the_photo_itself(tmp_path, sent_payloads, phot
         if message["role"] == "user"
     ]
     assert len(user_messages) == 1
-    assert user_messages[0]["images"] == [
-        base64.b64encode(PHOTO_BYTES).decode("ascii")
-    ]
+    assert user_messages[0]["images"] == [base64.b64encode(PHOTO_BYTES).decode("ascii")]
     assert user_messages[0]["content"].count("[img]") == 1
     assert REFERENCE_PHOTO_LEAD_IN in user_messages[0]["content"]
     assert "Build this." in user_messages[0]["content"]
@@ -103,9 +106,7 @@ def test_the_photo_precedes_the_reply_in_the_history(tmp_path, sent_payloads, ph
     assert roles.index("user") < roles.index("assistant")
 
 
-def test_a_text_only_writer_reads_the_eyes_description(
-    tmp_path, sent_payloads, photo
-):
+def test_a_text_only_writer_reads_the_eyes_description(tmp_path, sent_payloads, photo):
     """Two calls: the eye sees pixels, the writer sees prose."""
     session = _session(tmp_path, vision_model=EYE_MODEL)
 
@@ -123,8 +124,9 @@ def test_a_text_only_writer_reads_the_eyes_description(
         if message["role"] == "user"
     )
     assert "images" not in user_message, "a blind writer must not be sent base64"
-    assert f"--- what the reference photo shows ({EYE_MODEL}) ---" in (
-        user_message["content"]
+    assert (
+        f"--- what the reference photo shows ({EYE_MODEL}) ---"
+        in (user_message["content"])
     )
     assert EYE_DESCRIPTION in user_message["content"]
 
@@ -225,12 +227,18 @@ def test_a_blind_eye_on_the_render_path_still_reports_a_note(tmp_path, monkeypat
     turn a recoverable turn into a failed run. This is the control that
     keeps the change from spreading past the one path that needed it.
     """
+
     def capture(self, path, payload, timeout_seconds):
         raise RuntimeError("HTTP 404: model not found")
 
     monkeypatch.setattr(OllamaClient, "_request", capture)
     client = OllamaClient(
-        ModelConfig.from_environment(context_length=WINDOW, eye_context_length=WINDOW, model="writer", vision_model=EYE_MODEL)
+        ModelConfig.from_environment(
+            context_length=WINDOW,
+            eye_context_length=WINDOW,
+            model="writer",
+            vision_model=EYE_MODEL,
+        )
     )
     render = tmp_path / "render.png"
     render.write_bytes(PHOTO_BYTES)
@@ -238,9 +246,7 @@ def test_a_blind_eye_on_the_render_path_still_reports_a_note(tmp_path, monkeypat
 
     description = deliver_images(message, [render], client, "RENDER")
 
-    assert description.startswith("(The vision model could not be reached"), (
-        description
-    )
+    assert description.startswith("(The vision model could not be reached"), description
     assert "working blind on this image" in description
     assert "404" in description, "the note names the failure, not just its shape"
     assert "RENDER" in message["content"], "the header still frames the note"

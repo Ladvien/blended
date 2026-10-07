@@ -49,26 +49,40 @@ def test_world_bounds_reads_the_placed_box(two_boxes):
     assert bounds["max_m"] == pytest.approx([0.2, 0.2, 0.45], abs=1e-6)
     assert bounds["extents_m"] == pytest.approx([0.4, 0.4, 0.04], abs=1e-6)
     move_object_to("Seat", (1.0, 0.0, 0.0))
-    assert world_bounds("Seat")["min_m"][0] == pytest.approx(0.8, abs=1e-6)  # this frame's box, not the last one's
+    assert world_bounds("Seat")["min_m"][0] == pytest.approx(
+        0.8, abs=1e-6
+    )  # this frame's box, not the last one's
 
 
 def test_mark_uv_seams_by_selector_and_refuses_an_empty_selection(two_boxes):
     from blended.ops import EdgeSelector, NoEdgesSelected, mark_uv_seams
 
-    assert mark_uv_seams("Seat", EdgeSelector(kind="dihedral_angle", minimum_dihedral_angle_deg=60.0)) == "Seat"
+    assert (
+        mark_uv_seams(
+            "Seat", EdgeSelector(kind="dihedral_angle", minimum_dihedral_angle_deg=60.0)
+        )
+        == "Seat"
+    )
     seat = bpy.data.objects["Seat"]
     assert sum(1 for edge in seat.data.edges if edge.use_seam) == BOX_EDGE_COUNT
     with pytest.raises(NoEdgesSelected):
-        mark_uv_seams("Other", EdgeSelector(kind="vertex_group", vertex_group_pattern="nothing_.*"))
+        mark_uv_seams(
+            "Other",
+            EdgeSelector(kind="vertex_group", vertex_group_pattern="nothing_.*"),
+        )
     assert not any(edge.use_seam for edge in bpy.data.objects["Other"].data.edges)
 
 
 def test_the_three_ops_dispatch_as_tools(two_boxes, tmp_path):
     from blended.agent.tools import dispatch_tool
 
-    renamed = dispatch_tool("rename_object", {"object_name": "Seat", "new_name": "Stool"}, tmp_path)
+    renamed = dispatch_tool(
+        "rename_object", {"object_name": "Seat", "new_name": "Stool"}, tmp_path
+    )
     assert renamed.ok and "gate: PASS" in renamed.text, renamed.text
     bounds = dispatch_tool("world_bounds", {"object_name": "Stool"}, tmp_path)
     assert bounds.ok and '"extents_m"' in bounds.text
-    seams = dispatch_tool("mark_uv_seams", {"object_name": "Stool", "edges": {"kind": "all"}}, tmp_path)
+    seams = dispatch_tool(
+        "mark_uv_seams", {"object_name": "Stool", "edges": {"kind": "all"}}, tmp_path
+    )
     assert seams.ok and "gate: PASS" in seams.text, seams.text

@@ -75,7 +75,9 @@ def test_reverted_fill_keeps_the_cleanup_that_preceded_it(empty_scene):
     cleanup_report = cleanup_mesh(scene_object, CleanupSettings())
 
     assert cleanup_report.reverted_hole_fills == 1
-    assert any("deleted 2 loose vertices" in action for action in cleanup_report.actions)
+    assert any(
+        "deleted 2 loose vertices" in action for action in cleanup_report.actions
+    )
     assert cleanup_report.after.connected_component_count == 1
     assert cleanup_report.after.boundary_edge_count == before_report.boundary_edge_count
     assert len(scene_object.data.vertices) == (

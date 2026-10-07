@@ -39,9 +39,7 @@ REPOSITORY_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPOSITORY_ROOT / "src"))
 os.chdir(REPOSITORY_ROOT)
 
-BLENDER = os.environ.get(
-    "BLENDER", "/Applications/Blender.app/Contents/MacOS/Blender"
-)
+BLENDER = os.environ.get("BLENDER", "/Applications/Blender.app/Contents/MacOS/Blender")
 PIN_PROPOSAL_PATH = Path("_evaluate/pin_proposal.json")
 HALT_REPORT_PATH = Path("_evaluate/halt_report.md")
 GOLDEN_ROOT = Path("_evaluate/golden")
@@ -437,9 +435,7 @@ def propose_only(arguments) -> int:
         record for record in records if record.iteration == arguments.from_iteration
     ]
     if not selected:
-        raise SystemExit(
-            f"no iteration {arguments.from_iteration} in {arguments.log}"
-        )
+        raise SystemExit(f"no iteration {arguments.from_iteration} in {arguments.log}")
 
     evidence = prompt_search.gate_evidence(selected)
     print("================ GATE EVIDENCE ================", flush=True)
@@ -455,8 +451,7 @@ def propose_only(arguments) -> int:
     print(f"[connection] {status.summary()}", flush=True)
     if not status.ok:
         raise SystemExit(
-            f"writer model unreachable, refusing to propose an edit: "
-            f"{status.detail}"
+            f"writer model unreachable, refusing to propose an edit: {status.detail}"
         )
     gradient = prompt_search.textual_gradient(client, body, evidence)
     print("\n================ GRADIENT ================", flush=True)
@@ -473,8 +468,7 @@ def propose_only(arguments) -> int:
         verdict = "ADMISSIBLE" if not reason else f"REFUSED: {reason}"
         admissible_count += 1 if not reason else 0
         print(
-            f"\n--- candidate {index} ({len(candidate.splitlines())} lines) "
-            f"{verdict}",
+            f"\n--- candidate {index} ({len(candidate.splitlines())} lines) {verdict}",
             flush=True,
         )
     print(
@@ -795,9 +789,7 @@ def adjust(arguments, failing_records) -> tuple[str, int | None]:
 
 def _roll_back(revision: int, package_directory: Path) -> None:
     """Undo a candidate revision: its template AND its registry entry."""
-    template = (
-        package_directory / "prompts" / f"working_agreement_v{revision}.md.j2"
-    )
+    template = package_directory / "prompts" / f"working_agreement_v{revision}.md.j2"
     registry_path = package_directory / "prompt_versions.py"
     text = registry_path.read_text(encoding="utf-8")
     lines = text.splitlines(keepends=True)

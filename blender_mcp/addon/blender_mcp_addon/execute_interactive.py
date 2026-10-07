@@ -9,9 +9,7 @@ Polls client connections via ``bpy.app.timers`` so that requests are
 handled in Blender's main loop during normal interactive sessions.
 """
 
-__all__ = (
-    "run",
-)
+__all__ = ("run",)
 
 from . import mcp_to_blender_server
 
@@ -30,6 +28,7 @@ def run() -> float | None:
     except Exception:  # pylint: disable=broad-exception-caught
         import sys
         import traceback
+
         print(
             "Error: unhandled exception in the MCP server timer.\n"
             "This may be a bug in Blender-MCP, as errors should not be raised at this point, continuing:\n"

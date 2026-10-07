@@ -129,7 +129,9 @@ def baked_labels(path: Path) -> tuple[list[str], int]:
     return OP_LABEL_PATTERN.findall(text), len(CHUNK_LABEL_PATTERN.findall(text))
 
 
-def scan_attempt(directory: Path, scene_ops: frozenset[str], readers: frozenset[str]) -> dict | None:
+def scan_attempt(
+    directory: Path, scene_ops: frozenset[str], readers: frozenset[str]
+) -> dict | None:
     """One archived attempt, through all three instruments."""
     meta_path = directory / ".agent_meta.json"
     if not meta_path.exists():
@@ -197,7 +199,9 @@ def archive_rows(bench_root: Path, results_root: str, scene_ops, readers) -> lis
     return rows
 
 
-def single_shot_rows(bench_root: Path, results_root: str, scene_ops, readers) -> list[dict]:
+def single_shot_rows(
+    bench_root: Path, results_root: str, scene_ops, readers
+) -> list[dict]:
     """A1's completions, through the same two instruments.
 
     A1 has no tool-event log — it is one reply, dispatched here — so its
@@ -207,13 +211,19 @@ def single_shot_rows(bench_root: Path, results_root: str, scene_ops, readers) ->
     """
     rows = []
     for record in completions(SINGLE_SHOT_ARM):
-        reply = json.loads(record["raw_output"]) if record["raw_output"].startswith("{") else {}
+        reply = (
+            json.loads(record["raw_output"])
+            if record["raw_output"].startswith("{")
+            else {}
+        )
         names = [
             call.get("function", {}).get("name", "")
             for call in reply.get("tool_calls", [])
         ]
         arm_directory = (
-            bench_root / results_root / model_directory(SINGLE_SHOT_ARM, record["draw"])
+            bench_root
+            / results_root
+            / model_directory(SINGLE_SHOT_ARM, record["draw"])
             / record["instance"]
         )
         baked_ops, baked_chunks = baked_labels(
@@ -223,20 +233,25 @@ def single_shot_rows(bench_root: Path, results_root: str, scene_ops, readers) ->
             (i for i, name in enumerate(names, start=1) if name in scene_ops), None
         )
         first_chunk = next(
-            (i for i, name in enumerate(names, start=1) if name == HATCH_TOOL_NAME), None
+            (i for i, name in enumerate(names, start=1) if name == HATCH_TOOL_NAME),
+            None,
         )
-        rows.append({
-            "instance": record["instance"],
-            "draw": record["draw"],
-            "dispatched_scene_ops": sum(1 for name in names if name in scene_ops),
-            "dispatched_readers": sum(1 for name in names if name in readers),
-            "dispatched_chunks": sum(1 for name in names if name == HATCH_TOOL_NAME),
-            "baked_scene_ops": sum(1 for name in baked_ops if name in scene_ops),
-            "baked_reader_ops": sum(1 for name in baked_ops if name in readers),
-            "baked_chunks": baked_chunks,
-            "first_scene_op_index": first_scene,
-            "first_chunk_index": first_chunk,
-        })
+        rows.append(
+            {
+                "instance": record["instance"],
+                "draw": record["draw"],
+                "dispatched_scene_ops": sum(1 for name in names if name in scene_ops),
+                "dispatched_readers": sum(1 for name in names if name in readers),
+                "dispatched_chunks": sum(
+                    1 for name in names if name == HATCH_TOOL_NAME
+                ),
+                "baked_scene_ops": sum(1 for name in baked_ops if name in scene_ops),
+                "baked_reader_ops": sum(1 for name in baked_ops if name in readers),
+                "baked_chunks": baked_chunks,
+                "first_scene_op_index": first_scene,
+                "first_chunk_index": first_chunk,
+            }
+        )
     return rows
 
 
@@ -354,7 +369,8 @@ def disclosure_table(rows: list[dict], disclosed_fingerprint: str) -> dict:
             "offered_fingerprints": fingerprints,
             "offered_disclosed_set": disclosed_fingerprint in fingerprints,
             "baked_op_share": _share(
-                entry["baked_scene_ops"], entry["baked_scene_ops"] + entry["baked_chunks"]
+                entry["baked_scene_ops"],
+                entry["baked_scene_ops"] + entry["baked_chunks"],
             ),
             "dispatched_op_share": _share(
                 entry["dispatched_scene_ops"],
@@ -389,7 +405,9 @@ def assert_probe_varies(rolls: dict) -> None:
         )
 
 
-def assert_hypothesis_refuted(archive_drop: dict, single_drop: dict, mechanism: dict) -> None:
+def assert_hypothesis_refuted(
+    archive_drop: dict, single_drop: dict, mechanism: dict
+) -> None:
     """Section 2 of the summary states that BOTH predictions fail; check it.
 
     The prose is fixed text, so a changed archive must not silently print
@@ -406,7 +424,10 @@ def assert_hypothesis_refuted(archive_drop: dict, single_drop: dict, mechanism: 
             f"archive drops {archive_rate:.3f} of scene ops against A1's "
             f"{single_rate:.3f}: the summary's 'both predictions fail' is false"
         )
-    if mechanism["failure_before_first_chunk"] >= mechanism["failure_after_first_chunk"]:
+    if (
+        mechanism["failure_before_first_chunk"]
+        >= mechanism["failure_after_first_chunk"]
+    ):
         raise SystemExit(
             f"{mechanism['failure_before_first_chunk']} op failures preceded the "
             f"first chunk against {mechanism['failure_after_first_chunk']} after "
@@ -464,7 +485,7 @@ def render_summary(measured: dict) -> str:
         "",
         (
             "Two further biases in the published counts, both from "
-            "`bench_bridge`: `emits_geometry` is \"hatch or any facade op\", so "
+            '`bench_bridge`: `emits_geometry` is "hatch or any facade op", so '
             f"`{OP_COLLECTION_KEY}` counts READER ops "
             f"({archive['baked_reader_ops']} of them across the archive) as "
             "geometry-emitting, and `n_chunks_included` is the label counter, "
@@ -533,7 +554,8 @@ def render_summary(measured: dict) -> str:
         "|---|---|---|---|---|---|---|",
     ]
     for name, entry in sorted(
-        measured["per_roll"].items(), key=lambda item: -(item[1]["baked_op_share"] or 0.0)
+        measured["per_roll"].items(),
+        key=lambda item: -(item[1]["baked_op_share"] or 0.0),
     ):
         lines.append(
             f"| {name} | {entry['writer'] or '—'} | {entry['attempts']} | "
@@ -550,7 +572,7 @@ def render_summary(measured: dict) -> str:
             f"{measured['all_tool_count']} set production offers today) bakes a "
             f"nonzero op share; every roll that predates op collection bakes "
             f"zero, and for the rolls with no tool events at all the "
-            f"distinction between \"did not call\" and \"was not recorded\" is "
+            f'distinction between "did not call" and "was not recorded" is '
             f"not measurable. A1, single-shot with all "
             f"{measured['all_tool_count']} schemas offered, baked "
             f"{_percent(single['baked']['op_share'])} ops."
@@ -608,7 +630,11 @@ def main(argv) -> int:
     # this script exists to expose.
     drop_readable = [row for row in instrumented if row["bake_records_ops"]]
     artifact_example = max(
-        (row for row in rows if not row["bake_records_ops"] and row["dispatched_scene_ops"]),
+        (
+            row
+            for row in rows
+            if not row["bake_records_ops"] and row["dispatched_scene_ops"]
+        ),
         key=lambda row: row["dispatched_scene_ops"],
     )
     single = single_shot_rows(bench_root, arguments.results_root, scene_ops, readers)
@@ -637,9 +663,7 @@ def main(argv) -> int:
                 "scene_ops": drop_rate(
                     drop_readable, "dispatched_scene_ops", "baked_scene_ops"
                 ),
-                "chunks": drop_rate(
-                    drop_readable, "dispatched_chunks", "baked_chunks"
-                ),
+                "chunks": drop_rate(drop_readable, "dispatched_chunks", "baked_chunks"),
             },
         },
         "single_shot": {

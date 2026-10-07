@@ -48,6 +48,9 @@ def weld_and_dissolve(object_name: str) -> dict[str, int]:
                 dist=DEGENERATE_EDGE_DISTANCE_M,
                 edges=list(working_mesh.edges),
             )
+            # bmesh does not promise valid element indices after a topology
+            # op, and the sliver edges below are keyed by index.
+            working_mesh.edges.index_update()
             # Collinear zero-area faces have no short edge for
             # dissolve_degenerate; collapse their shortest edge instead.
             zero_area_faces = [

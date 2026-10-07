@@ -8,9 +8,7 @@ Context manager to capture STDOUT/STDERR while also forwarding to the real outpu
 Useful so the LLM may use print(..) style debugging and receive the results as part of the response.
 """
 
-__all__ = (
-    "CaptureOutput",
-)
+__all__ = ("CaptureOutput",)
 
 import io
 import sys
@@ -19,6 +17,7 @@ from typing import IO, Self
 
 class _Tee(io.TextIOBase):
     """Write to both a :class:`io.StringIO` buffer and the original stream."""
+
     __slots__ = (
         "_buffer",
         "_original",
@@ -47,6 +46,7 @@ class CaptureOutput:
     Output is forwarded to the original streams in real time
     and also stored for retrieval via :meth:`stdout` and :meth:`stderr`.
     """
+
     __slots__ = (
         "_tee_out",
         "_tee_err",

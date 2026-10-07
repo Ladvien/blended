@@ -36,9 +36,7 @@ REPOSITORY_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPOSITORY_ROOT / "src"))
 os.chdir(REPOSITORY_ROOT)
 
-BLENDER = os.environ.get(
-    "BLENDER", "/Applications/Blender.app/Contents/MacOS/Blender"
-)
+BLENDER = os.environ.get("BLENDER", "/Applications/Blender.app/Contents/MacOS/Blender")
 PIN_PROPOSAL_PATH = Path("_evaluate/pin_proposal.json")
 PINNED_IDENTITY_PATH = Path("_evaluate/golden/pinned_identity.txt")
 REGISTRY_PATH = REPOSITORY_ROOT / "src" / "blended" / "agent" / "prompt_versions.py"
@@ -87,7 +85,9 @@ def _replace_runs(text: str, runs) -> str:
         flags=re.MULTILINE,
     )
     if not replaced:
-        raise PinRefused(f"{REGISTRY_PATH} has no `CONVERGENCE_RUNS = (...)` to rewrite")
+        raise PinRefused(
+            f"{REGISTRY_PATH} has no `CONVERGENCE_RUNS = (...)` to rewrite"
+        )
     return rewritten
 
 
@@ -136,9 +136,7 @@ def main(argv=None) -> int:
             )
     runs = [(int(iteration), str(brief)) for iteration, brief in proposal["runs"]]
     text = REGISTRY_PATH.read_text(encoding="utf-8")
-    text = _replace_assignment(
-        text, "PINNED_PROMPT_REVISION", str(arguments.revision)
-    )
+    text = _replace_assignment(text, "PINNED_PROMPT_REVISION", str(arguments.revision))
     text = _replace_assignment(
         text, "CONVERGED_ON", f'"{proposal["proposed_at"][:10]}"'
     )

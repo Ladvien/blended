@@ -76,13 +76,13 @@ def build_system_prompt(
         f"{index}. {rule}" for index, rule in enumerate(CONVENTIONS, 1)
     )
     manifest_text = build_manifest()
-    gate_and_traps_text = manifest_slice(manifest_text, GATE_HEADING, OUTPUT_CONTRACT_HEADING)
+    gate_and_traps_text = manifest_slice(
+        manifest_text, GATE_HEADING, OUTPUT_CONTRACT_HEADING
+    )
 
     return render(
         SYSTEM_PROMPT_TEMPLATE,
-        blender_series=(
-            f"{TARGET_BLENDER_SERIES[0]}.{TARGET_BLENDER_SERIES[1]}"
-        ),
+        blender_series=(f"{TARGET_BLENDER_SERIES[0]}.{TARGET_BLENDER_SERIES[1]}"),
         working_agreement=get_revision(revision).body,
         skills=skills_text,
         conventions=conventions_text,

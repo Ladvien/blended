@@ -91,6 +91,7 @@ class _BlenderMCPPreferences(bpy.types.AddonPreferences):  # type: ignore[misc]
 
     host: StringProperty(  # type: ignore[valid-type]
         name="Host",
+        description="Loopback address to listen on (127.0.0.1 or localhost). Any other host is refused: this server runs arbitrary Python without authentication",
         default=mcp_to_blender_server.DEFAULT_HOST,
     )
     port: IntProperty(  # type: ignore[valid-type]
@@ -145,7 +146,7 @@ class _BlenderMCPPreferences(bpy.types.AddonPreferences):  # type: ignore[misc]
         max=5.0,
         step=1,
         precision=2,
-        subtype='TIME_ABSOLUTE',
+        subtype="TIME_ABSOLUTE",
         update=_update_timer_interval_active,
     )
 
@@ -162,7 +163,7 @@ class _BlenderMCPPreferences(bpy.types.AddonPreferences):  # type: ignore[misc]
         max=10.0,
         step=10,
         precision=2,
-        subtype='TIME_ABSOLUTE',
+        subtype="TIME_ABSOLUTE",
         update=_update_timer_interval_idle,
     )
 
@@ -179,7 +180,7 @@ class _BlenderMCPPreferences(bpy.types.AddonPreferences):  # type: ignore[misc]
         max=60.0,
         step=100,
         precision=1,
-        subtype='TIME_ABSOLUTE',
+        subtype="TIME_ABSOLUTE",
         update=_update_timer_interval_idle_delay,
     )
 
@@ -238,9 +239,8 @@ class _BLMCP_OT_server_start(bpy.types.Operator):  # type: ignore[misc]
             self.report({"ERROR"}, str(ex))
             return {"CANCELLED"}
         bpy.app.timers.register(
-            execute_interactive.run,
-            first_interval=mcp_to_blender_server.TIMER_INTERVAL_ACTIVE,
-            persistent=True)
+            execute_interactive.run, first_interval=mcp_to_blender_server.TIMER_INTERVAL_ACTIVE, persistent=True
+        )
         self.report({"INFO"}, "MCP server started on {:s}:{:d}".format(prefs.host, prefs.port))
         return {"FINISHED"}
 
@@ -295,9 +295,8 @@ def _autostart_timer() -> None:
         return
 
     bpy.app.timers.register(
-        execute_interactive.run,
-        first_interval=mcp_to_blender_server.TIMER_INTERVAL_ACTIVE,
-        persistent=True)
+        execute_interactive.run, first_interval=mcp_to_blender_server.TIMER_INTERVAL_ACTIVE, persistent=True
+    )
 
 
 def _cli_execute_handler(argv: list[str]) -> int:
@@ -307,6 +306,7 @@ def _cli_execute_handler(argv: list[str]) -> int:
     if not _State.startup_online_ok_or_error():
         return 1
     from .cli import cli_execute
+
     return cli_execute(argv)
 
 

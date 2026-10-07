@@ -66,9 +66,7 @@ def test_non_intersecting_cutter_raises_instead_of_silently_no_oping(empty_scene
     box_object = add_box("NoOpBox", 1.0, 1.0, 1.0)
     link_into_scene(box_object)
     # Entirely outside the target: no intersection, no change.
-    outside_cutter = add_box(
-        "OutsideCutter", 0.5, 0.5, 0.5, location_m=(5.0, 0.0, 0.0)
-    )
+    outside_cutter = add_box("OutsideCutter", 0.5, 0.5, 0.5, location_m=(5.0, 0.0, 0.0))
     link_into_scene(outside_cutter)
 
     with pytest.raises(BooleanNoOp):

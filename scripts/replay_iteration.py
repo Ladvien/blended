@@ -55,8 +55,10 @@ def main(argv) -> int:
     bpy.ops.wm.read_factory_settings(use_empty=True)
 
     def announce(index, total, result):
-        print(f"[replay] chunk {index}/{total}: "
-              f"{'ok' if result.ok else 'FAILED'}", flush=True)
+        print(
+            f"[replay] chunk {index}/{total}: {'ok' if result.ok else 'FAILED'}",
+            flush=True,
+        )
 
     built = replay_record(record, brief.part_names, on_chunk=announce)
     # The record's form_summary is the report scored against the brief

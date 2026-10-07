@@ -45,8 +45,9 @@ def _rigged_pair():
         "Rig",
         (
             BoneSpec("Root", (0, 0, 0.0), (0, 0, 0.5)),
-            BoneSpec("Tip", (0, 0, 0.5), (0, 0, 1.0), parent_name="Root",
-                     connected=True),
+            BoneSpec(
+                "Tip", (0, 0, 0.5), (0, 0, 1.0), parent_name="Root", connected=True
+            ),
         ),
     )
     bind_mesh_to_armature(box, armature, automatic_weights=False)
@@ -123,8 +124,9 @@ def test_a_bone_no_group_names_is_reported(empty_scene):
         "Rig",
         (
             BoneSpec("Root", (0, 0, 0.0), (0, 0, 0.5)),
-            BoneSpec("Unused", (0, 0, 0.5), (0, 0, 1.0), parent_name="Root",
-                     connected=True),
+            BoneSpec(
+                "Unused", (0, 0, 0.5), (0, 0, 1.0), parent_name="Root", connected=True
+            ),
         ),
     )
     bind_mesh_to_armature(box, armature, automatic_weights=False)
@@ -189,10 +191,7 @@ def test_keyframes_outside_the_frame_range_are_reported(empty_scene):
     from blended.ops.animation import animation_report, keyframe_object_transform
 
     box = _animated_box()
-    assert (
-        animation_report(box).keyframes_outside_frame_range_count
-        == 0
-    )
+    assert animation_report(box).keyframes_outside_frame_range_count == 0
 
     keyframe_object_transform(box, OUTSIDE_FRAME, location_m=(5.0, 0.0, 0.0))
     report = animation_report(box)

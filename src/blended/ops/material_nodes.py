@@ -202,9 +202,7 @@ def _set_texture_colors(texture_node, kind, color_a_rgb, color_b_rgb):
     # and the Principled BSDF default for Workbench/Eevee solid shading.
 
 
-def assign_image_texture_material(
-    object_name: str, name: str, image_path: Path
-) -> str:
+def assign_image_texture_material(object_name: str, name: str, image_path: Path) -> str:
     """Create/reuse an image-texture material and assign it as the named mesh's only slot.
 
     Raises FileNotFoundError if ``image_path`` does not exist.
@@ -292,7 +290,9 @@ def material_report(object_name: str) -> MaterialReport:
 
     if first_mat is not None and first_mat.node_tree is not None:
         for node in first_mat.node_tree.nodes:
-            node_type_counts[node.bl_idname] = node_type_counts.get(node.bl_idname, 0) + 1
+            node_type_counts[node.bl_idname] = (
+                node_type_counts.get(node.bl_idname, 0) + 1
+            )
 
         # Detect texture kinds by node type.
         kind_by_type = {v: k for k, v in NODE_TYPE_BY_KIND.items()}

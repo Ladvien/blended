@@ -137,7 +137,9 @@ def main(argv) -> int:
         # image loading path itself is what this run validates.
         for view_name in CAPTURE_VIEWS:
             comparison = _golden_comparison(
-                golden_directory, {view_name: golden_directory / f"{view_name}.png"}, view_name
+                golden_directory,
+                {view_name: golden_directory / f"{view_name}.png"},
+                view_name,
             )
             if comparison.silhouette_iou != 1.0 or comparison.shading_rmse != 0.0:
                 raise SystemExit(
@@ -180,7 +182,9 @@ def main(argv) -> int:
             decimate.ratio = MUTATION_DECIMATE_RATIO
         bpy.context.view_layer.update()
         mutation_directory = (
-            REPOSITORY_ROOT / "_evaluate" / "visual_gate_calibration"
+            REPOSITORY_ROOT
+            / "_evaluate"
+            / "visual_gate_calibration"
             / f"{brief_name}_mutated"
         )
         captured = _capture_for(brief, built, mutation_directory)

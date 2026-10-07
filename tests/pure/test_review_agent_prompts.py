@@ -33,7 +33,9 @@ def _evaluate_literal(source: str) -> str:
 
 def _package_copy(tmp_path: Path) -> Path:
     destination = tmp_path / "src" / "blended"
-    shutil.copytree(SOURCE_PACKAGE, destination, ignore=shutil.ignore_patterns("__pycache__"))
+    shutil.copytree(
+        SOURCE_PACKAGE, destination, ignore=shutil.ignore_patterns("__pycache__")
+    )
     return destination / "agent"
 
 
@@ -48,7 +50,9 @@ def test_record_outcome_with_a_quote_and_backslash_keeps_the_registry_healthy(tm
     body = prompt_versions.latest_revision().body
     lines = body.splitlines(keepends=True)
     candidate = "".join(lines[:5]) + "One inserted sentence.\n" + "".join(lines[5:])
-    revision = prompt_search.write_revision(candidate, "one sentence", "expect Z", package)
+    revision = prompt_search.write_revision(
+        candidate, "one sentence", "expect Z", package
+    )
 
     prompt_search.record_outcome(revision, HOSTILE_TEXT, package)
 
@@ -58,12 +62,16 @@ def test_record_outcome_with_a_quote_and_backslash_keeps_the_registry_healthy(tm
     assert registry.count("C:\\\\new\\\\table") == 1
 
 
-def test_record_outcome_restores_the_registry_when_it_no_longer_imports(tmp_path, monkeypatch):
+def test_record_outcome_restores_the_registry_when_it_no_longer_imports(
+    tmp_path, monkeypatch
+):
     package = _package_copy(tmp_path)
     body = prompt_versions.latest_revision().body
     lines = body.splitlines(keepends=True)
     candidate = "".join(lines[:5]) + "One inserted sentence.\n" + "".join(lines[5:])
-    revision = prompt_search.write_revision(candidate, "one sentence", "expect Z", package)
+    revision = prompt_search.write_revision(
+        candidate, "one sentence", "expect Z", package
+    )
     registry_path = package / "prompt_versions.py"
     before = registry_path.read_text(encoding="utf-8")
 

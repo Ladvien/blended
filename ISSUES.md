@@ -1,152 +1,48 @@
-# ISSUES.md — open findings from the full-repo review of 2026-10-07
+# ISSUES.md — the 2026-10-07 review follow-up
 
-Branch `review/full-repo-2026-10-07`. Every slice of the repo was read by a
-reviewer (19 slices: `src/blended`, `tests/`, `scripts/`, the vendored
-`blender_mcp/` subtree, docs). Defects with a fix that needed no sign-off were
-fixed in the same branch, each with a regression test and a record in
-`src/blended/evaluate/mistake_memory.py`. This file lists only what is
-**still open**: things that need a decision, a rotation, a re-pin, or a
-measurement. It replaces the 2026-09-19 review: its M2, M3, Mi1, Mi2, Mi3, I1
-and I2 are fixed in this branch, M1 went with the deleted streamed transport,
-and Mi4 (a split report bullet) and I3 (an optional design row) were
-cosmetic and are not carried over.
+The 2026-10-07 full-repo review left S1-S3, P1-P5, D1-D8 and a PROPOSED list open; the follow-up on branch `fix/review-followup-2026-10-07` verified each and closed all of them (closures below). Three new findings made during the follow-up are open, listed first; nothing else is.
 
-Baseline before the review: pure 713 passed / 2 skipped / 1 xfailed; Blender
-247 passed / 1 skipped; `mypy src` 54 errors. After: see the commit message.
+## Open (found during the follow-up, not fixed)
 
-## Needs the owner (outside the repo)
+### N1 — `rebuild_twice --iteration` cannot replay iteration 49, and the `uv_crate` golden asserts nothing about UVs
+`make test-repro ARGS="--iteration 49"` exits 1 on `main` as well as on this branch (measured on both): chunk 1 raises `AttributeError: 'str' object has no attribute 'location'`, because `add_box` returns an `ObjectName` and the recorded chunk predates that. `scripts/rebuild_twice.py` aborts on any failed chunk; `blended.evaluate.replay.replay_record` (what the golden tests use) does not. Replayed through `replay_record`, 12 of iteration 49's 20 replayed calls (run_python chunks and op calls) fail (`TypeError: ops take object NAMES (str), got Object` and `AttributeError`), and the scene ends with one object `Crate` whose meshes (`Crate`, `Crate.002`) have no UV layer. `tests/blender/test_golden_convergence.py` still passes for `uv_crate` because it asserts the form gate and dimensions only. So the "uv_crate golden" does not pin a UV-unwrapped crate, and the iteration lane of `test-repro` is unusable for records that contain failed chunks. A fix is a decision: re-record the golden in the viewport (`CLAUDE.md`, "Pin verified behavior"), and either make `rebuild_twice` replay through `replay_record` or restrict `--iteration` to records without failed chunks.
 
-### S1 — A live API key is in a public repository's history
-`tests/pure/test_openai_transport.py` carried the real bmb llama-swap key (64
-hex) since commit `1c65544` ("Working"). The repository is PUBLIC
-(`gh repo view`: `visibility PUBLIC`). The working tree no longer has it, but
-the key is still in history and must be treated as exposed.
-**Action:** add a new key to `apiKeys:` in bmb's `~/llm/llama-swap.yaml`,
-re-mint `~/.blended/bmb_api_key`, delete the old entry. A history rewrite is a
-separate, destructive decision and was not done. The key's host is a LAN
-address (`192.168.1.233`), which limits who can use it; it does not make it
-safe to leave. A scan of all history for provider-format tokens (GitHub, AWS,
-Anthropic, `sk-`, Ollama `hex.alnum`) found nothing else.
+### N2 — `BMB_ENDPOINT` names an address bmb no longer has
+`src/blended/agent/loop.py:74` (and `tests/pure/test_review_agent_loop.py:232`) hardcode `http://192.168.1.233:9292`. On 2026-10-07 bmb answered at `192.168.1.205` (`bmb.local` resolves to it; `ssh bmb` reaches it) and `192.168.1.233` did not answer (`curl` code 000, `ping` 100% loss). The memory note already says the address moves; the constant should resolve `bmb.local`. Not changed: the follow-up rotated the key and probed through `bmb.local:9292`, and changing the endpoint is a lane decision.
 
-## Security decisions
+### N3 — three comments cite BlenderGym's "verification ratio" for a deterministic verifier
+`scripts/orientation_policy_sim.py:25`, `src/blended/evaluate/bench_bridge.py:134` and `src/blended/ops/canonical_orientation.py:33` say BlenderGym measures a win from raising a loop's *deterministic* verification ratio. The paper (arXiv 2504.01786, section 4.3 and Fig. 7-8) measures that systems with a higher share of queries spent on **VLM verifier** calls (VeriRatio 0.33, 0.62, 0.73) outperform those with a lower share; a deterministic geometric check is the repo's extension of that result, not something the paper measured. Not reworded: the three sites are comments in pinned text paths and the wording is the owner's call.
 
-### S2 — MCP HTTP transport has no DNS-rebinding protection, CORS `*`, no auth
-`blender_mcp/mcp/blmcp/__init__.py:73-130`. With `run_python` this is code
-execution in Blender for any page that can reach the port; `--host 0.0.0.0`
-exposes it to the LAN. Upstream behaviour, opt-in (stdio is the default and is
-what `.mcp.json` uses). Needs a design decision, not a patch.
+## Closed
 
-### S3 — The add-on's `host` is not validated
-`blender_mcp/addon/blender_mcp_addon/mcp_to_blender_server.py` binds
-`("localhost", 9876)` by default (loopback only; browser cross-site requests
-fail at `json.loads`). The `host` preference and `--host` accept any string, so
-`0.0.0.0` would expose unauthenticated remote code execution. A guard in
-`start` that refuses a non-loopback host would close it; upstream may rely on
-the flag for containers.
+| Item | How it was closed | Guard |
+|---|---|---|
+| S1 | bmb llama-swap key rotated on 2026-10-07 (history not rewritten, by the owner's decision). Probe `POST /v1/chat/completions`: new key 400 (past auth, nonexistent model), old key 401. The rotation's old key is no longer valid; `git grep` finds the new key nowhere. | `bmb-key-committed-in-public-history` |
+| S2 | HTTP transport: `--host` must be loopback; DNS-rebinding protection on with loopback `Host` and `Origin` only (live: evil Host 421, evil Origin 403, loopback 200). | `tests/pure/test_review_followup.py` |
+| S3 | Add-on `start()` refuses any host that does not resolve only to loopback. | `tests/blender/test_review_mcp_addon.py` |
+| P1 | `Action.fcurves` fix text states the measured `AttributeError`; assembled fingerprint `a10:c68237772de1` -> `a10:c16070bc954b`, pin rewritten. | `tests/blender/test_review_analyze_capture.py::test_drift_signatures_match_the_error_blender_really_raises` |
+| P2 | A wire edge counts as non-manifold (`link_faces > 2 or == 0`); no golden moved. | `tests/blender/test_review_followup.py` |
+| P3 | `length_m = hypot(rise, run) + drop / cos(splay)`; the golden stool and leg tests stayed green. | `tests/pure/test_splayed_leg_spec.py::test_the_axis_top_lands_on_the_top_circle` |
+| P4 | `import_glb` recentres on the bounding-box centre; no golden moved. | `tests/blender/test_review_followup.py` |
+| P5 | `view_name` dropped from `_examiner_prompt`; `examiner_identity` unchanged (`x+examiner:4bc67293e36c` before and after). | `tests/pure/test_examiner.py` |
+| D1 | `run_batch`, `run_script_subprocess`, `run/_bootstrap.py` deleted with their tests and records; EXE-9 and EXE-10 retired in place. | `git grep` finds only past-tense narrative |
+| D2 | `reset_scene` restores frame range, current frame, units and resolution; `assert_clean_scene` asserts them. | `tests/blender/test_review_followup.py` |
+| D3 | The two test files that never ran moved to `tests/bench_scripts/`, run by `make test-bench-scripts` in a throwaway env (numpy, scipy, trimesh, Pillow never enter `.venv`). 0 skipped there; `make test-pure` has no import skips. | `make test-bench-scripts` |
+| D4 | `blender_mcp/mcp/pyproject.toml`: `requires-python >=3.11`, `anyio` declared; `blended` stays undeclared (the workspace root supplies it, and declaring it would be circular). `uv.lock` updated. | `uv lock` / `uv sync` |
+| D5 | Render tools append the format's extension before setting the path and return the written file; the objects summary reports `hide_viewport` and a separate `hide_in_view_layer`. | `tests/blender/test_review_mcp_tools.py` |
+| D6 | A raised chunk is emitted as `exec(compile(<repr>, <label>, "exec"), globals())`, byte for byte. | `tests/pure/test_review_followup.py` |
+| D7 | Not a defect: the cap overshoot is deliberate. `tests/blender/test_agent_loop.py::test_the_budget_counts_calls_not_messages` pins "a message's calls are never half-answered", and the stop text reports the executed count. | that test |
+| D8 | `tests/pure/test_agent_cancel.py` renamed `test_turn_token_budget.py`; live references updated; `BACKLOG_DONE.md` gained an append-only Errata section and its in-place edit was reverted. | `tests/pure/test_review_mistake_memory.py` |
 
-## Pinned text and gates (a fix moves a fingerprint or a golden)
+PROPOSED items:
 
-### P1 — The drift catalog's `Action.fcurves` text is wrong, and it is in the prompt
-`src/blended/drift/catalog.py:35-40` says reading `action.fcurves` "returns
-empty and silently does nothing". Measured on Blender 5.2.0: it raises
-`AttributeError: 'Action' object has no attribute 'fcurves'`
-(`src/blended/ops/animation.py:10` already says so). The text feeds the
-assembled prompt, pinned as `a10:c68237772de1`
-(`_evaluate/golden/pinned_assembled_fingerprint.txt`). Replace the sentence
-with "action.fcurves does not exist in 5.x: reading it raises AttributeError
-('Action' object has no attribute 'fcurves'; measured 5.2.0 LTS)" and re-pin.
+- `digest.py` `_uv_component` loop order: falsified as a risk, no code changed. The three builders (barrel, crate, pallet) passed `make test-repro` but carry no UV layer (`grep unwrap_uvs src/blended/builders` finds nothing), so those runs say nothing about UVs, and iteration 49 could not run (N1). A UV-bearing build was measured instead: a beveled box with a bore and a notch (two EXACT booleans) unwrapped with `ANGLE_BASED`, 78 polygons, 348 UV loops with 348 distinct values (the probe varies), built in six fresh Blenders under `PYTHONHASHSEED` 0-5: identical scene digest and identical raw UV loop order in all six. Scope of the claim: that build family and that seed range, one thread configuration.
+- `CALIBRATION_PATH` (`visual_diff`, `examiner`) cwd-relative: not a defect. Every entry point `chdir`s to the repository root (`scripts/run_agent_task.py:39`, `scripts/run_tests_in_blender.py:44`, `scripts/calibrate_visual_gate.py:48`, `scripts/calibrate_examiner.py:53`), and `examiner.py` reports a missing file by path.
+- `claude_code.py` `check_connection` non-object JSON and a watchdog kill mid-frame: both reproduced and fixed (`tests/pure/test_review_followup.py`).
+- `prompt_search` rejected-hunk memory keyed by line range: by design. `prompt_versions.changed_hunks` keys a hunk as `"<opcode> lines i1-i2 -> j1-j2"`, which is positional by construction; the memory refuses a repeated edit at the same place and does not claim to recognise a shifted one. The consequence of a miss was not measured.
+- `validate_modules()` duplicate names: fixed (`tests/pure/test_review_followup.py`).
+- Examiner numeric claims, checked against the papers' full text (home-still `paper_get` and `distill_search` timed out after 900 s each, so arXiv HTML was read): BlenderGym 0.66 is the best VLM verifier (Claude-3.5-Sonnet) against 0.79 inter-human, confirmed; RefGlitch-Bench (the `RESP` the comments cite, arXiv 2604.11082), Qwen3-VL-8B recall 0.76 with the oracle reference, 0.69 with the best automatic reference, 0.28 with none, and the irrelevant-reference drop of 0.23 F1, all confirmed. One citation was NOT supported: `examiner.py` said BlenderGym measured judge position bias, and the paper's text has no position-bias measurement (the words "position bias" occur zero times); the attribution was removed and MT-bench kept. The comment's "five-defect zoo" is a four-defect zoo (`scripts/calibrate_examiner.py::_fixtures`) and now says so.
+- `.mcp.json` absolute paths: documented in `README.md` ("`.mcp.json` and `.omp/mcp.json` name this machine's absolute paths").
+- `heal.py` edge-index keying: `edges.index_update()` added. A collision could not be made: 4 constructed meshes and 40 randomised icospheres (vertices snapped within and beyond the weld distance, faces collapsed) gave contiguous, duplicate-free, non-negative edge indices after `remove_doubles` and `dissolve_degenerate`. No test, no record.
 
-### P2 — A wire edge passes the mesh gate
-`src/blended/analyze/mesh_checks.py:621-626`: edges with zero faces count as
-neither boundary nor non-manifold. Measured: a cube with one hanging wire edge
-returns `failures() == []`; only disconnected wire edges are caught, by the
-component count. Counting them changes the gate every golden and bench score
-was measured under.
-
-### P3 — Splayed legs end 0.35 mm short of the top
-`src/blended/ops/legs.py:177`: `SplayedLegSpec.length_m` adds the drop, but the
-axial drop is `drop / cos(splay)`. Measured for the stool spec: leg axis ends
-at z=0.40965 against `top_z_m` 0.41; the foot circle is exact. The fix is
-`hypot(rise, run) + sole_drop_m / cos(splay_rad)`, which moves golden geometry
-and `test_the_leg_regains_the_length_the_drop_spent`.
-
-### P4 — `import_glb` recentres on the vertex mean, not the bbox centre
-`src/blended/ingest/import_glb.py:76-80`. The result depends on tessellation
-density. `_evaluate/visual_gate_calibration.json` and the golden views were
-measured with the current recentring (`scripts/calibrate_visual_gate.py:13`).
-
-### P5 — `examiner.py` passes `view_name`; the template never renders it
-`src/blended/evaluate/examiner.py:372` vs `prompts/examiner.md.j2` (pinned).
-Harmless (jinja ignores extras); drop the argument or render it.
-
-## Dead code and spec
-
-### D1 — `run_batch`, `run_script_subprocess`, `run/_bootstrap.py` have no callers
-Nothing in `src/`, `scripts/`, `blender_mcp/` or the Makefile calls them; the
-spec's EXE-9/EXE-10 require them. They now have tests
-(`tests/*/test_review_harness_core.py`). One-path rule: delete them and the
-two spec rows, or keep them on purpose.
-
-### D2 — `reset_scene` leaves frame range, unit scale and render resolution
-Measured in Blender 5.2 after `reset_scene`: `frame_start/end/current`
-(5/99/42), `unit_settings.scale_length` (0.01) and `render.resolution_x` (321)
-survive. Harm to rebuild digests is PROPOSED (both builds inherit the same
-leak); measure before changing.
-
-### D3 — Tests that never run in the matrix
-`tests/pure/test_bench_proportion_headroom.py` calls `importorskip("numpy")`;
-`.venv` has neither numpy nor trimesh, so its four tests are the skipped file in
-`make test-pure`. Run directly under system python they pass. Add numpy and
-trimesh to the dev group, or move the test to `tests/blender/`.
-
-### D4 — Vendored MCP package declares neither `blended` nor `anyio`
-`blender_mcp/mcp/pyproject.toml`: `blmcp.tools_helpers.blended_bridge` imports
-`blended` and `anyio`, and `requires-python >=3.10` differs from the root's
-`>=3.11`. Declaring `blended` would be circular with the root's `blender-mcp`
-dependency and touches `uv.lock`.
-
-### D5 — Upstream tool quirks pinned by upstream tests
-`get_objects_summary_toolcode.py:36` fills `hide_viewport` from
-`obj.hide_get()` (view-layer hide); `render_*` tools reduce `output_path` to its
-basename under `bpy.app.tempdir/blender_mcp` and let Blender append `.png`
-(the returned path then does not exist). Pinned by
-`test_blender_mcp_with_blender.py:752-810` and `test_tool_listing.py`.
-
-### D6 — `bench_bridge` re-indents multi-line string literals
-`src/blended/evaluate/bench_bridge.py` (~184): a chunk that raised after
-changing the scene is wrapped with `textwrap.indent`, which also indents the
-inside of triple-quoted strings, so the replayed text differs from the live
-run. A fix changes the script format `tests/pure/test_bench_bridge.py` pins.
-
-### D7 — The tool-call cap is checked at the top of the loop
-`src/blended/agent/loop.py`: one reply carrying several calls can exceed
-`maximum_tool_calls_per_turn` while the stop text still says "budget N".
-`tests/pure/test_turn_caps.py` may pin the current behaviour.
-
-### D8 — `tests/pure/test_agent_cancel.py` is named for a deleted method
-It tests the token-budget seam since `AgentSession.cancel` was deleted. Not
-renamed because `BACKLOG_DONE.md`, the spec and a mistake-memory guard cite the
-path.
-
-## PROPOSED (unmeasured; nothing was changed for these)
-
-- `src/blended/evaluate/digest.py:105` `_uv_component` hashes UVs in raw loop
-  order while faces are sorted; whether loop order is nondeterministic is not
-  measured.
-- `src/blended/evaluate/visual_diff.py` `CALIBRATION_PATH` is relative to the
-  working directory; a launch from another directory prints "uncalibrated"
-  and skips the gate instead of failing.
-- `src/blended/agent/claude_code.py` `check_connection`: `claude auth status`
-  printing valid JSON that is not an object would raise `AttributeError`; a
-  watchdog kill mid-frame surfaces as `JSONDecodeError`.
-- `src/blended/agent/prompt_search.py:129` rejected-hunk memory keys on
-  line-range strings, so the same edit at a shifted line is not recognised.
-- `src/blended/agent/skill_modules.py:119` `validate_modules()` does not check
-  duplicate names.
-- `src/blended/evaluate/examiner.py` numeric claims ("0.66-alignment", the RESP
-  recall figures) were not re-checked against the cited papers; the DOIs were.
-- `.mcp.json` hardcodes `/Users/ladvien/blended/.venv/bin/blender-mcp`; the
-  README says both `.mcp.json` and `.omp/mcp.json` need editing on another
-  checkout.
-- `src/blended/ops/heal.py` (~55) dedupes sliver edges by `edge.index` after
-  `remove_doubles`; could not make indices collide in a probe.
+Verification counts and the commands are in the pull request.

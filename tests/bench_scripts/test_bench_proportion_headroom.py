@@ -6,18 +6,19 @@ on the same eight model dirs; these tests pin the pieces that claim rests
 on so a refactor cannot change what "oracle proportions" or "floating"
 mean without turning red.
 """
+
 from __future__ import annotations
 
 import sys
 from pathlib import Path
 
+import numpy as np
 import pytest
+import trimesh
 
-# The pure layer's venv is stdlib-only; the bench scripts need numpy and
-# trimesh, so this module skips cleanly there and runs where they exist
-# (the system python3 the bench chain uses).
-np = pytest.importorskip("numpy")
-trimesh = pytest.importorskip("trimesh")
+# The bench scripts need numpy, scipy and trimesh, which never enter `.venv`
+# (Blender, on Python 3.13, puts its site-packages first on sys.path).
+# `make test-bench-scripts` runs this directory in a throwaway env that has them.
 
 SCRIPTS = Path(__file__).resolve().parents[2] / "scripts"
 sys.path.insert(0, str(SCRIPTS))
@@ -55,7 +56,9 @@ def test_extents_are_read_between_the_registered_percentiles():
 
 def test_oracle_rescale_gives_the_generated_cloud_the_reference_extents():
     reference = _Scorer.normalize_unit_sphere(_box_cloud((1.0, 3.0, 1.0)))  # tall jar
-    generated = _Scorer.normalize_unit_sphere(_box_cloud((2.0, 3.0, 2.0)))  # 2x too wide
+    generated = _Scorer.normalize_unit_sphere(
+        _box_cloud((2.0, 3.0, 2.0))
+    )  # 2x too wide
     rescaled = oracle_rescaled(_Scorer, reference, generated)
     ratio = extents_at_percentiles(rescaled) / extents_at_percentiles(reference)
     assert np.allclose(ratio, 1.0, rtol=0.05)

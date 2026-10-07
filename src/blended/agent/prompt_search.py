@@ -250,9 +250,7 @@ def _tuple_close_index(lines: list[str]) -> int:
             index for index, line in enumerate(lines) if REGISTRY_ANCHOR in line
         )
     except StopIteration as error:
-        raise RevisionRejected(
-            f"registry has no {REGISTRY_ANCHOR!r} anchor"
-        ) from error
+        raise RevisionRejected(f"registry has no {REGISTRY_ANCHOR!r} anchor") from error
     for index in range(anchor + 1, len(lines)):
         if lines[index].rstrip("\n") == ")":
             return index
@@ -350,18 +348,12 @@ def record_outcome(revision: int, outcome: str, package_directory: Path) -> None
     if end is None:
         raise RevisionRejected(f"registry entry v{revision} never closes")
     pending = next(
-        (
-            index
-            for index in range(start, end)
-            if lines[index].strip() == 'outcome="",'
-        ),
+        (index for index in range(start, end) if lines[index].strip() == 'outcome="",'),
         None,
     )
     if pending is None:
         raise RevisionRejected(f"v{revision} has no pending outcome to fill")
-    lines[pending] = (
-        "        outcome=\n" f"{_python_string_block(outcome, ' ' * 12)},\n"
-    )
+    lines[pending] = f"        outcome=\n{_python_string_block(outcome, ' ' * 12)},\n"
 
     registry_path.write_text("".join(lines), encoding="utf-8")
     try:

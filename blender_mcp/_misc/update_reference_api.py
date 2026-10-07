@@ -8,9 +8,7 @@ Copy RST files and examples from a Blender API reference build into ``data/api/`
 Examples are copied from ``API_DIR/../examples`` into ``data/api/examples/``.
 """
 
-__all__ = (
-    "main",
-)
+__all__ = ("main",)
 
 import argparse
 import os
@@ -53,7 +51,11 @@ def main() -> int:
 
     src_dir = args.api_dir
     if not os.path.isfile(os.path.join(src_dir, "bpy.app.rst")):
-        print("Source directory does not look like an API reference build: {:s}".format(src_dir))
+        print(
+            "Source directory does not look like an API reference build: {:s}".format(
+                src_dir
+            )
+        )
         return 1
 
     examples_dir = os.path.join(os.path.dirname(src_dir), "examples")

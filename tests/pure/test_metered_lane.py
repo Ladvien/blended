@@ -42,6 +42,7 @@ def _urlopen_from(handler):
     The handler runs when urlopen is CALLED, as the real one raises its
     HTTPError at call time and not on entering the response — that is
     the property the retry loop rests on (OT-35)."""
+
     def urlopen(request, timeout=None, context=None):
         import json as _json
 
@@ -90,8 +91,16 @@ def test_the_window_comes_from_the_pinned_providers_endpoint(monkeypatch):
     calls = _catalogue(
         monkeypatch,
         [
-            {"tag": "someone-else", "provider_name": "Someone Else", "context_length": 262_144},
-            {"tag": OPENROUTER_PINNED_PROVIDER, "provider_name": "GMICloud", "context_length": METERED_WINDOW},
+            {
+                "tag": "someone-else",
+                "provider_name": "Someone Else",
+                "context_length": 262_144,
+            },
+            {
+                "tag": OPENROUTER_PINNED_PROVIDER,
+                "provider_name": "GMICloud",
+                "context_length": METERED_WINDOW,
+            },
         ],
     )
     client = OllamaClient(_metered_config())
@@ -101,15 +110,23 @@ def test_the_window_comes_from_the_pinned_providers_endpoint(monkeypatch):
 
     assert status.ok and f"OpenRouter -> {OPENROUTER_PINNED_PROVIDER}" in status.detail
     assert f"context {METERED_WINDOW:,}" in status.detail
-    assert calls[0] == (_endpoints_path(), None)  # the provider's endpoint before the ping
+    assert calls[0] == (
+        _endpoints_path(),
+        None,
+    )  # the provider's endpoint before the ping
     assert client.config.context_tokens == METERED_WINDOW
 
     # And the request names that one provider, with no silent reroute.
     payload = client._chat_payload([{"role": "user", "content": "x"}])
-    assert payload["provider"] == {"order": [OPENROUTER_PINNED_PROVIDER], "allow_fallbacks": False}
+    assert payload["provider"] == {
+        "order": [OPENROUTER_PINNED_PROVIDER],
+        "allow_fallbacks": False,
+    }
 
 
-def test_a_provider_that_does_not_serve_the_model_is_refused_with_those_that_do(monkeypatch):
+def test_a_provider_that_does_not_serve_the_model_is_refused_with_those_that_do(
+    monkeypatch,
+):
     """Measured 2026-09-10: pinning `deepseek` — the model's own vendor —
     answered "0 endpoints out of 1 requested are available matching your
     guardrail restriction" per call. The lane must say so at the
@@ -138,16 +155,25 @@ def test_a_provider_entry_without_a_window_is_refused(monkeypatch):
 
 
 def test_the_price_is_asked_for_on_this_lane_and_on_no_other():
-    metered = OllamaClient(_metered_config())._chat_payload([{"role": "user", "content": "x"}])
+    metered = OllamaClient(_metered_config())._chat_payload(
+        [{"role": "user", "content": "x"}]
+    )
     assert metered["usage"] == {"include": True}
 
     llama_swap = OllamaClient(
-        ModelConfig(model="qwen3.8-27b", endpoint=BMB_ENDPOINT, vision_model="", api_key="k")
+        ModelConfig(
+            model="qwen3.8-27b", endpoint=BMB_ENDPOINT, vision_model="", api_key="k"
+        )
     )._chat_payload([{"role": "user", "content": "x"}])
     assert "usage" not in llama_swap  # our own hardware charges nothing
 
     daemon = OllamaClient(
-        ModelConfig(model="anything", endpoint=LOCAL_ENDPOINT, vision_model="", context_length=32_768)
+        ModelConfig(
+            model="anything",
+            endpoint=LOCAL_ENDPOINT,
+            vision_model="",
+            context_length=32_768,
+        )
     )._chat_payload([{"role": "user", "content": "x"}])
     assert "usage" not in daemon
 
@@ -162,7 +188,9 @@ def test_cost_comes_off_the_usage_object_and_stays_zero_where_none_is_reported()
 
     # llama-swap fills in usage but never a price: zero means "charged
     # nothing", not "unknown".
-    free = _turn_cost_from_body({"usage": {"prompt_tokens": 100, "completion_tokens": 20}})
+    free = _turn_cost_from_body(
+        {"usage": {"prompt_tokens": 100, "completion_tokens": 20}}
+    )
     assert free.cost_usd == 0.0 and free.input_tokens == 100
 
     # The Ollama wire reports neither shape.
@@ -187,12 +215,18 @@ def test_the_cache_split_and_the_thinking_share_are_read_too():
         }
     )
     assert cost.billed_input_tokens == 34  # the provider's own number, unchanged
-    assert cost.input_tokens == 20 and cost.cache_read_tokens == 10 and cost.cache_write_tokens == 4
+    assert (
+        cost.input_tokens == 20
+        and cost.cache_read_tokens == 10
+        and cost.cache_write_tokens == 4
+    )
     assert cost.reasoning_tokens == 24 and cost.output_tokens == 29
     assert "(24 reasoning)" in cost.summary()
 
     # A lane that reports no details: everything fresh, nothing thought.
-    plain = _turn_cost_from_body({"usage": {"prompt_tokens": 100, "completion_tokens": 20}})
+    plain = _turn_cost_from_body(
+        {"usage": {"prompt_tokens": 100, "completion_tokens": 20}}
+    )
     assert plain.input_tokens == 100 and plain.cache_read_tokens == 0
     assert plain.reasoning_tokens == 0 and "reasoning" not in plain.summary()
 
@@ -202,7 +236,11 @@ def test_a_metered_run_stops_at_its_cap_with_both_numbers_named(monkeypatch):
         "choices": [{"message": {"role": "assistant", "content": "..."}}],
         "usage": {"prompt_tokens": 1_000_000, "completion_tokens": 1000, "cost": 0.2},
     }
-    _catalogue(monkeypatch, [{"tag": OPENROUTER_PINNED_PROVIDER, "context_length": METERED_WINDOW}], reply=expensive)
+    _catalogue(
+        monkeypatch,
+        [{"tag": OPENROUTER_PINNED_PROVIDER, "context_length": METERED_WINDOW}],
+        reply=expensive,
+    )
     client = OllamaClient(_metered_config(maximum_run_cost_usd=0.30))
     client.check_connection()
 
@@ -219,6 +257,7 @@ def test_a_metered_run_stops_at_its_cap_with_both_numbers_named(monkeypatch):
 def test_only_a_metered_lane_is_capped(monkeypatch):
     """bmb's llama-swap bills nothing per call, so a long run there is
     not a spending accident and must never be stopped as one."""
+
     def fake_request(self, path, payload, timeout_seconds):
         return {
             "choices": [{"message": {"role": "assistant", "content": "ok"}}],
@@ -229,7 +268,13 @@ def test_only_a_metered_lane_is_capped(monkeypatch):
 
     monkeypatch.setattr(OllamaClient, "_request", fake_request)
     client = OllamaClient(
-        ModelConfig(model="qwen3.8-27b", endpoint=BMB_ENDPOINT, vision_model="", api_key="k", maximum_run_cost_usd=0.01)
+        ModelConfig(
+            model="qwen3.8-27b",
+            endpoint=BMB_ENDPOINT,
+            vision_model="",
+            api_key="k",
+            maximum_run_cost_usd=0.01,
+        )
     )
     assert not client.config.is_metered
     client.chat([{"role": "user", "content": "x"}])
@@ -273,11 +318,20 @@ def test_a_rate_limited_call_is_retried_then_succeeds(monkeypatch):
     def flaky(self, path, payload, timeout_seconds):
         attempts["n"] += 1
         if attempts["n"] <= 2:
-            raise urllib.error.HTTPError(path, 429, "Too Many Requests", {}, io.BytesIO(b"rate limited"))
-        return {"choices": [{"message": {"role": "assistant", "content": "pong"}}], "usage": {"prompt_tokens": 5, "completion_tokens": 1}}
+            raise urllib.error.HTTPError(
+                path, 429, "Too Many Requests", {}, io.BytesIO(b"rate limited")
+            )
+        return {
+            "choices": [{"message": {"role": "assistant", "content": "pong"}}],
+            "usage": {"prompt_tokens": 5, "completion_tokens": 1},
+        }
 
-    monkeypatch.setattr(OllamaClient, "_build_request", lambda self, path, payload: path)
-    monkeypatch.setattr("blended.agent.loop.urllib.request.urlopen", _urlopen_from(flaky))
+    monkeypatch.setattr(
+        OllamaClient, "_build_request", lambda self, path, payload: path
+    )
+    monkeypatch.setattr(
+        "blended.agent.loop.urllib.request.urlopen", _urlopen_from(flaky)
+    )
     client = OllamaClient(_metered_config(context_length=METERED_WINDOW))
 
     body = client._request("/v1/chat/completions", {"model": "m"}, 60)
@@ -300,10 +354,16 @@ def test_a_permanent_error_is_not_retried(monkeypatch):
 
     def refuses(self, path, payload, timeout_seconds):
         calls["n"] += 1
-        raise urllib.error.HTTPError(path, 400, "Bad Request", {}, io.BytesIO(b"malformed"))
+        raise urllib.error.HTTPError(
+            path, 400, "Bad Request", {}, io.BytesIO(b"malformed")
+        )
 
-    monkeypatch.setattr(OllamaClient, "_build_request", lambda self, path, payload: path)
-    monkeypatch.setattr("blended.agent.loop.urllib.request.urlopen", _urlopen_from(refuses))
+    monkeypatch.setattr(
+        OllamaClient, "_build_request", lambda self, path, payload: path
+    )
+    monkeypatch.setattr(
+        "blended.agent.loop.urllib.request.urlopen", _urlopen_from(refuses)
+    )
     client = OllamaClient(_metered_config(context_length=METERED_WINDOW))
 
     with pytest.raises(urllib.error.HTTPError) as raised:
@@ -322,10 +382,16 @@ def test_a_window_that_never_lifts_fails_loudly(monkeypatch):
 
     def always_limited(self, path, payload, timeout_seconds):
         calls["n"] += 1
-        raise urllib.error.HTTPError(path, 503, "Service Unavailable", {}, io.BytesIO(b"down"))
+        raise urllib.error.HTTPError(
+            path, 503, "Service Unavailable", {}, io.BytesIO(b"down")
+        )
 
-    monkeypatch.setattr(OllamaClient, "_build_request", lambda self, path, payload: path)
-    monkeypatch.setattr("blended.agent.loop.urllib.request.urlopen", _urlopen_from(always_limited))
+    monkeypatch.setattr(
+        OllamaClient, "_build_request", lambda self, path, payload: path
+    )
+    monkeypatch.setattr(
+        "blended.agent.loop.urllib.request.urlopen", _urlopen_from(always_limited)
+    )
     client = OllamaClient(_metered_config(context_length=METERED_WINDOW))
 
     with pytest.raises(urllib.error.HTTPError) as raised:
@@ -355,10 +421,16 @@ def test_an_exhausted_credit_lane_is_not_retried(monkeypatch):
 
     def out_of_credits(self, path, payload, timeout_seconds):
         calls["n"] += 1
-        raise urllib.error.HTTPError(path, 429, "Too Many Requests", {}, io.BytesIO(body))
+        raise urllib.error.HTTPError(
+            path, 429, "Too Many Requests", {}, io.BytesIO(body)
+        )
 
-    monkeypatch.setattr(OllamaClient, "_build_request", lambda self, path, payload: path)
-    monkeypatch.setattr("blended.agent.loop.urllib.request.urlopen", _urlopen_from(out_of_credits))
+    monkeypatch.setattr(
+        OllamaClient, "_build_request", lambda self, path, payload: path
+    )
+    monkeypatch.setattr(
+        "blended.agent.loop.urllib.request.urlopen", _urlopen_from(out_of_credits)
+    )
     client = OllamaClient(_metered_config(context_length=METERED_WINDOW))
 
     with pytest.raises(urllib.error.HTTPError) as raised:
@@ -390,10 +462,17 @@ def test_a_socket_timeout_on_open_is_retried_then_succeeds(monkeypatch):
         attempts["n"] += 1
         if attempts["n"] <= 2:
             raise TimeoutError("timed out")
-        return {"choices": [{"message": {"role": "assistant", "content": "pong"}}], "usage": {"prompt_tokens": 5, "completion_tokens": 1}}
+        return {
+            "choices": [{"message": {"role": "assistant", "content": "pong"}}],
+            "usage": {"prompt_tokens": 5, "completion_tokens": 1},
+        }
 
-    monkeypatch.setattr(OllamaClient, "_build_request", lambda self, path, payload: path)
-    monkeypatch.setattr("blended.agent.loop.urllib.request.urlopen", _urlopen_from(stalls_twice))
+    monkeypatch.setattr(
+        OllamaClient, "_build_request", lambda self, path, payload: path
+    )
+    monkeypatch.setattr(
+        "blended.agent.loop.urllib.request.urlopen", _urlopen_from(stalls_twice)
+    )
     client = OllamaClient(_metered_config(context_length=METERED_WINDOW))
 
     body = client._request("/v1/chat/completions", {"model": "m"}, 60)
@@ -417,8 +496,12 @@ def test_a_connection_that_never_answers_fails_loudly(monkeypatch):
         calls["n"] += 1
         raise urllib.error.URLError(ConnectionRefusedError(61, "Connection refused"))
 
-    monkeypatch.setattr(OllamaClient, "_build_request", lambda self, path, payload: path)
-    monkeypatch.setattr("blended.agent.loop.urllib.request.urlopen", _urlopen_from(refused))
+    monkeypatch.setattr(
+        OllamaClient, "_build_request", lambda self, path, payload: path
+    )
+    monkeypatch.setattr(
+        "blended.agent.loop.urllib.request.urlopen", _urlopen_from(refused)
+    )
     client = OllamaClient(_metered_config(context_length=METERED_WINDOW))
 
     with pytest.raises(urllib.error.URLError):
@@ -438,26 +521,49 @@ def test_the_completion_reservation_comes_from_the_provider_bounded(monkeypatch)
     every real conversation."""
     _catalogue(
         monkeypatch,
-        [{"tag": OPENROUTER_PINNED_PROVIDER, "context_length": METERED_WINDOW, "max_completion_tokens": 943_717}],
+        [
+            {
+                "tag": OPENROUTER_PINNED_PROVIDER,
+                "context_length": METERED_WINDOW,
+                "max_completion_tokens": 943_717,
+            }
+        ],
     )
     client = OllamaClient(_metered_config(max_completion_tokens=16_384))
     client.check_connection()
 
-    assert client.config.max_completion_tokens == MAXIMUM_RESERVED_COMPLETION_TOKENS == 65_536
-    assert MAXIMUM_RESERVED_COMPLETION_TOKENS == 4 * 16_384  # 4x the ceiling measured to cut
-    assert MAXIMUM_RESERVED_COMPLETION_TOKENS < METERED_WINDOW * 0.07  # the prompt keeps the window
+    assert (
+        client.config.max_completion_tokens
+        == MAXIMUM_RESERVED_COMPLETION_TOKENS
+        == 65_536
+    )
+    assert (
+        MAXIMUM_RESERVED_COMPLETION_TOKENS == 4 * 16_384
+    )  # 4x the ceiling measured to cut
+    assert (
+        MAXIMUM_RESERVED_COMPLETION_TOKENS < METERED_WINDOW * 0.07
+    )  # the prompt keeps the window
 
     # A provider that publishes a SMALLER ceiling than the bound is believed.
     _catalogue(
         monkeypatch,
-        [{"tag": OPENROUTER_PINNED_PROVIDER, "context_length": METERED_WINDOW, "max_completion_tokens": 8_192}],
+        [
+            {
+                "tag": OPENROUTER_PINNED_PROVIDER,
+                "context_length": METERED_WINDOW,
+                "max_completion_tokens": 8_192,
+            }
+        ],
     )
     modest = OllamaClient(_metered_config(max_completion_tokens=16_384))
     modest.check_connection()
     assert modest.config.max_completion_tokens == 8_192
 
     # A provider that publishes none leaves the configured value alone.
-    _catalogue(monkeypatch, [{"tag": OPENROUTER_PINNED_PROVIDER, "context_length": METERED_WINDOW}])
+    _catalogue(
+        monkeypatch,
+        [{"tag": OPENROUTER_PINNED_PROVIDER, "context_length": METERED_WINDOW}],
+    )
     silent = OllamaClient(_metered_config(max_completion_tokens=16_384))
     silent.check_connection()
     assert silent.config.max_completion_tokens == 16_384

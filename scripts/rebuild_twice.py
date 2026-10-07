@@ -159,8 +159,7 @@ def digest_in_this_process(arguments) -> dict:
         result = run_source_in_process(source)
         # stderr, so stdout stays parseable by the parent.
         print(
-            f"[child] chunk {index}/{len(sources)}: "
-            f"{'ok' if result.ok else 'FAILED'}",
+            f"[child] chunk {index}/{len(sources)}: {'ok' if result.ok else 'FAILED'}",
             file=sys.stderr,
             flush=True,
         )
@@ -219,9 +218,7 @@ def run_child(arguments, hash_seed: str) -> dict:
         ) from expired
 
     marked = [
-        line
-        for line in completed.stdout.splitlines()
-        if line.startswith(DIGEST_MARKER)
+        line for line in completed.stdout.splitlines() if line.startswith(DIGEST_MARKER)
     ]
     if completed.returncode != 0 or not marked:
         raise SystemExit(
@@ -258,8 +255,7 @@ def main(argv) -> int:
     problems = compare_digests(digests[0], digests[1])
     if problems:
         print(
-            f"[repro] NOT reproducible: {len(problems)} component "
-            f"difference(s)",
+            f"[repro] NOT reproducible: {len(problems)} component difference(s)",
             flush=True,
         )
         for problem in problems:
@@ -277,5 +273,7 @@ def main(argv) -> int:
     return 0
 
 
-extra_arguments = sys.argv[sys.argv.index("--") + 1 :] if "--" in sys.argv else sys.argv[1:]
+extra_arguments = (
+    sys.argv[sys.argv.index("--") + 1 :] if "--" in sys.argv else sys.argv[1:]
+)
 raise SystemExit(main(extra_arguments))

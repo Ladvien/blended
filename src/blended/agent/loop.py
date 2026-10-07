@@ -67,7 +67,9 @@ LOCAL_ENDPOINT = "http://localhost:11434"
 CLOUD_ENDPOINT = "https://ollama.com"
 CHAT_PATH = "/api/chat"
 TAGS_PATH = "/api/tags"
-SHOW_PATH = "/api/show"  # the daemon's own model card: context_length lives in model_info
+SHOW_PATH = (
+    "/api/show"  # the daemon's own model card: context_length lives in model_info
+)
 OPENAI_CHAT_PATH = "/v1/chat/completions"
 # llama-swap on bmb speaks the OpenAI protocol; bmb exposes the port
 # directly on the LAN at this address (no SSH tunnel needed).
@@ -269,6 +271,8 @@ def exhausted_credits_error(detail: str) -> bool:
     """True when a gateway error body says the lane is out of credits —
     a condition no retry and no next instance can change."""
     return EXHAUSTED_CREDITS_SIGNATURE in detail
+
+
 # Waits between attempts, in seconds. NOT a fallback: the same request
 # goes to the same endpoint and the same provider, a bounded number of
 # times, and then fails loudly.
@@ -337,6 +341,7 @@ def _read_openrouter_api_key() -> str:
 def _is_openrouter_model(model: str) -> bool:
     """`vendor/model` ids belong to OpenRouter; nothing else has a slash."""
     return "/" in model
+
 
 # Why these, given what this harness actually asks of a model.
 #
@@ -763,9 +768,7 @@ class ModelConfig:
             resolved_key = _implied_api_key(
                 resolved_model, os.environ.get(API_KEY_ENVIRONMENT_VARIABLE, "")
             )
-        explicit_endpoint = (
-            endpoint if endpoint and endpoint != LOCAL_ENDPOINT else ""
-        )
+        explicit_endpoint = endpoint if endpoint and endpoint != LOCAL_ENDPOINT else ""
         resolved_endpoint = (
             explicit_endpoint
             or os.environ.get(HOST_ENVIRONMENT_VARIABLE, "")
@@ -846,7 +849,9 @@ class ModelConfig:
             return self.context_length
         if self.uses_openai_protocol:
             return CONTEXT_TOKENS_BY_MODEL.get(self.model)
-        return self.context_length  # what the Ollama request sends as num_ctx; None until discovered
+        return (
+            self.context_length
+        )  # what the Ollama request sends as num_ctx; None until discovered
 
     @property
     def uses_separate_eye(self) -> bool:
@@ -1122,14 +1127,20 @@ class OllamaClient:
             except urllib.error.HTTPError as http_error:
                 # HTTPError is a URLError: it must be sorted by status
                 # BEFORE the transport clause below can see it.
-                if http_error.code not in RETRYABLE_HTTP_STATUSES or wait_seconds is None:
+                if (
+                    http_error.code not in RETRYABLE_HTTP_STATUSES
+                    or wait_seconds is None
+                ):
                     raise
                 detail = http_error.read().decode("utf-8", "replace")[:160]
                 if exhausted_credits_error(detail):
                     # The body was consumed to read it; hand it on where
                     # check_connection and the sweep read the detail.
                     raise urllib.error.HTTPError(
-                        http_error.url, http_error.code, detail, http_error.hdrs,
+                        http_error.url,
+                        http_error.code,
+                        detail,
+                        http_error.hdrs,
                         io.BytesIO(detail.encode("utf-8")),
                     ) from http_error
                 what = f"HTTP {http_error.code}"
@@ -1330,11 +1341,7 @@ class OllamaClient:
                 # unbounded within num_ctx, and a reply cut at num_ctx is
                 # still an error (check_reply_fits).
                 # See the OpenAI branch: only when the caller pinned one.
-                **(
-                    {"seed": self.config.seed}
-                    if self.config.seed is not None
-                    else {}
-                ),
+                **({"seed": self.config.seed} if self.config.seed is not None else {}),
             },
         }
         if tools:
@@ -1399,9 +1406,7 @@ class OllamaClient:
                     probe_client.discover_context(PREFLIGHT_TIMEOUT_SECONDS)
                 probe_client._request(
                     probe_client._chat_path(),
-                    probe_client._chat_payload(
-                        [{"role": "user", "content": "ping"}]
-                    ),
+                    probe_client._chat_payload([{"role": "user", "content": "ping"}]),
                     PREFLIGHT_TIMEOUT_SECONDS,
                 )
             except urllib.error.HTTPError as http_error:
@@ -1416,18 +1421,25 @@ class OllamaClient:
             eye_window = ""
             if self.config.uses_separate_eye:
                 eye_probe = OllamaClient(self.config.eye_config())
-                if not eye_probe.config.uses_openai_protocol and not eye_probe.config.uses_claude_code:
+                if (
+                    not eye_probe.config.uses_openai_protocol
+                    and not eye_probe.config.uses_claude_code
+                ):
                     # The eye's window rides the same config so every eye
                     # client built from it knows its own num_ctx.
                     try:
-                        eye_window_tokens = eye_probe.discover_context(PREFLIGHT_TIMEOUT_SECONDS)
+                        eye_window_tokens = eye_probe.discover_context(
+                            PREFLIGHT_TIMEOUT_SECONDS
+                        )
                     except Exception as error:  # noqa: BLE001 — diagnostic path
                         return ConnectionStatus(
                             False,
                             endpoint,
                             f"eye {self.config.vision_model}: {error}",
                         )
-                    self.config = replace(self.config, eye_context_length=eye_window_tokens)
+                    self.config = replace(
+                        self.config, eye_context_length=eye_window_tokens
+                    )
                     eye_window = f"; eye context {eye_window_tokens:,}"
             if BMB_ENDPOINT in endpoint:
                 route = f"llama-swap on bmb ({BMB_ENDPOINT})"
@@ -1450,7 +1462,9 @@ class OllamaClient:
                 if self.config.context_length
                 else ""
             )
-            return ConnectionStatus(True, endpoint, f"{self.config.model} via {route}{window}{eye_window}")
+            return ConnectionStatus(
+                True, endpoint, f"{self.config.model} via {route}{window}{eye_window}"
+            )
 
         # The hint follows the OBSERVED failure, never the mere absence
         # of a key. A signed-in daemon needs no key, so keying the hint
@@ -1493,7 +1507,7 @@ class OllamaClient:
                     f" big's llama-swap takes no API key (it answers 200 "
                     f"with and without a bearer, verified 2026-09-03), so "
                     f"a 401 here means something else is listening on "
-                    f"{BIG_ENDPOINT} — check `ssh big \"bash -lc "
+                    f'{BIG_ENDPOINT} — check `ssh big "bash -lc '
                     f"'journalctl --user -u llama-swap -n 20'\"`."
                 )
             elif self.config.is_openrouter:
@@ -1552,7 +1566,9 @@ class OllamaClient:
             message = _assistant_message_from_openai(
                 body, constrained=self.config.constrains_tool_calls and bool(tools)
             )
-            finish_reason = ((body.get("choices") or [{}])[0]).get("finish_reason") or ""
+            finish_reason = (
+                ((body.get("choices") or [{}])[0]).get("finish_reason") or ""
+            )
         else:
             message = body.get("message", {})
             finish_reason = body.get("done_reason") or ""
@@ -1589,7 +1605,9 @@ def _turn_cost_from_body(body: dict) -> TurnCost:
         # (`billed_input_tokens`), which is what OT-26's fraction divides.
         return TurnCost(
             api_calls=1,
-            input_tokens=int(usage.get("prompt_tokens") or 0) - cache_read - cache_write,
+            input_tokens=int(usage.get("prompt_tokens") or 0)
+            - cache_read
+            - cache_write,
             cache_read_tokens=cache_read,
             cache_write_tokens=cache_write,
             output_tokens=int(usage.get("completion_tokens") or 0),
@@ -1601,7 +1619,6 @@ def _turn_cost_from_body(body: dict) -> TurnCost:
         input_tokens=int(body.get("prompt_eval_count") or 0),
         output_tokens=int(body.get("eval_count") or 0),
     )
-
 
 
 class ContextUndiscovered(RuntimeError):
@@ -1663,8 +1680,7 @@ class VisionDescriber:
         # `self.vision_model` is the describer's own eye (the examiner
         # passes its own), so it is pushed onto the config first.
         eye_client = OllamaClient(
-            replace(self.client.config, vision_model=self.vision_model)
-            .eye_config()
+            replace(self.client.config, vision_model=self.vision_model).eye_config()
         )
         try:
             reply = eye_client.chat([message])
@@ -1852,7 +1868,6 @@ def _parse_tool_arguments(raw_arguments: object) -> dict:
     return arguments
 
 
-
 def _tokens_since(start: TurnCost, now: TurnCost) -> int:
     """Tokens billed between two readings of a client's `spent`: input
     (including cache reads and writes) plus output."""
@@ -1932,7 +1947,9 @@ class AgentSession:
             if on_event is not None:
                 on_event(kind, text)
 
-        def refuse(tool_call: dict, tool_name: str, arguments: dict, refusal: str) -> None:
+        def refuse(
+            tool_call: dict, tool_name: str, arguments: dict, refusal: str
+        ) -> None:
             """Answer one call without dispatching it: the model reads the
             refusal as the tool result and the structured record says why
             nothing ran."""
@@ -1946,12 +1963,14 @@ class AgentSession:
                     )
                 ),
             )
-            self.messages.append({
-                "role": "tool",
-                "content": refusal,
-                "tool_name": tool_name,
-                "tool_call_id": tool_call.get("id", ""),
-            })
+            self.messages.append(
+                {
+                    "role": "tool",
+                    "content": refusal,
+                    "tool_name": tool_name,
+                    "tool_call_id": tool_call.get("id", ""),
+                }
+            )
 
         user_message: dict = {"role": "user", "content": user_text}
         if reference_images:
@@ -2018,7 +2037,9 @@ class AgentSession:
             # is refused when the turn's tokens exceed the budget.
             turn_tokens = _tokens_since(spent_at_turn_start, self.client.spent)
             if tool_calls and turn_tokens > self.maximum_turn_tokens:
-                self._answer_pending_tool_calls(assistant_message, TOKEN_CAP_TOOL_RESULT)
+                self._answer_pending_tool_calls(
+                    assistant_message, TOKEN_CAP_TOOL_RESULT
+                )
                 exhausted = TOKEN_CAP_ANSWER.format(
                     tokens=turn_tokens, budget=self.maximum_turn_tokens
                 )
@@ -2057,7 +2078,9 @@ class AgentSession:
                         MALFORMED_ARGUMENTS_REFUSAL.format(
                             tool_name=tool_name,
                             error=bad_arguments,
-                            raw=str(raw_arguments)[:MALFORMED_ARGUMENTS_ECHO_CHARACTERS],
+                            raw=str(raw_arguments)[
+                                :MALFORMED_ARGUMENTS_ECHO_CHARACTERS
+                            ],
                         ),
                     )
                     continue
@@ -2192,7 +2215,11 @@ class AgentSession:
                 ]
                 if capped:
                     return self._stop_at_gate_cap(
-                        assistant_message, capped[0], gate_failures[capped[0]], outcome, emit
+                        assistant_message,
+                        capped[0],
+                        gate_failures[capped[0]],
+                        outcome,
+                        emit,
                     )
 
         exhausted = (
@@ -2237,7 +2264,9 @@ class AgentSession:
             len(self.messages),
         )
         already_answered = sum(
-            1 for message in self.messages[position + 1 :] if message.get("role") == "tool"
+            1
+            for message in self.messages[position + 1 :]
+            if message.get("role") == "tool"
         )
         for tool_call in (assistant_message.get("tool_calls") or [])[already_answered:]:
             self.messages.append(
@@ -2270,9 +2299,14 @@ class AgentSession:
         for image_path in sheet.images:
             emit("render", str(image_path))
         last_gate: dict = next(
-            (gate for gate in outcome.gates if gate.get("object_name") == object_name), {}
+            (gate for gate in outcome.gates if gate.get("object_name") == object_name),
+            {},
         )
-        verdict = last_gate.get("scene_state") or "; ".join(last_gate.get("gate_failures", ())) or outcome.stage_reached
+        verdict = (
+            last_gate.get("scene_state")
+            or "; ".join(last_gate.get("gate_failures", ()))
+            or outcome.stage_reached
+        )
         answer = GATE_CAP_ANSWER.format(
             object_name=object_name,
             count=count,

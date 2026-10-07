@@ -43,5 +43,7 @@ def test_failed_call_still_names_what_it_touched() -> None:
 def test_unlinked_constructor_result_is_named_for_blender_to_filter() -> None:
     # add_box's `name` parameter: the box is not in the scene until
     # link_into_scene, and frame_in_viewports says so instead of failing.
-    outcome = ToolOutcome("ok", intermediates_created=("Box",), intermediates_resolved=("Box",))
+    outcome = ToolOutcome(
+        "ok", intermediates_created=("Box",), intermediates_resolved=("Box",)
+    )
     assert frame_target_names(outcome) == ("Box",)

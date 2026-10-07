@@ -74,24 +74,34 @@ def run_blender_cli(
             check=False,
         )
     except subprocess.TimeoutExpired as ex:
-        raise RuntimeError("Blender CLI timed out after {:.0f}s".format(timeout)) from ex
+        raise RuntimeError(
+            "Blender CLI timed out after {:.0f}s".format(timeout)
+        ) from ex
     except FileNotFoundError as ex:
         raise RuntimeError(
             "Blender executable not found at '{:s}'. "
-            "Set the BLENDER_PATH environment variable to the correct path.".format(blender)
+            "Set the BLENDER_PATH environment variable to the correct path.".format(
+                blender
+            )
         ) from ex
 
     for line in proc.stdout.splitlines():
         if line.startswith(_RESULT_PREFIX):
-            result = json.loads(line[len(_RESULT_PREFIX):])
+            result = json.loads(line[len(_RESULT_PREFIX) :])
             if not isinstance(result, dict):
-                raise TypeError("Expected dict from Blender CLI, got {!r}".format(type(result)))
+                raise TypeError(
+                    "Expected dict from Blender CLI, got {!r}".format(type(result))
+                )
             return result
         if line.startswith(_ERROR_PREFIX):
-            raise RuntimeError("Blender error: {:s}".format(json.loads(line[len(_ERROR_PREFIX):])))
+            raise RuntimeError(
+                "Blender error: {:s}".format(json.loads(line[len(_ERROR_PREFIX) :]))
+            )
 
     raise RuntimeError(
-        "No result marker in Blender output.\nstdout: {:s}\nstderr: {:s}".format(proc.stdout, proc.stderr)
+        "No result marker in Blender output.\nstdout: {:s}\nstderr: {:s}".format(
+            proc.stdout, proc.stderr
+        )
     )
 
 
@@ -104,7 +114,9 @@ def _numbered_blend_path(filepath: str) -> str:
         candidate = "{:s}_mcp_{:04d}{:s}".format(base, i, ext)
         if not os.path.exists(candidate):
             return candidate
-    raise RuntimeError("Could not find an unused numbered path for '{:s}'".format(filepath))
+    raise RuntimeError(
+        "Could not find an unused numbered path for '{:s}'".format(filepath)
+    )
 
 
 @contextlib.contextmanager
@@ -122,7 +134,7 @@ def synced_blend_for_cli(blend_file: str) -> Generator[str, None, None]:
         try:
             response = send_code(
                 "import bpy, os\n"
-                "result = {\"is_dirty\": bpy.data.is_dirty, \"filepath\": bpy.data.filepath}\n",
+                'result = {"is_dirty": bpy.data.is_dirty, "filepath": bpy.data.filepath}\n',
                 strict_json=True,
             )
         except ConnectionError:
@@ -144,9 +156,8 @@ def synced_blend_for_cli(blend_file: str) -> Generator[str, None, None]:
         blender_filepath = str(result.get("filepath", ""))
 
         # Compare normalized paths to see if this is the same file.
-        if (
-            not blender_filepath
-            or os.path.realpath(blend_file) != os.path.realpath(blender_filepath)
+        if not blender_filepath or os.path.realpath(blend_file) != os.path.realpath(
+            blender_filepath
         ):
             yield blend_file
             return
@@ -170,4 +181,8 @@ def synced_blend_for_cli(blend_file: str) -> Generator[str, None, None]:
             try:
                 os.remove(temp_path)
             except OSError as ex:
-                _log.warning("Failed to remove temporary file '{:s}': {:s}".format(temp_path, str(ex)))
+                _log.warning(
+                    "Failed to remove temporary file '{:s}': {:s}".format(
+                        temp_path, str(ex)
+                    )
+                )

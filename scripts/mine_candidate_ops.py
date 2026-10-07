@@ -31,7 +31,9 @@ DEFAULT_REPORT_DIRECTORY = REPOSITORY_ROOT / "docs" / "candidate_ops"
 
 def main(argv) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--log", default=str(REPOSITORY_ROOT / "_evaluate" / "iterations.jsonl"))
+    parser.add_argument(
+        "--log", default=str(REPOSITORY_ROOT / "_evaluate" / "iterations.jsonl")
+    )
     parser.add_argument("--from-iteration", type=int, default=None)
     parser.add_argument("--transcript", action="append", default=[])
     parser.add_argument("--out", default=None)
@@ -42,7 +44,11 @@ def main(argv) -> int:
     transcripts = {}
     try:
         for path in arguments.transcript:
-            rows = [json.loads(line) for line in Path(path).read_text().splitlines() if line.strip()]
+            rows = [
+                json.loads(line)
+                for line in Path(path).read_text().splitlines()
+                if line.strip()
+            ]
             name = Path(path).name
             if name in transcripts:
                 raise SystemExit(
@@ -53,9 +59,16 @@ def main(argv) -> int:
         report = render_report(records, transcripts, today)
     except UnminableRecord as error:
         print(f"[mine] REFUSED: {error}", file=sys.stderr)
-        print("[mine] pass --from-iteration to select records written after OT-8", file=sys.stderr)
+        print(
+            "[mine] pass --from-iteration to select records written after OT-8",
+            file=sys.stderr,
+        )
         return 2
-    out = Path(arguments.out) if arguments.out else DEFAULT_REPORT_DIRECTORY / f"{today.isoformat()}-candidate-ops.md"
+    out = (
+        Path(arguments.out)
+        if arguments.out
+        else DEFAULT_REPORT_DIRECTORY / f"{today.isoformat()}-candidate-ops.md"
+    )
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(report, encoding="utf-8")
     print(f"[mine] wrote {out}")

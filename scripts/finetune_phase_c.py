@@ -155,9 +155,7 @@ def summarise_pairs(pairs: list[dict]) -> dict:
     scored = [pair for pair in pairs if pair["cd_pca"] is not None]
     passing = [pair for pair in scored if pair["cd_pca"] <= CD_PCA_PASS]
     deduplicated = {(pair["instance"], pair["script_sha256"]) for pair in pairs}
-    verified_dedup = {
-        (pair["instance"], pair["script_sha256"]) for pair in executed
-    }
+    verified_dedup = {(pair["instance"], pair["script_sha256"]) for pair in executed}
     return {
         "pairs": len(pairs),
         "executed": len(executed),

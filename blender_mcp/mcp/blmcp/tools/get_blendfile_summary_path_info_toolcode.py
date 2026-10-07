@@ -15,7 +15,6 @@ import os
 import time
 from typing import NamedTuple
 
-
 # Blender appends a number (1-32) to the file path for each backup.
 _MAX_BACKUPS = 32
 
@@ -50,11 +49,13 @@ def main(params: None) -> Result:
             if not os.path.exists(backup_path):
                 break
             bstat = os.stat(backup_path)
-            backups.append({
-                "path": backup_path,
-                "age_seconds": round(time.time() - bstat.st_mtime, 1),
-                "size_bytes": bstat.st_size,
-            })
+            backups.append(
+                {
+                    "path": backup_path,
+                    "age_seconds": round(time.time() - bstat.st_mtime, 1),
+                    "size_bytes": bstat.st_size,
+                }
+            )
 
     return Result(
         status="ok",

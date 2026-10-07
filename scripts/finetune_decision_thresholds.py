@@ -78,11 +78,11 @@ BAKE_TIMEOUT_SECONDS = 240
 SOLID_VOLUME_RELATIVE_TOLERANCE = 1e-9
 
 # --- §3 decision thresholds (verbatim from the spec) -----------------------
-F_GEOM_DO_NOT_TUNE = 0.60        # rule 1: F_geom >= 60% -> do not fine-tune
-F_SYNTAX_MINIMUM = 0.40          # rules 2 and 3 gate on F_syntax >= 40%
-DELTA_TUNE_MINIMUM_PP = 15.0     # rule 2 vs rule 3 split, percentage points
-DELTA_FACADE_MINIMUM_PP = 25.0   # rule 4: the facade is carrying the work
-DELTA_SIZE_MAXIMUM_PP = 10.0     # rule 5: a small model is near the frontier
+F_GEOM_DO_NOT_TUNE = 0.60  # rule 1: F_geom >= 60% -> do not fine-tune
+F_SYNTAX_MINIMUM = 0.40  # rules 2 and 3 gate on F_syntax >= 40%
+DELTA_TUNE_MINIMUM_PP = 15.0  # rule 2 vs rule 3 split, percentage points
+DELTA_FACADE_MINIMUM_PP = 25.0  # rule 4: the facade is carrying the work
+DELTA_SIZE_MAXIMUM_PP = 10.0  # rule 5: a small model is near the frontier
 
 # --- The G3 judge (spec §4) ------------------------------------------------
 #

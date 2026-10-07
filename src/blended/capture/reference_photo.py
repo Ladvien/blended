@@ -69,8 +69,7 @@ def normalize_reference_photo(source_path: Path, output_directory: Path) -> Path
         output_directory = Path(output_directory)
         output_directory.mkdir(parents=True, exist_ok=True)
         destination = output_directory / (
-            f"{NORMALIZED_PHOTO_PREFIX}{source_path.stem}"
-            f"{NORMALIZED_PHOTO_SUFFIX}"
+            f"{NORMALIZED_PHOTO_PREFIX}{source_path.stem}{NORMALIZED_PHOTO_SUFFIX}"
         )
         image.file_format = NORMALIZED_PHOTO_FORMAT
         image.filepath_raw = str(destination)

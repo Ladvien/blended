@@ -190,7 +190,9 @@ def scored_instances_file(
         directory.name
         for directory in instance_directories(model_root)
         if (directory / "glb" / f"{directory.name}.glb").exists()
-        and (bench_root / "data" / directory.name / "glb" / f"{directory.name}.glb").exists()
+        and (
+            bench_root / "data" / directory.name / "glb" / f"{directory.name}.glb"
+        ).exists()
     ]
     if not usable:
         return None
@@ -213,7 +215,10 @@ def run(command: list[str], cwd: Path | None = None) -> int:
 
 
 def diagnose_rows(
-    bench_root: Path, results_root_argument: str, model_root: Path, model_dir: str,
+    bench_root: Path,
+    results_root_argument: str,
+    model_root: Path,
+    model_dir: str,
     refresh: bool,
 ) -> tuple[dict, str]:
     """Per-instance scores, from the archive when it has them."""
@@ -232,12 +237,18 @@ def diagnose_rows(
             [
                 str(bench_python(bench_root)),
                 str(REPOSITORY_ROOT / "scripts" / "diagnose_3dcode.py"),
-                "--bench-root", str(bench_root),
-                "--results-root", results_root_argument,
-                "--model-dir", model_dir,
-                "--instances-file", str(instances_file_for(model_root, model_dir)),
-                "--out", str(WORKING_DIRECTORY / f"diagnose_{model_dir}.md"),
-                "--json", str(generated),
+                "--bench-root",
+                str(bench_root),
+                "--results-root",
+                results_root_argument,
+                "--model-dir",
+                model_dir,
+                "--instances-file",
+                str(instances_file_for(model_root, model_dir)),
+                "--out",
+                str(WORKING_DIRECTORY / f"diagnose_{model_dir}.md"),
+                "--json",
+                str(generated),
             ],
             cwd=REPOSITORY_ROOT,
         )
@@ -245,11 +256,16 @@ def diagnose_rows(
             print(f"[phaseA] diagnose failed on {model_dir} (exit {code})", flush=True)
             return {}, "unscored"
     data = read_json(generated)
-    return ({row["instance"]: row for row in data["per_instance"]} if data else {}), "generated"
+    return (
+        {row["instance"]: row for row in data["per_instance"]} if data else {}
+    ), "generated"
 
 
 def decompose_rows(
-    bench_root: Path, results_root_argument: str, model_root: Path, model_dir: str,
+    bench_root: Path,
+    results_root_argument: str,
+    model_root: Path,
+    model_dir: str,
     refresh: bool,
 ) -> dict:
     """`cd_pca_aspect_oracle` per instance: the G1/G2 separator."""
@@ -262,12 +278,18 @@ def decompose_rows(
             [
                 str(bench_python(bench_root)),
                 str(REPOSITORY_ROOT / "scripts" / "shape_error_decompose.py"),
-                "--bench-root", str(bench_root),
-                "--results-root", results_root_argument,
-                "--model-dir", model_dir,
-                "--instances-file", str(instances_file),
-                "--out", str(WORKING_DIRECTORY / f"decompose_{model_dir}.md"),
-                "--json", str(path),
+                "--bench-root",
+                str(bench_root),
+                "--results-root",
+                results_root_argument,
+                "--model-dir",
+                model_dir,
+                "--instances-file",
+                str(instances_file),
+                "--out",
+                str(WORKING_DIRECTORY / f"decompose_{model_dir}.md"),
+                "--json",
+                str(path),
             ],
             cwd=REPOSITORY_ROOT,
         )
@@ -465,14 +487,16 @@ def hatch_table(attempts: list[dict]) -> dict:
     """
     table = {}
     for label, rows in (
-        ("passing", [a for a in attempts if a["code"] == "PASS" and not a["third_party"]]),
+        (
+            "passing",
+            [a for a in attempts if a["code"] == "PASS" and not a["third_party"]],
+        ),
         (
             "failing",
             [
                 a
                 for a in attempts
-                if a["code"] not in ("PASS", *EXCLUDED_CODES)
-                and not a["third_party"]
+                if a["code"] not in ("PASS", *EXCLUDED_CODES) and not a["third_party"]
             ],
         ),
     ):
@@ -499,11 +523,24 @@ def hatch_table(attempts: list[dict]) -> dict:
 
 
 CSV_COLUMNS = (
-    "model_dir", "instance", "writer", "render_status", "agent_status", "code",
-    "b5_category", "error_fingerprint", "cd_pca", "cd_yawmin", "delta_orient",
-    "fscore_005", "cd_pca_aspect_oracle", "baked_scene_ops", "baked_chunks",
+    "model_dir",
+    "instance",
+    "writer",
+    "render_status",
+    "agent_status",
+    "code",
+    "b5_category",
+    "error_fingerprint",
+    "cd_pca",
+    "cd_yawmin",
+    "delta_orient",
+    "fscore_005",
+    "cd_pca_aspect_oracle",
+    "baked_scene_ops",
+    "baked_chunks",
     "score_provenance",
-    "third_party", "excluded_reason",
+    "third_party",
+    "excluded_reason",
 )
 
 
@@ -515,7 +552,9 @@ def write_csv(attempts: list[dict], path: Path) -> None:
         for attempt in attempts:
             row = {column: attempt.get(column, "") for column in CSV_COLUMNS}
             if attempt["code"] == INFRASTRUCTURE_CODE:
-                reason = attempt["error_fingerprint"][:120] or attempt["agent_error"][:120]
+                reason = (
+                    attempt["error_fingerprint"][:120] or attempt["agent_error"][:120]
+                )
             elif attempt["code"] == UNSCORED_CODE:
                 reason = "executed, but this roll carries no cd_pca"
             elif attempt["third_party"]:
@@ -556,8 +595,10 @@ def render_summary(attempts: list[dict], measured: dict) -> str:
     ]
     failures = measured["failures"]
     for code, count in sorted(codes.items(), key=lambda item: (-item[1], item[0])):
-        share = "—" if code in ("PASS", *EXCLUDED_CODES) or not failures else (
-            f"{100.0 * count / failures:.1f}%"
+        share = (
+            "—"
+            if code in ("PASS", *EXCLUDED_CODES) or not failures
+            else (f"{100.0 * count / failures:.1f}%")
         )
         lines.append(f"| {code} | {count} | {share} |")
     lines += [
@@ -654,9 +695,7 @@ def render_summary(attempts: list[dict], measured: dict) -> str:
     ]
     families = ("B5-API", "BMSH", "CTX", "OTHER", "")
     for code in sorted({a["code"] for a in harness}):
-        counts = Counter(
-            a["b5_category"] for a in harness if a["code"] == code
-        )
+        counts = Counter(a["b5_category"] for a in harness if a["code"] == code)
         cells = " | ".join(str(counts.get(family, 0)) for family in families)
         lines.append(f"| {code} | {cells} |")
     lines += [
@@ -685,14 +724,14 @@ def main(argv) -> int:
         raise SystemExit("no attempts collected")
     measured = shares(attempts)
     write_csv(attempts, PHASE_A_DIRECTORY / "taxonomy.csv")
-    (PHASE_A_DIRECTORY / "summary.md").write_text(
-        render_summary(attempts, measured)
-    )
+    (PHASE_A_DIRECTORY / "summary.md").write_text(render_summary(attempts, measured))
     (WORKING_DIRECTORY / "phase_a_measured.json").write_text(
         json.dumps(
             {
                 "shares": measured,
-                "codes": dict(Counter(a["code"] for a in attempts if not a["third_party"])),
+                "codes": dict(
+                    Counter(a["code"] for a in attempts if not a["third_party"])
+                ),
                 "hatch": hatch_table(attempts),
             },
             indent=2,

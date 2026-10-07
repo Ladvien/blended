@@ -91,7 +91,9 @@ def add_armature(
 
     bone_names = [b.name for b in bones]
     if len(set(bone_names)) != len(bone_names):
-        raise ValueError(f"Duplicate bone names in add_armature({name!r}): {bone_names}")
+        raise ValueError(
+            f"Duplicate bone names in add_armature({name!r}): {bone_names}"
+        )
 
     # Parents are resolved in order during edit-bone construction, so a
     # parent must be listed BEFORE its child (BoneSpec contract). Checked
@@ -101,8 +103,7 @@ def add_armature(
         if spec.parent_name:
             if spec.parent_name not in bone_names:
                 raise ValueError(
-                    f"Bone {spec.name!r} references unknown parent "
-                    f"{spec.parent_name!r}"
+                    f"Bone {spec.name!r} references unknown parent {spec.parent_name!r}"
                 )
             if spec.parent_name not in bones_listed_so_far:
                 raise ValueError(
@@ -224,7 +225,9 @@ def bind_mesh_to_armature(
             for extra in armature_mods[1:]:
                 mesh_object.modifiers.remove(extra)
         else:
-            mod = mesh_object.modifiers.new(name="Armature", type=ARMATURE_MODIFIER_TYPE)
+            mod = mesh_object.modifiers.new(
+                name="Armature", type=ARMATURE_MODIFIER_TYPE
+            )
             mod.object = armature_object
     else:
         mod = mesh_object.modifiers.new(name="Armature", type=ARMATURE_MODIFIER_TYPE)
@@ -258,10 +261,7 @@ def rig_report(armature_name: str) -> RigReport:
         if obj.type != "MESH":
             continue
         for mod in obj.modifiers:
-            if (
-                mod.type == ARMATURE_MODIFIER_TYPE
-                and mod.object is armature_object
-            ):
+            if mod.type == ARMATURE_MODIFIER_TYPE and mod.object is armature_object:
                 if mod.show_viewport and mod.show_render:
                     bound_mesh_names.append(obj.name)
                 else:

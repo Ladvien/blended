@@ -157,8 +157,7 @@ def main(argv) -> int:
     # work, so a run that cannot be graded does not cost a build.
     if not config.uses_separate_eye:
         print(
-            "[FAIL] the reference-photo gate needs a separate eye: pass "
-            "--vision-model",
+            "[FAIL] the reference-photo gate needs a separate eye: pass --vision-model",
             flush=True,
         )
         return 2
@@ -168,7 +167,10 @@ def main(argv) -> int:
         output_directory=output_directory / "agent",
         maximum_tool_calls_per_turn=arguments.max_tool_calls,
         messages=[
-            {"role": "system", "content": build_system_prompt(revision=arguments.revision)}
+            {
+                "role": "system",
+                "content": build_system_prompt(revision=arguments.revision),
+            }
         ],
         # This driver stands in for the live UI, so it holds the UI's
         # contract: a turn that changes the scene declares its plan first.
@@ -280,8 +282,7 @@ def main(argv) -> int:
         view_name=EXAMINER_VIEW_NAME,
     )
     photo_gate_deviations = tuple(
-        tag for tag in verdict.order_consistent_tags
-        if tag in HALTING_DEVIATION_TAGS
+        tag for tag in verdict.order_consistent_tags if tag in HALTING_DEVIATION_TAGS
     )
     abstained = CANNOT_TELL_TAG in verdict.order_consistent_tags
     for tag in photo_gate_deviations:

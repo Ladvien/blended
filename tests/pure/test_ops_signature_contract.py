@@ -40,7 +40,9 @@ def _seeded_defect_op(blender_object, width: float, count: int = 2):
 # --- tests ---------------------------------------------------------------
 
 
-@pytest.mark.parametrize("op_name,function", facade_ops(), ids=lambda x: x if isinstance(x, str) else "")
+@pytest.mark.parametrize(
+    "op_name,function", facade_ops(), ids=lambda x: x if isinstance(x, str) else ""
+)
 def test_facade_op_satisfies_the_signature_contract(op_name, function):
     violations = contract_violations(function)
     assert not violations, f"{op_name}: " + "; ".join(violations)
@@ -103,7 +105,9 @@ def test_the_ungated_marker_on_a_text_returning_op_is_a_violation():
         """Returns text, so there is nothing to exempt from the gate."""
         return name
 
-    assert any("nothing to exempt" in v for v in contract_violations(marked_but_returns_text))
+    assert any(
+        "nothing to exempt" in v for v in contract_violations(marked_but_returns_text)
+    )
 
 
 def test_an_ungated_constructor_must_take_the_name_it_returns():
@@ -121,4 +125,7 @@ def test_a_reader_that_returns_an_object_name_is_a_violation():
         """Claims to read, returns what it modified."""
         return ObjectName(object_name)
 
-    assert any("a reader creates or modifies nothing" in v for v in contract_violations(reader_that_writes))
+    assert any(
+        "a reader creates or modifies nothing" in v
+        for v in contract_violations(reader_that_writes)
+    )

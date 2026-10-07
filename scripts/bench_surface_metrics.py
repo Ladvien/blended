@@ -53,10 +53,17 @@ __all__ = [
 def signed_permutations():
     """All 48 signed permutation matrices (6 axis orders x 8 sign choices)."""
     out = []
-    for perm in ((0, 1, 2), (0, 2, 1), (1, 0, 2),
-                 (1, 2, 0), (2, 0, 1), (2, 1, 0)):
-        for signs in ((1, 1, 1), (1, 1, -1), (1, -1, 1), (1, -1, -1),
-                      (-1, 1, 1), (-1, 1, -1), (-1, -1, 1), (-1, -1, -1)):
+    for perm in ((0, 1, 2), (0, 2, 1), (1, 0, 2), (1, 2, 0), (2, 0, 1), (2, 1, 0)):
+        for signs in (
+            (1, 1, 1),
+            (1, 1, -1),
+            (1, -1, 1),
+            (1, -1, -1),
+            (-1, 1, 1),
+            (-1, 1, -1),
+            (-1, -1, 1),
+            (-1, -1, -1),
+        ):
             matrix = np.zeros((3, 3))
             for row, col in enumerate(perm):
                 matrix[row, col] = signs[row]
@@ -121,7 +128,9 @@ def fscore(reference_points, generated_points, threshold):
     return 2.0 * precision * recall / (precision + recall), precision, recall
 
 
-def surface_columns(reference_points, aligned_points, threshold=PRIMARY_FSCORE_THRESHOLD) -> dict:
+def surface_columns(
+    reference_points, aligned_points, threshold=PRIMARY_FSCORE_THRESHOLD
+) -> dict:
     """The three panel columns for one instance at one threshold, keyed
     the way every diagnose JSON row carries them (`fscore_005`, ...)."""
     value, precision, recall = fscore(reference_points, aligned_points, threshold)

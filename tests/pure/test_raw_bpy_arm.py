@@ -35,7 +35,9 @@ def test_prose_around_a_fence_is_dropped():
 
 
 def test_a_broken_indent_is_refused_and_names_its_line():
-    ok, detail = parses("import bpy\nfor i in range(3):\nbpy.ops.mesh.primitive_cube_add()\n")
+    ok, detail = parses(
+        "import bpy\nfor i in range(3):\nbpy.ops.mesh.primitive_cube_add()\n"
+    )
     assert not ok
     assert "IndentationError" in detail and "line 3" in detail
 

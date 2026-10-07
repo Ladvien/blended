@@ -53,6 +53,7 @@ diff. This module is the registry.
 from __future__ import annotations
 
 import hashlib
+from collections import Counter
 from dataclasses import dataclass
 
 
@@ -319,6 +320,11 @@ def validate_modules() -> list[str]:
 
     problems: list[str] = []
     registered = {entry.name for entry in SKILL_MODULES}
+    for name, count in sorted(Counter(entry.name for entry in SKILL_MODULES).items()):
+        if count > 1:
+            problems.append(
+                f"{name!r} is registered {count} times: get_module returns the first"
+            )
 
     on_disk = set(available_skills())
     for orphan in sorted(on_disk - registered):

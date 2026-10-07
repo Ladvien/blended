@@ -9,7 +9,6 @@ Each test builds the defect deliberately, then asserts that exactly the
 intended check trips — not merely that something failed.
 """
 
-
 import pytest
 
 bpy = pytest.importorskip("bpy", reason="requires Blender-as-module")
@@ -279,7 +278,6 @@ def _build_reference_stool(*, angled_feet: bool = False, leg_angles_deg=None):
     test input, not a second way to build a stool.
     """
 
-
     from blended.evaluate import briefs
     from blended.ops.booleans import boolean_union
     from blended.ops.legs import SplayedLegSpec, add_splayed_leg, trim_soles_flat
@@ -434,7 +432,9 @@ def test_legs_collapsed_to_the_axis_trips_no_central_post(empty_scene):
     report = evaluate_brief(brief)
     tripped = _failure_names(report, brief)
     assert "no_central_post" in tripped
-    assert {f"leg_{index}_foot_is_solid" for index in range(briefs.STOOL_LEG_COUNT)} <= tripped
+    assert {
+        f"leg_{index}_foot_is_solid" for index in range(briefs.STOOL_LEG_COUNT)
+    } <= tripped
 
 
 def test_blind_recess_trips_the_clear_axis_probe(empty_scene):
@@ -461,9 +461,7 @@ def test_blind_recess_trips_the_clear_axis_probe(empty_scene):
     # The new spec is not.
     assert not report.passes(brief)
     blocked = [m for m in report.clear_axes if not m.ok]
-    assert [m.probe.name for m in blocked] == [
-        "drain_hole_goes_all_the_way_through"
-    ]
+    assert [m.probe.name for m in blocked] == ["drain_hole_goes_all_the_way_through"]
     assert blocked[0].blocked_at_m is not None
 
 
@@ -474,8 +472,8 @@ def test_correct_planter_has_a_clear_drain_axis(empty_scene):
     brief = get_brief("planter_box")
     _build_planter()
     report = evaluate_brief(brief)
-    assert all(measurement.ok for measurement in report.clear_axes), (
-        report.summary(brief)
+    assert all(measurement.ok for measurement in report.clear_axes), report.summary(
+        brief
     )
 
 
@@ -534,8 +532,7 @@ def test_angled_sole_is_reported_as_a_tilt_not_a_missing_leg(empty_scene):
     for measurement in failed:
         assert measurement.rejected_face_count > 0, measurement.describe()
         assert (
-            measurement.worst_rejected_span_m
-            > measurement.probe.planarity_tolerance_m
+            measurement.worst_rejected_span_m > measurement.probe.planarity_tolerance_m
         ), measurement.describe()
         assert "NOT level" in measurement.describe()
 
@@ -603,9 +600,7 @@ def test_correct_spacing_measures_the_specified_bearings(empty_scene):
     _build_reference_stool()
     report = evaluate_brief(brief)
 
-    bearings = sorted(
-        round(m.measured_angle_deg) for m in report.ground_contacts
-    )
+    bearings = sorted(round(m.measured_angle_deg) for m in report.ground_contacts)
     assert bearings == [0, 120, 240], [m.describe() for m in report.ground_contacts]
     for measurement in report.ground_contacts:
         assert measurement.radius_ok, measurement.describe()

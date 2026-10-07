@@ -30,7 +30,12 @@ def _constrained_client(monkeypatch, content: str):
     config = ModelConfig.from_environment(model="blenderllm")
     client = OllamaClient(config)
     body = {
-        "choices": [{"message": {"role": "assistant", "content": content}, "finish_reason": "stop"}],
+        "choices": [
+            {
+                "message": {"role": "assistant", "content": content},
+                "finish_reason": "stop",
+            }
+        ],
         "usage": {"prompt_tokens": 10, "completion_tokens": 5},
     }
     monkeypatch.setattr(client, "_request", lambda path, payload, timeout: body)
@@ -48,11 +53,16 @@ def test_a_bare_tool_call_object_is_not_mistaken_for_the_envelope(monkeypatch):
 
 
 def test_a_real_envelope_is_still_decoded_into_tool_calls(monkeypatch):
-    envelope = {"message": "hi", "tool_calls": [{"name": "list_scene", "arguments": {}}]}
+    envelope = {
+        "message": "hi",
+        "tool_calls": [{"name": "list_scene", "arguments": {}}],
+    }
     client = _constrained_client(monkeypatch, json.dumps(envelope))
     message = client.chat([{"role": "user", "content": "go"}], [LIST_SCENE_TOOL])
     assert message["content"] == "hi"
-    assert [call["function"]["name"] for call in message["tool_calls"]] == ["list_scene"]
+    assert [call["function"]["name"] for call in message["tool_calls"]] == [
+        "list_scene"
+    ]
 
 
 def test_a_toolless_reply_on_the_constrained_lane_is_plain_text(monkeypatch):
@@ -61,7 +71,9 @@ def test_a_toolless_reply_on_the_constrained_lane_is_plain_text(monkeypatch):
     from blended.agent.loop import ModelConfig
 
     client = _constrained_client(monkeypatch, '{"message": "hi", "tool_calls": []}')
-    assert "response_format" not in client._chat_payload([{"role": "user", "content": "x"}], None)
+    assert "response_format" not in client._chat_payload(
+        [{"role": "user", "content": "x"}], None
+    )
     assert ModelConfig.from_environment(model="blenderllm").constrains_tool_calls
     message = client.chat([{"role": "user", "content": "go"}], None)
     assert message["content"] == '{"message": "hi", "tool_calls": []}'
@@ -79,7 +91,9 @@ def test_the_local_llama_server_gets_the_long_ceiling(monkeypatch):
     assert cloud.request_timeout_seconds == loop.REQUEST_TIMEOUT_SECONDS
 
 
-@pytest.mark.parametrize("spelling", ["http://127.0.0.1:8091/", "http://127.0.0.1:8091/v1"])
+@pytest.mark.parametrize(
+    "spelling", ["http://127.0.0.1:8091/", "http://127.0.0.1:8091/v1"]
+)
 def test_constrained_lane_matches_by_containment_like_the_protocol_check(spelling):
     """ISSUES Mi1: a trailing slash took the OpenAI wire but sent wire
     `tools` to a model that cannot emit them."""
@@ -111,7 +125,9 @@ def _call_reply(tool_name: str, arguments, call_id: str = "c0") -> dict:
     return {
         "role": "assistant",
         "content": "",
-        "tool_calls": [{"id": call_id, "function": {"name": tool_name, "arguments": arguments}}],
+        "tool_calls": [
+            {"id": call_id, "function": {"name": tool_name, "arguments": arguments}}
+        ],
     }
 
 
@@ -168,7 +184,10 @@ def test_a_malformed_plan_step_is_reported_after_the_tool_ran(tmp_path):
 
     session = AgentSession(
         client=_scripted(
-            [_call_reply("inspect_object", {"object_name": "X", "plan_step": "abc"}), ANSWER]
+            [
+                _call_reply("inspect_object", {"object_name": "X", "plan_step": "abc"}),
+                ANSWER,
+            ]
         ),
         output_directory=tmp_path,
         dispatch=lambda *a: ToolOutcome("inspected"),
@@ -188,7 +207,9 @@ def test_the_gate_cap_answers_queued_calls_before_it_renders(tmp_path):
         "FAILED",
         ok=False,
         stage_reached=STAGE_GATE,
-        gates=({"object_name": "Bad", "stage_reached": STAGE_GATE, "gate_failures": ["x"]},),
+        gates=(
+            {"object_name": "Bad", "stage_reached": STAGE_GATE, "gate_failures": ["x"]},
+        ),
     )
 
     def dispatch(tool_name, arguments, output_directory):
@@ -217,7 +238,9 @@ def test_the_gate_cap_answers_queued_calls_before_it_renders(tmp_path):
     assert tool_messages[-1]["content"] == GATE_CAP_TOOL_RESULT
 
 
-def test_an_eye_call_that_fails_after_billing_still_counts_against_the_run(monkeypatch, tmp_path):
+def test_an_eye_call_that_fails_after_billing_still_counts_against_the_run(
+    monkeypatch, tmp_path
+):
     """The eye's spend was folded into the run's record only on success, so
     a reply cut after it was billed escaped the NFR-27 cap."""
     from blended.agent.context_preflight import ReplyTruncated
@@ -227,9 +250,16 @@ def test_an_eye_call_that_fails_after_billing_still_counts_against_the_run(monke
         "choices": [{"message": {"content": "cut"}, "finish_reason": "length"}],
         "usage": {"prompt_tokens": 100, "completion_tokens": 7},
     }
-    monkeypatch.setattr(OllamaClient, "_request", lambda self, path, payload, timeout: truncated_body)
+    monkeypatch.setattr(
+        OllamaClient, "_request", lambda self, path, payload, timeout: truncated_body
+    )
     writer = OllamaClient(
-        ModelConfig(model="qwen3.8-27b", endpoint="http://192.168.1.233:9292", api_key="k", vision_model="qwen3-vl")
+        ModelConfig(
+            model="qwen3.8-27b",
+            endpoint="http://192.168.1.233:9292",
+            api_key="k",
+            vision_model="qwen3-vl",
+        )
     )
     image = tmp_path / "render.png"
     image.write_bytes(b"\x89PNG")

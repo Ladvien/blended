@@ -57,9 +57,17 @@ def data_dir() -> str:
 # ---------------------------------------------------------------------------
 # Directive and role stubs.
 
+
 def _directive_ignore(
-        name, arguments, options, content, lineno,
-        content_offset, block_text, state, state_machine,
+    name,
+    arguments,
+    options,
+    content,
+    lineno,
+    content_offset,
+    block_text,
+    state,
+    state_machine,
 ):
     """
     Used to explicitly mark as doctest blocks things that otherwise
@@ -67,7 +75,7 @@ def _directive_ignore(
 
     Note this doesn't ignore child nodes.
     """
-    text = '\n'.join(content)
+    text = "\n".join(content)
     return [docutils.nodes.doctest_block(text, text, codeblock=True)]
 
 
@@ -75,8 +83,15 @@ _directive_ignore.content = True
 
 
 def _directive_ignore_recursive(
-        name, arguments, options, content, lineno,
-        content_offset, block_text, state, state_machine,
+    name,
+    arguments,
+    options,
+    content,
+    lineno,
+    content_offset,
+    block_text,
+    state,
+    state_machine,
 ):
     """
     Ignore everything under this directive (use with care!)
@@ -94,6 +109,7 @@ class _DirectivePreserve(docutils.parsers.rst.Directive):
     nested-parsed so inner directives (e.g. ``.. attribute::`` inside a
     ``.. class::``) remain addressable.
     """
+
     required_arguments = 0
     optional_arguments = 99
     final_argument_whitespace = True
@@ -124,6 +140,7 @@ class _DirectiveLiteralInclude(_DirectivePreserve):
     ``get_python_api_docs``) can honour ``:lines:`` slicing - the base
     class's ``option_spec = None`` drops them on the floor.
     """
+
     option_spec: ClassVar[dict[str, Any]] = {
         "lines": directives.unchanged,
         "language": directives.unchanged,
@@ -176,8 +193,13 @@ class _RoleIgnore(docutils.nodes.Inline, docutils.nodes.TextElement):
 
 
 def _role_ignore(
-        name, rawtext, text, lineno, inliner,
-        options=None, content=None,
+    name,
+    rawtext,
+    text,
+    lineno,
+    inliner,
+    options=None,
+    content=None,
 ):
     if options is None:
         options = {}
@@ -185,7 +207,7 @@ def _role_ignore(
         content = []
     nodes_out, msgs = inliner.parse(text, lineno, memo=inliner, parent=inliner.parent)
     del msgs
-    return [_RoleIgnore(text, '', *nodes_out, **options)], []
+    return [_RoleIgnore(text, "", *nodes_out, **options)], []
 
 
 def _register_stubs() -> None:
@@ -197,18 +219,18 @@ def _register_stubs() -> None:
     # API-defining directives: the signature line is the docs, so
     # the full block is preserved verbatim.
     for name in (
-            "attribute",
-            "class",
-            "classmethod",
-            "currentmodule",
-            "data",
-            "decorator",
-            "exception",
-            "function",
-            "method",
-            "module",
-            "property",
-            "staticmethod",
+        "attribute",
+        "class",
+        "classmethod",
+        "currentmodule",
+        "data",
+        "decorator",
+        "exception",
+        "function",
+        "method",
+        "module",
+        "property",
+        "staticmethod",
     ):
         directives.register_directive(name, _DirectivePreserve)
 
@@ -219,51 +241,51 @@ def _register_stubs() -> None:
     # Content-bearing rendering directives: body kept, signature line
     # dropped.
     for name in (
-            "admonition",
-            "attention",
-            "caution",
-            "code-block",
-            "danger",
-            "deprecated",
-            # Collapsible block in the Blender 5.2 API docs
-            # (e.g. `.. details:: Special Methods`); body holds definitions.
-            "details",
-            "error",
-            "hint",
-            "important",
-            "note",
-            # Custom Blender manual directive used for addon metadata
-            # (`:Category:`, `:Menu:`, ...). Body keeps the field list.
-            "reference",
-            "seealso",
-            "tip",
-            "versionadded",
-            "versionchanged",
-            "warning",
+        "admonition",
+        "attention",
+        "caution",
+        "code-block",
+        "danger",
+        "deprecated",
+        # Collapsible block in the Blender 5.2 API docs
+        # (e.g. `.. details:: Special Methods`); body holds definitions.
+        "details",
+        "error",
+        "hint",
+        "important",
+        "note",
+        # Custom Blender manual directive used for addon metadata
+        # (`:Category:`, `:Menu:`, ...). Body keeps the field list.
+        "reference",
+        "seealso",
+        "tip",
+        "versionadded",
+        "versionchanged",
+        "warning",
     ):
         directives.register_directive(name, _directive_ignore)
 
     # Navigation-only directives: drop entirely.
     for name in (
-            "autoclass",
-            "automodule",
-            "autosummary",
-            "contents",
-            "glossary",
-            "highlight",
-            "hlist",
-            "include",
-            "index",
-            "only",
-            "parsed-literal",
-            "peertube",
-            "raw",
-            "sectionauthor",
-            "toctree",
-            "todo",
-            "todolist",
-            "vimeo",
-            "youtube",
+        "autoclass",
+        "automodule",
+        "autosummary",
+        "contents",
+        "glossary",
+        "highlight",
+        "hlist",
+        "include",
+        "index",
+        "only",
+        "parsed-literal",
+        "peertube",
+        "raw",
+        "sectionauthor",
+        "toctree",
+        "todo",
+        "todolist",
+        "vimeo",
+        "youtube",
     ):
         directives.register_directive(name, _directive_ignore_recursive)
 
@@ -278,24 +300,24 @@ def _register_stubs() -> None:
     # an empty `legend` wrapping the INFO), which leaks into
     # `astext()` output and differs between warm and cold processes.
     for name in (
-            "abbr",
-            "attr",
-            "bl-icon",
-            "class",
-            "const",
-            "data",
-            "doc",
-            "exc",
-            "file",
-            "func",
-            "guilabel",
-            "kbd",
-            "math",
-            "menuselection",
-            "meth",
-            "mod",
-            "ref",
-            "term",
+        "abbr",
+        "attr",
+        "bl-icon",
+        "class",
+        "const",
+        "data",
+        "doc",
+        "exc",
+        "file",
+        "func",
+        "guilabel",
+        "kbd",
+        "math",
+        "menuselection",
+        "meth",
+        "mod",
+        "ref",
+        "term",
     ):
         roles.register_local_role(name, _role_ignore)
 
@@ -330,6 +352,7 @@ def _default_settings(*, strict: bool = False):
     """
     # pylint: disable-next=import-outside-toplevel
     from docutils.frontend import get_default_settings  # type: ignore[import]
+
     settings = get_default_settings(docutils.parsers.rst.Parser)
     settings.tab_width = 3
     settings.pep_references = False
@@ -387,8 +410,8 @@ def _node_text(node) -> str:
 
 def _is_directive_container(node) -> bool:
     return (
-        isinstance(node, docutils.nodes.container) and
-        node.get("directive_name") is not None
+        isinstance(node, docutils.nodes.container)
+        and node.get("directive_name") is not None
     )
 
 
@@ -455,9 +478,9 @@ def _walk_paragraphs(doctree):
 # feed the text in via `split_paragraphs_from_text`, avoiding a second
 # read for the paragraph splitter.
 _PARAGRAPH_CACHE_MAX = 8192
-_PARAGRAPH_CACHE: collections.OrderedDict[
-    tuple[str, float], tuple[str, ...]
-] = collections.OrderedDict()
+_PARAGRAPH_CACHE: collections.OrderedDict[tuple[str, float], tuple[str, ...]] = (
+    collections.OrderedDict()
+)
 
 
 def _cache_get(key: tuple[str, float]) -> tuple[str, ...] | None:
@@ -516,7 +539,7 @@ def split_paragraphs_for_path(path: str) -> list[str]:
 
 
 def _walk_paragraphs_with_sections(
-        doctree,
+    doctree,
 ) -> Iterator[tuple[str, tuple[str, ...]]]:
     """
     Yield ``(text, section_stack)`` per paragraph.
@@ -607,7 +630,7 @@ _PARAGRAPH_SECTION_CACHE: collections.OrderedDict[
 
 
 def _cache_sections_get(
-        key: tuple[str, float],
+    key: tuple[str, float],
 ) -> tuple[tuple[str, tuple[str, ...]], ...] | None:
     result = _PARAGRAPH_SECTION_CACHE.get(key)
     if result is not None:
@@ -616,8 +639,8 @@ def _cache_sections_get(
 
 
 def _cache_sections_put(
-        key: tuple[str, float],
-        value: tuple[tuple[str, tuple[str, ...]], ...],
+    key: tuple[str, float],
+    value: tuple[tuple[str, tuple[str, ...]], ...],
 ) -> None:
     _PARAGRAPH_SECTION_CACHE[key] = value
     if len(_PARAGRAPH_SECTION_CACHE) > _PARAGRAPH_CACHE_MAX:
@@ -625,7 +648,9 @@ def _cache_sections_put(
 
 
 def split_paragraphs_with_sections_from_text(
-        path: str, mtime: float, text: str,
+    path: str,
+    mtime: float,
+    text: str,
 ) -> list[tuple[str, tuple[str, ...]]]:
     """
     Paragraph + section-stack list for an RST file whose content is
@@ -644,7 +669,7 @@ def split_paragraphs_with_sections_from_text(
 
 
 def split_paragraphs_with_sections_for_path(
-        path: str,
+    path: str,
 ) -> list[tuple[str, tuple[str, ...]]]:
     """
     Return ``(text, section_stack)`` per paragraph for an RST file,
@@ -676,10 +701,10 @@ def _parse_one_for_worker(path: str, strict: bool = False) -> _DocTree:
 
 
 def _iter_parse_doctrees(
-        paths_list: list[str],
-        jobs: int,
-        *,
-        strict: bool = False,
+    paths_list: list[str],
+    jobs: int,
+    *,
+    strict: bool = False,
 ) -> Iterator[tuple[str, _DocTree]]:
     """
     Parse every RST file in *paths_list* and yield ``(path, doctree)``
@@ -699,6 +724,7 @@ def _iter_parse_doctrees(
 
     # pylint: disable-next=import-outside-toplevel
     from concurrent.futures import ProcessPoolExecutor
+
     # `chunksize=1` (also the default) gives finest-grained load
     # balancing - parse times vary widely between RST files, so larger
     # batches let one worker stall the whole pool on a heavy batch while
@@ -716,10 +742,10 @@ def _iter_parse_doctrees(
 
 
 def iter_doctrees_for_paths(
-        paths: Iterable[str],
-        *,
-        jobs: int = 0,
-        strict: bool = False,
+    paths: Iterable[str],
+    *,
+    jobs: int = 0,
+    strict: bool = False,
 ) -> Iterator[tuple[str, _DocTree]]:
     """
     Yield ``(path, doctree)`` pairs for each RST file in *paths*.
@@ -806,18 +832,20 @@ def doctree_for_path(path: str) -> _DocTree:
     return _parse_one_for_worker(path)
 
 
-_DEFINITION_DIRECTIVES = frozenset({
-    "attribute",
-    "class",
-    "classmethod",
-    "data",
-    "decorator",
-    "exception",
-    "function",
-    "method",
-    "property",
-    "staticmethod",
-})
+_DEFINITION_DIRECTIVES = frozenset(
+    {
+        "attribute",
+        "class",
+        "classmethod",
+        "data",
+        "decorator",
+        "exception",
+        "function",
+        "method",
+        "property",
+        "staticmethod",
+    }
+)
 
 
 def list_doctree_definitions(doctree) -> list[str]:

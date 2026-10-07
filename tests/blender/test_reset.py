@@ -24,7 +24,9 @@ def _populate_scene():
     """One object, its mesh, a material and an action: the four kinds of
     datablock a build leaves behind."""
     mesh_data = bpy.data.meshes.new("ResidueMesh")
-    mesh_data.from_pydata([(0.0, 0.0, 0.0), (1.0, 0.0, 0.0), (0.0, 1.0, 0.0)], [], [(0, 1, 2)])
+    mesh_data.from_pydata(
+        [(0.0, 0.0, 0.0), (1.0, 0.0, 0.0), (0.0, 1.0, 0.0)], [], [(0, 1, 2)]
+    )
     mesh_data.update()
     residue_object = bpy.data.objects.new("ResidueObject", mesh_data)
     bpy.context.scene.collection.objects.link(residue_object)

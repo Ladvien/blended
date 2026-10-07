@@ -217,7 +217,11 @@ def test_an_op_tool_call_binds_runs_and_reports_done():
     assert outcome.text.startswith("OK: middle_extent_m")
     assert "returned: 0.25" in outcome.text
     assert outcome.images == ()
-    result = call_op("middle_extent_m", OP_FUNCTIONS["middle_extent_m"], {"extents_m": [0.3, 0.2, 0.25]})
+    result = call_op(
+        "middle_extent_m",
+        OP_FUNCTIONS["middle_extent_m"],
+        {"extents_m": [0.3, 0.2, 0.25]},
+    )
     assert result.ok and result.stage_reached == STAGE_DONE
     assert result.bound_arguments == {"extents_m": (0.3, 0.2, 0.25)}
 
@@ -246,9 +250,19 @@ def test_unknown_and_missing_parameters_are_named():
     from blended.agent.tools import OP_FUNCTIONS
 
     with pytest.raises(ArgumentError, match=r"unknown parameter\(s\) \['widht_m'\]"):
-        bind_arguments("add_box", OP_FUNCTIONS["add_box"], {"name": "Crate", "widht_m": 0.5, "depth_m": 0.5, "height_m": 0.5})
-    with pytest.raises(ArgumentError, match=r"missing required parameter\(s\) \['height_m'\]"):
-        bind_arguments("add_box", OP_FUNCTIONS["add_box"], {"name": "Crate", "width_m": 0.5, "depth_m": 0.5})
+        bind_arguments(
+            "add_box",
+            OP_FUNCTIONS["add_box"],
+            {"name": "Crate", "widht_m": 0.5, "depth_m": 0.5, "height_m": 0.5},
+        )
+    with pytest.raises(
+        ArgumentError, match=r"missing required parameter\(s\) \['height_m'\]"
+    ):
+        bind_arguments(
+            "add_box",
+            OP_FUNCTIONS["add_box"],
+            {"name": "Crate", "width_m": 0.5, "depth_m": 0.5},
+        )
 
 
 def test_arguments_are_converted_to_the_signature_types():
@@ -262,17 +276,33 @@ def test_arguments_are_converted_to_the_signature_types():
     leg = bind_arguments(
         "add_splayed_leg",
         OP_FUNCTIONS["add_splayed_leg"],
-        {"name": "Leg", "spec": {"foot_radius_m": 0.14, "foot_bearing_deg": 0, "top_radius_m": 0.1, "top_z_m": 0.4, "leg_radius_m": 0.02}},
+        {
+            "name": "Leg",
+            "spec": {
+                "foot_radius_m": 0.14,
+                "foot_bearing_deg": 0,
+                "top_radius_m": 0.1,
+                "top_z_m": 0.4,
+                "leg_radius_m": 0.02,
+            },
+        },
     )
     assert isinstance(leg["spec"], SplayedLegSpec)
-    assert leg["spec"].foot_bearing_deg == 0.0 and isinstance(leg["spec"].foot_bearing_deg, float)
+    assert leg["spec"].foot_bearing_deg == 0.0 and isinstance(
+        leg["spec"].foot_bearing_deg, float
+    )
 
     armature = bind_arguments(
         "add_armature",
         OP_FUNCTIONS["add_armature"],
-        {"name": "Rig", "bones": [{"name": "root", "head_m": [0, 0, 0], "tail_m": [0, 0, 0.5]}]},
+        {
+            "name": "Rig",
+            "bones": [{"name": "root", "head_m": [0, 0, 0], "tail_m": [0, 0, 0.5]}],
+        },
     )
-    assert armature["bones"] == (BoneSpec(name="root", head_m=(0.0, 0.0, 0.0), tail_m=(0.0, 0.0, 0.5)),)
+    assert armature["bones"] == (
+        BoneSpec(name="root", head_m=(0.0, 0.0, 0.0), tail_m=(0.0, 0.0, 0.5)),
+    )
 
     textured = bind_arguments(
         "assign_image_texture_material",
@@ -324,8 +354,14 @@ def test_a_returned_report_is_rendered_as_json():
     from blended.agent.op_call import json_returned
     from blended.ops import BoneSpec
 
-    assert json_returned(BoneSpec(name="root", head_m=(0.0, 0.0, 0.0), tail_m=(0.0, 0.0, 0.5))) == {
-        "name": "root", "head_m": [0.0, 0.0, 0.0], "tail_m": [0.0, 0.0, 0.5], "parent_name": "", "connected": False,
+    assert json_returned(
+        BoneSpec(name="root", head_m=(0.0, 0.0, 0.0), tail_m=(0.0, 0.0, 0.5))
+    ) == {
+        "name": "root",
+        "head_m": [0.0, 0.0, 0.0],
+        "tail_m": [0.0, 0.0, 0.5],
+        "parent_name": "",
+        "connected": False,
     }
     with pytest.raises(TypeError, match="no JSON form"):
         json_returned(object())
@@ -349,15 +385,22 @@ def test_an_op_tool_off_the_main_thread_is_refused_like_any_tool():
     assert len(failures) == 1 and "not the main thread" in str(failures[0])
 
 
-
 # --- the escape hatch (OT-7) ------------------------------------------------
 
 
 def test_run_python_without_a_reason_is_refused_before_bpy():
     from blended.agent.tools import RUN_PYTHON_REASON_REFUSAL, dispatch_tool
 
-    for arguments in ({"source": "pass"}, {"source": "pass", "reason": ""}, {"source": "pass", "reason": "   "}, {"source": "pass", "reason": 3}):
-        assert dispatch_tool("run_python", arguments, None).text == RUN_PYTHON_REASON_REFUSAL, arguments
+    for arguments in (
+        {"source": "pass"},
+        {"source": "pass", "reason": ""},
+        {"source": "pass", "reason": "   "},
+        {"source": "pass", "reason": 3},
+    ):
+        assert (
+            dispatch_tool("run_python", arguments, None).text
+            == RUN_PYTHON_REASON_REFUSAL
+        ), arguments
 
 
 def test_run_python_with_a_reason_reaches_bpy():
@@ -366,16 +409,21 @@ def test_run_python_with_a_reason_reaches_bpy():
     from blended.agent.tools import dispatch_tool
 
     with pytest.raises(ModuleNotFoundError, match="bpy"):
-        dispatch_tool("run_python", {"source": "pass", "reason": "no op does this"}, None)
+        dispatch_tool(
+            "run_python", {"source": "pass", "reason": "no op does this"}, None
+        )
 
 
 def test_the_run_python_schema_requires_the_reason():
     from blended.agent.tools import SERVICE_TOOL_SCHEMAS
 
-    run_python = next(t["function"] for t in SERVICE_TOOL_SCHEMAS if t["function"]["name"] == "run_python")
+    run_python = next(
+        t["function"]
+        for t in SERVICE_TOOL_SCHEMAS
+        if t["function"]["name"] == "run_python"
+    )
     assert run_python["parameters"]["required"] == ["source", "reason"]
     assert run_python["description"].startswith("ESCAPE HATCH")
-
 
 
 # --- search_ops (OT-15): schema-driven, pure -----------------------------------
@@ -391,9 +439,16 @@ def test_search_ops_returns_each_hit_with_its_generated_schema():
     outcome = dispatch_tool("search_ops", {"query": "boolean union"}, None)
 
     assert outcome.ok
-    union = next(t["function"] for t in OP_TOOL_SCHEMAS if t["function"]["name"] == "boolean_union")
+    union = next(
+        t["function"]
+        for t in OP_TOOL_SCHEMAS
+        if t["function"]["name"] == "boolean_union"
+    )
     assert outcome.text.startswith("boolean_union: ")
-    assert "schema: " + json.dumps(union["parameters"], separators=(",", ":")) in outcome.text
+    assert (
+        "schema: " + json.dumps(union["parameters"], separators=(",", ":"))
+        in outcome.text
+    )
     # One ranked page, never more than the cap.
     broad = dispatch_tool("search_ops", {"query": "object"}, None)
     assert broad.text.count("\n    schema: ") <= MAXIMUM_SEARCH_RESULTS
@@ -403,7 +458,9 @@ def test_search_ops_spans_the_underscore_and_word_order():
     from blended.agent.tools import dispatch_tool
 
     for query in ("assign material", "material assign", "assign_material"):
-        assert dispatch_tool("search_ops", {"query": query}, None).text.startswith("assign_material: "), query
+        assert dispatch_tool("search_ops", {"query": query}, None).text.startswith(
+            "assign_material: "
+        ), query
     miss = dispatch_tool("search_ops", {"query": "teleport"}, None)
     assert not miss.ok and miss.text.startswith("No operation matches")
     assert not dispatch_tool("search_ops", {"query": "???"}, None).ok

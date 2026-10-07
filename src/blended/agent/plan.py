@@ -139,8 +139,7 @@ def parse_plan_arguments(arguments: dict) -> TurnPlan:
     """
     if not isinstance(arguments, dict):
         raise PlanArgumentError(
-            f"declare_plan arguments must be an object, got "
-            f"{type(arguments).__name__}"
+            f"declare_plan arguments must be an object, got {type(arguments).__name__}"
         )
     raw_steps = arguments.get("steps")
     if raw_steps is None:
@@ -161,8 +160,7 @@ def parse_plan_arguments(arguments: dict) -> TurnPlan:
     for position, step in enumerate(raw_steps, start=1):
         if not isinstance(step, str):
             raise PlanArgumentError(
-                f"declare_plan step {position} is not a string: "
-                f"{type(step).__name__}."
+                f"declare_plan step {position} is not a string: {type(step).__name__}."
             )
         stripped = step.strip()
         if not stripped:
@@ -182,8 +180,7 @@ def plan_step_of(arguments: dict) -> int | None:
     """
     if not isinstance(arguments, dict):
         raise PlanArgumentError(
-            f"tool arguments must be an object, got "
-            f"{type(arguments).__name__}"
+            f"tool arguments must be an object, got {type(arguments).__name__}"
         )
     if PLAN_STEP_ARGUMENT not in arguments:
         return None
@@ -249,11 +246,12 @@ def decode_plan_event(text: str) -> TurnPlan:
     try:
         payload = json.loads(text)
     except json.JSONDecodeError as error:
-        raise PlanArgumentError(f"plan event is not valid JSON: {error.msg}.") from error
+        raise PlanArgumentError(
+            f"plan event is not valid JSON: {error.msg}."
+        ) from error
     if not isinstance(payload, dict):
         raise PlanArgumentError(
-            f"plan event payload must be an object, got "
-            f"{type(payload).__name__}."
+            f"plan event payload must be an object, got {type(payload).__name__}."
         )
     if _PLAN_EVENT_STEPS_KEY not in payload:
         raise PlanArgumentError(
@@ -261,15 +259,13 @@ def decode_plan_event(text: str) -> TurnPlan:
         )
     if _PLAN_EVENT_CURRENT_STEP_KEY not in payload:
         raise PlanArgumentError(
-            f"plan event payload missing "
-            f"'{_PLAN_EVENT_CURRENT_STEP_KEY}'."
+            f"plan event payload missing '{_PLAN_EVENT_CURRENT_STEP_KEY}'."
         )
     steps = payload[_PLAN_EVENT_STEPS_KEY]
     current_step = payload[_PLAN_EVENT_CURRENT_STEP_KEY]
     if not isinstance(steps, list):
         raise PlanArgumentError(
-            f"plan event 'steps' must be an array, got "
-            f"{type(steps).__name__}."
+            f"plan event 'steps' must be an array, got {type(steps).__name__}."
         )
     if not all(isinstance(step, str) for step in steps):
         raise PlanArgumentError("plan event 'steps' must be an array of strings.")
@@ -280,9 +276,7 @@ def decode_plan_event(text: str) -> TurnPlan:
         )
     # Re-parse through parse_plan_arguments so the decode path enforces
     # the same step-content rules (empty, too many) as the encode path.
-    plan = parse_plan_arguments(
-        {_PLAN_EVENT_STEPS_KEY: steps}
-    )
+    plan = parse_plan_arguments({_PLAN_EVENT_STEPS_KEY: steps})
     # current_step is clamped here, not validated against len(steps),
     # because with_step clamps on the way in and the round-trip must
     # preserve a clamped value exactly.

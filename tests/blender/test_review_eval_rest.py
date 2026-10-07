@@ -43,7 +43,9 @@ def test_a_shifted_square_scores_the_hand_computed_iou_and_rmse():
     assert comparison.subject_pixel_fraction == pytest.approx(1536 / SIZE_PX**2)
     # Only the 1024 px that belong to exactly one subject differ, by 1.0
     # on each RGB channel: mean square over the union = 1024 / 1536.
-    assert comparison.shading_rmse == pytest.approx(math.sqrt(1024 / 1536), abs=RMSE_TOLERANCE)
+    assert comparison.shading_rmse == pytest.approx(
+        math.sqrt(1024 / 1536), abs=RMSE_TOLERANCE
+    )
 
 
 def test_a_zero_pixel_frame_is_refused_by_name_not_by_an_index_error():

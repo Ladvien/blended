@@ -41,7 +41,12 @@ CALLS = (
     RecordedCall("add_box", {"name": "A"}, STAGE_DONE),
     RecordedCall("run_python", {"source": "a = 1", "reason": "r"}, STAGE_DONE),
     RecordedCall("world_bounds", {}, STAGE_DONE),
-    RecordedCall("boolean_union", {"target_name": "A", "addend_name": "B"}, STAGE_EXECUTE, changed_scene=True),
+    RecordedCall(
+        "boolean_union",
+        {"target_name": "A", "addend_name": "B"},
+        STAGE_EXECUTE,
+        changed_scene=True,
+    ),
     RecordedCall("run_python", {"source": "b = 2", "reason": "r"}, STAGE_DONE),
 )
 

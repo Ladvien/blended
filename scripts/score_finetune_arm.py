@@ -98,9 +98,12 @@ def main(argv) -> int:
             [
                 str(DEV_PYTHON),
                 str(REPOSITORY_ROOT / "scripts" / "bake_3dcode.py"),
-                "--bench-root", str(bench_root),
-                "--model-dir", model_dir,
-                "--results-root", arguments.results_root,
+                "--bench-root",
+                str(bench_root),
+                "--model-dir",
+                model_dir,
+                "--results-root",
+                arguments.results_root,
             ]
         )
         if code == BAKE_MISSING_ARTIFACTS_EXIT:
@@ -115,8 +118,10 @@ def main(argv) -> int:
                 [
                     str(bench_python),
                     str(bench_root / "metrics" / scorer),
-                    "--model", model_dir,
-                    "--results-root", str(results_root),
+                    "--model",
+                    model_dir,
+                    "--results-root",
+                    str(results_root),
                 ],
                 cwd=bench_root,
             )
@@ -133,12 +138,18 @@ def main(argv) -> int:
             [
                 str(bench_python),
                 str(REPOSITORY_ROOT / "scripts" / "diagnose_3dcode.py"),
-                "--bench-root", str(bench_root),
-                "--results-root", arguments.results_root,
-                "--model-dir", model_dir,
-                "--instances-file", str(instances_file),
-                "--out", str(WORKING_DIRECTORY / f"diagnose_{model_dir}.md"),
-                "--json", str(WORKING_DIRECTORY / f"diagnose_{model_dir}.json"),
+                "--bench-root",
+                str(bench_root),
+                "--results-root",
+                arguments.results_root,
+                "--model-dir",
+                model_dir,
+                "--instances-file",
+                str(instances_file),
+                "--out",
+                str(WORKING_DIRECTORY / f"diagnose_{model_dir}.md"),
+                "--json",
+                str(WORKING_DIRECTORY / f"diagnose_{model_dir}.json"),
             ],
             cwd=REPOSITORY_ROOT,
         )
@@ -151,7 +162,9 @@ def main(argv) -> int:
             if (bench_root / "data" / instance / "glb" / f"{instance}.glb").exists()
         ]
         if not executed:
-            print(f"[score] {model_dir}: nothing executed, no decomposition", flush=True)
+            print(
+                f"[score] {model_dir}: nothing executed, no decomposition", flush=True
+            )
             continue
         decomposable = WORKING_DIRECTORY / f"decomposable_{model_dir}.txt"
         decomposable.write_text("\n".join(executed) + "\n")
@@ -159,12 +172,18 @@ def main(argv) -> int:
             [
                 str(bench_python),
                 str(REPOSITORY_ROOT / "scripts" / "shape_error_decompose.py"),
-                "--bench-root", str(bench_root),
-                "--results-root", arguments.results_root,
-                "--model-dir", model_dir,
-                "--instances-file", str(decomposable),
-                "--out", str(WORKING_DIRECTORY / f"decompose_{model_dir}.md"),
-                "--json", str(WORKING_DIRECTORY / f"decompose_{model_dir}.json"),
+                "--bench-root",
+                str(bench_root),
+                "--results-root",
+                arguments.results_root,
+                "--model-dir",
+                model_dir,
+                "--instances-file",
+                str(decomposable),
+                "--out",
+                str(WORKING_DIRECTORY / f"decompose_{model_dir}.md"),
+                "--json",
+                str(WORKING_DIRECTORY / f"decompose_{model_dir}.json"),
             ],
             cwd=REPOSITORY_ROOT,
         )

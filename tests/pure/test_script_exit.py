@@ -7,7 +7,6 @@ gates on exit codes, including the closing rule for a backlog item, so a
 crash that reads as a success is the worst possible failure mode.
 """
 
-
 from blended.run.script_exit import UNCAUGHT_EXCEPTION_EXIT_CODE, run_script_main
 
 
@@ -20,6 +19,7 @@ def test_a_clean_run_keeps_its_own_status():
 
 def test_a_deliberate_system_exit_passes_through():
     """A script that means to exit 2 still exits 2."""
+
     def refuses():
         raise SystemExit(2)
 
@@ -41,6 +41,7 @@ def test_an_uncaught_exception_becomes_a_failing_status(capsys):
     after the build and export, and `make converge` returned 0; three
     metered-lane briefs died on HTTP 429 and returned 0 too, so the chain
     recorded four successes it never had."""
+
     def dies():
         raise RuntimeError("the visual gate raised")
 
@@ -63,14 +64,21 @@ def test_every_blender_hosted_script_is_guarded():
 
     scripts = Path(__file__).resolve().parents[2] / "scripts"
     hosted = [
-        "run_agent_task.py", "chat_e2e.py", "calibrate_examiner.py",
-        "calibrate_visual_gate.py", "pin_golden_views.py", "replay_iteration.py",
-        "photo_to_model.py", "run_3dcode_instance.py",
+        "run_agent_task.py",
+        "chat_e2e.py",
+        "calibrate_examiner.py",
+        "calibrate_visual_gate.py",
+        "pin_golden_views.py",
+        "replay_iteration.py",
+        "photo_to_model.py",
+        "run_3dcode_instance.py",
     ]
     for name in hosted:
         source = (scripts / name).read_text()
         assert "run_script_main(main" in source, f"{name} exits 0 on a crash"
-        assert "raise SystemExit(main(" not in source, f"{name} still calls main unguarded"
+        assert "raise SystemExit(main(" not in source, (
+            f"{name} still calls main unguarded"
+        )
 
 
 def test_the_code_is_the_conventional_software_error():

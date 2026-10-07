@@ -8,9 +8,10 @@ __all__ = ()
 
 
 def _image_downscale_to_size_limit(
-        tmpdir: str, filepath: str,
-        size_limit_in_bytes: int,
-        size_tolerance_in_bytes: int = 0,
+    tmpdir: str,
+    filepath: str,
+    size_limit_in_bytes: int,
+    size_tolerance_in_bytes: int = 0,
 ) -> bytes:
     """
     Downscale *filepath* for HiDPI and to stay under *size_limit_in_bytes*.
@@ -38,7 +39,7 @@ def _image_downscale_to_size_limit(
     pixel_size = context.preferences.system.pixel_size
     if pixel_size > 1.0:
         w, h = im.size
-        im.resize((round(w / pixel_size), round(h / pixel_size)), method='BILINEAR')
+        im.resize((round(w / pixel_size), round(h / pixel_size)), method="BILINEAR")
 
     def _write_and_read(im_buf: "imbuf.types.ImBuf") -> bytes:
         imbuf.write(im_buf, filepath=filepath_out)
@@ -51,7 +52,7 @@ def _image_downscale_to_size_limit(
         if new_w <= 64 or new_h <= 64:
             return None
         im_copy = im.copy()
-        im_copy.resize((new_w, new_h), method='BILINEAR')
+        im_copy.resize((new_w, new_h), method="BILINEAR")
         result = _write_and_read(im_copy)
         im_copy.free()
         return result
@@ -79,7 +80,8 @@ def _image_downscale_to_size_limit(
         if max_idx < 0:
             raise RuntimeError(
                 "Image is {:d} bytes and too small to downscale under the {:d} byte limit".format(
-                    len(data), size_limit_in_bytes,
+                    len(data),
+                    size_limit_in_bytes,
                 )
             )
 
@@ -89,34 +91,51 @@ def _image_downscale_to_size_limit(
         # so: needed_divisor ~= current_divisor * sqrt(current_size / limit).
         # Falls back to standard bisection when the range is too small.
         import math
+
         lo, hi = 0, max_idx
         # Initial estimate uses divisor=1 (the full-size encode above).
         estimated = math.sqrt(len(data) / size_limit_in_bytes)
         while lo <= hi:
             if hi - lo >= 2:
-                mid = min(hi - 1, max(lo + 1, min(
-                    range(lo, hi + 1),
-                    key=lambda i: abs(divisors[i] - estimated),
-                )))
+                mid = min(
+                    hi - 1,
+                    max(
+                        lo + 1,
+                        min(
+                            range(lo, hi + 1),
+                            key=lambda i: abs(divisors[i] - estimated),
+                        ),
+                    ),
+                )
             else:
                 mid = (lo + hi) // 2
             test_filedata_as_bytes = _encode_at_divisor(divisors[mid])
-            if test_filedata_as_bytes is not None and len(test_filedata_as_bytes) <= size_limit_in_bytes:
+            if (
+                test_filedata_as_bytes is not None
+                and len(test_filedata_as_bytes) <= size_limit_in_bytes
+            ):
                 data = test_filedata_as_bytes
                 if len(test_filedata_as_bytes) == size_limit_in_bytes:
                     break  # Exact fit, no better option possible.
                 if size_tolerance_in_bytes > 0:
                     if len(test_filedata_as_bytes) < size_limit_in_bytes:
-                        if len(test_filedata_as_bytes) >= size_limit_in_bytes - size_tolerance_in_bytes:
+                        if (
+                            len(test_filedata_as_bytes)
+                            >= size_limit_in_bytes - size_tolerance_in_bytes
+                        ):
                             break  # Smaller but not by much, good enough.
                 hi = mid - 1
                 # Re-estimate: this divisor was enough, maybe a smaller one works.
-                estimated = divisors[mid] * math.sqrt(len(test_filedata_as_bytes) / size_limit_in_bytes)
+                estimated = divisors[mid] * math.sqrt(
+                    len(test_filedata_as_bytes) / size_limit_in_bytes
+                )
             else:
                 lo = mid + 1
                 # Re-estimate: need more scaling.
                 if test_filedata_as_bytes is not None:
-                    estimated = divisors[mid] * math.sqrt(len(test_filedata_as_bytes) / size_limit_in_bytes)
+                    estimated = divisors[mid] * math.sqrt(
+                        len(test_filedata_as_bytes) / size_limit_in_bytes
+                    )
 
     finally:
         im.free()
@@ -124,7 +143,8 @@ def _image_downscale_to_size_limit(
     if len(data) > size_limit_in_bytes:
         raise RuntimeError(
             "No downscale fits the image under the {:d} byte limit (full size is {:d} bytes)".format(
-                size_limit_in_bytes, len(data),
+                size_limit_in_bytes,
+                len(data),
             )
         )
 

@@ -76,8 +76,6 @@ _OBJECT_NAME_PATTERN = re.compile(r"(^|_)name$|_names$")
 MAXIMUM_SUMMARY_CHARACTERS = 120
 
 
-
-
 # --- gating (OT-5) --------------------------------------------------------
 
 # The attribute `@op(gated=...)` stamps on a function. Read only through
@@ -221,7 +219,10 @@ def contract_violations(function) -> list[str]:
             violations.append(
                 f"parameter {parameter.name!r} is annotated {annotation_text!r}, a bpy type"
             )
-        if _OBJECT_NAME_PATTERN.search(parameter.name) and annotation_text not in NAME_ANNOTATIONS:
+        if (
+            _OBJECT_NAME_PATTERN.search(parameter.name)
+            and annotation_text not in NAME_ANNOTATIONS
+        ):
             violations.append(
                 f"parameter {parameter.name!r} looks like a name but is {annotation_text!r}"
             )
@@ -263,10 +264,11 @@ def contract_violations(function) -> list[str]:
     elif rest and rest.split("\n", 1)[0].strip():
         violations.append("docstring summary is not a single line followed by a blank")
     elif len(first_line) > MAXIMUM_SUMMARY_CHARACTERS:
-        violations.append(f"docstring summary longer than {MAXIMUM_SUMMARY_CHARACTERS} chars")
+        violations.append(
+            f"docstring summary longer than {MAXIMUM_SUMMARY_CHARACTERS} chars"
+        )
 
     return violations
-
 
 
 def assert_satisfies_contract(op_name: str, function) -> None:

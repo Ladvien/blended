@@ -10,6 +10,7 @@ reads the runner's recorded error and stops with its own exit code,
 naming the instances it did not attempt. Driven here with a fake Blender
 that writes the runner's metadata, so no Blender and no bench are needed.
 """
+
 from __future__ import annotations
 
 import json
@@ -49,21 +50,34 @@ def test_the_sweep_stops_on_the_first_exhausted_credit_loss(tmp_path):
 
     completed = subprocess.run(
         [
-            sys.executable, str(SWEEP),
-            "--bench-root", str(bench_root),
-            "--instances-file", str(instances),
-            "--model-dir", "roll-under-test",
-            "--blender", str(fake),
+            sys.executable,
+            str(SWEEP),
+            "--bench-root",
+            str(bench_root),
+            "--instances-file",
+            str(instances),
+            "--model-dir",
+            "roll-under-test",
+            "--blender",
+            str(fake),
         ],
-        capture_output=True, text=True, timeout=120, check=False,
+        capture_output=True,
+        text=True,
+        timeout=120,
+        check=False,
         env={**os.environ, "PYTHONPATH": str(SWEEP.parents[1] / "src")},
     )
 
-    assert completed.returncode == 3, completed.stdout + completed.stderr  # LANE_EXHAUSTED_EXIT
+    assert completed.returncode == 3, (
+        completed.stdout + completed.stderr
+    )  # LANE_EXHAUSTED_EXIT
     assert "[SWEEP STOPPED] Jar_seed0" in completed.stdout
     assert "2 instance(s) not attempted" in completed.stdout
     assert completed.stdout.count("[STATUS]") == 1
     results = bench_root / "results" / "text_to_3D_agent" / "roll-under-test"
     assert (results / "Jar_seed0" / ".agent_meta.json").exists()
     assert not (results / "Plate_seed0").exists()  # never attempted
-    assert json.loads((results / "Jar_seed0" / ".agent_meta.json").read_text())["status"] == "ERR_CONNECTION"
+    assert (
+        json.loads((results / "Jar_seed0" / ".agent_meta.json").read_text())["status"]
+        == "ERR_CONNECTION"
+    )

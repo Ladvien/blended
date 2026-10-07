@@ -28,16 +28,31 @@ REFUSED_EXIT_CODE = 2
 # Every variable bench_chain.sh reads: a developer shell that exports one
 # (REFERENCE_IMAGES, FREEZE_ROOT, ...) must not change what a test measures.
 SCRIPT_VARIABLES = (
-    "WORKTREE", "MODEL_DIR", "WRITER", "EYE", "BENCH_ROOT", "INSTANCES",
-    "OUT", "TIMEOUT", "TOOLS", "FREEZE_ROOT", "REFERENCE_IMAGES",
+    "WORKTREE",
+    "MODEL_DIR",
+    "WRITER",
+    "EYE",
+    "BENCH_ROOT",
+    "INSTANCES",
+    "OUT",
+    "TIMEOUT",
+    "TOOLS",
+    "FREEZE_ROOT",
+    "REFERENCE_IMAGES",
 )
 
 
 def _inherited_environment() -> dict:
-    return {name: value for name, value in os.environ.items() if name not in SCRIPT_VARIABLES}
+    return {
+        name: value
+        for name, value in os.environ.items()
+        if name not in SCRIPT_VARIABLES
+    }
 
 
-def run_chain(worktree: Path, freeze_root: Path, out: Path) -> subprocess.CompletedProcess:
+def run_chain(
+    worktree: Path, freeze_root: Path, out: Path
+) -> subprocess.CompletedProcess:
     environment = {
         **_inherited_environment(),
         **REQUIRED_ENVIRONMENT,
@@ -49,8 +64,12 @@ def run_chain(worktree: Path, freeze_root: Path, out: Path) -> subprocess.Comple
         "BENCH_ROOT": str(out / "no-bench-here"),
     }
     return subprocess.run(
-        ["zsh", str(CHAIN_SCRIPT)], env=environment,
-        capture_output=True, text=True, timeout=60, check=False,
+        ["zsh", str(CHAIN_SCRIPT)],
+        env=environment,
+        capture_output=True,
+        text=True,
+        timeout=60,
+        check=False,
     )
 
 
@@ -91,13 +110,27 @@ def test_a_real_freeze_logs_its_commit_first(tmp_path):
     freeze.mkdir(parents=True)
     subprocess.run(["git", "init", "-q", str(freeze)], check=True)
     subprocess.run(
-        ["git", "-C", str(freeze), "-c", "user.email=t@t", "-c", "user.name=t",
-         "commit", "-q", "--allow-empty", "-m", "frozen"],
+        [
+            "git",
+            "-C",
+            str(freeze),
+            "-c",
+            "user.email=t@t",
+            "-c",
+            "user.name=t",
+            "commit",
+            "-q",
+            "--allow-empty",
+            "-m",
+            "frozen",
+        ],
         check=True,
     )
     commit = subprocess.run(
         ["git", "-C", str(freeze), "rev-parse", "HEAD"],
-        capture_output=True, text=True, check=True,
+        capture_output=True,
+        text=True,
+        check=True,
     ).stdout.strip()
     out = tmp_path / "out"
 
@@ -124,8 +157,20 @@ def test_a_reference_root_missing_a_view_is_refused_before_the_sweep(tmp_path):
     freeze.mkdir(parents=True)
     subprocess.run(["git", "init", "-q", str(freeze)], check=True)
     subprocess.run(
-        ["git", "-C", str(freeze), "-c", "user.email=t@t", "-c", "user.name=t",
-         "commit", "-q", "--allow-empty", "-m", "frozen"],
+        [
+            "git",
+            "-C",
+            str(freeze),
+            "-c",
+            "user.email=t@t",
+            "-c",
+            "user.name=t",
+            "commit",
+            "-q",
+            "--allow-empty",
+            "-m",
+            "frozen",
+        ],
         check=True,
     )
     instances = tmp_path / "instances.txt"
@@ -136,15 +181,22 @@ def test_a_reference_root_missing_a_view_is_refused_before_the_sweep(tmp_path):
         (views / name).write_bytes(b"png")  # Image_035.png is absent
     out = tmp_path / "out"
     environment = {
-        **_inherited_environment(), **REQUIRED_ENVIRONMENT,
-        "WORKTREE": str(freeze), "FREEZE_ROOT": str(freeze_root), "OUT": str(out),
+        **_inherited_environment(),
+        **REQUIRED_ENVIRONMENT,
+        "WORKTREE": str(freeze),
+        "FREEZE_ROOT": str(freeze_root),
+        "OUT": str(out),
         "BENCH_ROOT": str(out / "no-bench-here"),
         "INSTANCES": str(instances),
         "REFERENCE_IMAGES": str(tmp_path / "categories"),
     }
     completed = subprocess.run(
-        ["zsh", str(CHAIN_SCRIPT)], env=environment,
-        capture_output=True, text=True, timeout=60, check=False,
+        ["zsh", str(CHAIN_SCRIPT)],
+        env=environment,
+        capture_output=True,
+        text=True,
+        timeout=60,
+        check=False,
     )
     assert completed.returncode == REFUSED_EXIT_CODE, completed.stderr
     assert "Jar_seed0/images/Image_035.png" in completed.stderr
@@ -155,13 +207,19 @@ def test_a_reference_root_missing_a_view_is_refused_before_the_sweep(tmp_path):
 @pytest.mark.parametrize("missing", ["WORKTREE", "MODEL_DIR", "WRITER"])
 def test_a_missing_required_variable_is_refused(tmp_path, missing):
     environment = {
-        **_inherited_environment(), **REQUIRED_ENVIRONMENT,
-        "WORKTREE": str(tmp_path), "OUT": str(tmp_path / "out"),
+        **_inherited_environment(),
+        **REQUIRED_ENVIRONMENT,
+        "WORKTREE": str(tmp_path),
+        "OUT": str(tmp_path / "out"),
     }
     environment.pop(missing)
     completed = subprocess.run(
-        ["zsh", str(CHAIN_SCRIPT)], env=environment,
-        capture_output=True, text=True, timeout=60, check=False,
+        ["zsh", str(CHAIN_SCRIPT)],
+        env=environment,
+        capture_output=True,
+        text=True,
+        timeout=60,
+        check=False,
     )
     assert completed.returncode != 0
     assert missing in completed.stderr

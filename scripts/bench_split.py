@@ -31,9 +31,9 @@ from pathlib import Path
 DEFAULT_BENCH_ROOT = "/Users/ladvien/3dcodebench"
 DEFAULT_OUT_DIR = "bench_sets"
 
-EXPECTED_HOLDOUT_COUNT = 20      # instances_v1.txt, frozen since v1
-EXPECTED_DEV_COUNT = 145         # 165 baked references - 20 holdout
-DEV_SWEEP_COUNT = 12             # live dev rolls: ~12 x 340 s ~= 70 min
+EXPECTED_HOLDOUT_COUNT = 20  # instances_v1.txt, frozen since v1
+EXPECTED_DEV_COUNT = 145  # 165 baked references - 20 holdout
+DEV_SWEEP_COUNT = 12  # live dev rolls: ~12 x 340 s ~= 70 min
 
 # Pinned so a changed bake set is loud instead of silent: the Step-2
 # policy measurement and its 0.0311 constant are derived over exactly the
@@ -56,10 +56,16 @@ EXPECTED_DEV_SWEEP = (
 
 def parse_arguments(argv):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--bench-root", default=DEFAULT_BENCH_ROOT,
-                        help="3DCodeBench checkout (holds data/ and metrics/)")
-    parser.add_argument("--out-dir", default=DEFAULT_OUT_DIR,
-                        help="Directory the three lists are written to")
+    parser.add_argument(
+        "--bench-root",
+        default=DEFAULT_BENCH_ROOT,
+        help="3DCodeBench checkout (holds data/ and metrics/)",
+    )
+    parser.add_argument(
+        "--out-dir",
+        default=DEFAULT_OUT_DIR,
+        help="Directory the three lists are written to",
+    )
     return parser.parse_args(argv)
 
 
@@ -87,8 +93,10 @@ def dev_sweep_indices(dev_count: int, sweep_count: int) -> list[int]:
     """Even stride over the sorted dev list, endpoints included."""
     if dev_count < sweep_count:
         raise SystemExit(f"dev set of {dev_count} cannot yield {sweep_count}")
-    return [round(index * (dev_count - 1) / (sweep_count - 1))
-            for index in range(sweep_count)]
+    return [
+        round(index * (dev_count - 1) / (sweep_count - 1))
+        for index in range(sweep_count)
+    ]
 
 
 def main(argv) -> int:
@@ -101,44 +109,53 @@ def main(argv) -> int:
     holdout_path = bench_root / "instances_v1.txt"
     if not holdout_path.exists():
         raise SystemExit(f"No frozen instance list at {holdout_path}")
-    holdout = [line.strip() for line in holdout_path.read_text().splitlines()
-               if line.strip()]
+    holdout = [
+        line.strip() for line in holdout_path.read_text().splitlines() if line.strip()
+    ]
     if len(holdout) != EXPECTED_HOLDOUT_COUNT:
         raise SystemExit(
             f"{holdout_path} holds {len(holdout)} names, "
-            f"expected {EXPECTED_HOLDOUT_COUNT}")
+            f"expected {EXPECTED_HOLDOUT_COUNT}"
+        )
     if len(set(holdout)) != len(holdout):
         raise SystemExit(f"{holdout_path} holds duplicate names")
 
     holdout_set = set(holdout)
-    baked = sorted(directory.name for directory in data_root.iterdir()
-                   if directory.is_dir() and reference_baked_ok(directory))
+    baked = sorted(
+        directory.name
+        for directory in data_root.iterdir()
+        if directory.is_dir() and reference_baked_ok(directory)
+    )
     missing_holdout = [name for name in holdout if name not in set(baked)]
     if missing_holdout:
         raise SystemExit(
-            "holdout instances have no baked reference: "
-            f"{missing_holdout}")
+            f"holdout instances have no baked reference: {missing_holdout}"
+        )
 
     dev_all = [name for name in baked if name not in holdout_set]
     if len(dev_all) != EXPECTED_DEV_COUNT:
         raise SystemExit(
             f"dev set is {len(dev_all)} instances, expected "
             f"{EXPECTED_DEV_COUNT}; the bake set moved, so the pinned "
-            "orientation-policy numbers must be re-derived")
+            "orientation-policy numbers must be re-derived"
+        )
 
     indices = dev_sweep_indices(len(dev_all), DEV_SWEEP_COUNT)
     dev_sweep = [dev_all[index] for index in indices]
     if tuple(dev_sweep) != EXPECTED_DEV_SWEEP:
         raise SystemExit(
             "dev sweep stride no longer matches the pinned list:\n"
-            f"  computed: {dev_sweep}\n  pinned:   {list(EXPECTED_DEV_SWEEP)}")
+            f"  computed: {dev_sweep}\n  pinned:   {list(EXPECTED_DEV_SWEEP)}"
+        )
 
     # Every emitted name must be fully usable: reference GLB (chamfer) and
     # brief (the runner's task text).
     for name in dev_all + holdout:
         instance_dir = data_root / name
-        for required in ((instance_dir / "glb" / f"{name}.glb"),
-                         (instance_dir / "prompt_description.txt")):
+        for required in (
+            (instance_dir / "glb" / f"{name}.glb"),
+            (instance_dir / "prompt_description.txt"),
+        ):
             if not required.exists():
                 raise SystemExit(f"missing {required}")
     if holdout_set & set(dev_all):

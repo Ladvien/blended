@@ -33,6 +33,7 @@ math on fixtures).
       --json outputs/bench/proportion_headroom.json \
       --out outputs/bench/proportion_headroom.md
 """
+
 from __future__ import annotations
 
 import argparse
@@ -75,8 +76,9 @@ def parse_arguments(argv):
 
 def extents_at_percentiles(points, percentiles=PROPORTION_EXTENT_PERCENTILES):
     """Per-axis extent between the two percentiles, robust to a stray vertex."""
-    low, high = np.percentile(points, percentiles[0], axis=0), np.percentile(
-        points, percentiles[1], axis=0
+    low, high = (
+        np.percentile(points, percentiles[0], axis=0),
+        np.percentile(points, percentiles[1], axis=0),
     )
     return high - low
 
@@ -113,7 +115,9 @@ def axis_log2_errors(reference_points, aligned_points):
     """|log2(reference extent / generated extent)| per axis, axes ordered
     by the REFERENCE's extent descending: (largest, middle, smallest)."""
     reference_extents = extents_at_percentiles(reference_points)
-    generated_extents = np.maximum(extents_at_percentiles(aligned_points), MINIMUM_EXTENT)
+    generated_extents = np.maximum(
+        extents_at_percentiles(aligned_points), MINIMUM_EXTENT
+    )
     order = np.argsort(-reference_extents)
     return np.abs(np.log2(reference_extents[order] / generated_extents[order]))
 
@@ -131,7 +135,9 @@ def score_instance(sc, reference_glb: Path, generated_glb: Path) -> dict | None:
     value, precision, recall = fscore(reference, aligned, PRIMARY_FSCORE_THRESHOLD)
     rescaled = oracle_rescaled(sc, reference, aligned)
     rotation_2, _ = best_pca_alignment(sc, reference, rescaled)
-    oracle_value, _, _ = fscore(reference, rescaled @ rotation_2.T, PRIMARY_FSCORE_THRESHOLD)
+    oracle_value, _, _ = fscore(
+        reference, rescaled @ rotation_2.T, PRIMARY_FSCORE_THRESHOLD
+    )
     errors = axis_log2_errors(reference, aligned)
     components_generated, floating_generated = component_counts(
         trimesh.load(generated_glb, force="mesh")

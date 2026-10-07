@@ -144,9 +144,7 @@ def build_manifest(include_drift_catalog: bool = True) -> str:
     if OP_CONFIG_DATACLASSES:
         sections.append("\n### Operation config objects\n")
         for module_path, class_name in OP_CONFIG_DATACLASSES:
-            config_class = getattr(
-                importlib.import_module(module_path), class_name
-            )
+            config_class = getattr(importlib.import_module(module_path), class_name)
             sections.append(
                 f"- `{class_name}` — "
                 f"{(config_class.__doc__ or '').strip().splitlines()[0]}"
@@ -157,8 +155,7 @@ def build_manifest(include_drift_catalog: bool = True) -> str:
                     "" if default is dataclasses.MISSING else f" = {default}"
                 )
                 sections.append(
-                    f"      `{config_field.name}: "
-                    f"{config_field.type}{shown_default}`"
+                    f"      `{config_field.name}: {config_field.type}{shown_default}`"
                 )
 
     sections.append("\n## What the gate measures\n")

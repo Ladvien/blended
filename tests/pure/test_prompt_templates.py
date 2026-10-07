@@ -96,7 +96,11 @@ def test_the_revision_history_is_disciplined():
 # The baseline (revision 1) has no predecessor to differ from.
 @pytest.mark.parametrize(
     "revision",
-    [entry.revision for entry in prompt_versions.PROMPT_REVISIONS if entry.revision > 1],
+    [
+        entry.revision
+        for entry in prompt_versions.PROMPT_REVISIONS
+        if entry.revision > 1
+    ],
 )
 def test_each_revision_changes_exactly_one_place(revision):
     hunks = prompt_versions.changed_hunks(
@@ -151,22 +155,23 @@ def test_the_assembled_fingerprint_covers_the_drift_catalog(monkeypatch):
         source="[measured] test_the_assembled_fingerprint_covers_the_drift_catalog",
     )
     before_assembled = system_prompt.assembled_prompt_fingerprint()
-    before_identity = prompt_versions.get_revision(prompt_versions.PINNED_PROMPT_REVISION).identity
+    before_identity = prompt_versions.get_revision(
+        prompt_versions.PINNED_PROMPT_REVISION
+    ).identity
 
-    monkeypatch.setattr(
-        catalog, "DRIFT_ENTRIES", catalog.DRIFT_ENTRIES + (extra,)
-    )
+    monkeypatch.setattr(catalog, "DRIFT_ENTRIES", catalog.DRIFT_ENTRIES + (extra,))
 
     # The probe must be VISIBLE before its effect can be interpreted. A
     # patch that silently missed would otherwise read as "the drift
     # catalog does not reach the prompt", which is the opposite lesson.
     assert extra.fix in manifest.build_manifest(), (
-        "the synthetic row never reached build_manifest, so this test "
-        "measured nothing"
+        "the synthetic row never reached build_manifest, so this test measured nothing"
     )
 
     after_assembled = system_prompt.assembled_prompt_fingerprint()
-    after_identity = prompt_versions.get_revision(prompt_versions.PINNED_PROMPT_REVISION).identity
+    after_identity = prompt_versions.get_revision(
+        prompt_versions.PINNED_PROMPT_REVISION
+    ).identity
     assert after_assembled != before_assembled, (
         "a new drift row did not move the assembled fingerprint, so the "
         "fingerprint does not cover the manifest it claims to cover"
@@ -250,9 +255,10 @@ def test_the_shipped_configuration_is_the_converged_configuration():
     )
     from blended.agent.system_prompt import build_system_prompt
 
-    assert prompt_versions.get_revision(
-        prompt_versions.PINNED_PROMPT_REVISION
-    ).body in build_system_prompt(), (
+    assert (
+        prompt_versions.get_revision(prompt_versions.PINNED_PROMPT_REVISION).body
+        in build_system_prompt()
+    ), (
         "the default session prompt is not the pinned revision — a user "
         "would talk to text nobody scored"
     )
@@ -272,5 +278,11 @@ def test_the_prompt_describes_no_op_twice():
     prompt = build_system_prompt(revision=14)
     for name, _ in facade_ops():
         assert f"{name}(" not in prompt, name
-    assert "## Conventions" in prompt and GATE_HEADING in prompt and "## Known API traps" in prompt
-    assert OUTPUT_CONTRACT_HEADING not in prompt  # the chat never wanted 'return only Python'
+    assert (
+        "## Conventions" in prompt
+        and GATE_HEADING in prompt
+        and "## Known API traps" in prompt
+    )
+    assert (
+        OUTPUT_CONTRACT_HEADING not in prompt
+    )  # the chat never wanted 'return only Python'

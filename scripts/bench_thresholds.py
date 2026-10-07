@@ -7,11 +7,11 @@ threshold quoted by both must therefore live in a module neither venv can
 break, and be defined exactly once.
 """
 
-ORIENT_ARTIFACT_THRESHOLD = 0.02    # Δ_orient at/above which an instance's
-                                    # score is an orientation artifact rather
-                                    # than shape error; also the per-instance
-                                    # across-roll range above which a roll
-                                    # delta is indistinguishable from noise
+ORIENT_ARTIFACT_THRESHOLD = 0.02  # Δ_orient at/above which an instance's
+# score is an orientation artifact rather
+# than shape error; also the per-instance
+# across-roll range above which a roll
+# delta is indistinguishable from noise
 
 # --- The pre-registered ranking rule -------------------------------------
 #

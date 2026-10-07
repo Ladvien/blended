@@ -115,7 +115,9 @@ def convert_argument(hint, value, path: str):
     members = typing.get_args(hint)
     if origin is typing.Literal:
         if value not in members:
-            raise ArgumentError(f"{path}: expected one of {list(members)}, got {value!r}")
+            raise ArgumentError(
+                f"{path}: expected one of {list(members)}, got {value!r}"
+            )
         return value
     if origin in (types.UnionType, typing.Union):
         failures: list[str] = []
@@ -124,7 +126,9 @@ def convert_argument(hint, value, path: str):
                 return convert_argument(member, value, path)
             except ArgumentError as error:
                 failures.append(str(error))
-        raise ArgumentError(f"{path}: none of the accepted types fit: " + " | ".join(failures))
+        raise ArgumentError(
+            f"{path}: none of the accepted types fit: " + " | ".join(failures)
+        )
     if origin is tuple:
         if not isinstance(value, (list, tuple)):
             raise ArgumentError(f"{path}: expected an array, got {value!r}")
@@ -150,7 +154,9 @@ def convert_argument(hint, value, path: str):
         ]
     if dataclasses.is_dataclass(hint) and isinstance(hint, type):
         if not isinstance(value, dict):
-            raise ArgumentError(f"{path}: expected an object for {hint.__name__}, got {value!r}")
+            raise ArgumentError(
+                f"{path}: expected an object for {hint.__name__}, got {value!r}"
+            )
         field_hints = typing.get_type_hints(hint)
         field_names = [config_field.name for config_field in dataclasses.fields(hint)]
         unknown = sorted(set(value) - set(field_names))
@@ -166,7 +172,9 @@ def convert_argument(hint, value, path: str):
             and config_field.name not in value
         ]
         if missing:
-            raise ArgumentError(f"{path}: missing required field(s) {missing} for {hint.__name__}")
+            raise ArgumentError(
+                f"{path}: missing required field(s) {missing} for {hint.__name__}"
+            )
         return hint(
             **{
                 name: convert_argument(field_hints[name], item, f"{path}.{name}")
@@ -222,7 +230,9 @@ class OpCallResult:
                 # A binding failure IS its message; the frames below it
                 # are this module's, not the model's. An op's own
                 # traceback is kept, bounded like run_python's.
-                lines.append(self.execution.traceback_text[:maximum_traceback_characters])
+                lines.append(
+                    self.execution.traceback_text[:maximum_traceback_characters]
+                )
             return "\n".join(lines)
         lines.append(f"  returned: {json.dumps(self.returned)}")
         for gate in self.gates:
@@ -233,7 +243,9 @@ class OpCallResult:
             gate_lines = gate_summary_lines(
                 gate.object_type, gate.report, gate.gate_failures, gate.world_extents_m
             )
-            lines.extend(line.replace("  gate:", f"  gate{label}:", 1) for line in gate_lines)
+            lines.extend(
+                line.replace("  gate:", f"  gate{label}:", 1) for line in gate_lines
+            )
         return "\n".join(lines)
 
 
@@ -259,7 +271,9 @@ def _resolved_object_names(function, bound: dict) -> tuple[str, ...]:
 
 def _worst_stage(gates: tuple[GateVerdict, ...]) -> str:
     """The earliest stage any gate stopped at; `done` when all passed."""
-    return min((gate.stage_reached for gate in gates), key=STAGES.index, default=STAGE_DONE)
+    return min(
+        (gate.stage_reached for gate in gates), key=STAGES.index, default=STAGE_DONE
+    )
 
 
 def call_op(

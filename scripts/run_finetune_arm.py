@@ -146,7 +146,9 @@ def main(argv) -> int:
     description = prompt_path.read_text().strip()
 
     model_dir = model_directory(arguments.arm, arguments.draw)
-    work_directory = bench_root / arguments.results_root / model_dir / arguments.instance
+    work_directory = (
+        bench_root / arguments.results_root / model_dir / arguments.instance
+    )
     script_path = work_directory / f"{arguments.instance}.py"
     if script_path.exists() and not arguments.overwrite:
         print(f"[SKIP] {model_dir}/{arguments.instance}", flush=True)
@@ -353,7 +355,9 @@ def _finish_ops(
             continue
         if not isinstance(call_arguments, dict):
             failures.append(PARSE_ARGUMENT_ERROR)
-            print(f"[ARGUMENT_ERROR] {tool_name}: arguments are not an object", flush=True)
+            print(
+                f"[ARGUMENT_ERROR] {tool_name}: arguments are not an object", flush=True
+            )
             continue
         before = scene_signature()
         # One line per call BEFORE it runs: a completion killed by the

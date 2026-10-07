@@ -60,7 +60,8 @@ def main(params: Params) -> Result:
         # `area.type` assignment below would raise AFTER the duplicate
         # workspace was made and activated, leaving it behind.
         valid_space_types = sorted(
-            item.identifier for item in bpy.types.Area.bl_rna.properties["type"].enum_items
+            item.identifier
+            for item in bpy.types.Area.bl_rna.properties["type"].enum_items
         )
         if params.space_type not in valid_space_types:
             return Result(
@@ -85,13 +86,15 @@ def main(params: Params) -> Result:
             created=True,
         )
 
-    available = sorted({
-        area.type
-        for ws in bpy.data.workspaces
-        for screen in ws.screens
-        for area in ((_largest_area(screen),) if _largest_area(screen) else ())
-        if area is not None
-    })
+    available = sorted(
+        {
+            area.type
+            for ws in bpy.data.workspaces
+            for screen in ws.screens
+            for area in ((_largest_area(screen),) if _largest_area(screen) else ())
+            if area is not None
+        }
+    )
     return Result(
         status="error",
         message="No workspace with space type {!r} found".format(params.space_type),
