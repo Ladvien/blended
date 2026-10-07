@@ -35,7 +35,9 @@ DRIFT_ENTRIES: tuple[DriftEntry, ...] = (
         fix=(
             "Actions are slotted/layered in 5.x: walk "
             "action.layers -> strips -> channelbags -> fcurves. "
-            "Reading action.fcurves returns empty and silently does nothing."
+            "action.fcurves does not exist in 5.x: reading it raises "
+            "AttributeError ('Action' object has no attribute 'fcurves'; "
+            "measured 5.2.0 LTS)."
         ),
         source="[measured] scp_characters session",
     ),

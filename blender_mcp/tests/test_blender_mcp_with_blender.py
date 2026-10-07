@@ -23,6 +23,7 @@ Set ``BLENDER_MCP_FOREGROUND=1`` to use the real display instead.
 
 __all__ = ()
 
+import atexit
 import base64
 import glob
 import inspect
@@ -34,15 +35,12 @@ import signal
 import socket
 import struct
 import subprocess
+import sys
 import tempfile
 import textwrap
 import threading
 import time
 import unittest
-
-import sys
-
-import atexit
 
 # Root of the repository.
 _REPO_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -51,10 +49,11 @@ _REPO_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _REPO_DIR not in sys.path:
     sys.path.insert(0, _REPO_DIR)
 
-from blended.agent.plan import MISSING_PLAN_REFUSAL
 from blmcp.tools_helpers.blended_bridge import SOURCE_ROOTS
 from blmcp.tools_helpers.connection import send_code
 from tests.mcp_client import MCPClient
+
+from blended.agent.plan import MISSING_PLAN_REFUSAL
 
 # Fixed ports for the test servers (background and foreground).
 # Kept off the add-on's default (9876) so a user's running Blender is never
@@ -518,11 +517,11 @@ class _TestServerMixin:
 
     def setUp(self) -> None:
         """Reload the default scene so each test starts from a clean state."""
-        self._execute_code((
+        self._execute_code(
                 "import bpy\n"
                 "bpy.ops.wm.read_homefile(use_empty=False)\n"
                 "result = {'reset': True}\n"
-            ))
+            )
 
     # -----------------------------------------------------------------
     # blended tools.
@@ -790,6 +789,7 @@ class _TestServerMixin:
                                     "selected": False,
                                     "visible": True,
                                     "hide_viewport": False,
+                                    "hide_in_view_layer": False,
                                 },
                                 {
                                     "name": "Cube",
@@ -799,6 +799,7 @@ class _TestServerMixin:
                                     "selected": True,
                                     "visible": True,
                                     "hide_viewport": False,
+                                    "hide_in_view_layer": False,
                                 },
                                 {
                                     "name": "Light",
@@ -808,6 +809,7 @@ class _TestServerMixin:
                                     "selected": False,
                                     "visible": True,
                                     "hide_viewport": False,
+                                    "hide_in_view_layer": False,
                                 },
                             ],
                             "children": [],
@@ -1107,11 +1109,11 @@ class _TestServerMixin:
         if not self._interactive:
             return
         # Hide the default Cube.
-        self._execute_code((
+        self._execute_code(
                 "import bpy\n"
                 "bpy.data.objects['Cube'].hide_viewport = True\n"
                 "result = {'hidden': True}\n"
-            ))
+            )
         # Jump to it with allow_edits enabled.
         data = self._test_tool("jump_to_view3d_object_by_name", {
             "name": "Cube", "allow_edits": True,
@@ -1119,10 +1121,10 @@ class _TestServerMixin:
         self.assertEqual(data["status"], "ok")
         self.assertEqual(data["object"], "Cube")
         # Verify the object is no longer hidden.
-        check = self._execute_code((
+        check = self._execute_code(
                 "import bpy\n"
                 "result = {'hide_viewport': bpy.data.objects['Cube'].hide_viewport}\n"
-            ))
+            )
         self.assertFalse(check["hide_viewport"])
 
     def test_jump_to_view3d_object_data_by_name_allow_edits(self) -> None:
@@ -1132,11 +1134,11 @@ class _TestServerMixin:
         if not self._interactive:
             return
         # Hide the default Cube.
-        self._execute_code((
+        self._execute_code(
                 "import bpy\n"
                 "bpy.data.objects['Cube'].hide_viewport = True\n"
                 "result = {'hidden': True}\n"
-            ))
+            )
         # Jump to it via data name with allow_edits enabled.
         data = self._test_tool("jump_to_view3d_object_data_by_name", {
             "name": "Cube", "allow_edits": True,
@@ -1144,10 +1146,10 @@ class _TestServerMixin:
         self.assertEqual(data["status"], "ok")
         self.assertEqual(data["data_name"], "Cube")
         # Verify the object is no longer hidden.
-        check = self._execute_code((
+        check = self._execute_code(
                 "import bpy\n"
                 "result = {'hide_viewport': bpy.data.objects['Cube'].hide_viewport}\n"
-            ))
+            )
         self.assertFalse(check["hide_viewport"])
 
     def test_execute_blender_code_stateful(self) -> None:
@@ -1155,12 +1157,12 @@ class _TestServerMixin:
         Verify that the Blender session is stateful across tool calls.
         """
         # Create an object.
-        self._execute_code((
+        self._execute_code(
                 "import bpy\n"
                 "bpy.ops.mesh.primitive_ico_sphere_add()\n"
                 "bpy.context.active_object.name = 'TestSphere'\n"
                 "result = {'created': True}\n"
-            ))
+            )
         # Verify it exists in a separate call.
         data = self._execute_code("import bpy\nresult = {'found': 'TestSphere' in bpy.data.objects}\n")
         self.assertTrue(data["found"])

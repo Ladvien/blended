@@ -11,13 +11,13 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
+import numpy as np
 import pytest
+import trimesh
 
-# The pure layer's venv is stdlib-only; the bench scripts need numpy and
-# trimesh, so this module skips cleanly there and runs where they exist
-# (the system python3 the bench chain uses).
-np = pytest.importorskip("numpy")
-trimesh = pytest.importorskip("trimesh")
+# The bench scripts need numpy, scipy and trimesh, which never enter `.venv`
+# (Blender, on Python 3.13, puts its site-packages first on sys.path).
+# `make test-bench-scripts` runs this directory in a throwaway env that has them.
 
 SCRIPTS = Path(__file__).resolve().parents[2] / "scripts"
 sys.path.insert(0, str(SCRIPTS))

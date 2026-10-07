@@ -48,7 +48,6 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass
-from textwrap import indent
 
 from blended.stages import STAGE_DONE, STAGE_EXPORT, STAGE_GATE, STAGE_LOCATE
 
@@ -176,10 +175,14 @@ def standalone_script(
         else:
             # It raised in the run after changing the scene, so the
             # replay must make the same change and meet the same error.
+            # The body goes in through exec(compile()) rather than being
+            # indented into a try block: indenting rewrites the
+            # continuation lines of a triple-quoted string.
             parts.append(
                 f"\n# --- {label} (raised in the run after changing the "
                 f"scene; reproduced) ---\n"
-                f"try:\n{indent(body, '    ')}\n"
+                f"try:\n"
+                f"    exec(compile({body!r}, {label!r}, \"exec\"), globals())\n"
                 f"except Exception as _error:\n"
                 f"    print({f'[bridge] {label} raised as it did in the run: '!r} "
                 f"+ repr(_error))\n"

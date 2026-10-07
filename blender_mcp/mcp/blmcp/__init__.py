@@ -10,16 +10,22 @@ All tools send code to the add-on to run.
 """
 
 __all__ = (
+    "LOOPBACK_ALLOWED_HOSTS",
+    "LOOPBACK_ALLOWED_ORIGINS",
     "argument_parser",
+    "loopback_transport_security",
     "main",
 )
 
 import argparse
 import importlib
+import ipaddress
 import os
 import pkgutil
+import socket
 
 import yaml
+from mcp.server.transport_security import TransportSecuritySettings
 
 from blmcp.tools_helpers.blended_bridge import BlendedFastMCP, blended_instructions
 
@@ -29,7 +35,40 @@ from blmcp.tools_helpers.blended_bridge import BlendedFastMCP, blended_instructi
 # This could be disabled if it no longer serves its purpose - as most agents wont use STDIO.
 _USE_HTTP_SUPPORT = True
 
+# The HTTP transport serves tools that run arbitrary Python in Blender and has
+# no authentication, so it is loopback-only and checks Host/Origin against the
+# loopback names (DNS-rebinding protection). A page on another origin reaches
+# 127.0.0.1 through the browser; the Origin check is what refuses it.
+LOOPBACK_ALLOWED_HOSTS = ["127.0.0.1:*", "localhost:*", "[::1]:*"]
+LOOPBACK_ALLOWED_ORIGINS = ["http://127.0.0.1:*", "http://localhost:*", "http://[::1]:*"]
+
 _TRANSPORTS = ("stdio", *(("http",) if _USE_HTTP_SUPPORT else ()))
+
+
+def loopback_transport_security() -> TransportSecuritySettings:
+    """DNS-rebinding protection that admits only loopback Host and Origin headers."""
+    return TransportSecuritySettings(
+        enable_dns_rebinding_protection=True,
+        allowed_hosts=LOOPBACK_ALLOWED_HOSTS,
+        allowed_origins=LOOPBACK_ALLOWED_ORIGINS,
+    )
+
+
+def _require_loopback_host(host: str, port: int) -> None:
+    """
+    Refuse a ``host`` that does not resolve only to loopback addresses.
+
+    Duplicated in the add-on's ``mcp_to_blender_server`` on purpose: the add-on
+    runs inside Blender and cannot import ``blmcp``. ``socket.gaierror`` from
+    an unresolvable host propagates unchanged.
+    """
+    infos = socket.getaddrinfo(host, port, socket.AF_UNSPEC, socket.SOCK_STREAM)
+    addresses = {str(info[4][0]) for info in infos}
+    if not all(ipaddress.ip_address(address.split("%", 1)[0]).is_loopback for address in addresses):
+        raise ValueError(
+            "refusing to listen on {!r}: it resolves to {}, not loopback; "
+            "this server runs arbitrary Python without authentication".format(host, ", ".join(sorted(addresses)))
+        )
 
 
 def argument_parser() -> argparse.ArgumentParser:
@@ -55,7 +94,7 @@ def argument_parser() -> argparse.ArgumentParser:
         parser.add_argument(
             "--host",
             default="127.0.0.1",
-            help="Host to bind to for HTTP transports (default: 127.0.0.1).",
+            help="Loopback host to bind to for HTTP transports (default: 127.0.0.1); any other host is refused.",
         )
         parser.add_argument(
             "--port", "-p",
@@ -96,10 +135,13 @@ def main() -> int:
 
     transport = args.transport
     if _USE_HTTP_SUPPORT and transport == "http":
-        # pylint: disable-next=import-error,no-name-in-module
-        from mcp.server.fastmcp.server import TransportSecuritySettings  # type: ignore[attr-defined]
         from starlette.applications import Starlette
         from starlette.middleware.cors import CORSMiddleware
+
+        try:
+            _require_loopback_host(args.host, args.port)
+        except (ValueError, OSError) as error:
+            parser.error(str(error))
 
         transport = "streamable-http"
 
@@ -107,9 +149,7 @@ def main() -> int:
         mcp.settings.port = args.port
         mcp.settings.streamable_http_path = "/"
         mcp.settings.stateless_http = True
-        mcp.settings.transport_security = TransportSecuritySettings(
-            enable_dns_rebinding_protection=False,
-        )
+        mcp.settings.transport_security = loopback_transport_security()
 
         # Add CORS middleware so browser-based clients
         # (e.g. llama.cpp web UI) can connect without preflight failures.

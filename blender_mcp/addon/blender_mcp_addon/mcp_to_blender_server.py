@@ -26,6 +26,7 @@ __all__ = (
     "use_log",
 )
 
+import ipaddress
 import json
 import math
 import select
@@ -251,7 +252,7 @@ def _execute_code(
         # `SystemExit` too: `exit()` / `raise SystemExit` bypass the `sys.exit` block in the sandbox
         # and would otherwise end the server (background mode) or escape into Blender's timer.
         try:
-            exec(code, namespace)
+            exec(code, namespace)  # noqa: S102 — executing client code is this server's job
         except (Exception, SystemExit):  # pylint: disable=broad-exception-caught
             response: dict[str, object] = {"status": "error", "message": traceback.format_exc()}
             if captured.stdout:
@@ -365,7 +366,7 @@ def _close_conn(conn: socket.socket) -> None:
     """
     try:
         conn.close()
-    except Exception:  # pylint: disable=broad-exception-caught
+    except Exception:  # pylint: disable=broad-exception-caught  # noqa: S110 — closing a connection ignores any error
         pass
 
 
@@ -646,6 +647,24 @@ def poll_blocking(timeout: float = _POLL_BLOCKING_TIMEOUT) -> bool:
     return _handle_blocking_client(conn)
 
 
+def _require_loopback_host(host: str, port: int) -> None:
+    """
+    Refuse any ``host`` that does not resolve only to loopback addresses.
+
+    This server executes arbitrary Python from whoever connects and has no
+    authentication, so a non-loopback bind (``0.0.0.0``, a LAN address) hands
+    code execution to the network. ``socket.gaierror`` from an unresolvable
+    host propagates unchanged.
+    """
+    infos = socket.getaddrinfo(host, port, socket.AF_UNSPEC, socket.SOCK_STREAM)
+    addresses = {str(info[4][0]) for info in infos}
+    if not all(ipaddress.ip_address(address.split("%", 1)[0]).is_loopback for address in addresses):
+        raise ValueError(
+            "refusing to listen on {!r}: it resolves to {}, not loopback; "
+            "this server runs arbitrary Python without authentication".format(host, ", ".join(sorted(addresses)))
+        )
+
+
 # ---------------------------------------------------------------------------
 # Public API.
 
@@ -665,6 +684,8 @@ def start(host: str, port: int) -> None:
     """
     if is_running():
         raise RuntimeError("Server is already running")
+
+    _require_loopback_host(host, port)
 
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     try:

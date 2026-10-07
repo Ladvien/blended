@@ -91,6 +91,7 @@ class _BlenderMCPPreferences(bpy.types.AddonPreferences):  # type: ignore[misc]
 
     host: StringProperty(  # type: ignore[valid-type]
         name="Host",
+        description="Loopback address to listen on (127.0.0.1 or localhost). Any other host is refused: this server runs arbitrary Python without authentication",
         default=mcp_to_blender_server.DEFAULT_HOST,
     )
     port: IntProperty(  # type: ignore[valid-type]

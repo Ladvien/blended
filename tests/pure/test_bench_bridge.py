@@ -89,9 +89,10 @@ def test_a_chunk_that_raised_after_changing_the_scene_is_replayed():
 
     assert script.included_count == 2 and script.excluded_count == 1
     assert "raised in the run after changing the scene; reproduced" in script.text
-    # The chunk's own source is indented into the try, and the failure is
-    # met the same way it was met live rather than swallowed in silence.
-    assert "try:\n    make_handle()\n    boom()\n" in script.text
+    # The chunk's own source is reproduced byte for byte through
+    # exec(compile()), and the failure is met the same way it was met live
+    # rather than swallowed in silence.
+    assert "exec(compile('make_handle()\\nboom()', 'chunk 1', \"exec\"), globals())" in script.text
     assert "except Exception as _error:" in script.text
     assert "raised as it did in the run" in script.text
     # A clean call is emitted exactly as before: no try, no change.

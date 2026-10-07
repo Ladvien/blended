@@ -38,6 +38,7 @@ def _deferred_tool_check_for_file_output(
 
 def main(params: Params) -> Result | Callable[[], dict[str, object] | None]:
     import os
+
     import bpy  # pylint: disable=import-error,no-name-in-module
 
     use_deferred = not bpy.app.background
@@ -52,6 +53,10 @@ def main(params: Params) -> Result | Callable[[], dict[str, object] | None]:
     # With `INVOKE_DEFAULT` a context manager would restore it too early.
     rd = scene.render
     orig_filepath = rd.filepath
+    # `write_still` appends the format's extension to `filepath`; resolve it
+    # here so the deferred check and the returned path name the real file.
+    if rd.use_file_extension and not output_path.lower().endswith(rd.file_extension):
+        output_path += rd.file_extension
     rd.filepath = output_path
 
     render_args = ('INVOKE_DEFAULT',) if use_deferred else ()

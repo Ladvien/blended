@@ -7,31 +7,20 @@ environment tell the truth loudly: every run returns a RunResult with
 the full traceback, and failed runs are matched against the drift
 catalog so known API moves are surfaced with their fix attached.
 
-Two modes, one result shape:
-  * in-process  — when `import bpy` works (bpy wheel, or already inside
-    Blender). Used by tests and by the live-session frontend.
-  * subprocess  — spawns `$BLENDER --background` for isolation. Used by
-    the headless frontend when a full Blender install is present.
+Execution is in-process, against the current bpy: a bpy wheel, or code
+already inside Blender.
 """
 
 from __future__ import annotations
 
 import contextlib
 import io
-import json
-import os
-import subprocess
-import tempfile
 import time
 import traceback as traceback_module
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from pathlib import Path
 
 from blended.drift.catalog import DriftEntry, match_traceback
-
-BLENDER_BINARY_ENVIRONMENT_VARIABLE = "BLENDER"
-SUBPROCESS_TIMEOUT_SECONDS = 240  # 3DCodeBench's per-script wall clock
 
 # How much of a chunk's stdout comes back to the agent. Bounded, because
 # SWE-agent measured a too-LARGE observation window costing more than a
@@ -138,73 +127,3 @@ def run_source_in_process(source_code: str, script_name: str = "<agent>") -> Run
 
     result, _ = execute_captured(execute_source, script_name, bpy.app.version_string)
     return result
-
-
-def run_script_subprocess(
-    script_path: Path,
-    blender_binary: str | None = None,
-) -> RunResult:
-    """Execute a script file in a fresh `blender --background` process."""
-    resolved_binary = blender_binary or os.environ.get(
-        BLENDER_BINARY_ENVIRONMENT_VARIABLE
-    )
-    if not resolved_binary:
-        raise RuntimeError(
-            f"No Blender binary: pass blender_binary or set "
-            f"${BLENDER_BINARY_ENVIRONMENT_VARIABLE}."
-        )
-    bootstrap_path = Path(__file__).with_name("_bootstrap.py")
-
-    started_at = time.perf_counter()
-    with tempfile.TemporaryDirectory(prefix="blended_run_") as scratch_directory:
-        result_path = Path(scratch_directory) / "result.json"
-        try:
-            completed = subprocess.run(
-                [
-                    resolved_binary,
-                    "--background",
-                    "--factory-startup",
-                    "--python",
-                    str(bootstrap_path),
-                    "--",
-                    str(script_path),
-                    str(result_path),
-                ],
-                capture_output=True,
-                text=True,
-                timeout=SUBPROCESS_TIMEOUT_SECONDS,
-                check=False,
-            )
-        except subprocess.TimeoutExpired:
-            return RunResult(
-                ok=False,
-                duration_s=time.perf_counter() - started_at,
-                error_type="TimeoutExpired",
-                error_message=f"Blender did not finish within {SUBPROCESS_TIMEOUT_SECONDS} s and was killed.",
-            )
-        duration_s = time.perf_counter() - started_at
-        if not result_path.exists():
-            # Blender's own stderr (or stdout) is the only record of why.
-            diagnostic = _bounded_stdout(completed.stderr or completed.stdout or "")
-            return RunResult(
-                ok=False,
-                duration_s=duration_s,
-                error_type="HarnessError",
-                error_message=(
-                    f"Blender exited with status {completed.returncode} without writing a result file."
-                    + (f"\n{diagnostic}" if diagnostic else "")
-                ),
-            )
-        result_payload = json.loads(result_path.read_text())
-
-    traceback_text = result_payload.get("traceback_text", "")
-    return RunResult(
-        ok=result_payload["ok"],
-        duration_s=duration_s,
-        blender_version=result_payload.get("blender_version", ""),
-        error_type=result_payload.get("error_type", ""),
-        error_message=result_payload.get("error_message", ""),
-        traceback_text=traceback_text,
-        stdout_text=_bounded_stdout(result_payload.get("stdout_text", "")),
-        matched_drift=tuple(match_traceback(traceback_text)),
-    )

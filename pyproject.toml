@@ -25,7 +25,11 @@ where = ["src"]
 blended = ["py.typed", "agent/prompts/*.j2"]
 
 [tool.pytest.ini_options]
-testpaths = ["tests"]
+# tests/blender first: its modules skip at import without bpy, leaving no
+# module of the same basename behind to collide with tests/pure's. The other
+# order made a bare `pytest` fail collection (measured 2026-10-07).
+# tests/bench_scripts is deliberately absent: `make test-bench-scripts`.
+testpaths = ["tests/blender", "tests/pure"]
 markers = [
     "blender: requires a working bpy (Blender-as-module or a live Blender).",
 ]
@@ -67,6 +71,9 @@ extend-immutable-calls = [
 # structural requirements of running standalone against bpy, not
 # untidiness, so E402 is silenced for examples only.
 "examples/*.py" = ["E402"]
+# The vendored Blender Lab subtree keeps its upstream style; these mirror the
+# ignores in blender_mcp/mcp/pyproject.toml's own lint policy.
+"blender_mcp/**" = ["UP032", "BLE001", "SIM102", "SIM114", "RUF023"]
 
 [tool.uv.workspace]
 members = [

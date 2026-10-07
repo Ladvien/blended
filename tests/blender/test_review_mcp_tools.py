@@ -140,3 +140,47 @@ def test_image_downscale_raises_when_no_downscale_fits(factory_scene, tmp_path):
     source = _noise_png(tmp_path)
     with pytest.raises(RuntimeError, match="byte limit"):
         template._image_downscale_to_size_limit(str(tmp_path), str(source), IMPOSSIBLE_LIMIT_BYTES)
+
+
+# --- review follow-up 2026-10-07 (D5): render paths and the objects summary ---
+
+THUMBNAIL_RESOLUTION_PX = 32
+HIDDEN_OBJECT_NAME = "HiddenInViewport"
+
+
+@pytest.mark.parametrize("toolcode_file", ["render_viewport_to_path_toolcode.py", "render_thumbnail_to_path_toolcode.py"])
+def test_a_render_tool_returns_the_file_it_wrote(toolcode_file):
+    """`write_still` appends the format's extension to `filepath`, so the tool
+    answered with 'probe' while the file on disk was 'probe.png': the returned
+    path named a file Blender never wrote."""
+    import os
+
+    bpy.ops.wm.read_factory_settings()  # not empty: the render needs the default camera
+    render = bpy.context.scene.render
+    render.engine = "BLENDER_WORKBENCH"
+    render.resolution_x = THUMBNAIL_RESOLUTION_PX
+    render.resolution_y = THUMBNAIL_RESOLUTION_PX
+    toolcode = _load_toolcode(toolcode_file)
+
+    result = toolcode.main(toolcode.Params(output_path="probe"))
+
+    assert result.status == "ok", result
+    assert result.filepath.endswith(".png"), result.filepath
+    assert os.path.isfile(result.filepath), result.filepath
+
+
+def test_the_objects_summary_separates_viewport_hide_from_view_layer_hide(factory_scene):
+    """`hide_viewport` was filled from `obj.hide_get()`, the VIEW LAYER eye, so
+    an object disabled in viewports (the monitor icon) read as not hidden."""
+    mesh = bpy.data.meshes.new(HIDDEN_OBJECT_NAME)
+    hidden = bpy.data.objects.new(HIDDEN_OBJECT_NAME, mesh)
+    factory_scene.collection.objects.link(hidden)
+    hidden.hide_viewport = True
+    summary = _load_toolcode("get_objects_summary_toolcode.py")
+
+    result = summary.main(None)
+
+    objects = [o for c in result.collections for o in c["objects"]]
+    (info,) = [o for o in objects if o["name"] == HIDDEN_OBJECT_NAME]
+    assert info["hide_viewport"] is True
+    assert info["hide_in_view_layer"] is False

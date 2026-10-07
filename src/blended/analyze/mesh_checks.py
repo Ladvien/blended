@@ -57,6 +57,7 @@ class MeshReport:
 
     object_name: str
     triangle_count: int
+    # Edges shared by more than two faces plus wire edges (shared by none).
     non_manifold_edge_count: int
     boundary_edge_count: int
     zero_area_face_count: int
@@ -623,8 +624,12 @@ def analyze_object(blender_object) -> MeshReport:
                 face.calc_area() for face in working_mesh.faces
             )
             triangle_count = sum(len(face.verts) - 2 for face in working_mesh.faces)
+            # Blender's own Select Non-Manifold: an edge shared by more than
+            # two faces, or by none (a wire edge).
             non_manifold_edge_count = sum(
-                1 for edge in working_mesh.edges if len(edge.link_faces) > 2
+                1
+                for edge in working_mesh.edges
+                if len(edge.link_faces) > 2 or len(edge.link_faces) == 0
             )
             boundary_edge_count = sum(
                 1 for edge in working_mesh.edges if len(edge.link_faces) == 1

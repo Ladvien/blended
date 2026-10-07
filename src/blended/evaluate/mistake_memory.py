@@ -654,7 +654,8 @@ MISTAKES: tuple[MistakeRecord, ...] = (
         cause=(
             "ingest.import_glb is the GENERATED-asset lane. It "
             "deliberately normalizes what it reads — joins the parts, "
-            "recentres on the vertex CENTROID and re-grounds — which is "
+            "recentres on the vertex CENTROID (the bounding-box centre since "
+            "2026-10-07) and re-grounds — which is "
             "correct for an arbitrary generated mesh and destructive for "
             "evidence. A stool's vertex centroid is not its axis, so the "
             "round trip moved the feet off the 0.14 m circle the "
@@ -2228,8 +2229,9 @@ MISTAKES: tuple[MistakeRecord, ...] = (
             "blended.harness', and the scene stayed empty."
         ),
         cause=(
-            "blended/run/__init__.py eagerly imports run.batch, which "
-            "imports blended.harness at module level. harness -> "
+            "blended/run/__init__.py eagerly imported run.batch (deleted "
+            "2026-10-07), which imported blended.harness at module level. "
+            "harness -> "
             "run.stages -> run/__init__ -> run.batch -> harness is a cycle "
             "whenever harness is the FIRST of the two imported. The pure "
             "suite never saw it because an earlier test had already "
@@ -2278,7 +2280,7 @@ MISTAKES: tuple[MistakeRecord, ...] = (
             "budget rather than reading 68 as a failure of the surface."
         ),
         guarded_by=(
-            "tests/pure/test_agent_cancel.py::"
+            "tests/pure/test_turn_token_budget.py::"
             "test_the_turn_stops_at_the_seam_when_the_token_budget_is_exceeded "
             "(the seam); the derivation rule in the constant's comment "
             "(the number)"
@@ -3207,7 +3209,7 @@ MISTAKES: tuple[MistakeRecord, ...] = (
         ),
         fix="Restored sheet.save and return output_path.",
         guarded_by=(
-            "tests/pure/test_review_analyze_capture.py::"
+            "tests/bench_scripts/test_contact_sheet_pillow.py::"
             "test_contact_sheet_pillow_branch_returns_the_written_sheet"
         ),
         recorded_on="2026-10-07",
@@ -3282,27 +3284,10 @@ MISTAKES: tuple[MistakeRecord, ...] = (
             "RunResult (measured in Blender 5.2 background)."
         ),
         cause="execute_captured caught Exception only; SystemExit is a BaseException.",
-        fix="Catch (Exception, SystemExit) in executor.execute_captured and run/_bootstrap.py.",
+        fix="Catch (Exception, SystemExit) in executor.execute_captured.",
         guarded_by=(
             "tests/pure/test_review_harness_core.py::"
             "test_a_chunk_that_calls_sys_exit_comes_back_as_a_failed_result"
-        ),
-        recorded_on="2026-10-07",
-    ),
-    MistakeRecord(
-        identifier="subprocess-executor-raises-and-drops-the-cause",
-        scope="harness_code",
-        failure=(
-            "run_script_subprocess raised TimeoutExpired past a 1 s cap, and "
-            "a Blender that exited 7 with stderr 'segfault in render' "
-            "produced only 'exited without writing a result file'."
-        ),
-        cause="The subprocess result was discarded and the timeout was not caught.",
-        fix="A timeout is a RunResult; a missing result file reports returncode and a bounded stderr tail.",
-        guarded_by=(
-            "tests/pure/test_review_harness_core.py::"
-            "test_subprocess_timeout_is_a_failed_result and "
-            "::test_subprocess_without_result_file_reports_status_and_stderr"
         ),
         recorded_on="2026-10-07",
     ),
@@ -3336,22 +3321,6 @@ MISTAKES: tuple[MistakeRecord, ...] = (
         guarded_by=(
             "tests/pure/test_review_harness_core.py::"
             "test_locate_feedback_carries_the_scene_state_reason"
-        ),
-        recorded_on="2026-10-07",
-    ),
-    MistakeRecord(
-        identifier="run-batch-shared-export-path",
-        scope="harness_code",
-        failure=(
-            "run_batch with export_glb_path set wrote one file: every "
-            "item's result.export_path named the same path."
-        ),
-        cause="The settings were copied verbatim to every item.",
-        fix="Per-item <stem>_<label><suffix>; duplicate labels are refused.",
-        guarded_by=(
-            "tests/blender/test_review_harness_core.py::"
-            "test_batch_exports_one_file_per_item and "
-            "::test_batch_refuses_duplicate_labels"
         ),
         recorded_on="2026-10-07",
     ),
@@ -3681,6 +3650,336 @@ MISTAKES: tuple[MistakeRecord, ...] = (
         guarded_by=(
             "tests/pure/test_openai_transport.py::"
             "test_the_eye_rides_the_daemon_when_the_writer_rides_bmb"
+        ),
+        recorded_on="2026-10-07",
+    ),
+    MistakeRecord(
+        identifier="wire-edge-passed-the-manifold-gate",
+        scope="harness_code",
+        failure=(
+            "A closed six-face cube plus one edge to a lone vertex measured "
+            "non_manifold_edge_count == 0 and failures(MeshBudget()) listed "
+            "no non-manifold entry (assert 0 == 1); the gate passed a mesh "
+            "with a hanging wire edge."
+        ),
+        cause=(
+            "analyze_object counted only edges shared by MORE than two faces. "
+            "An edge shared by none (link_faces == 0) is neither that nor a "
+            "boundary edge (== 1), yet Blender's own Select Non-Manifold "
+            "selects it. A gate that counts a narrower predicate than the "
+            "name it reports under cannot fail on the case it omits, and no "
+            "golden carried a wire edge."
+        ),
+        fix="The predicate is `len(edge.link_faces) > 2 or len(edge.link_faces) == 0`.",
+        guarded_by=(
+            "tests/blender/test_review_followup.py::"
+            "test_a_wire_edge_on_a_closed_cube_fails_the_manifold_gate"
+        ),
+        recorded_on="2026-10-07",
+    ),
+    MistakeRecord(
+        identifier="splayed-leg-axis-ended-short-of-the-top",
+        scope="harness_code",
+        failure=(
+            "On STOOL_SPEC the leg axis, walked length_m up from the base, "
+            "ended at z = 0.409632 against top_z_m 0.41 (0.37 mm short) and "
+            "0.06 mm outboard of top_radius_m; the foot circle was exact."
+        ),
+        cause=(
+            "length_m added sole_drop_m, which is measured straight down, to "
+            "a length measured along the splayed axis: the axis must regain "
+            "drop / cos(splay). The test that was meant to guard it asserted "
+            "the same formula (hypot + drop) as its expectation, so the "
+            "derivation it checked was the derivation it shared."
+        ),
+        fix=(
+            "length_m = hypot(rise, run) + sole_drop_m / cos(splay_rad); the "
+            "guard now walks the axis from the base and compares where it "
+            "ends with top_z_m and top_radius_m."
+        ),
+        guarded_by=(
+            "tests/pure/test_splayed_leg_spec.py::"
+            "test_the_axis_top_lands_on_the_top_circle"
+        ),
+        recorded_on="2026-10-07",
+    ),
+    MistakeRecord(
+        identifier="glb-import-recentred-on-vertex-mean",
+        scope="harness_code",
+        failure=(
+            "A unit cube with ten cuts on each +X face edge, exported to GLB "
+            "and read back by import_glb, had its bounding-box centre x at "
+            "-0.3846 m (assert 0.3846154 < 1e-05): the mean of the vertices "
+            "sat at 0, the box did not."
+        ),
+        cause=(
+            "import_glb recentred on the mean of the vertex coordinates, so "
+            "the result depended on tessellation density; the stated "
+            "convention is 'centered on X/Y'."
+        ),
+        fix="Recentre on the bounding-box centre, (min + max) / 2 on x and y.",
+        guarded_by=(
+            "tests/blender/test_review_followup.py::"
+            "test_import_glb_centres_on_the_bounding_box_not_the_vertex_mean"
+        ),
+        recorded_on="2026-10-07",
+    ),
+    MistakeRecord(
+        identifier="reset-left-frame-range-units-and-resolution",
+        scope="harness_code",
+        failure=(
+            "The review measured frame_start/end/current (5/99/42), "
+            "unit_settings.scale_length (0.01) and render.resolution_x (321) "
+            "surviving reset_scene. This change's own fail-before: "
+            "assert_clean_scene() after frame_end = 99 raised nothing "
+            "('DID NOT RAISE SceneNotClean')."
+        ),
+        cause=(
+            "reset_scene wiped datablocks and restored fps only, and "
+            "assert_clean_scene checked the same two things, so a rebuild "
+            "started from whatever the previous build left in the scene "
+            "settings."
+        ),
+        fix=(
+            "reset_scene restores the frame range and current frame, the "
+            "unit system, scale and length unit and the render resolution "
+            "to Blender 5.2.0's factory values (named CANONICAL_* "
+            "constants); assert_clean_scene reports each mismatch."
+        ),
+        guarded_by=(
+            "tests/blender/test_review_followup.py::"
+            "test_reset_scene_restores_frame_range_units_and_resolution and "
+            "::test_a_stale_frame_end_after_reset_is_not_a_clean_scene"
+        ),
+        recorded_on="2026-10-07",
+    ),
+    MistakeRecord(
+        identifier="addon-bound-any-host-without-auth",
+        scope="harness_code",
+        failure=(
+            "mcp_to_blender_server.start('0.0.0.0', port) bound and "
+            "listened (pytest.raises(ValueError): 'DID NOT RAISE'); the "
+            "server runs arbitrary Python from any peer with no "
+            "authentication."
+        ),
+        cause=(
+            "The host preference and --host accepted any string; only the "
+            "default ('localhost') was loopback."
+        ),
+        fix=(
+            "start() resolves the host first and refuses, with a ValueError "
+            "naming the addresses, unless every one is loopback."
+        ),
+        guarded_by=(
+            "tests/blender/test_review_mcp_addon.py::"
+            "test_the_server_refuses_a_non_loopback_host and "
+            "::test_the_server_still_binds_loopback"
+        ),
+        recorded_on="2026-10-07",
+    ),
+    MistakeRecord(
+        identifier="http-transport-without-rebinding-protection",
+        scope="harness_code",
+        failure=(
+            "blender-mcp --transport http set "
+            "enable_dns_rebinding_protection=False and accepted --host "
+            "0.0.0.0 (read from the code; the pre-fix server was not run): "
+            "with run_python behind it, any page that reaches the port had "
+            "code execution in Blender. After the fix, a live server "
+            "answered Host evil.example with 421 and Origin "
+            "http://evil.example with 403, and 200 for a loopback Host and "
+            "a localhost Origin."
+        ),
+        cause=(
+            "Upstream disabled the check so the llama.cpp web UI could "
+            "connect, and nothing restricted the bind address."
+        ),
+        fix=(
+            "--host must resolve only to loopback (parser.error otherwise); "
+            "the transport allows only loopback Host and Origin headers "
+            "(LOOPBACK_ALLOWED_HOSTS / LOOPBACK_ALLOWED_ORIGINS). CORS "
+            "stays, since the Origin check now refuses other pages."
+        ),
+        guarded_by=(
+            "tests/pure/test_review_followup.py::"
+            "test_the_http_transport_refuses_a_non_loopback_host and "
+            "::test_the_transport_security_settings_reject_a_rebound_host_and_origin"
+        ),
+        recorded_on="2026-10-07",
+    ),
+    MistakeRecord(
+        identifier="raised-chunk-reindented-string-literals",
+        scope="harness_code",
+        failure=(
+            "A raised-but-built chunk whose source was NOTE = '''a\\nb''' "
+            "replayed with NOTE == 'a\\n    b' (assert 'a\\n    b' == "
+            "'a\\nb'): the bake built a different value than the run did."
+        ),
+        cause=(
+            "standalone_script wrapped the body in try: with "
+            "textwrap.indent, which also indents the continuation lines "
+            "inside a triple-quoted string."
+        ),
+        fix=(
+            "The body is emitted as exec(compile(<repr>, <label>, 'exec'), "
+            "globals()) inside the try, byte for byte; the labels are "
+            "unchanged because scripts/finetune_* prefix-match them."
+        ),
+        guarded_by=(
+            "tests/pure/test_review_followup.py::"
+            "test_a_raised_chunk_keeps_its_multiline_string_literals"
+        ),
+        recorded_on="2026-10-07",
+    ),
+    MistakeRecord(
+        identifier="render-path-returned-a-file-blender-never-wrote",
+        scope="harness_code",
+        failure=(
+            "render_viewport_to_path and render_thumbnail_to_path answered "
+            "with filepath '<tempdir>/blender_mcp/probe' for output_path "
+            "'probe' (assert result.filepath.endswith('.png') failed); "
+            "with the extension resolved first, the file exists at "
+            "'.../probe.png'."
+        ),
+        cause=(
+            "write_still appends the format's extension to render.filepath "
+            "when use_file_extension is set, and the tool reported the "
+            "path it had set, not the path Blender wrote. The deferred "
+            "check for the file watched the same wrong path."
+        ),
+        fix=(
+            "The extension (render.file_extension) is appended before "
+            "filepath is set, so the deferred check and the returned path "
+            "name the real file."
+        ),
+        guarded_by=(
+            "tests/blender/test_review_mcp_tools.py::"
+            "test_a_render_tool_returns_the_file_it_wrote"
+        ),
+        recorded_on="2026-10-07",
+    ),
+    MistakeRecord(
+        identifier="objects-summary-hide-viewport-read-view-layer-hide",
+        scope="harness_code",
+        failure=(
+            "get_objects_summary reported hide_viewport False for an "
+            "object whose hide_viewport was True (assert False is True)."
+        ),
+        cause=(
+            "The field was filled from obj.hide_get(), the view-layer eye, "
+            "which is a different property from the monitor icon "
+            "obj.hide_viewport."
+        ),
+        fix=(
+            "hide_viewport reads obj.hide_viewport; the view-layer hide "
+            "is reported separately as hide_in_view_layer."
+        ),
+        guarded_by=(
+            "tests/blender/test_review_mcp_tools.py::"
+            "test_the_objects_summary_separates_viewport_hide_from_view_layer_hide"
+        ),
+        recorded_on="2026-10-07",
+    ),
+    MistakeRecord(
+        identifier="watchdog-kill-surfaced-as-json-error",
+        scope="harness_code",
+        failure=(
+            "A CLI killed by the watchdog mid-frame (stdout ended on "
+            "'{\"type\":') raised JSONDecodeError: Expecting value: line 1 "
+            "column 9 (char 8) instead of 'did not answer within'."
+        ),
+        cause=(
+            "The kill truncates the last stdout line; _consume parsed that "
+            "fragment and the except BaseException handler re-raised the "
+            "symptom before the timed_out check could report the cause."
+        ),
+        fix="chat() re-raises only when the watchdog did not fire; otherwise the timeout is reported.",
+        guarded_by=(
+            "tests/pure/test_review_followup.py::"
+            "test_a_watchdog_kill_mid_frame_reports_the_timeout_not_a_json_error"
+        ),
+        recorded_on="2026-10-07",
+    ),
+    MistakeRecord(
+        identifier="auth-status-non-object-crashed-check-connection",
+        scope="harness_code",
+        failure=(
+            "`claude auth status` printing '[]' raised AttributeError: "
+            "'list' object has no attribute 'get' out of check_connection."
+        ),
+        cause="Only json.loads sat inside the try; the result was used as a dict unchecked.",
+        fix="A payload that is not a JSON object is a failed check naming its type.",
+        guarded_by=(
+            "tests/pure/test_review_followup.py::"
+            "test_an_auth_status_that_is_not_a_json_object_is_a_failed_check"
+        ),
+        recorded_on="2026-10-07",
+    ),
+    MistakeRecord(
+        identifier="duplicate-skill-module-name-unchecked",
+        scope="harness_code",
+        failure=(
+            "With the first registered skill module listed twice, "
+            "validate_modules() returned [] while get_module served only "
+            "the first."
+        ),
+        cause="`registered` was a set, so a repeated name collapsed to one.",
+        fix="validate_modules counts names and reports any registered more than once.",
+        guarded_by=(
+            "tests/pure/test_review_followup.py::"
+            "test_a_duplicate_skill_module_name_is_a_registry_problem"
+        ),
+        recorded_on="2026-10-07",
+    ),
+    MistakeRecord(
+        identifier="bmb-key-committed-in-public-history",
+        scope="process",
+        failure=(
+            "The bmb llama-swap key (64 hex) sat in "
+            "tests/pure/test_openai_transport.py from commit 1c65544 in a "
+            "PUBLIC repository. Rotated 2026-10-07: a POST to "
+            "/v1/chat/completions with the new key answered 400 (the key "
+            "passed auth; the probe sends a nonexistent model) and with "
+            "the old key 401."
+        ),
+        cause=(
+            "A real credential was pasted into a test as a literal; the "
+            "tree was cleaned later but history keeps it, and cleaning the "
+            "tree is not rotating the key."
+        ),
+        fix=(
+            "A new key replaced the old entry in bmb's llama-swap apiKeys "
+            "(hot-reloaded) and in ~/.blended/bmb_api_key (mode 0600); "
+            "history was not rewritten, by the owner's decision. The test "
+            "now feeds a fake key through the key file."
+        ),
+        guarded_by=(
+            "tests/pure/test_openai_transport.py::"
+            "test_the_bmb_key_file_feeds_bmb_models_only"
+        ),
+        recorded_on="2026-10-07",
+    ),
+    MistakeRecord(
+        identifier="drift-fix-text-claimed-silent-empty",
+        scope="harness_code",
+        failure=(
+            "The drift catalog told the model that reading action.fcurves "
+            "'returns empty and silently does nothing'. Measured on Blender "
+            "5.2.0 LTS: it raises AttributeError ('Action' object has no "
+            "attribute 'fcurves'). The text is in the assembled prompt."
+        ),
+        cause=(
+            "The fix text described a guess about the failure mode, not the "
+            "traceback the signature matches."
+        ),
+        fix=(
+            "The text states the measured AttributeError; the assembled "
+            "fingerprint moved a10:c68237772de1 -> a10:c16070bc954b with "
+            "no new revision (the OT-24 precedent) and the pin was rewritten."
+        ),
+        guarded_by=(
+            "tests/blender/test_review_analyze_capture.py::"
+            "test_drift_signatures_match_the_error_blender_really_raises"
         ),
         recorded_on="2026-10-07",
     ),

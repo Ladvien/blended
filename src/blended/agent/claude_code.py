@@ -667,13 +667,17 @@ class ClaudeCodeTransport:
         watchdog = threading.Timer(self.timeout_seconds, kill_on_deadline)
         watchdog.start()
         started = time.monotonic()
+        assembled: _Assembled | None = None
         try:
             assembled = self._consume(process.stdout, tools)
         except BaseException:
             # A malformed frame (or an interrupt) must not leave the CLI
             # running for the rest of its 900 s ceiling, un-waited.
             process.kill()
-            raise
+            # The watchdog's kill ends stdout mid-line, and that fragment is
+            # what failed to parse: report the timeout, not the symptom.
+            if not timed_out.is_set():
+                raise
         finally:
             watchdog.cancel()
             writer.join(timeout=PIPE_THREAD_JOIN_SECONDS)
@@ -686,6 +690,9 @@ class ClaudeCodeTransport:
                 f"Claude Code did not answer within {self.timeout_seconds} s "
                 f"(model {self.model}). {stderr_text[:300]}"
             )
+        # Reaching here, an exception was re-raised above unless the watchdog
+        # fired, and that case raised "did not answer within".
+        assert assembled is not None
         if assembled.result is None:
             raise RuntimeError(
                 f"Claude Code exited {return_code} with no result frame "
@@ -767,6 +774,11 @@ class ClaudeCodeTransport:
                 cwd=str(self.working_directory),
             ).stdout
             status = json.loads(status_output or "{}")
+            if not isinstance(status, dict):
+                return False, (
+                    f"`{binary} auth status` printed {type(status).__name__}, "
+                    f"not a JSON object"
+                )
         except Exception as error:  # noqa: BLE001 — diagnostic path
             return False, f"`{binary} auth status` failed: {error}"
         if not status.get("loggedIn"):

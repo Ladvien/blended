@@ -8,7 +8,7 @@ acceptance reports number for number.
 
 This is what a golden snapshot is checked against. Re-importing the
 exported .glb would NOT do: `ingest.import_glb` normalizes what it
-reads — it recentres on the vertex centroid and re-grounds — which is
+reads — it recentres on its bounding-box centre and re-grounds — which is
 right for an arbitrary generated asset and wrong for evidence, because
 it moves the very placement the snapshot exists to pin.
 

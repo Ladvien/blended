@@ -37,7 +37,7 @@ and in `prompt_versions`, where v9 still carries its measured outcome.
 Each is rebuilt by REPLAYING the run's own recorded chunks, so this
 suite needs no model, no network and no lucky generation. Replay rather
 than re-import: `ingest.import_glb` normalizes what it reads — it
-recentres on the vertex centroid and re-grounds — which is right for an
+recentres on its bounding-box centre and re-grounds — which is right for an
 arbitrary generated asset and wrong for evidence, because it moves the
 very placement the snapshot exists to pin. The .glb files beside these
 tests are for a human to turn; the numbers come from the replay.

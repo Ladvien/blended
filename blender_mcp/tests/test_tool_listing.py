@@ -13,9 +13,10 @@ import os
 import sys
 import unittest
 
-from blended.agent.tools import TOOL_SCHEMAS
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
+
+from blended.agent.tools import TOOL_SCHEMAS
 
 # Root of the repository.
 _REPO_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -454,7 +455,9 @@ EXPECTED_TOOLS = [
     {
         "name": "render_thumbnail_to_path",
         "description": "\n"
-        "Render a small, low-quality thumbnail to *output_path* (temporarily overrides settings).\n",
+        "Render a small, low-quality thumbnail into Blender's temp directory as\n"
+        "``blender_mcp/<basename of output_path>`` (temporarily overrides settings);\n"
+        "the format's extension is added when missing. Returns the written ``filepath``.\n",
         "inputSchema": {
             "properties": {
                 "output_path": {
@@ -472,7 +475,9 @@ EXPECTED_TOOLS = [
     {
         "name": "render_viewport_to_path",
         "description": "\n"
-        "Render the current scene to *output_path* using current render settings.\n",
+        "Render the current scene into Blender's temp directory as ``blender_mcp/<basename of output_path>``\n"
+        "using current render settings; the format's extension is added when missing.\n"
+        "Returns the written ``filepath``.\n",
         "inputSchema": {
             "properties": {
                 "output_path": {
@@ -627,21 +632,20 @@ def _list_tools() -> list[dict[str, object]]:
             args=["-m", "blmcp"],
             env=env,
         )
-        async with stdio_client(params) as (read, write):
-            async with ClientSession(read, write) as session:
-                await session.initialize()
-                result = await session.list_tools()
-                # blended's surface is pinned by TOOL_SCHEMAS_FINGERPRINT;
-                # this snapshot pins the upstream tools only.
-                return [
-                    {
-                        "name": t.name,
-                        "description": t.description,
-                        "inputSchema": t.inputSchema,
-                    }
-                    for t in result.tools
-                    if t.name not in _BLENDED_TOOL_NAMES
-                ]
+        async with stdio_client(params) as (read, write), ClientSession(read, write) as session:
+            await session.initialize()
+            result = await session.list_tools()
+            # blended's surface is pinned by TOOL_SCHEMAS_FINGERPRINT;
+            # this snapshot pins the upstream tools only.
+            return [
+                {
+                    "name": t.name,
+                    "description": t.description,
+                    "inputSchema": t.inputSchema,
+                }
+                for t in result.tools
+                if t.name not in _BLENDED_TOOL_NAMES
+            ]
 
     return asyncio.run(_run())
 

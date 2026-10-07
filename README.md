@@ -56,6 +56,8 @@ blender_mcp/     Blender Lab's MCP server (vendored subtree) extended to serve t
 scripts/         entry points: converge, replay, calibrate, pin, 3DCodeBench sweep
 tests/pure/      no Blender required, runs anywhere
 tests/blender/   requires `import bpy` (pip wheel or Blender's Python)
+tests/bench_scripts/  the bench scripts' tests (numpy, scipy, trimesh, Pillow),
+                 run by `make test-bench-scripts`
 tests/gui/       the viewport-framing check, run by `make test-viewport-gui`
 docs/            specification, roadmap, plans, research
 ```
@@ -142,7 +144,10 @@ make test-mcp-blender          # MCP client -> server -> real background
                                # Blender -> blended's dispatch_tool
 make test-viewport-gui         # viewport framing in a GUI Blender (opens
                                # a window for a few seconds)
-make test                      # pure + Blender app + MCP unit; the gate
+make test-bench-scripts        # tests/bench_scripts in a throwaway env with
+                               # numpy, scipy, trimesh and Pillow (never in
+                               # .venv; downloads wheels on first run)
+make test                      # pure + Blender app + bench scripts + MCP unit; the gate
 make test-repro ARGS="--builder barrel"
                                # build twice in two fresh Blenders under
                                # different PYTHONHASHSEED; identical

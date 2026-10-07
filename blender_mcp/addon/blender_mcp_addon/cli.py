@@ -32,7 +32,7 @@ def cli_execute(argv: list[str]) -> int:
     parser.add_argument(
         "--host",
         default=mcp_to_blender_server.DEFAULT_HOST,
-        help="Host to bind to.",
+        help="Loopback address to bind to (127.0.0.1 or localhost); any other host is refused.",
     )
     parser.add_argument(
         "--port",

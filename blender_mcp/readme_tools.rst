@@ -81,11 +81,16 @@ The tools exposed by the MCP server.
    Move the 3D viewport to the object whose data block matches *name*.
 
 ``render_thumbnail_to_path``
-   Render a small, low-quality thumbnail to *output_path* (temporarily
-   overrides settings).
+   Render a small, low-quality thumbnail into Blender's temp directory as
+   ``blender_mcp/<basename of output_path>`` (temporarily overrides
+   settings); the format's extension is added when missing. Returns the
+   written ``filepath``.
 
 ``render_viewport_to_path``
-   Render the current scene to *output_path* using current render settings.
+   Render the current scene into Blender's temp directory as
+   ``blender_mcp/<basename of output_path>`` using current render settings;
+   the format's extension is added when missing. Returns the written
+   ``filepath``.
 
 ``search_api_docs``
    Full-text search over the bundled Blender Python API reference.

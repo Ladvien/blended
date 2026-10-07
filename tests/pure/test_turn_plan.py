@@ -35,7 +35,7 @@ from blended.agent.plan import (
 )
 
 # ---------------------------------------------------------------------------
-# Scripted client — copies the established pattern from test_agent_cancel.
+# Scripted client — copies the established pattern from test_turn_token_budget.
 # ---------------------------------------------------------------------------
 
 
