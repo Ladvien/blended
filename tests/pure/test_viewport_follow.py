@@ -47,3 +47,19 @@ def test_unlinked_constructor_result_is_named_for_blender_to_filter() -> None:
         "ok", intermediates_created=("Box",), intermediates_resolved=("Box",)
     )
     assert frame_target_names(outcome) == ("Box",)
+
+
+def test_the_viewport_line_names_a_few_objects_then_counts_the_rest():
+    """A call that changed two hundred objects must not answer with two hundred names."""
+    from blended.viewport_follow import MAXIMUM_NAMES_ON_LINE, _framed_line
+
+    names = tuple(f"Part{index}" for index in range(MAXIMUM_NAMES_ON_LINE + 5))
+
+    line = _framed_line(names, 2)
+
+    assert line == (
+        "viewport: framed "
+        + ", ".join(names[:MAXIMUM_NAMES_ON_LINE])
+        + " and 5 more in 2 3D viewport(s)"
+    )
+    assert _framed_line(("Crate",), 1) == "viewport: framed Crate in 1 3D viewport(s)"

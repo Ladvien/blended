@@ -10,10 +10,7 @@
       "command": "/Users/ladvien/blended/.venv/bin/blender-mcp",
       "args": [
         "--exit-on-source-change"
-      ],
-      "env": {
-        "BLENDER_PATH": "/Applications/Blender.app/Contents/MacOS/Blender"
-      }
+      ]
     }
   }
 }

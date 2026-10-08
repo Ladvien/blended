@@ -8,7 +8,9 @@ wire call, image content, errors raised in Blender, the event log, and
 the source fingerprint that keeps the server and Blender fresh.
 
 No Blender: ``send_code`` is replaced with a stub that answers like the
-add-on does. The live path is ``test_blender_mcp_with_blender.py``.
+add-on does, and the probe for the open Blender is stubbed to find one. The
+live path is ``test_blender_mcp_with_blender.py``; the pause is
+``tests/pure/test_live_blender.py``.
 """
 
 __all__ = ()
@@ -58,6 +60,17 @@ def _ok_response(outcome: ToolOutcome) -> dict[str, object]:
     }
 
 
+def _stub_live_blender_probe(test_case: unittest.TestCase) -> None:
+    """
+    Make the probe for the open Blender find one. It is a socket connect, so
+    with no Blender listening it would pause every call before the stubbed
+    ``send_code`` is reached.
+    """
+    patcher = mock.patch.object(blended_bridge, "require_live_blender", lambda: None)
+    patcher.start()
+    test_case.addCleanup(patcher.stop)
+
+
 class TestBlendedBridge(unittest.TestCase):
     def setUp(self) -> None:
         self._directory = tempfile.TemporaryDirectory()
@@ -71,6 +84,7 @@ class TestBlendedBridge(unittest.TestCase):
         patcher = mock.patch.object(blended_bridge, "send_code", self._send_code)
         patcher.start()
         self.addCleanup(patcher.stop)
+        _stub_live_blender_probe(self)
         self.addCleanup(self._directory.cleanup)
 
     def _send_code(self, code: str, strict_json: bool) -> dict[str, object]:
@@ -461,6 +475,7 @@ class TestHandoff(unittest.TestCase):
         patcher = mock.patch.object(blended_bridge, "send_code", self._send_code)
         patcher.start()
         self.addCleanup(patcher.stop)
+        _stub_live_blender_probe(self)
 
     @staticmethod
     def _send_code(_code: str, _strict_json: bool) -> dict[str, object]:
@@ -634,7 +649,8 @@ class TestToolcodeReimport(unittest.TestCase):
             encoding="utf-8",
         )
         (src / "blended" / "viewport_follow.py").write_text(
-            "def follow_viewport(outcome):\n    raise AssertionError('framed a read-only probe')\n",
+            "def snapshot_scene():\n    raise AssertionError('snapshotted for a read-only probe')\n\n\n"
+            "def follow_viewport(outcome, *, before=None):\n    raise AssertionError('framed a read-only probe')\n",
             encoding="utf-8",
         )
         return src

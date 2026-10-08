@@ -3538,22 +3538,6 @@ MISTAKES: tuple[MistakeRecord, ...] = (
         recorded_on="2026-10-07",
     ),
     MistakeRecord(
-        identifier="yield-inside-try-except-in-contextmanager",
-        scope="harness_code",
-        failure=(
-            "A ConnectionError raised in the with-body of "
-            "synced_blend_for_cli became 'RuntimeError: generator didn't "
-            "stop after throw()'."
-        ),
-        cause="The fallback yield sat inside try/except ConnectionError, so the thrown error was caught and the generator yielded twice.",
-        fix="Catch only around the call and yield outside the try.",
-        guarded_by=(
-            "tests/pure/test_review_mcp_helpers.py::"
-            "test_connection_error_in_the_with_body_is_not_swallowed"
-        ),
-        recorded_on="2026-10-07",
-    ),
-    MistakeRecord(
         identifier="handoff-read-outside-try",
         scope="harness_code",
         failure=(
@@ -4007,6 +3991,121 @@ MISTAKES: tuple[MistakeRecord, ...] = (
             "test_every_python_file_parses_under_the_minimum_python"
         ),
         recorded_on="2026-10-07",
+    ),
+    MistakeRecord(
+        identifier="missing-blender-surfaced-as-raw-errors-and-a-headless-spawn",
+        scope="harness_code",
+        failure=(
+            "With no Blender answering, over the real stdio server (measured on "
+            "main f1a2636 against an isolated GUI Blender that was then "
+            "killed): list_scene came back as 'Cannot connect to Blender at "
+            "...', get_objects_summary as 'Error executing tool ...: Cannot "
+            "connect ...', add_box as 'No plan declared this turn' (the plan "
+            "gate ran before anything looked for Blender), and "
+            "get_blendfile_summary_path_info_for_cli started a headless "
+            "Blender ('Blender executable not found at blender' without "
+            "BLENDER_PATH; with it, subprocess.run of Blender --background "
+            "answered status ok from the file on disk). An agent could read "
+            "none of these as 'stop and tell the user'."
+        ),
+        cause=(
+            "send_code's ConnectionError propagated raw (FastMCP wraps an "
+            "upstream one in a ToolError), the plan check ran first, and the "
+            "five *_for_cli tools had a second path, run_blender_cli, so a "
+            "missing Blender was silently worked around with a different one "
+            "than the user's open session."
+        ),
+        fix=(
+            "Every tool except the three docs-only ones looks for the open "
+            "Blender first (require_live_blender, before the plan gate), and "
+            "any ConnectionError becomes an error result that starts with "
+            "PAUSED:, names the host and port, and tells the agent to stop and "
+            "tell the user. A *_for_cli tool answers from the open Blender "
+            "when it has that file open and otherwise pauses naming both "
+            "files; blender_cli.py and BLENDER_PATH are deleted, so nothing "
+            "can start a headless Blender. The instructions head carries the "
+            "rule and the same PAUSED: constant."
+        ),
+        guarded_by=(
+            "tests/pure/test_live_blender.py::"
+            "test_every_tool_pauses_when_no_blender_answers and "
+            "::test_a_for_cli_tool_pauses_when_the_open_blender_has_another_file; "
+            "blender_mcp/tests/test_blender_mcp_with_blender.py::"
+            "test_a_for_cli_tool_pauses_when_the_open_blender_has_another_file"
+        ),
+        recorded_on="2026-10-07",
+    ),
+    MistakeRecord(
+        identifier="viewport-followed-names-not-changes",
+        scope="harness_code",
+        failure=(
+            "A run_python chunk that moved Crate without naming it ended "
+            "'viewport: unchanged: nothing this call touched is in the scene "
+            "yet' and the view stayed put (measured over the real stdio "
+            "server on main f1a2636, and in a GUI Blender: "
+            "follow_viewport(ToolOutcome('ok')) after moving a box 3 m left "
+            "view_distance as it was)."
+        ),
+        cause=(
+            "The framing targets were the names the outcome carried (gated "
+            "objects and op arguments); a chunk that names nothing "
+            "contributes none. Every earlier framing test handed the framer "
+            "a name, so none could fail on this."
+        ),
+        fix=(
+            "snapshot_scene() before a scene-changing call and "
+            "changed_object_names() after it add every object the call "
+            "created or changed (type, parent, world transform, data-block, "
+            "material slots, modifier stack, base-mesh coordinates, "
+            "evaluated bounding box) to what is framed. Known blind spot: a "
+            "setting that changes none of those, such as a bevel width on a "
+            "cube (the first draft of the modifier test used one and the diff "
+            "was empty, because a bevel leaves a cube's bounds as they were)."
+        ),
+        guarded_by=(
+            "tests/blender/test_viewport_follow_diff.py::"
+            "test_a_moved_object_is_changed_without_a_view_layer_update and "
+            "::test_an_in_place_vertex_edit_is_changed; make test-viewport-gui "
+            "(tests/gui/check_viewport_follow.py: the unnamed move, with a "
+            "no-snapshot control that frames nothing)"
+        ),
+        recorded_on="2026-10-07",
+    ),
+    MistakeRecord(
+        identifier="stubbed-send_code-test-passed-only-with-a-blender-listening",
+        scope="harness_code",
+        failure=(
+            "make test-mcp on 6250965 with nothing listening on 9876: "
+            "blender_mcp/tests/test_blended_bridge.py ran 28 tests, 7 errored "
+            "with LiveBlenderUnavailable 'No open Blender answers at "
+            "localhost:9876 (Connection refused)' (4 in TestBlendedBridge, 3 in "
+            "TestHandoff). The same file ran 28/28 OK with a throwaway "
+            "listener on a spare port and BLENDER_MCP_PORT pointing at it."
+        ),
+        cause=(
+            "BlendedSession.call() now probes for the open Blender (a socket "
+            "connect) before the plan gate, and these suites stubbed only "
+            "send_code. The probe is a second route to Blender that the stub "
+            "did not cover, so the suite's verdict depended on whether the "
+            "developer's Blender bridge happened to be up. A passing run on a "
+            "machine with a listener says nothing about the same run without "
+            "one."
+        ),
+        fix=(
+            "_stub_live_blender_probe(test_case) patches "
+            "blended_bridge.require_live_blender in both setUps that stub "
+            "send_code. The pause itself is still tested against the real "
+            "probe in tests/pure/test_live_blender.py. Known blind spot: a "
+            "run with a Blender listening still passes whether or not the "
+            "stub is there, so only a run with nothing on the port can catch "
+            "its removal."
+        ),
+        guarded_by=(
+            "blender_mcp/tests/test_blended_bridge.py::TestBlendedBridge and "
+            "::TestHandoff, run with nothing listening on the Blender port: "
+            "make test-mcp"
+        ),
+        recorded_on="2026-10-08",
     ),
 )
 

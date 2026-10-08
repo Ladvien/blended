@@ -251,7 +251,7 @@ async def _run(
     # Pass environment variables the MCP server needs to connect to Blender.
     # StdioServerParameters only inherits a small safe-list by default.
     env: dict[str, str] = {}
-    for key in ("BLENDER_MCP_HOST", "BLENDER_MCP_PORT", "BLENDER_PATH"):
+    for key in ("BLENDER_MCP_HOST", "BLENDER_MCP_PORT"):
         value = os.environ.get(key)
         if value is not None:
             env[key] = value

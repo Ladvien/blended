@@ -49,8 +49,6 @@ Environment Variables
    PYTHON              Python interpreter (default: python).
    BLENDER_BIN         Path to the Blender binary (default: blender).
    BLENDER_MCP         Path to the blender-mcp command (default: blender-mcp).
-   BLENDER_PATH        Path to the Blender binary used by the MCP server
-                       (default: blender).
    BLENDER_MCP_HOST    Host the MCP addon listens on (default: localhost).
    BLENDER_MCP_PORT    Port the MCP addon listens on (default: 9876).
    BLENDER_MCP_TIMEOUT Startup timeout in seconds for tests (default: 10).

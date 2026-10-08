@@ -938,7 +938,6 @@ class TestChatClient(unittest.TestCase):
         """
         env = self._env.copy()
         env["BLENDER_MCP_PORT"] = str(_PORT_BLENDER)
-        env["BLENDER_PATH"] = self._blender_bin
         api_key = os.environ.get("ANTHROPIC_API_KEY")
         if api_key:
             env["ANTHROPIC_API_KEY"] = api_key

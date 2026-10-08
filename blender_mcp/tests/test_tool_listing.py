@@ -43,7 +43,7 @@ EXPECTED_TOOLS = [
     {
         "name": "get_blendfile_summary_datablocks_for_cli",
         "description": "\n"
-        "Return a data-block summary by opening *blend_file* in background Blender.\n",
+        "Return a data-block summary, answered by the open Blender, which must have *blend_file* open or the call pauses.\n",
         "inputSchema": {
             "properties": {"blend_file": {"title": "Blend File", "type": "string"}},
             "required": ["blend_file"],
@@ -65,7 +65,7 @@ EXPECTED_TOOLS = [
     {
         "name": "get_blendfile_summary_missing_files_for_cli",
         "description": "\n"
-        "Report missing file references by opening *blend_file* in background Blender.\n",
+        "Report missing file references, answered by the open Blender, which must have *blend_file* open or the call pauses.\n",
         "inputSchema": {
             "properties": {"blend_file": {"title": "Blend File", "type": "string"}},
             "required": ["blend_file"],
@@ -86,7 +86,7 @@ EXPECTED_TOOLS = [
     {
         "name": "get_blendfile_summary_of_linked_libraries_for_cli",
         "description": "\n"
-        "Return linked-library info by opening *blend_file* in background Blender.\n",
+        "Return linked-library info, answered by the open Blender, which must have *blend_file* open or the call pauses.\n",
         "inputSchema": {
             "properties": {"blend_file": {"title": "Blend File", "type": "string"}},
             "required": ["blend_file"],
@@ -107,7 +107,7 @@ EXPECTED_TOOLS = [
     {
         "name": "get_blendfile_summary_path_info_for_cli",
         "description": "\n"
-        "Return path info by opening *blend_file* in background Blender.\n",
+        "Return path info, answered by the open Blender, which must have *blend_file* open or the call pauses.\n",
         "inputSchema": {
             "properties": {"blend_file": {"title": "Blend File", "type": "string"}},
             "required": ["blend_file"],
@@ -128,7 +128,7 @@ EXPECTED_TOOLS = [
     {
         "name": "get_blendfile_summary_usage_guess_for_cli",
         "description": "\n"
-        "Guess use-cases by opening *blend_file* in background Blender.\n",
+        "Guess use-cases, answered by the open Blender, which must have *blend_file* open or the call pauses.\n",
         "inputSchema": {
             "properties": {"blend_file": {"title": "Blend File", "type": "string"}},
             "required": ["blend_file"],

@@ -93,6 +93,12 @@ from blmcp.tools_helpers import (
 )
 from blmcp.tools_helpers.blended_bridge_toolcode import Params
 from blmcp.tools_helpers.connection import send_code
+from blmcp.tools_helpers.live_blender import (
+    PAUSE_PREFIX,
+    TOOLS_WITHOUT_BLENDER,
+    pause_text,
+    require_live_blender,
+)
 
 REPOSITORY_SRC = Path(blended.__file__).resolve().parent.parent
 REPOSITORY_ROOT = REPOSITORY_SRC.parent
@@ -176,8 +182,8 @@ MCP_INSTRUCTIONS_HEAD_CONDENSES_REVISION = 10
 MCP_INSTRUCTIONS_HEAD = f"""\
 # Must-read: the rules every blended session follows
 
-The user watches this Blender's 3D viewport while you work. This head is the
-part of these instructions every client delivers; the full text follows it.
+The user watches this Blender's 3D viewport while you work. Every client
+delivers this head; the full text follows it.
 
 1. Call `declare_plan` before any tool that changes the scene.
 2. Build with blended's op tools. `run_python` is the last resort, and its
@@ -200,10 +206,34 @@ part of these instructions every client delivers; the full text follows it.
    the gate verdict. If an operation fails twice the same way, stop and say
    what you are stuck on. Art direction is the user's: ask, show renders.
 
-Viewport: every scene-changing blended tool frames the objects it touched in
-the user's 3D viewport and ends its result with a `viewport:` line. An object
-is framed once it is linked into the scene. To show a different part, or one a
-`run_python` chunk changed without naming it, call `{VIEWPORT_FOLLOW_TOOL_NAME}`."""
+Blender: these tools drive the user's OPEN Blender. If one answers
+`{PAUSE_PREFIX}`, stop and tell the user. Never start your own Blender or
+bpy, and do not retry or work around it.
+
+Viewport: every scene-changing blended call re-centres the user's 3D viewport
+on what it created or changed (found by comparing the scene before and after,
+so `run_python` is covered) and ends with a `viewport:` line. An object is
+framed once it is linked into the scene. To show something else, call
+`{VIEWPORT_FOLLOW_TOOL_NAME}`."""
+
+
+_MAXIMUM_CAUSE_DEPTH = 8
+
+
+def _connection_error_in(error: BaseException) -> ConnectionError | None:
+    """
+    The ``ConnectionError`` behind *error*, if there is one: FastMCP wraps what
+    an upstream tool raised in a ``ToolError`` whose ``__cause__`` is the
+    original, so the exception itself is not enough.
+    """
+    current: BaseException | None = error
+    for _ in range(_MAXIMUM_CAUSE_DEPTH):
+        if current is None:
+            return None
+        if isinstance(current, ConnectionError):
+            return current
+        current = current.__cause__ or current.__context__
+    return None
 
 
 def blended_instructions(upstream_instructions: str) -> str:
@@ -413,6 +443,14 @@ class BlendedSession:
         transcript, output_directory = self._open()
         transcript.record("tool", "{:s}({:s})".format(tool_name, json.dumps(arguments)))
 
+        # Look for the open Blender before anything else: a plan, or the
+        # refusal to act without one, means nothing when no Blender is there.
+        try:
+            await anyio.to_thread.run_sync(require_live_blender)
+        except ConnectionError as error:
+            transcript.record("error", str(error))
+            raise
+
         if plan_required_for(tool_name) and not self.plan_declared:
             transcript.record("result", MISSING_PLAN_REFUSAL)
             transcript.record(
@@ -526,7 +564,21 @@ class BlendedFastMCP(FastMCP):  # type: ignore[misc]
         try:
             if name in BLENDED_TOOL_NAMES:
                 return await self._blended.call(name, arguments)
+            if name not in TOOLS_WITHOUT_BLENDER:
+                await anyio.to_thread.run_sync(require_live_blender)
             return await super().call_tool(name, arguments)
+        except Exception as error:  # pylint: disable=broad-exception-caught
+            # Whatever raised, a missing Blender is a pause the agent can act
+            # on, not a stack trace; anything else is a real failure.
+            unavailable = _connection_error_in(error)
+            if unavailable is None:
+                raise
+            return types.CallToolResult(
+                content=[
+                    types.TextContent(type="text", text=pause_text(str(unavailable)))
+                ],
+                isError=True,
+            )
         finally:
             with self._in_flight_lock:
                 self._in_flight -= 1

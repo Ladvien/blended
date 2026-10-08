@@ -14,8 +14,8 @@ from blmcp.tools_helpers import (
     toolcode_load_from_filepath,
     toolcode_wrap_with_calling_convention,
 )
-from blmcp.tools_helpers.blender_cli import run_blender_cli, synced_blend_for_cli
 from blmcp.tools_helpers.connection import send_code
+from blmcp.tools_helpers.live_blender import run_in_open_blender_for_file
 
 _TOOL_CALL = toolcode_wrap_with_calling_convention(
     toolcode_load_from_filepath(__file__)
@@ -37,13 +37,14 @@ def register(mcp: FastMCP) -> None:
 
     @mcp.tool(
         annotations=ToolAnnotations(
-            title="Get Blend-File Data-blocks Summary for Command-Line",
+            title="Get Blend-File Data-blocks Summary for an Open File",
             readOnlyHint=True,
         )
     )
     def get_blendfile_summary_datablocks_for_cli(blend_file: str) -> dict[str, object]:
         """
-        Return a data-block summary by opening *blend_file* in background Blender.
+        Return a data-block summary, answered by the open Blender, which must have *blend_file* open or the call pauses.
         """
-        with synced_blend_for_cli(blend_file) as synced_path:
-            return run_blender_cli(synced_path, toolcode_format_call(_TOOL_CALL, None))
+        return run_in_open_blender_for_file(
+            blend_file, toolcode_format_call(_TOOL_CALL, None)
+        )

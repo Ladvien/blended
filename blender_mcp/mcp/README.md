@@ -15,6 +15,8 @@ In this repository the server is a workspace member of the root `pyproject.toml`
 ### Add-on
 * Run `make install-mcp-addon` from the repository root: it symlinks `blender_mcp/addon/blender_mcp_addon` into Blender, enables it and allows online access (its socket needs it).
 * The add-on listens on `localhost:9876` (override with `BLENDER_MCP_HOST` / `BLENDER_MCP_PORT` on the server).
+* The server only ever uses that open Blender. Every tool looks for it first; when nothing answers, the result is an error that starts with `PAUSED:` and tells the agent to stop and tell you. No tool starts a headless Blender, so `BLENDER_PATH` is gone. The five `*_for_cli` tools answer from the open Blender when it has that file open (unsaved edits count) and otherwise pause naming the file it has. The three docs-only tools do not need Blender and never pause.
+* After every scene-changing blended call the 3D viewport is re-centred on what the call created or changed (the scene is compared before and after, so a `run_python` chunk that names nothing is covered), and the result ends with a `viewport:` line.
 
 ### Server options
 * `--transport stdio|http` (default `stdio`); `--host` / `--port` apply to `http` only. `--host` must be a loopback address (`127.0.0.1`, `localhost`, `::1`): the tools run arbitrary Python in Blender with no authentication, so any other host exits with an error, and the HTTP transport rejects non-loopback `Host` and `Origin` headers (DNS-rebinding protection).

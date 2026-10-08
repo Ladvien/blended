@@ -78,9 +78,9 @@ claude                         # in this directory; .mcp.json registers
                                # .venv/bin/blender-mcp as server `blended`
 ```
 
-`.mcp.json` and `.omp/mcp.json` name this machine's absolute paths
-(`/Users/ladvien/blended/.venv/bin/blender-mcp` and `BLENDER_PATH`);
-a checkout elsewhere must edit both files before the server starts.
+`.mcp.json` and `.omp/mcp.json` name this machine's absolute path
+(`/Users/ladvien/blended/.venv/bin/blender-mcp`); a checkout elsewhere must
+edit both files before the server starts.
 
 The add-on executes any code sent to localhost:9876.
 

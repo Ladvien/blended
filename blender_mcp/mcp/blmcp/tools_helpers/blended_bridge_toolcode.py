@@ -21,8 +21,9 @@ the same whole-second mtime, so a same-size edit in the second of the
 last compile re-imported the old code (measured in Blender 5.2: a scripted
 edit, call, revert, call ran the stale body 20 of 20 times at a 0 s gap).
 
-After a scene-changing call (``plan_required_for``), the objects it
-touched are framed in every 3D viewport, and the outcome's text gains a
+After a scene-changing call (``plan_required_for``), the objects it named,
+created or changed (the scene is snapshotted before the call and compared
+after it) are framed in every 3D viewport, and the outcome's text gains a
 ``viewport:`` line (``blended.viewport_follow``).
 
 The purge is safe because ``src/blended`` registers no bpy classes,
@@ -120,15 +121,20 @@ def main(params: Params) -> Result:
     from blended.agent.tools import dispatch_tool
 
     # pylint: disable-next=import-outside-toplevel
-    from blended.viewport_follow import follow_viewport
+    from blended.viewport_follow import follow_viewport, snapshot_scene
 
+    # The user watches this Blender: a scene-changing call re-centres the
+    # viewport on what it created or changed (the scene before and after
+    # decides, so a `run_python` chunk that names nothing is covered), and
+    # says so on a `viewport:` line. The snapshot is taken before dispatch
+    # and fails the call loudly, before anything has changed.
+    frames = plan_required_for(params.tool_name)
+    before = snapshot_scene() if frames else None
     outcome = dispatch_tool(
         params.tool_name,
         json.loads(params.arguments_json),
         Path(params.output_directory),
     )
-    # The user watches this Blender: a scene-changing call leaves what it
-    # touched framed, and says so on a `viewport:` line.
-    if plan_required_for(params.tool_name):
-        outcome = follow_viewport(outcome)
+    if frames:
+        outcome = follow_viewport(outcome, before=before)
     return Result("ok", outcome_to_json(outcome))

@@ -6,9 +6,6 @@ Each test drives the fixed path with data that fails on the old code:
 
 * ``search`` folded overlapping matches into one hit but left the hit's
   ``text`` at the seed's window, so a folded match was scored yet never shown.
-* ``synced_blend_for_cli`` yielded inside ``try/except ConnectionError``, so a
-  ``ConnectionError`` raised in the caller's ``with`` body made it yield twice
-  and surfaced as ``RuntimeError: generator didn't stop after throw()``.
 * ``BlendedSession.resume`` read the handoff as UTF-8 outside its ``try``, so a
   corrupt handoff crashed server start-up and was never consumed.
 * ``blended_bridge`` left three public module constants out of ``__all__``,
@@ -39,7 +36,6 @@ pytest.importorskip("mcp")
 
 from blmcp.tools_helpers import (
     blended_bridge,
-    blender_cli,
     rst_doc_search,
     rst_parse_docs,
 )
@@ -100,29 +96,6 @@ def test_hit_text_does_not_run_past_the_last_paragraph() -> None:
         )
     (hit,) = result["hits"]
     assert hit["text"] == "\n\n".join(FOLD_BODY.strip().split("\n\n"))
-
-
-def test_connection_error_in_the_with_body_is_not_swallowed() -> None:
-    body_message = "raised in the with body"
-    with (
-        mock.patch.object(
-            blender_cli, "send_code", side_effect=ConnectionError("no blender")
-        ),
-        pytest.raises(ConnectionError, match=body_message),
-        blender_cli.synced_blend_for_cli("/tmp/never_opened.blend") as path,
-    ):
-        assert path == "/tmp/never_opened.blend"
-        raise ConnectionError(body_message)
-
-
-def test_unreachable_blender_yields_the_file_unchanged() -> None:
-    with (
-        mock.patch.object(
-            blender_cli, "send_code", side_effect=ConnectionError("no blender")
-        ),
-        blender_cli.synced_blend_for_cli("/tmp/never_opened.blend") as path,
-    ):
-        assert path == "/tmp/never_opened.blend"
 
 
 def test_handoff_that_is_not_utf8_is_refused_loudly_and_consumed() -> None:
