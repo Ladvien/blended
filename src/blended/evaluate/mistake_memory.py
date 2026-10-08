@@ -4071,6 +4071,42 @@ MISTAKES: tuple[MistakeRecord, ...] = (
         ),
         recorded_on="2026-10-07",
     ),
+    MistakeRecord(
+        identifier="stubbed-send_code-test-passed-only-with-a-blender-listening",
+        scope="harness_code",
+        failure=(
+            "make test-mcp on 6250965 with nothing listening on 9876: "
+            "blender_mcp/tests/test_blended_bridge.py ran 28 tests, 7 errored "
+            "with LiveBlenderUnavailable 'No open Blender answers at "
+            "localhost:9876 (Connection refused)' (4 in TestBlendedBridge, 3 in "
+            "TestHandoff). The same file ran 28/28 OK with a throwaway "
+            "listener on a spare port and BLENDER_MCP_PORT pointing at it."
+        ),
+        cause=(
+            "BlendedSession.call() now probes for the open Blender (a socket "
+            "connect) before the plan gate, and these suites stubbed only "
+            "send_code. The probe is a second route to Blender that the stub "
+            "did not cover, so the suite's verdict depended on whether the "
+            "developer's Blender bridge happened to be up. A passing run on a "
+            "machine with a listener says nothing about the same run without "
+            "one."
+        ),
+        fix=(
+            "_stub_live_blender_probe(test_case) patches "
+            "blended_bridge.require_live_blender in both setUps that stub "
+            "send_code. The pause itself is still tested against the real "
+            "probe in tests/pure/test_live_blender.py. Known blind spot: a "
+            "run with a Blender listening still passes whether or not the "
+            "stub is there, so only a run with nothing on the port can catch "
+            "its removal."
+        ),
+        guarded_by=(
+            "blender_mcp/tests/test_blended_bridge.py::TestBlendedBridge and "
+            "::TestHandoff, run with nothing listening on the Blender port: "
+            "make test-mcp"
+        ),
+        recorded_on="2026-10-08",
+    ),
 )
 
 
