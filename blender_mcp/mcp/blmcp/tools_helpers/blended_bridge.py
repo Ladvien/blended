@@ -32,6 +32,8 @@ __all__ = (
     "HANDOFF_MAX_AGE_S",
     "MCP_INSTRUCTIONS_HEAD",
     "MCP_INSTRUCTIONS_HEAD_CONDENSES_REVISION",
+    "PLUGIN_PACKAGES",
+    "PLUGIN_SOURCE_ROOTS",
     "REPOSITORY_ROOT",
     "REPOSITORY_SRC",
     "SOURCE_CHANGED_EXIT_CODE",
@@ -83,6 +85,7 @@ from blended.agent.tools import (
     TOOL_SCHEMAS_FINGERPRINT,
 )
 from blended.agent.transcript import ChatTranscript, default_log_directory
+from blended.plugins import plugin_package_names, plugin_source_roots
 from mcp import types  # pylint: disable=import-error,no-name-in-module
 from mcp.server.fastmcp import FastMCP  # pylint: disable=import-error,no-name-in-module
 
@@ -111,7 +114,19 @@ BLMCP_ROOT = Path(__file__).resolve().parent.parent
 SOURCE_SUFFIXES = frozenset({".py", ".j2", ".yml", ".yaml", ".toml", ".json"})
 SOURCE_SKIPPED_DIRECTORY_NAMES = frozenset({"__pycache__"})
 SOURCE_SKIPPED_PATHS = (BLMCP_ROOT / "data" / "api", BLMCP_ROOT / "data" / "manual")
-SOURCE_ROOTS = (REPOSITORY_SRC / "blended", BLMCP_ROOT)
+# Op plugins (`blended.plugins`): their packages sit outside `src/blended`, so
+# the fingerprint watches them too, and the toolcode puts their roots on
+# Blender's `sys.path` (an editable install's `.pth` is not processed there).
+PLUGIN_SOURCE_ROOTS = plugin_source_roots()
+PLUGIN_PACKAGES = plugin_package_names()
+SOURCE_ROOTS = (
+    REPOSITORY_SRC / "blended",
+    BLMCP_ROOT,
+    *(
+        Path(root) / package
+        for root, package in zip(PLUGIN_SOURCE_ROOTS, PLUGIN_PACKAGES)
+    ),
+)
 _FINGERPRINT_HEX_CHARACTERS = 16
 
 # The source watcher: poll period, how long a change must hold still before
@@ -478,6 +493,8 @@ class BlendedSession:
                 str(REPOSITORY_SRC),
                 VENV_SITE_PACKAGES,
                 source_fingerprint(),
+                PLUGIN_SOURCE_ROOTS,
+                PLUGIN_PACKAGES,
             ),
         )
         started = time.perf_counter()

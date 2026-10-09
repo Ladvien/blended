@@ -302,6 +302,7 @@ SERVICE_TOOL_SCHEMAS: list[dict] = [
 from blended.agent.tool_schemas import build_tool_schemas, tool_schemas_fingerprint
 from blended.manifest import OP_MODULE_NAMES
 from blended.ops._contract import facade_ops
+from blended.plugins import op_plugins
 
 # One generated tool per facade op (OT-3): introspected, never written.
 OP_TOOL_SCHEMAS = build_tool_schemas()
@@ -403,7 +404,7 @@ def search_ops(query: str) -> ToolOutcome:
     if not hits:
         return ToolOutcome(
             f"No operation matches all of {query_tokens}. Available modules: "
-            f"{', '.join(OP_MODULE_NAMES)}.",
+            f"{', '.join([*OP_MODULE_NAMES, *(plugin.module_name for plugin in op_plugins())])}.",
             ok=False,
         )
     return ToolOutcome("\n".join(hits[:MAXIMUM_SEARCH_RESULTS]))

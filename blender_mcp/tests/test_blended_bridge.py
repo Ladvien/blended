@@ -656,8 +656,13 @@ class TestToolcodeReimport(unittest.TestCase):
         return src
 
     def _step(
-        self, src: Path, fingerprint: str, write: dict[str, str] | None = None
+        self,
+        src: Path,
+        fingerprint: str,
+        write: dict[str, str] | None = None,
+        plugin: tuple[Path, str] | None = None,
     ) -> dict[str, object]:
+        plugin_root, plugin_package = plugin or (None, None)
         params = blended_bridge_toolcode.Params(
             "probe",
             "{}",
@@ -665,6 +670,8 @@ class TestToolcodeReimport(unittest.TestCase):
             str(src),
             str(self._site_packages),
             fingerprint,
+            (str(plugin_root),) if plugin_root else (),
+            (plugin_package,) if plugin_package else (),
         )
         return {
             "code": toolcode_format_call(blended_bridge._TOOL_CALL, params),
@@ -705,6 +712,38 @@ class TestToolcodeReimport(unittest.TestCase):
         )
         # The probe is live only if the first import cached bytecode.
         self.assertTrue(any((tools.parent / "__pycache__").glob("tools.*.pyc")))
+
+    def test_a_changed_fingerprint_reimports_a_plugin_package_too(self) -> None:
+        """A plugin lives outside the checkout: only its root and package name
+        reach the toolcode, which must put the root on sys.path and purge it."""
+        src = self._checkout("a", "unused")
+        tools = src / "blended" / "agent" / "tools.py"
+        tools.write_text(
+            "import fake_plugin_package\n\n\n"
+            "def dispatch_tool(name, arguments, output_directory):\n"
+            "    return fake_plugin_package.VALUE\n",
+            encoding="utf-8",
+        )
+        plugin_root = self._root / "plugin"
+        module = plugin_root / "fake_plugin_package" / "__init__.py"
+        module.parent.mkdir(parents=True)
+        module.write_text("VALUE = 'one'\n", encoding="utf-8")
+        plugin = (plugin_root, "fake_plugin_package")
+        results = self._run(
+            [
+                self._step(src, "fingerprint-1", plugin=plugin),
+                self._step(
+                    src,
+                    "fingerprint-1",
+                    write={str(module): "VALUE = 'two'\n"},
+                    plugin=plugin,
+                ),
+                self._step(src, "fingerprint-2", plugin=plugin),
+            ]
+        )
+        self.assertEqual(
+            results, [{"outcome": "one"}, {"outcome": "one"}, {"outcome": "two"}]
+        )
 
     def test_another_checkouts_copy_is_refused_and_left_loaded(self) -> None:
         a_src = self._checkout("a", "from-a")
