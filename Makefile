@@ -37,17 +37,17 @@ test-blender-app:
 # The MCP server's unit layer (blender_mcp/ subtree + blended bridge):
 # no Blender required.
 test-mcp:
-	$(PY) blender_mcp/tests/test_mcp_server.py && \
-		$(PY) blender_mcp/tests/test_tool_listing.py && \
-		$(PY) blender_mcp/tests/test_blended_bridge.py && \
-		$(PY) blender_mcp/tests/test_rst_parse.py && \
-		$(PY) blender_mcp/tests/test_rst_search.py
+	BLENDED_DISABLE_PLUGINS=1 $(PY) blender_mcp/tests/test_mcp_server.py && \
+		BLENDED_DISABLE_PLUGINS=1 $(PY) blender_mcp/tests/test_tool_listing.py && \
+		BLENDED_DISABLE_PLUGINS=1 $(PY) blender_mcp/tests/test_blended_bridge.py && \
+		BLENDED_DISABLE_PLUGINS=1 $(PY) blender_mcp/tests/test_rst_parse.py && \
+		BLENDED_DISABLE_PLUGINS=1 $(PY) blender_mcp/tests/test_rst_search.py
 
 # The MCP server against a real background Blender: client -> server ->
 # socket -> add-on main-thread exec -> blended's dispatch_tool. Only the
 # background class runs: foreground and interactive need Weston (Linux).
 test-mcp-blender:
-	BLENDER_BIN=$(BLENDER) BLENDER_MCP=$(CURDIR)/.venv/bin/blender-mcp \
+	BLENDED_DISABLE_PLUGINS=1 BLENDER_BIN=$(BLENDER) BLENDER_MCP=$(CURDIR)/.venv/bin/blender-mcp \
 		$(PY) blender_mcp/tests/test_blender_mcp_with_blender.py TestBackgroundServer
 
 # The MCP bridge's viewport framing against Blender's own projection. It

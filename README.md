@@ -132,6 +132,29 @@ disables any same-named `blender` server that omp would import from
 another tool's config (e.g. `uvx blender-mcp` in `~/.claude.json`),
 since it would talk to the same port.
 
+## Op plugins
+
+An installed distribution can add ops to the facade without a change here:
+declare an entry point in the `blended.ops` group naming a module whose
+`__all__` lists its op functions (`blended.plugins`).
+
+```toml
+[project.entry-points."blended.ops"]
+my_ops = "my_package.ops"
+```
+
+Plugin ops follow the core ops, satisfy the same contract
+(`blended.ops._contract`), and reach the tool schemas, the plan gate and
+`search_ops` through `facade_ops()`. A name that collides with an existing
+op is refused at import. A plugin must be a package installed into the
+`blended` venv, so its entry point is discoverable from Blender
+(`uv pip install --python .venv/bin/python -e path/to/plugin`): the MCP
+server hands Blender the package's source directory, and a source change
+re-imports the plugin together with `blended`. `uv sync` removes a plugin
+installed this way; run the install again after it. The test suite sets
+`BLENDED_DISABLE_PLUGINS=1`, because the pinned tool-schema fingerprint
+describes the core set.
+
 ## Run
 
 ```sh

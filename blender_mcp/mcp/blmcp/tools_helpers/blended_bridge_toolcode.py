@@ -65,6 +65,10 @@ class Params(NamedTuple):
     repository_src: str
     venv_site_packages: str
     source_fingerprint: str
+    # The directories that hold op-plugin packages (`blended.plugins`) and
+    # the packages themselves, in the same order. Empty with no plugin.
+    plugin_sys_paths: tuple[str, ...] = ()
+    plugin_packages: tuple[str, ...] = ()
 
 
 class Result(NamedTuple):
@@ -90,20 +94,35 @@ def main(params: Params) -> Result:
     if imported is not None:
         _refuse_another_copy(imported, params.repository_src)
 
-    # Site-packages first, then src, each at the front: src ends up first.
-    for path in (params.venv_site_packages, params.repository_src):
+    # Site-packages first, then the plugin roots, then src, each at the
+    # front: src ends up first.
+    for path in (
+        params.venv_site_packages,
+        *params.plugin_sys_paths,
+        params.repository_src,
+    ):
         if path not in sys.path:
             sys.path.insert(0, path)
 
     if getattr(imported, _FINGERPRINT_ATTRIBUTE, None) != params.source_fingerprint:
+        packages = (_PACKAGE, *params.plugin_packages)
         for module_name in [
             name
             for name in list(sys.modules)
-            if name == _PACKAGE or name.startswith(_PACKAGE + ".")
+            if any(
+                name == package or name.startswith(package + ".")
+                for package in packages
+            )
         ]:
             del sys.modules[module_name]
-        for source in Path(params.repository_src, _PACKAGE).rglob("*.py"):
-            Path(importlib.util.cache_from_source(str(source))).unlink(missing_ok=True)
+        package_roots = [(params.repository_src, _PACKAGE)] + list(
+            zip(params.plugin_sys_paths, params.plugin_packages)
+        )
+        for root, package in package_roots:
+            for source in Path(root, package).rglob("*.py"):
+                Path(importlib.util.cache_from_source(str(source))).unlink(
+                    missing_ok=True
+                )
         importlib.invalidate_caches()
 
     import blended  # pylint: disable=import-outside-toplevel

@@ -173,14 +173,28 @@ class ContractViolation(TypeError):
 
 
 def facade_ops() -> list[tuple[str, object]]:
-    """Every function the facade exports, as (name, function), in facade order."""
-    import blended.ops as ops_facade
+    """Every function the facade exports, as (name, function), in facade order.
 
-    return [
+    The core ops come first, then the ops of every installed plugin
+    (`blended.plugins`); a plugin op that reuses a name is refused.
+    """
+    import blended.ops as ops_facade
+    from blended.plugins import PluginError, plugin_ops
+
+    ops = [
         (name, getattr(ops_facade, name))
         for name in ops_facade.__all__
         if inspect.isfunction(getattr(ops_facade, name))
     ]
+    taken = {name for name, _ in ops}
+    for name, function in plugin_ops():
+        if name in taken:
+            raise PluginError(
+                f"plugin op {name!r} from {function.__module__} collides with an existing op"
+            )
+        taken.add(name)
+        ops.append((name, function))
+    return ops
 
 
 def _annotation_text(annotation) -> str:
