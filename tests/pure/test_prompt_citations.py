@@ -8,7 +8,7 @@ asserted against the registry.  A draft that scanned all prose scored 50
 hits and was right about 3 in the old repo, a 94% false-positive rate,
 and a gate that cries wolf gets switched off inside a week.  That
 sentence is the reason the pattern below matches
-``^(run|inspect|render|search|list|export|declare)_[a-z_]+$`` and
+``^(run|inspect|render|search|list|export|save|declare)_[a-z_]+$`` and
 nothing broader.
 
 The precision-over-recall design — regex extraction of code-element
@@ -42,7 +42,7 @@ _BACKTICK_IDENTIFIER = re.compile(r"`([a-z_][a-z0-9_]*)`")
 # module docstring.  Anything matching this but NOT in the registry is a
 # prompt citing a tool that no longer exists.
 _TOOL_CALL_PATTERN = re.compile(
-    r"^(run|inspect|render|search|list|export|declare)_[a-z_]+$"
+    r"^(run|inspect|render|search|list|export|save|declare)_[a-z_]+$"
 )
 
 # Registered tool names, read from the schema the agent dispatches

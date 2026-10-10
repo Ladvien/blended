@@ -41,7 +41,22 @@ class HarnessSettings:
     output_directory: Path = DEFAULT_OUTPUT_DIRECTORY
     maximum_retries: int = 2
     export_glb_path: Path | None = None  # set to also export + round-trip
+    # Where the exported asset's editable .blend goes (OT-50). REQUIRED
+    # whenever export_glb_path is set: require_export_blend_path refuses
+    # the run before anything is built, and there is no default beside the
+    # .glb, so the caller chooses where the source lives.
+    export_blend_path: Path | None = None
     session_log_path: Path | None = None
+
+
+def require_export_blend_path(settings: HarnessSettings) -> None:
+    """Refuse a run that would export a .glb with nowhere to save its .blend."""
+    if settings.export_glb_path is not None and settings.export_blend_path is None:
+        raise ValueError(
+            f"HarnessSettings.export_glb_path is set ({settings.export_glb_path}) "
+            f"but export_blend_path is not: every exported asset ships with "
+            f"its .blend source, so the caller must choose where it goes."
+        )
 
 
 @dataclass(frozen=True)
@@ -200,6 +215,7 @@ class HarnessResult:
     export_failures: tuple[str, ...] = field(default_factory=tuple)
     export_path: Path | None = None
     export_file_size_bytes: int = 0
+    export_blend_path: Path | None = None
     execution_summary: str = ""
     # WHERE THE EXTENTS LANDED, so the writer can see it during the turn.
     # The harness rotates the finished object by exactly this reading
@@ -225,6 +241,8 @@ class HarnessResult:
                 f"  export: verified round-trip "
                 f"({self.export_path}, {self.export_file_size_bytes} bytes)"
             )
+        if self.export_blend_path is not None:
+            lines.append(f"  export: .blend source saved ({self.export_blend_path})")
         if self.contact_sheet_path is not None:
             lines.append(f"  sheet: {self.contact_sheet_path}")
         return "\n".join(lines)
@@ -445,13 +463,19 @@ def _gate_capture_export(
 
     export_path: Path | None = None
     export_file_size_bytes = 0
+    export_blend_path: Path | None = None
     if settings.export_glb_path is not None:
         from blended.export import export_glb
 
-        export_report = export_glb(blender_object, settings.export_glb_path)
+        export_report = export_glb(
+            blender_object,
+            settings.export_glb_path,
+            blend_path=settings.export_blend_path,
+        )
         export_failures = tuple(export_report.round_trip_failures(settings.budget))
         export_path = export_report.export_path
         export_file_size_bytes = export_report.file_size_bytes
+        export_blend_path = export_report.blend.blend_path
         if export_failures:
             return HarnessResult(
                 ok=False,
@@ -474,6 +498,7 @@ def _gate_capture_export(
         contact_sheet_path=contact_sheet_path,
         export_path=export_path,
         export_file_size_bytes=export_file_size_bytes,
+        export_blend_path=export_blend_path,
         execution_summary=execution_summary,
         world_extents_m=verdict.world_extents_m,
     )
@@ -487,6 +512,7 @@ def run_chunk(
     chunk_label: str = "<agent>",
 ) -> HarnessResult:
     """The agent path: execute source, then gate the named object."""
+    require_export_blend_path(settings)
     import bpy
 
     from blended.run.retry import run_with_retries
@@ -539,6 +565,7 @@ def run_builder(
     builder, settings: HarnessSettings = HarnessSettings()
 ) -> HarnessResult:
     """The library path: build via a Parameters+Builder object, then gate."""
+    require_export_blend_path(settings)
     try:
         built_object = builder.build()
     except Exception as build_error:  # noqa: BLE001 — reported, not swallowed

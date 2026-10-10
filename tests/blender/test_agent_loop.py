@@ -313,12 +313,18 @@ def test_export_tool_verifies_the_written_file(empty_scene, tmp_path):
     CrateBuilder(CrateParameters(name="ExportMe")).build()
     _outcome = dispatch_tool(
         "export_asset",
-        {"object_name": "ExportMe", "path": str(tmp_path / "crate.glb")},
+        {
+            "object_name": "ExportMe",
+            "path": str(tmp_path / "crate.glb"),
+            "blend_path": str(tmp_path / "crate.blend"),
+        },
         tmp_path,
     )
     result_text, _ = _outcome.text, list(_outcome.images)
     assert "Exported and verified" in result_text
     assert (tmp_path / "crate.glb").exists()
+    assert (tmp_path / "crate.blend").exists()
+    assert str(tmp_path / "crate.blend") in result_text
 
 
 # --- the writer/eye split --------------------------------------------------

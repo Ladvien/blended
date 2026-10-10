@@ -278,7 +278,9 @@ def main(argv) -> int:
         exported: list[str] = []
         for built_object in built_objects_in_scene:
             destination = render_directory / f"{built_object.name}.glb"
-            export_report = export_glb(built_object, destination)
+            export_report = export_glb(
+                built_object, destination, blend_path=destination.with_suffix(".blend")
+            )
             exported.append(destination.name)
             print(
                 f"[export] {destination} ({export_report.file_size_bytes} "

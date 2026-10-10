@@ -246,17 +246,55 @@ SERVICE_TOOL_SCHEMAS: list[dict] = [
             "name": "export_asset",
             "description": (
                 "Export an object to .glb and VERIFY it by re-importing the "
-                "written file and re-measuring. Only call this on a mesh that "
-                "already passes the gate."
+                "written file and re-measuring, and save its editable .blend "
+                "source at blend_path (REQUIRED: an asset without its .blend "
+                "is not done). Only call this on a mesh that already passes "
+                "the gate."
             ),
             "parameters": {
                 "type": "object",
                 "properties": {
                     "object_name": {"type": "string"},
                     "path": {"type": "string", "description": "Output .glb path."},
+                    "blend_path": {
+                        "type": "string",
+                        "description": (
+                            "Absolute path ending in .blend where the object's "
+                            "editable source is saved."
+                        ),
+                    },
                     "plan_step": PLAN_STEP_SCHEMA,
                 },
-                "required": ["object_name", "path"],
+                "required": ["object_name", "path", "blend_path"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "save_blend",
+            "description": (
+                "Save the named objects as an editable .blend (one scene, "
+                "exactly those objects with their mesh and material data and "
+                "transforms) and VERIFY it by re-reading the written file. "
+                "Use it for pieces exported some other way, such as several "
+                "objects in one .glb; export_asset already saves its own."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "object_names": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "minItems": 1,
+                    },
+                    "blend_path": {
+                        "type": "string",
+                        "description": "Absolute path ending in .blend.",
+                    },
+                    "plan_step": PLAN_STEP_SCHEMA,
+                },
+                "required": ["object_names", "blend_path"],
             },
         },
     },
@@ -511,6 +549,28 @@ def dispatch_tool(
     return _dispatch_service_tool(tool_name, arguments, output_directory)
 
 
+def _required_blend_path(arguments: dict) -> tuple[Path, str]:
+    """The `blend_path` of an export or save call, or the refusal text.
+
+    Pure (no bpy). Every exported asset ships with its .blend (OT-50), so
+    a missing, relative or non-.blend path fails the call instead of
+    defaulting to somewhere the caller never chose.
+    """
+    raw_path = arguments.get("blend_path")
+    if not isinstance(raw_path, str) or not raw_path.strip():
+        return Path(), (
+            "blend_path is REQUIRED: every exported asset ships with its "
+            ".blend source, so give an absolute path ending in .blend."
+        )
+    blend_path = Path(raw_path)
+    if not blend_path.is_absolute() or blend_path.suffix != ".blend":
+        return Path(), (
+            f"blend_path must be an absolute path ending in .blend, got "
+            f"{raw_path!r}; the .blend source is required for every export."
+        )
+    return blend_path, ""
+
+
 def _dispatch_service_tool(
     tool_name: str, arguments: dict, output_directory: Path
 ) -> ToolOutcome:
@@ -718,15 +778,23 @@ def _dispatch_service_tool(
         return done("\n".join(lines))
 
     if tool_name == "export_asset":
-        from blended.export import export_glb
+        from blended.export import BlendSaveError, export_glb
 
+        blend_path, refusal = _required_blend_path(arguments)
+        if refusal:
+            return failed(refusal, STAGE_EXPORT)
         object_name = arguments["object_name"]
         blender_object = bpy.data.objects.get(object_name)
         if blender_object is None:
             return failed(
                 f"No object named {object_name!r} in the scene.", STAGE_LOCATE
             )
-        export_report = export_glb(blender_object, Path(arguments["path"]))
+        try:
+            export_report = export_glb(
+                blender_object, Path(arguments["path"]), blend_path=blend_path
+            )
+        except BlendSaveError as error:
+            return failed(f"EXPORT FAILED, the .blend source: {error}", STAGE_EXPORT)
         failures = export_report.round_trip_failures()
         if failures:
             return failed(
@@ -735,7 +803,40 @@ def _dispatch_service_tool(
         return done(
             f"Exported and verified: {export_report.export_path} "
             f"({export_report.file_size_bytes} bytes, "
-            f"{export_report.reimported_welded.triangle_count} tris round-tripped).",
+            f"{export_report.reimported_welded.triangle_count} tris round-tripped); "
+            f"saved and re-read the .blend source {export_report.blend.blend_path} "
+            f"({export_report.blend.file_size_bytes} bytes, "
+            f"{export_report.blend.triangle_counts[object_name]} tris).",
+            stage=STAGE_DONE,
+        )
+
+    if tool_name == "save_blend":
+        from blended.export import BlendSaveError, save_blend
+
+        blend_path, refusal = _required_blend_path(arguments)
+        if refusal:
+            return failed(refusal, STAGE_EXPORT)
+        object_names = arguments.get("object_names")
+        if (
+            not isinstance(object_names, list)
+            or not object_names
+            or not all(isinstance(name, str) for name in object_names)
+        ):
+            return failed(
+                "object_names must be a non-empty list of object names.", STAGE_LOCATE
+            )
+        try:
+            blend_report = save_blend(object_names, blend_path)
+        except BlendSaveError as error:
+            return failed(f"SAVE BLEND FAILED: {error}", STAGE_EXPORT)
+        return done(
+            f"Saved and re-read the .blend source {blend_report.blend_path} "
+            f"({blend_report.file_size_bytes} bytes): "
+            + ", ".join(
+                f"{name} {blend_report.triangle_counts[name]} tris"
+                for name in blend_report.object_names
+            )
+            + ".",
             stage=STAGE_DONE,
         )
 

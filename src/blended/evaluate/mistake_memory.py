@@ -4107,6 +4107,106 @@ MISTAKES: tuple[MistakeRecord, ...] = (
         ),
         recorded_on="2026-10-08",
     ),
+    MistakeRecord(
+        identifier="libraries-write-segfaults-on-a-scene-made-by-scenes-new",
+        scope="harness_code",
+        failure=(
+            "The first save_blend wrote the named objects through "
+            "bpy.data.libraries.write from a temporary scene made by "
+            "bpy.data.scenes.new plus a temporary collection. The first "
+            "test run killed Blender with 'Fatal Python error: Segmentation "
+            "fault' at the write call, in the user's own tool path."
+        ),
+        cause=(
+            "Measured 2026-10-10 in Blender 5.2.0 LTS with a scratch "
+            "script: libraries.write on ANY scene created by scenes.new "
+            "segfaults (empty, with objects linked directly, with a world "
+            "set, compressed or not), while the same call on the session's "
+            "own scene, on a Scene.copy() and on a Collection holding the "
+            "same object writes fine. The failure is in the new scene, not "
+            "in the objects or the path."
+        ),
+        fix=(
+            "save_blend writes an emptied shallow copy of the current scene "
+            "(Scene.copy(), children and objects unlinked from the copy's "
+            "own master collection, camera and world cleared, the named "
+            "objects linked in), then removes the copy. Unlinking from the "
+            "copy's master collection leaves the live collections alone, "
+            "which the session-unchanged test measures."
+        ),
+        guarded_by=(
+            "tests/blender/test_save_blend.py::"
+            "test_the_file_reopens_with_exactly_the_named_objects and "
+            "::test_the_session_is_unchanged_by_the_save (a segfault takes "
+            "the whole Blender layer down, so it cannot pass quietly)"
+        ),
+        recorded_on="2026-10-10",
+    ),
+    MistakeRecord(
+        identifier="the-blender-test-layer-imported-the-venvs-numpy-and-pillow",
+        scope="process",
+        failure=(
+            "make test-blender-app collected zero tests: "
+            "tests/blender/test_review_eval_rest.py failed at import with "
+            "'No module named numpy._core._multiarray_umath' (a "
+            "cpython-311 .so under Blender's Python 3.13), and after "
+            "appending the venv instead, every capture test failed at "
+            "'cannot import name _imaging from PIL'."
+        ),
+        cause=(
+            "numpy 2.4.6 and pillow 12.3.0 were installed into .venv on "
+            "2026-10-09, against the Makefile's rule that they never enter "
+            "it. scripts/run_tests_in_blender.py put the whole venv "
+            "site-packages first on Blender's sys.path, so a compiled "
+            "package built for another Python shadowed Blender's own "
+            "numpy, and Pillow has no Blender copy to fall back on."
+        ),
+        fix=(
+            "A path filter was not enough: test_bench_bridge's prelude "
+            "inserts the venv at sys.path[0] again mid-run. The script now "
+            "imports Blender's own numpy before the venv is visible and "
+            "marks PIL, scipy and trimesh absent in sys.modules (a None "
+            "entry: import raises ModuleNotFoundError, find_spec returns "
+            "None), so Blender runs with its bundled numpy and no Pillow "
+            "whatever lands in the venv. The venv itself was not touched, "
+            "because other tools may run on it."
+        ),
+        guarded_by=(
+            "make test-blender-app itself (it imports numpy-using test "
+            "modules and the capture path under Blender); "
+            "scripts/run_tests_in_blender.py (the sys.modules block)"
+        ),
+        recorded_on="2026-10-10",
+    ),
+    MistakeRecord(
+        identifier="the-documented-head-length-was-a-stale-copy",
+        scope="process",
+        failure=(
+            "The README, the spec and a mistake record all said "
+            "MCP_INSTRUCTIONS_HEAD is 1,823 characters, leaving 225 spare; "
+            "OT-50 planned a rule that needed about 190. The head measured "
+            "1,981, leaving 67, so the rule did not fit."
+        ),
+        cause=(
+            "1,823 was a measurement from 2026-10-02 copied forward through "
+            "later edits to the head; no test compared the documented "
+            "number with len(MCP_INSTRUCTIONS_HEAD), only with the limit."
+        ),
+        fix=(
+            "Measured the head (1,981), shortened the intro and the "
+            "viewport paragraph (dropping the 'every client delivers this "
+            "head' sentence and the 'found by comparing' parenthetical), "
+            "and added the .blend rule: 2,047 of 2,048. The README states "
+            "the measured number and a test compares it with the head. The "
+            "older record above keeps its 1,823 as the number true on its "
+            "date."
+        ),
+        guarded_by=(
+            "blender_mcp/tests/test_blended_bridge.py::TestInstructionsHead::"
+            "test_readme_states_the_measured_head_length"
+        ),
+        recorded_on="2026-10-10",
+    ),
 )
 
 

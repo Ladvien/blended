@@ -85,7 +85,9 @@ def main(argv) -> int:
 
     for built_object in built:
         destination = render_directory / f"{built_object.name}.glb"
-        export_report = export_glb(built_object, destination)
+        export_report = export_glb(
+            built_object, destination, blend_path=destination.with_suffix(".blend")
+        )
         print(
             f"[replay] wrote {destination} "
             f"({export_report.file_size_bytes} bytes), round trip "

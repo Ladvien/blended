@@ -25,7 +25,9 @@ def test_file_and_welded_reimport_agree(empty_scene, tmp_path):
     from blended.export import export_glb
 
     pallet_object = PalletBuilder(PalletParameters()).build()
-    export_report = export_glb(pallet_object, tmp_path / "pallet.glb")
+    export_report = export_glb(
+        pallet_object, tmp_path / "pallet.glb", blend_path=tmp_path / "pallet.blend"
+    )
 
     failures = export_report.round_trip_failures()
     assert failures == [], failures
