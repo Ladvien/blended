@@ -4113,31 +4113,35 @@ MISTAKES: tuple[MistakeRecord, ...] = (
         failure=(
             "The OT-51 brief asked blended.ops.motion to re-export skinclip's "
             "RingSkirtSpec while importing skinclip only inside op bodies. "
-            "`sys.modules['numpy'] = None; from skinclip.cloth import "
-            "RingSkirtSpec` raises ModuleNotFoundError at skinclip/cloth.py "
-            "line 27 (`import numpy as np`); with numpy absent from .venv "
-            "(uv sync removed it) that import is the facade's, the MCP "
-            "server's and tests/pure's."
+            "With skinclip v0.1.0, `sys.modules['numpy'] = None; from "
+            "skinclip.cloth import RingSkirtSpec` raised ModuleNotFoundError "
+            "at skinclip/cloth.py line 27 (`import numpy as np`); numpy is "
+            "absent from .venv by rule, so that import was the facade's, the "
+            "MCP server's and tests/pure's. The first fix was a mirror "
+            "dataclass in blended, field for field, with a test comparing "
+            "the two."
         ),
         cause=(
             "A type that lives in a numpy module cannot be named in a "
             "module that must import without numpy: `typing.get_type_hints` "
             "(the schema generator) and `dataclasses.fields` (the manifest) "
             "need the real class in the module's globals, so a lazy "
-            "`__getattr__` is not enough."
+            "`__getattr__` is not enough. A copy of a dependency's type is a "
+            "second definition that can drift."
         ),
         fix=(
-            "RingSkirtSpec is defined in blended.ops.motion, field for field "
-            "as skinclip's, with construction checks for the equal-height "
-            "cases skinclip divides by; the op converts it to skinclip's "
-            "inside its body. A Blender-tier test compares the two "
-            "dataclasses, so a field added to skinclip's fails here."
+            "skinclip v0.1.1 moved RingSkirtSpec into skinclip.spec, a module "
+            "that imports nothing; blended.ops.motion re-exports that class "
+            "(the mirror and its field-for-field test are deleted). The "
+            "construction checks skinclip's dataclass does not have (equal "
+            "heights divide by zero in the weights) live in "
+            "`_require_valid_spec`, run before anything is read."
         ),
         guarded_by=(
             "tests/pure/test_motion_ops_pure.py::"
-            "test_the_ops_import_with_numpy_and_skinclip_unavailable and "
+            "test_the_ops_import_with_numpy_unavailable and "
             "tests/blender/test_motion_ops.py::"
-            "test_the_ring_skirt_spec_mirrors_skinclips_field_for_field"
+            "test_the_exported_ring_skirt_spec_is_skinclips_own"
         ),
         recorded_on="2026-10-12",
     ),

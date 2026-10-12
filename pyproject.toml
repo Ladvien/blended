@@ -83,4 +83,4 @@ members = [
 
 [tool.uv.sources]
 blender-mcp = { workspace = true, editable = true }
-skinclip = { git = "https://github.com/Ladvien/skinclip.git", tag = "v0.1.0" }
+skinclip = { git = "https://github.com/Ladvien/skinclip.git", tag = "v0.1.1" }

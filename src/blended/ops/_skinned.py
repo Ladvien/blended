@@ -36,7 +36,6 @@ dynamics, Abu Rumman and Fratarcangeli, Computer Graphics Forum 2015, DOI
 
 from __future__ import annotations
 
-import dataclasses
 import math
 from dataclasses import dataclass
 from pathlib import Path
@@ -47,6 +46,7 @@ from skinclip import cloth, linalg, pose, quat
 from skinclip.capsules import Capsule, positions
 from skinclip.intersect import CheckSettings, segment_distance
 from skinclip.model import Clip, Figure, Skeleton, crease_zones, welded_corners
+from skinclip.spec import RingSkirtSpec
 
 from blended.ops._pose_paths import (
     LOCATION_CHANNEL,
@@ -56,7 +56,7 @@ from blended.ops._pose_paths import (
     pose_bone_path,
 )
 from blended.ops.animation import _action_channelbag, _action_fcurves
-from blended.ops.motion import ArmatureRotationModeError, RingSkirtSpec
+from blended.ops.motion import ArmatureRotationModeError
 from blended.ops.rigging import ARMATURE_MODIFIER_TYPE, BoneSpec, _create_edit_bones
 
 QUATERNION_ROTATION_MODE = "QUATERNION"
@@ -588,12 +588,6 @@ def _chain_bone_names(spec: RingSkirtSpec) -> list[str]:
     ]
 
 
-def _skinclip_spec(spec: RingSkirtSpec) -> cloth.RingSkirtSpec:
-    return cloth.RingSkirtSpec(
-        **{field.name: getattr(spec, field.name) for field in dataclasses.fields(spec)}
-    )
-
-
 def chain_layout(
     armature_object, mesh_object, garment_material: str, spec: RingSkirtSpec
 ) -> cloth.RingSkirt:
@@ -608,7 +602,7 @@ def chain_layout(
     garment = _garment_world_points(
         mesh_object, _garment_vertex_indices(mesh_object, garment_material)
     )
-    layout = cloth.ring_skirt_layout(garment, _skinclip_spec(spec), "z")
+    layout = cloth.ring_skirt_layout(garment, spec, "z")
     if not present:
         return layout
     if len(present) != len(names):

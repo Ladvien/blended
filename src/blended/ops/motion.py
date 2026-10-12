@@ -44,6 +44,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+# skinclip.spec imports nothing (no numpy), so the facade, the manifest and the
+# schema generator can name the real class; skinclip.cloth re-exports it.
+from skinclip.spec import RingSkirtSpec
+
 from blended.ops._contract import op
 
 # skinclip's `CheckSettings.contour_limit_m`: a frame fails when its
@@ -64,6 +68,31 @@ CHAIN_SUFFIX_UPPER = "a"
 CHAIN_SUFFIX_LOWER = "b"
 
 
+def _require_valid_spec(spec: RingSkirtSpec) -> None:
+    """Refuse a ring skirt whose heights or count skinclip would divide by zero on, before anything is read.
+
+    skinclip's `RingSkirtSpec` carries no checks of its own; the weights
+    divide by `top - knee` and `blend - top`, and the layout needs a cycle
+    of chains.
+    """
+    if spec.count < MINIMUM_SKIRT_CHAIN_COUNT:
+        raise ValueError(
+            f"a ring skirt needs at least {MINIMUM_SKIRT_CHAIN_COUNT} "
+            f"chains, got count={spec.count}"
+        )
+    if not (
+        spec.hem_height_m < spec.knee_height_m < spec.top_height_m < spec.blend_height_m
+    ):
+        raise ValueError(
+            "ring skirt heights must satisfy hem < knee < top < blend, got "
+            f"hem={spec.hem_height_m}, knee={spec.knee_height_m}, "
+            f"top={spec.top_height_m}, blend={spec.blend_height_m} "
+            "(the weights divide by top - knee and blend - top)"
+        )
+    if not spec.prefix:
+        raise ValueError("a ring skirt needs a bone-name prefix")
+
+
 class ArmatureRotationModeError(ValueError):
     """A keyed pose bone is not in QUATERNION rotation mode.
 
@@ -71,50 +100,6 @@ class ArmatureRotationModeError(ValueError):
     the clip is read, and the repair written, as quaternion keys: a bone
     keyed through Euler channels would be read as unrotated.
     """
-
-
-@dataclass(frozen=True, kw_only=True)
-class RingSkirtSpec:
-    """A ring skirt: `count` two-bone chains hung from an anchor bone around a garment.
-
-    Heights are world Z in metres: the chain top, its knee (the joint
-    between its two bones) and its hem, and `blend_height_m`, above
-    which the garment keeps its own weights; between the top and that
-    height they are mixed with the chains'. `inset_m` pulls the chains
-    that far inside the garment surface. Bone names are
-    `{prefix}{NN}_a` (top to knee) and `{prefix}{NN}_b` (knee to hem).
-    The fields mirror skinclip's `RingSkirtSpec`, which cannot be imported
-    without numpy; `tests/blender/test_motion_ops.py` asserts they agree.
-    """
-
-    count: int = 12
-    top_height_m: float
-    knee_height_m: float
-    hem_height_m: float
-    blend_height_m: float
-    inset_m: float
-    prefix: str = "skirt_"
-
-    def __post_init__(self) -> None:
-        if self.count < MINIMUM_SKIRT_CHAIN_COUNT:
-            raise ValueError(
-                f"a ring skirt needs at least {MINIMUM_SKIRT_CHAIN_COUNT} "
-                f"chains, got count={self.count}"
-            )
-        if not (
-            self.hem_height_m
-            < self.knee_height_m
-            < self.top_height_m
-            < self.blend_height_m
-        ):
-            raise ValueError(
-                "ring skirt heights must satisfy hem < knee < top < blend, got "
-                f"hem={self.hem_height_m}, knee={self.knee_height_m}, "
-                f"top={self.top_height_m}, blend={self.blend_height_m} "
-                "(the weights divide by top - knee and blend - top)"
-            )
-        if not self.prefix:
-            raise ValueError("a ring skirt needs a bone-name prefix")
 
 
 @dataclass(frozen=True)
@@ -282,7 +267,7 @@ def repair_limb_penetration(
     """Turn the arms and legs of an action off the body and each other where their capsules overlap.
 
     Finds the frames where two limb capsules (or a limb and the trunk)
-    are closer than their radii plus skinclip's margin (5 mm at v0.1.0) and rotates the upper
+    are closer than their radii plus skinclip's margin (5 mm at v0.1.1) and rotates the upper
     and lower limb bones by the smallest rotation that clears them,
     smoothed over time; `loop` keeps the last frame equal to the first.
     Replaces the `rotation_quaternion` keys of the bones it changed with
@@ -349,8 +334,16 @@ def bake_cloth_chains(
     `rotation_quaternion` keys for the chain bones over every frame of the
     action, simulating the chains against the body capsules (they keep
     clear of the legs, feet and arms) and reports the clearance measured
-    on the posed bones. Heights are world Z; `mesh_name` must be bound to
-    the armature. Every refusal happens before the scene is touched.
+    on the posed bones. Every refusal happens before the scene is touched.
+
+    `spec` places the chains: `count` chains round the garment, hung from
+    `top_height_m` (the chain top) through `knee_height_m` to
+    `hem_height_m`, all world Z in metres; the garment keeps its own
+    weights above `blend_height_m` and is mixed with the chains' between
+    the top and that height; `inset_m` pulls the chains inside the garment
+    surface; bones are named `{prefix}{NN}_a` (top to knee) and
+    `{prefix}{NN}_b` (knee to hem). Heights must satisfy hem < knee < top
+    < blend. `mesh_name` must be bound to the armature.
     """
     from skinclip import capsules, humanoid
     from skinclip.intersect import CheckSettings
@@ -358,6 +351,7 @@ def bake_cloth_chains(
     from blended.ops import _skinned
     from blended.ops._objects import object_by_name
 
+    _require_valid_spec(spec)
     armature_object = object_by_name(armature_name, "ARMATURE")
     mesh_object = object_by_name(mesh_name, "MESH")
     # Everything that can refuse does so before the scene is touched: a bad

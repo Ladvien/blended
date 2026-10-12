@@ -16,7 +16,6 @@ What each test defends:
     shows the same probe failing on chains that were never baked.
 """
 
-import dataclasses
 import math
 
 import pytest
@@ -752,30 +751,20 @@ def test_a_refused_bake_leaves_the_scene_as_it_found_it(empty_scene, tmp_path):
 
 
 # ---------------------------------------------------------------------------
-# the mirrors of skinclip's own definitions
+# the definitions blended shares with skinclip
 # ---------------------------------------------------------------------------
 
 
-def test_the_ring_skirt_spec_mirrors_skinclips_field_for_field():
+def test_the_exported_ring_skirt_spec_is_skinclips_own():
     from skinclip import cloth
+    from skinclip.spec import RingSkirtSpec as skinclip_spec
 
+    import blended.ops
     from blended.ops.motion import RingSkirtSpec
 
-    ours = {
-        f.name: (f.type, f.default, f.kw_only)
-        for f in dataclasses.fields(RingSkirtSpec)
-    }
-    theirs = {
-        f.name: (f.type, f.default, f.kw_only)
-        for f in dataclasses.fields(cloth.RingSkirtSpec)
-    }
-    assert [n for n in ours] == [n for n in theirs]
-    assert {n: (d, k) for n, (_, d, k) in ours.items()} == {
-        n: (d, k) for n, (_, d, k) in theirs.items()
-    }
-    assert {n: str(t) for n, (t, _, _) in ours.items()} == {
-        n: str(t) for n, (t, _, _) in theirs.items()
-    }
+    assert RingSkirtSpec is skinclip_spec
+    assert blended.ops.RingSkirtSpec is skinclip_spec
+    assert cloth.RingSkirtSpec is skinclip_spec
 
 
 def test_the_default_contour_limit_is_skinclips():
