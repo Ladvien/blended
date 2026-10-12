@@ -619,7 +619,7 @@ data-path reader; `make test` is green and the tool-schema pin is moved in the s
 **Side effects, measured:** tool-schema fingerprint `t:fd10e7f510a8` → `t:4cb061957131` (60 tools, 16 readers); the offered set 29 of 56 → 31 of 60 (`t:6b6093efb569` → `t:f26ac89217a9`), because readers are always offered; the assembled-prompt pin did not move. `uv sync` removed `numpy`, `pillow` and the hand-installed `spyrite-tile-ops` from `.venv` (the last was reinstalled).
 **Cloth numbers on skinclip v0.1.1, with what they do and do not show:** the v0.1.0 and v0.1.1 bakes give the SAME clearance, +0.011331 m, for `thigh_swing`, to nine digits. Not a dead probe: it takes 9 distinct values over the 31 frames and the chain keys differ by chain and frame. A diff of `cloth.py` shows why: v0.1.1 only collides in the ring's own plane (carried by the body) instead of the horizontal, and this body never tilts, so the push is the same. The minimum sits on two frames (4 and 19, the foot swinging past `skirt_00_b`); on every other frame the nearest approach is 0.017-0.021 m, a chain top against a thigh capsule (the tops are pinned, so the simulation cannot push them: its own clearance target is 0.05 m and the posed bones reach 0.0113 m at the worst frame). The threshold (>= -0.005 m) holds with 0.016 m of margin; the shortfall against 0.05 m is skinclip's, not hidden by the test.
 **Layers:** pure 1317 passed / 1 xfailed; Blender 330 passed / 1 skipped; bench-scripts 5 passed; MCP unit 126 tests OK (36 + 1 + 29 + 7 + 53).
-**Commit:** `78b0c31`.
+**Commit:** `78b0c31`, then `a2a2606` (skinclip `v0.1.1`: the real `RingSkirtSpec`, the mirror deleted).
 
 ---
 
