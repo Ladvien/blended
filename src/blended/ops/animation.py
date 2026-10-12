@@ -183,26 +183,31 @@ def animation_report(object_name: str) -> AnimationReport:
 # -- internals -----------------------------------------------------------
 
 
-def _action_fcurves(obj):
-    """Return the fcurves list for ``obj``'s action via the slotted API.
+def _action_channelbag(obj):
+    """Return the channelbag of ``obj``'s action slot, or None when it has none.
 
     Measured in Blender 5.2.0 LTS: ``action.fcurves`` raises
     ``AttributeError``.  The working path is
-    ``action.layers[0].strips[0].channelbag(slot).fcurves`` where
+    ``action.layers[0].strips[0].channelbag(slot)`` where
     ``slot`` is ``obj.animation_data.action_slot``.
     """
     ad = obj.animation_data
     if ad is None or ad.action is None:
-        return []
+        return None
     action = ad.action
     slot = ad.action_slot
     # An action assigned without any keyframe (or with no slot bound) has
-    # no layer/strip/channelbag: that is zero fcurves, not an IndexError.
+    # no layer/strip/channelbag: that is no channelbag, not an IndexError.
     # keyframe_insert creates one layer and one strip, so [0] is the
     # whole structure once anything has been keyed.
     if slot is None or not action.layers or not action.layers[0].strips:
-        return []
-    channelbag = action.layers[0].strips[0].channelbag(slot)
+        return None
+    return action.layers[0].strips[0].channelbag(slot)
+
+
+def _action_fcurves(obj):
+    """Return the fcurves list for ``obj``'s action via the slotted API."""
+    channelbag = _action_channelbag(obj)
     if channelbag is None:
         return []
     return list(channelbag.fcurves)

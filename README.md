@@ -43,7 +43,8 @@ src/blended/
   reset.py       wipe to a canonical empty scene, with the wipe ASSERTED
   drift/         API drift catalog — grows with every instructive traceback
   ops/           reusable construction vocabulary: the data API, with bpy.ops only in
-                 uv and rigging, each wrapped once
+                 uv and rigging, each wrapped once; motion.py (skinned-motion ops)
+                 over the skinclip package
   builders/      Parameters + Builder pairs (crate, barrel, pallet)
   analyze/       the mesh analyzer (the hard gate) + pair checks + metamorphic relations
   capture/       front/right/top/three-quarter renders, contact sheets, reference photos
@@ -135,6 +136,21 @@ in Claude Code, or quit and reopen Desktop (⌘Q). Add-on edits
 disables any same-named `blender` server that omp would import from
 another tool's config (e.g. `uvx blender-mcp` in `~/.claude.json`),
 since it would talk to the same port.
+
+## Skinned motion (skinclip)
+
+`blended.ops.motion` checks and repairs skinned animation: whether a clip passes its
+character through itself (`clip_self_intersection_report`), the body capsules of a humanoid
+rig (`body_capsules_report`), a limb repair (`repair_limb_penetration`) and a baked ring of
+skirt bone chains (`bake_cloth_chains`). The numerics are the numpy-only package
+[skinclip](https://github.com/Ladvien/skinclip), pinned by tag in `pyproject.toml`
+(`[tool.uv.sources]`) and installed by `uv sync` into `.venv`. skinclip declares no numpy on
+purpose: Blender's bundled numpy serves it, and a numpy wheel in `.venv` would shadow
+Blender's (the venv's site-packages come first on Blender's `sys.path`), so keep numpy out of
+`.venv`. The op modules import skinclip inside op bodies, so the facade, the MCP server and
+`tests/pure` import with no numpy. The ops read the armature's active action and need a UE5 or
+Mixamo humanoid for capsules and repair; `docs/2026-09-10-specification-and-requirements.md`
+OPS-26 and OPS-27 state what they refuse.
 
 ## Op plugins
 

@@ -6,6 +6,7 @@ requires-python = ">=3.11"
 dependencies = [
     "blender-mcp",
     "jinja2>=3.1.6",
+    "skinclip",
 ]
 
 [project.optional-dependencies]
@@ -48,7 +49,7 @@ explicit_package_bases = true
 # Pillow is the optional `capture` extra. None are importable from the dev
 # venv, so mypy treats them as Any instead of erroring at every import site.
 [[tool.mypy.overrides]]
-module = ["bpy.*", "bmesh.*", "mathutils.*", "numpy.*", "PIL.*"]
+module = ["bpy.*", "bmesh.*", "mathutils.*", "numpy.*", "PIL.*", "skinclip.*"]
 ignore_missing_imports = true
 
 [tool.ruff.lint.flake8-bugbear]
@@ -82,3 +83,4 @@ members = [
 
 [tool.uv.sources]
 blender-mcp = { workspace = true, editable = true }
+skinclip = { git = "https://github.com/Ladvien/skinclip.git", tag = "v0.1.2" }

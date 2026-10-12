@@ -4207,6 +4207,131 @@ MISTAKES: tuple[MistakeRecord, ...] = (
         ),
         recorded_on="2026-10-10",
     ),
+    MistakeRecord(
+        identifier="a-reexported-dependency-type-imports-the-dependency-at-facade-import",
+        scope="harness_code",
+        failure=(
+            "The OT-51 brief asked blended.ops.motion to re-export skinclip's "
+            "RingSkirtSpec while importing skinclip only inside op bodies. "
+            "With skinclip v0.1.0, `sys.modules['numpy'] = None; from "
+            "skinclip.cloth import RingSkirtSpec` raised ModuleNotFoundError "
+            "at skinclip/cloth.py line 27 (`import numpy as np`); numpy is "
+            "absent from .venv by rule, so that import was the facade's, the "
+            "MCP server's and tests/pure's. The first fix was a mirror "
+            "dataclass in blended, field for field, with a test comparing "
+            "the two."
+        ),
+        cause=(
+            "A type that lives in a numpy module cannot be named in a "
+            "module that must import without numpy: `typing.get_type_hints` "
+            "(the schema generator) and `dataclasses.fields` (the manifest) "
+            "need the real class in the module's globals, so a lazy "
+            "`__getattr__` is not enough. A copy of a dependency's type is a "
+            "second definition that can drift."
+        ),
+        fix=(
+            "skinclip v0.1.1 moved RingSkirtSpec into skinclip.spec, a module "
+            "that imports nothing; blended.ops.motion re-exports that class "
+            "(the mirror and its field-for-field test are deleted). The "
+            "construction checks skinclip's dataclass first lacked (equal "
+            "heights divide by zero in the weights) were kept in blended "
+            "until skinclip v0.1.2 put them in RingSkirtSpec.__post_init__; "
+            "blended's copy was deleted, and the agent binds the spec while "
+            "building the call, so a bad spec fails before the op body and "
+            "the scene are reached."
+        ),
+        guarded_by=(
+            "tests/pure/test_motion_ops_pure.py::"
+            "test_the_ops_import_with_numpy_unavailable, "
+            "tests/pure/test_motion_ops_pure.py::"
+            "test_a_bad_spec_fails_before_the_op_body_runs_and_so_before_the_scene_is_touched and "
+            "tests/blender/test_motion_ops.py::"
+            "test_the_exported_ring_skirt_spec_is_skinclips_own"
+        ),
+        recorded_on="2026-10-12",
+    ),
+    MistakeRecord(
+        identifier="a-repaired-clip-is-not-a-fixed-point-of-the-repair",
+        scope="harness_code",
+        failure=(
+            "tests/blender/test_motion_ops.py's first second-repair test "
+            "asserted frames_repaired == 0 after repairing the tube "
+            "humanoid's hand_through_torso; measured 4 frames repaired at "
+            "worst_depth_m_before 9.1e-07 m (a micrometre), after a first "
+            "pass that took 0.0979 m to 8.9e-07 m."
+        ),
+        cause=(
+            "The solver stops on the clearance's edge (margin 5 mm plus the "
+            "capsule radii), and Blender stores keyframes as float32, so "
+            "writing the repaired rotations back moves a depth of 0 to a "
+            "micrometre. 'No overlap' is a tolerance, not an equality."
+        ),
+        fix=(
+            "The test asserts the invariant the op promises: the second "
+            "pass starts and ends at or below 0.002 m and moves no key by "
+            "1e-3 or more."
+        ),
+        guarded_by=(
+            "tests/blender/test_motion_ops.py::"
+            "test_a_second_repair_only_trims_micrometres"
+        ),
+        recorded_on="2026-10-12",
+    ),
+    MistakeRecord(
+        identifier="removing-an-fcurve-leaves-the-property-at-its-last-value",
+        scope="harness_code",
+        failure=(
+            "The OT-51 cloth control ('chains that were never baked') removed "
+            "the 24 chain bones' rotation_quaternion fcurves and read the "
+            "clearance: -0.0555 m on skinclip v0.1.0/v0.1.1, -0.0690 m on "
+            "v0.1.2. Same bones, same thighs, but the number moved with the "
+            "skinclip version, which a never-baked chain cannot depend on. "
+            "With the pose reset to rest it reads -0.0700 m on v0.1.2."
+        ),
+        cause=(
+            "Deleting an fcurve does not reset the property it drove: the "
+            "pose bone keeps the last value evaluated, here the baked "
+            "frame-30 rotation, so the control held the chains frozen in a "
+            "baked pose, not at rest. The comment above it claimed 'rest "
+            "pose'. A control must be varied against what it controls: the "
+            "number moving with the thing under test was the tell."
+        ),
+        fix=(
+            "The control resets each chain pose bone to the identity "
+            "quaternion after removing its curves; the comment records both "
+            "readings and the mechanism."
+        ),
+        guarded_by=(
+            "tests/blender/test_motion_ops.py::"
+            "test_the_clearance_probe_fails_on_chains_that_were_never_baked"
+        ),
+        recorded_on="2026-10-12",
+    ),
+    MistakeRecord(
+        identifier="a-probe-ceiling-was-written-before-it-was-measured",
+        scope="process",
+        failure=(
+            "The comment above UNBAKED_CHAIN_CLEARANCE_CEILING_M said the "
+            "unbaked chains read about -0.07 m against the swinging thighs; "
+            "measured through the same probe they read -0.0555 m (baked: "
+            "+0.0113 m)."
+        ),
+        cause=(
+            "The number was estimated from the geometry while the test was "
+            "being written, and went into a comment as if measured; the "
+            "assertion (< -0.02 m) was loose enough to hide it."
+        ),
+        fix=(
+            "Measured both numbers in Blender and wrote them into the "
+            "comment; the control asserts the unbaked reading is below the "
+            "ceiling and the baked one above -0.005 m."
+        ),
+        guarded_by=(
+            "tests/blender/test_motion_ops.py::"
+            "test_the_clearance_probe_fails_on_chains_that_were_never_baked"
+        ),
+        recorded_on="2026-10-12",
+    ),
 )
 
 

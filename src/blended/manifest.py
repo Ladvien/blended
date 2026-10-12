@@ -36,6 +36,7 @@ OP_MODULE_NAMES = (
     "animation",
     "canonical_orientation",
     "selectors",
+    "motion",
 )
 
 # Config dataclasses that an operation takes as an argument. Listed
@@ -45,6 +46,7 @@ OP_MODULE_NAMES = (
 # exists to get right.
 OP_CONFIG_DATACLASSES = (
     ("blended.ops.legs", "SplayedLegSpec"),
+    ("blended.ops.motion", "RingSkirtSpec"),
     ("blended.ops.rigging", "BoneSpec"),
     ("blended.ops.selectors", "EdgeSelector"),
     ("blended.ops.selectors", "FaceSelector"),

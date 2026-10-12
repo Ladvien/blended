@@ -17,8 +17,8 @@
 
 | Fact | Value | Source |
 |---|---|---|
-| Agent tools | 9 hand-written service tools + 48 generated op tools = 57 in `TOOL_SCHEMAS` (35 require a declared plan, 14 op tools are readers), fingerprint `t:e34f29ae95dc` pinned; measured 2026-10-10 (OT-50 added `save_blend`; on 2026-10-07 it was 8 + 48 = 56 and `t:fd10e7f510a8`; it was 42 ops, 50 tools and `t:1fe7f62007ef` when OT-3 closed; OT-13 and OT-14 added the ops) | `src/blended/agent/tools.py`, `_evaluate/golden/pinned_tool_schemas_fingerprint.txt`, `tests/pure/test_tool_schemas.py` |
-| Construction path in the ACI | 48 generated op tools, bound, gated, plan-required unless readers; `run_python(source, reason)` is the escape hatch (OT-3–OT-7, closed) | AGT-1, AGT-3, AGT-21 |
+| Agent tools | 9 hand-written service tools + 52 generated op tools = 61 in `TOOL_SCHEMAS` (37 require a declared plan, 16 op tools are readers), fingerprint `t:0d039e177002` pinned; measured 2026-10-12 with OT-50 and OT-51 merged (OT-50 added `save_blend` and OT-51 four ops; on 2026-10-07 it was 8 + 48 = 56 and `t:fd10e7f510a8`; it was 42 ops, 50 tools and `t:1fe7f62007ef` when OT-3 closed; OT-13 and OT-14 added the ops) | `src/blended/agent/tools.py`, `_evaluate/golden/pinned_tool_schemas_fingerprint.txt`, `tests/pure/test_tool_schemas.py` |
+| Construction path in the ACI | 52 generated op tools, bound, gated, plan-required unless readers; `run_python(source, reason)` is the escape hatch (OT-3–OT-7, closed) | AGT-1, AGT-3, AGT-21 |
 | Ops facade completeness | whole — every public op re-exported, builders import the facade only (OT-1, closed) | `tests/pure/test_one_path_ops.py` |
 | Op signature contract | enforced — names in, names out, units on quantities, no bpy types (OT-2, closed) | `tests/pure/test_ops_signature_contract.py` |
 | Shipped builders | 3 (crate, barrel, pallet) | OPS-15 |
@@ -239,7 +239,7 @@ Measured pace: instance 2/20 after 50 min (≈ 25 min per instance, ≈ 8 h per 
 
 ## Phase 4 — Growing the vocabulary (the hatch tells you what to build)
 
-All Phase 4 items (OT-12, OT-13, OT-14) are closed — see `BACKLOG_DONE.md`.
+All Phase 4 items (OT-12, OT-13, OT-14, OT-51) are closed — see `BACKLOG_DONE.md`.
 
 ---
 
@@ -499,6 +499,7 @@ flowchart LR
   OT8 --> OT12 --> OT13
   OT3 --> OT14 --> OT13
   OT3 --> OT15
+  OT3 --> OT51
   OT4 --> OT16 --> OT17
   OT10 --> OT18 --> OT19
   OT8 --> OT20 --> OT27

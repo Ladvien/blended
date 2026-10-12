@@ -116,11 +116,30 @@ def test_every_public_op_is_reachable_from_the_facade():
     )
 
 
+# Config objects an op takes that live in a dependency, re-exported on the
+# facade so the manifest and the schema generator name the REAL class (a
+# copy would be a second definition that can drift). name -> home module.
+# Each must be importable without numpy: the facade imports with none.
+RE_EXPORTED_FROM_DEPENDENCIES = {"RingSkirtSpec": "skinclip.spec"}
+
+
 def test_facade_exports_nothing_it_does_not_define():
     """The reverse direction: `__all__` names must resolve to ops code."""
     defined = {symbol for _, symbol in _public_symbols_defined_in_ops()}
-    stray = sorted(set(ops_facade.__all__) - defined)
+    stray = sorted(
+        set(ops_facade.__all__) - defined - set(RE_EXPORTED_FROM_DEPENDENCIES)
+    )
     assert not stray, f"__all__ names with no ops definition: {stray}"
+
+
+@pytest.mark.parametrize("name", sorted(RE_EXPORTED_FROM_DEPENDENCIES))
+def test_a_re_exported_dependency_class_is_the_dependencys_own(name):
+    exported = getattr(ops_facade, name)
+    assert name in ops_facade.__all__
+    assert exported.__module__ == RE_EXPORTED_FROM_DEPENDENCIES[name], (
+        f"{name} on the facade is {exported.__module__}.{name}, not the "
+        f"{RE_EXPORTED_FROM_DEPENDENCIES[name]} class: a copy can drift"
+    )
 
 
 @pytest.mark.parametrize(
