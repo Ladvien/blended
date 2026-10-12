@@ -240,6 +240,30 @@ class TestInstructionsHead(unittest.TestCase):
         self.assertIn(f"`{name}`", blended_bridge.MCP_INSTRUCTIONS_HEAD)
 
 
+    def test_head_requires_the_blend_source_and_names_real_tools(self) -> None:
+        # OT-50: an export without its .blend is not done. The rule names
+        # the argument and the tool, and both must exist in the registry.
+        head = blended_bridge.MCP_INSTRUCTIONS_HEAD
+        self.assertIn("without its .blend is not done", head)
+        for name in ("export_asset", "save_blend"):
+            self.assertIn(f"`{name}`", head)
+            self.assertIn(name, blended_bridge.BLENDED_TOOL_NAMES)
+        exported = next(
+            tool for tool in blended_bridge.BLENDED_TOOLS if tool.name == "export_asset"
+        )
+        self.assertIn("blend_path", exported.inputSchema["required"])
+        self.assertIn("`blend_path`", head)
+
+
+    def test_readme_states_the_measured_head_length(self) -> None:
+        # The README said 1,823 characters while the head was 1,981.
+        readme = (Path(__file__).resolve().parents[2] / "README.md").read_text(
+            encoding="utf-8"
+        )
+        measured = f"{len(blended_bridge.MCP_INSTRUCTIONS_HEAD):,} characters"
+        self.assertIn(f"`MCP_INSTRUCTIONS_HEAD`, {measured}", readme)
+
+
 class TestWatcherIsOptIn(unittest.TestCase):
     """Claude Code and Claude Desktop never restart a server that exits."""
 

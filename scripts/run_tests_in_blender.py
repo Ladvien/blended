@@ -36,6 +36,21 @@ def venv_site_packages() -> Path:
     return candidates[-1]
 
 
+# Packages with compiled extensions built for the VENV's interpreter
+# (cpython-311), which cannot import under Blender's Python 3.13. numpy would
+# shadow Blender's own bundled copy; Pillow, scipy and trimesh have no Blender
+# copy and fail at their C modules (measured 2026-10-10, after numpy and
+# Pillow landed in .venv on 2026-10-09). Blender's layer runs with Blender's
+# numpy and none of the others (the Makefile's `test-blender-app` note).
+# Settled in `sys.modules`, not on `sys.path`, because
+# tests/blender/test_bench_bridge.py runs the bench prelude, which inserts the
+# venv's site-packages at sys.path[0] again mid-run. A `None` entry is how
+# Python records an absent module: `import` raises ModuleNotFoundError and
+# `importlib.util.find_spec` returns None.
+import numpy  # noqa: E402,F401  Blender's own, imported before the venv is visible
+
+for blocked_package in ("PIL", "scipy", "trimesh"):
+    sys.modules[blocked_package] = None  # type: ignore[assignment]
 sys.path.insert(0, str(venv_site_packages()))
 sys.path.insert(0, str(REPOSITORY_ROOT / "src"))
 # What `python -m pytest` puts there, and what tests/blender/test_harness.py

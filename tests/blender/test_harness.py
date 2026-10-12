@@ -22,13 +22,38 @@ def test_run_builder_full_loop_with_export(empty_scene, tmp_path):
         HarnessSettings(
             output_directory=tmp_path,
             export_glb_path=tmp_path / "pallet.glb",
+            export_blend_path=tmp_path / "pallet.blend",
         ),
     )
     assert result.ok, result.summary()
     assert result.stage_reached == "done"
     assert result.contact_sheet_path.exists()
     assert (tmp_path / "pallet.glb").exists()
+    assert (tmp_path / "pallet.blend").exists()
+    assert result.export_blend_path == tmp_path / "pallet.blend"
     assert result.export_failures == ()
+
+
+def test_a_glb_export_without_a_blend_path_is_refused_before_building(
+    empty_scene, tmp_path
+):
+    """OT-50: every exported asset ships with its .blend. The harness has
+    no default beside the .glb, so the run fails loudly before the builder
+    runs and nothing is written."""
+    from blended.harness import HarnessSettings, run_builder
+
+    class ExplodingBuilder:
+        def build(self):
+            raise AssertionError("the builder ran; the refusal came too late")
+
+    with pytest.raises(ValueError, match="export_blend_path"):
+        run_builder(
+            ExplodingBuilder(),
+            HarnessSettings(
+                output_directory=tmp_path, export_glb_path=tmp_path / "pallet.glb"
+            ),
+        )
+    assert list(tmp_path.iterdir()) == []
 
 
 def test_run_chunk_retries_and_logs(empty_scene, tmp_path):

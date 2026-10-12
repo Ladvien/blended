@@ -16,9 +16,12 @@ from blended.harness import HarnessSettings, run_builder
 
 result = run_builder(
     BarrelBuilder(BarrelParameters()),
-    HarnessSettings(export_glb_path="out/barrel.glb"),
+    HarnessSettings(
+        export_glb_path="out/barrel.glb",
+        export_blend_path="out/barrel.blend",  # required with export_glb_path
+    ),
 )
-print(result.summary())  # execute -> gate -> contact sheet -> verified export
+print(result.summary())  # execute -> gate -> contact sheet -> verified export + .blend
 ```
 
 `run_chunk(source, object_name, fix_source=...)` is the same loop for
@@ -87,7 +90,8 @@ The add-on executes any code sent to localhost:9876.
 **What the agent is told.** Claude Code delivers only the first 2,048
 characters of an MCP server's instructions (measured 2026-10-07: blended
 sends 24,721). So the instructions open with a must-read head
-(`MCP_INSTRUCTIONS_HEAD`, 1,823 characters) that condenses
+(`MCP_INSTRUCTIONS_HEAD`, 2,047 characters of the 2,048 allowed; it was
+1,981 before OT-50 added the rule that every export ships its .blend) that condenses
 working-agreement revision 10; the full text follows it. A test fails
 when the active revision moves, so the head gets reviewed along with it.
 

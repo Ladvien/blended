@@ -21,6 +21,7 @@ assert_supported_blender()
 settings = HarnessSettings(
     output_directory=Path("_renders/harness_demo"),
     export_glb_path=Path("_renders/harness_demo/barrel.glb"),
+    export_blend_path=Path("_renders/harness_demo/barrel.blend"),
     session_log_path=Path("_renders/harness_demo/session.jsonl"),
 )
 

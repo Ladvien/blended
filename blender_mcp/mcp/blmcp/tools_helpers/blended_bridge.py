@@ -197,8 +197,7 @@ MCP_INSTRUCTIONS_HEAD_CONDENSES_REVISION = 10
 MCP_INSTRUCTIONS_HEAD = f"""\
 # Must-read: the rules every blended session follows
 
-The user watches this Blender's 3D viewport while you work. Every client
-delivers this head; the full text follows it.
+The user watches this Blender's 3D viewport while you work.
 
 1. Call `declare_plan` before any tool that changes the scene.
 2. Build with blended's op tools. `run_python` is the last resort, and its
@@ -217,19 +216,21 @@ delivers this head; the full text follows it.
    contact, not the lowest point.
 8. Changing a passed asset: touch only what they named; everything else must
    measure the SAME afterwards. Re-gate and re-render after every edit.
-9. When all of it holds, stop and report what you built, its measurements and
-   the gate verdict. If an operation fails twice the same way, stop and say
-   what you are stuck on. Art direction is the user's: ask, show renders.
+9. Every exported asset ships with its .blend: `export_asset` needs
+   `blend_path`; anything exported another way calls `save_blend`. An asset
+   without its .blend is not done.
+10. When all of it holds, stop and report what you built, its measurements and
+    the gate verdict. If an operation fails twice the same way, stop and say
+    what you are stuck on. Art direction is the user's: ask, show renders.
 
 Blender: these tools drive the user's OPEN Blender. If one answers
 `{PAUSE_PREFIX}`, stop and tell the user. Never start your own Blender or
 bpy, and do not retry or work around it.
 
-Viewport: every scene-changing blended call re-centres the user's 3D viewport
-on what it created or changed (found by comparing the scene before and after,
-so `run_python` is covered) and ends with a `viewport:` line. An object is
-framed once it is linked into the scene. To show something else, call
-`{VIEWPORT_FOLLOW_TOOL_NAME}`."""
+Viewport: every scene-changing blended call (`run_python` too) re-centres the
+user's 3D viewport on what it created or changed and ends with a `viewport:`
+line. An object is framed once it is linked into the scene. To show something
+else, call `{VIEWPORT_FOLLOW_TOOL_NAME}`."""
 
 
 _MAXIMUM_CAUSE_DEPTH = 8

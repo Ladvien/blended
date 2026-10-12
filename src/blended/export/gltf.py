@@ -21,6 +21,11 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from blended.analyze.mesh_checks import MeshBudget, MeshReport, analyze_object
+from blended.export.blend import (
+    BlendSaveReport,
+    save_blend,
+    validate_blend_request,
+)
 from blended.export.glb_report import GlbAssetReport, asset_report
 
 EXPORT_DIMENSION_TOLERANCE_M = 1.0e-4
@@ -43,6 +48,9 @@ class ExportReport:
     # The node name engines walk by. The exporter's default root naming
     # is asserted against this, not assumed.
     exported_object_name: str = ""
+    # The editable source saved beside the .glb (OT-50). None only in
+    # synthetic pure-tier reports; export_glb always populates it.
+    blend: BlendSaveReport | None = None
 
     def round_trip_failures(self, budget: MeshBudget = MeshBudget()) -> list[str]:
         found_failures: list[str] = []
@@ -130,13 +138,21 @@ class ExportReport:
         return not self.round_trip_failures(budget)
 
 
-def export_glb(blender_object, output_path: Path) -> ExportReport:
-    """Export one object to .glb and verify the file by re-importing it."""
+def export_glb(blender_object, output_path: Path, *, blend_path: Path) -> ExportReport:
+    """Export one object to .glb, verify the file by re-importing it, and
+    save the object's editable .blend source at `blend_path` (OT-50).
+
+    `blend_path` is required: an asset without its source cannot be
+    edited and re-exported, and a silent default beside the .glb would
+    hide that choice from the caller. A bad path raises BlendSaveError
+    BEFORE anything is written, so no .glb is left without its source.
+    """
     import bpy
 
     from blended.ingest.import_glb import import_glb
     from blended.ops.primitives import remove_object_and_mesh
 
+    _, blend_path = validate_blend_request([blender_object.name], blend_path)
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -167,6 +183,7 @@ def export_glb(blender_object, output_path: Path) -> ExportReport:
     bpy.context.view_layer.update()
     reimported_dimensions_m = tuple(reimported_object.dimensions)
     remove_object_and_mesh(reimport_name)
+    blend_report = save_blend([exported_object_name], blend_path)
 
     return ExportReport(
         export_path=output_path,
@@ -178,4 +195,5 @@ def export_glb(blender_object, output_path: Path) -> ExportReport:
         reimported_dimensions_m=reimported_dimensions_m,
         file_report=file_report,
         exported_object_name=exported_object_name,
+        blend=blend_report,
     )

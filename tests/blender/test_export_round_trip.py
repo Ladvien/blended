@@ -18,7 +18,9 @@ def test_pallet_round_trips_clean(empty_scene, tmp_path):
     from blended.export import export_glb
 
     pallet_object = PalletBuilder(PalletParameters()).build()
-    export_report = export_glb(pallet_object, tmp_path / "pallet.glb")
+    export_report = export_glb(
+        pallet_object, tmp_path / "pallet.glb", blend_path=tmp_path / "pallet.blend"
+    )
 
     failures = export_report.round_trip_failures()
     assert failures == [], failures
@@ -36,7 +38,9 @@ def test_barrel_round_trips_clean(empty_scene, tmp_path):
     from blended.export import export_glb
 
     barrel_object = BarrelBuilder(BarrelParameters()).build()
-    export_report = export_glb(barrel_object, tmp_path / "barrel.glb")
+    export_report = export_glb(
+        barrel_object, tmp_path / "barrel.glb", blend_path=tmp_path / "barrel.blend"
+    )
     assert export_report.round_trip_failures() == []
 
 
@@ -57,6 +61,8 @@ def test_defective_mesh_is_flagged_before_export(empty_scene, tmp_path):
     working_mesh.to_mesh(open_box.data)
     working_mesh.free()
 
-    export_report = export_glb(open_box, tmp_path / "open.glb")
+    export_report = export_glb(
+        open_box, tmp_path / "open.glb", blend_path=tmp_path / "open.blend"
+    )
     failures = export_report.round_trip_failures()
     assert any("BEFORE export" in failure for failure in failures)
