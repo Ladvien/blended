@@ -239,40 +239,7 @@ Measured pace: instance 2/20 after 50 min (≈ 25 min per instance, ≈ 8 h per 
 
 ## Phase 4 — Growing the vocabulary (the hatch tells you what to build)
 
-All Phase 4 items (OT-12, OT-13, OT-14) are closed — see `BACKLOG_DONE.md`. OT-51 was added to
-this phase on 2026-10-12: the demand is not a hatch mining but a rig the vocabulary cannot yet judge.
-
-### OT-51 Skinned-motion ops: self-intersection, capsules, limb repair, cloth chains
-
-**What:** Four ops in a new `blended.ops.motion`, built on the numpy-only package `skinclip`
-(`Ladvien/skinclip`, tag `v0.1.0`) through an internal adapter `blended.ops._skinned` that reads an
-armature, its bound meshes and an action into skinclip's objects and writes keys back.
-`clip_self_intersection_report(armature_name, action_name, cloth_material, contour_limit_m)` and
-`body_capsules_report(armature_name)` are readers; `repair_limb_penetration(armature_name,
-action_name, loop)` and `bake_cloth_chains(armature_name, mesh_name, garment_material,
-anchor_bone_name, action_name, spec, loop)` are writers (plan required, return reports, not gated).
-`RingSkirtSpec` is the writer's config object (in `OP_CONFIG_DATACLASSES`), `ArmatureRotationModeError`
-refuses a keyed bone that is not in QUATERNION mode. Op modules import skinclip only inside op
-bodies, so the facade, the MCP server and `tests/pure` import them with no numpy.
-**Why:** A retargeted or generated clip crosses its own body (a hand through the thigh, a knee through
-a skirt) and nothing in the vocabulary sees it: the structural gate measures the mesh at rest, where
-it is sound. The check is metamorphic, not a reference comparison: a surface free of intersections at
-rest must stay free of them in every pose, measured as the length of the intersection contour (ContourCraft,
-SIGGRAPH 2024, DOI 10.1145/3641519.3657408). The repair and the cloth bake are skinclip's own solvers
-over body capsules (segment-segment distance, Ericson 2005, 5.1.9) and position-based dynamics (Abu
-Rumman and Fratarcangeli, CGF 2015, DOI 10.1111/cgf.12533); the three `hs distill search` queries of
-2026-10-12 found no per-frame limb solver and no skirt-bone paper to cite instead.
-**Amends:** OPS-1 and AGT-1 (52 ops, 60 tools, the two readers are always offered), adds OPS-26 and OPS-27,
-§5.5 (the new named constants), the measured-state table, §6.1–§6.3 counts.
-**Done means:** `tests/blender/test_motion_ops.py` (run by `make test-blender-app`) imports skinclip's tube
-humanoid into Blender and asserts: the `hand_through_torso` report fails and names an arm bone against the
-trunk, in Blender frame numbers; `body_capsules_report` gives 18 capsules (6 central, 6 a side) and
-`rig_convention == "ue5"`; after `repair_limb_penetration` the report passes and
-`worst_depth_m_after <= 0.002`, with every curve it did not change untouched; on `thigh_swing`
-`bake_cloth_chains` creates 24 bones, weights the garment, gives `worst_clearance_m >= -0.005` measured on the
-posed pose bones in Blender (and a control shows the same probe failing on unbaked chains), and a second call
-creates 0; `tests/pure/test_motion_ops_pure.py` and `test_pose_paths.py` pin the numpy-free import and the
-data-path reader; `make test` is green and the tool-schema pin is moved in the same change.
+All Phase 4 items (OT-12, OT-13, OT-14, OT-51) are closed — see `BACKLOG_DONE.md`.
 
 ---
 

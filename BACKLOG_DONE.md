@@ -580,6 +580,48 @@ AGT-27 amended to name both `chat` paths.
 
 ---
 
+## OT-51 Skinned-motion ops: self-intersection, capsules, limb repair, cloth chains
+
+**What:** Four ops in a new `blended.ops.motion`, built on the numpy-only package `skinclip`
+(`Ladvien/skinclip`, tag `v0.1.0`) through an internal adapter `blended.ops._skinned` that reads an
+armature, its bound meshes and an action into skinclip's objects and writes keys back.
+`clip_self_intersection_report(armature_name, action_name, cloth_material, contour_limit_m)` and
+`body_capsules_report(armature_name)` are readers; `repair_limb_penetration(armature_name,
+action_name, loop)` and `bake_cloth_chains(armature_name, mesh_name, garment_material,
+anchor_bone_name, action_name, spec, loop)` are writers (plan required, return reports, not gated).
+`RingSkirtSpec` is the writer's config object (in `OP_CONFIG_DATACLASSES`), `ArmatureRotationModeError`
+refuses a keyed bone that is not in QUATERNION mode. Op modules import skinclip only inside op
+bodies, so the facade, the MCP server and `tests/pure` import them with no numpy.
+**Why:** A retargeted or generated clip crosses its own body (a hand through the thigh, a knee through
+a skirt) and nothing in the vocabulary sees it: the structural gate measures the mesh at rest, where
+it is sound. The check is metamorphic, not a reference comparison: a surface free of intersections at
+rest must stay free of them in every pose, measured as the length of the intersection contour (ContourCraft,
+SIGGRAPH 2024, DOI 10.1145/3641519.3657408). The repair and the cloth bake are skinclip's own solvers
+over body capsules (segment-segment distance, Ericson 2005, 5.1.9) and position-based dynamics (Abu
+Rumman and Fratarcangeli, CGF 2015, DOI 10.1111/cgf.12533); the three `hs distill search` queries of
+2026-10-12 found no per-frame limb solver and no skirt-bone paper to cite instead.
+**Amends:** OPS-1 and AGT-1 (52 ops, 60 tools, the two readers are always offered), adds OPS-26 and OPS-27,
+§5.5 (the new named constants), the measured-state table, §6.1–§6.3 counts.
+**Done means:** `tests/blender/test_motion_ops.py` (run by `make test-blender-app`) imports skinclip's tube
+humanoid into Blender and asserts: the `hand_through_torso` report fails and names an arm bone against the
+trunk, in Blender frame numbers; `body_capsules_report` gives 18 capsules (6 central, 6 a side) and
+`rig_convention == "ue5"`; after `repair_limb_penetration` the report passes and
+`worst_depth_m_after <= 0.002`, with every curve it did not change untouched; on `thigh_swing`
+`bake_cloth_chains` creates 24 bones, weights the garment, gives `worst_clearance_m >= -0.005` measured on the
+posed pose bones in Blender (and a control shows the same probe failing on unbaked chains), and a second call
+creates 0; `tests/pure/test_motion_ops_pure.py` and `test_pose_paths.py` pin the numpy-free import and the
+data-path reader; `make test` is green and the tool-schema pin is moved in the same change.
+
+**Closed:** 2026-10-12.
+**Gating tests:** `tests/blender/test_motion_ops.py` (27 tests): `::test_the_hand_through_the_torso_fails_and_names_the_arm_against_the_trunk` (61 frames, 36 failing, worst frame 28, 1.781 m, `lowerarm_l` against `pelvis` / `thigh_l` / `spine_01`, `hand_l` against `thigh_l`), `::test_frames_are_blender_frame_numbers_when_the_action_starts_late`, `::test_the_capsule_report_holds_the_eighteen_capsules_of_a_ue5_humanoid`, `::test_the_repair_clears_the_hand_and_touches_only_the_arm` (depth 0.0979 → 8.9e-07 m, contour 1.781 → 0.0 m, 45 frames, only `upperarm_l` and `lowerarm_l` rewritten), `::test_the_cloth_bake_creates_the_chains_weights_the_garment_and_clears_the_legs` (24 bones, 768 vertices, 31 frames, clearance +0.0113 m), `::test_the_clearance_probe_fails_on_chains_that_were_never_baked` (same probe on unbaked chains: -0.0555 m), `::test_a_second_bake_reuses_the_bones_and_leaves_the_weights_alone`, `::test_a_refused_bake_leaves_the_scene_as_it_found_it`, `::test_a_moved_and_turned_armature_measures_the_same`; `tests/pure/test_motion_ops_pure.py::test_the_ops_import_with_numpy_and_skinclip_unavailable`; `tests/pure/test_pose_paths.py`.
+**Spec:** OPS-26 and OPS-27 added; the measured-state table, §3.9 package map, AGT-1, §5.5 constants, §6.1–§6.3 counts amended in place; `docs/harness_design.md` row 32; OPS-10 and three `manifest.py` cites re-resolved.
+**Shape of the change:** `blended.ops._skinned` reads an armature and its action as Blender evaluates it (`rest_local @ basis`) into skinclip's `Figure` / `Clip` and writes `rotation_quaternion` keys back (`basis_r = conjugate(rest_r) (x) local_r`); `rigging._create_edit_bones` became the one place bones are made. `RingSkirtSpec` is blended's own dataclass, not a re-export: skinclip's imports numpy at module level, which the facade must not.
+**Side effects, measured:** tool-schema fingerprint `t:fd10e7f510a8` → `t:c0f12870fe32` (60 tools, 16 readers); the offered set 29 of 56 → 31 of 60 (`t:6b6093efb569` → `t:f26ac89217a9`), because readers are always offered; the assembled-prompt pin did not move. `uv sync` removed `numpy`, `pillow` and the hand-installed `spyrite-tile-ops` from `.venv` (the last was reinstalled).
+**Layers:** pure 1316 passed / 1 xfailed; Blender 330 passed / 1 skipped; bench-scripts 5 passed; MCP unit 126 tests OK (36 + 1 + 29 + 7 + 53).
+**Commit:** `78b0c31`.
+
+---
+
 ## Errata (append-only; entries above are not edited)
 
 - 2026-10-07: `tests/blender/test_agent_loop.py::test_a_gated_op_on_a_missing_object_fails_at_locate` (OT-4 gating test) is now `::test_a_gated_op_on_a_missing_object_fails_at_execute`; the call fails at execute with `UnknownObject`.
