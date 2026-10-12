@@ -130,31 +130,7 @@ def add_armature(
     armature_object.location = location_m
     bpy.context.scene.collection.objects.link(armature_object)
 
-    # edit_bones are only editable in EDIT mode.  In a headless context
-    # there is no active area, so we must override the mode context via
-    # temp_override rather than relying on the viewport.
-    bpy.context.view_layer.objects.active = armature_object
-    armature_object.select_set(True)
-    with bpy.context.temp_override(
-        object=armature_object,
-        active_object=armature_object,
-        selected_objects=[armature_object],
-    ):
-        bpy.ops.object.mode_set(mode="EDIT")
-        try:
-            created: dict[str, object] = {}
-            for spec in bones:
-                edit_bone = armature_data.edit_bones.new(spec.name)
-                edit_bone.head = spec.head_m
-                edit_bone.tail = spec.tail_m
-                if spec.parent_name:
-                    edit_bone.parent = created[spec.parent_name]
-                    edit_bone.use_connect = spec.connected
-                created[spec.name] = edit_bone
-        finally:
-            # A failure mid-build must not strand the file in EDIT mode.
-            bpy.ops.object.mode_set(mode="OBJECT")
-
+    _create_edit_bones(armature_object, bones)
     armature_object.select_set(False)
     return armature_object.name
 
@@ -275,3 +251,48 @@ def rig_report(armature_name: str) -> RigReport:
         bound_mesh_names=tuple(bound_mesh_names),
         disabled_modifier_mesh_names=tuple(disabled_mesh_names),
     )
+
+
+# -- internals -----------------------------------------------------------
+
+
+def _create_edit_bones(armature_object, bones: tuple[BoneSpec, ...]) -> None:
+    """Create ``bones`` on ``armature_object`` in EDIT mode, then return to OBJECT mode.
+
+    The one place bones are made. A parent named by a spec is looked up
+    among the bones created earlier in this call, then among the bones
+    the armature already has, so the same path adds a first skeleton
+    (``add_armature``) and extends an existing one (``bake_cloth_chains``).
+    The armature becomes the active, selected object.
+    """
+    import bpy
+
+    armature_data = armature_object.data
+    # edit_bones are only editable in EDIT mode.  In a headless context
+    # there is no active area, so we must override the mode context via
+    # temp_override rather than relying on the viewport.
+    bpy.context.view_layer.objects.active = armature_object
+    armature_object.select_set(True)
+    with bpy.context.temp_override(
+        object=armature_object,
+        active_object=armature_object,
+        selected_objects=[armature_object],
+    ):
+        bpy.ops.object.mode_set(mode="EDIT")
+        try:
+            created: dict[str, object] = {}
+            for spec in bones:
+                edit_bone = armature_data.edit_bones.new(spec.name)
+                edit_bone.head = spec.head_m
+                edit_bone.tail = spec.tail_m
+                if spec.parent_name:
+                    edit_bone.parent = (
+                        created[spec.parent_name]
+                        if spec.parent_name in created
+                        else armature_data.edit_bones[spec.parent_name]
+                    )
+                    edit_bone.use_connect = spec.connected
+                created[spec.name] = edit_bone
+        finally:
+            # A failure mid-build must not strand the file in EDIT mode.
+            bpy.ops.object.mode_set(mode="OBJECT")

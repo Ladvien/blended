@@ -4107,6 +4107,92 @@ MISTAKES: tuple[MistakeRecord, ...] = (
         ),
         recorded_on="2026-10-08",
     ),
+    MistakeRecord(
+        identifier="a-reexported-dependency-type-imports-the-dependency-at-facade-import",
+        scope="harness_code",
+        failure=(
+            "The OT-51 brief asked blended.ops.motion to re-export skinclip's "
+            "RingSkirtSpec while importing skinclip only inside op bodies. "
+            "`sys.modules['numpy'] = None; from skinclip.cloth import "
+            "RingSkirtSpec` raises ModuleNotFoundError at skinclip/cloth.py "
+            "line 27 (`import numpy as np`); with numpy absent from .venv "
+            "(uv sync removed it) that import is the facade's, the MCP "
+            "server's and tests/pure's."
+        ),
+        cause=(
+            "A type that lives in a numpy module cannot be named in a "
+            "module that must import without numpy: `typing.get_type_hints` "
+            "(the schema generator) and `dataclasses.fields` (the manifest) "
+            "need the real class in the module's globals, so a lazy "
+            "`__getattr__` is not enough."
+        ),
+        fix=(
+            "RingSkirtSpec is defined in blended.ops.motion, field for field "
+            "as skinclip's, with construction checks for the equal-height "
+            "cases skinclip divides by; the op converts it to skinclip's "
+            "inside its body. A Blender-tier test compares the two "
+            "dataclasses, so a field added to skinclip's fails here."
+        ),
+        guarded_by=(
+            "tests/pure/test_motion_ops_pure.py::"
+            "test_the_ops_import_with_numpy_and_skinclip_unavailable and "
+            "tests/blender/test_motion_ops.py::"
+            "test_the_ring_skirt_spec_mirrors_skinclips_field_for_field"
+        ),
+        recorded_on="2026-10-12",
+    ),
+    MistakeRecord(
+        identifier="a-repaired-clip-is-not-a-fixed-point-of-the-repair",
+        scope="harness_code",
+        failure=(
+            "tests/blender/test_motion_ops.py's first second-repair test "
+            "asserted frames_repaired == 0 after repairing the tube "
+            "humanoid's hand_through_torso; measured 4 frames repaired at "
+            "worst_depth_m_before 9.1e-07 m (a micrometre), after a first "
+            "pass that took 0.0979 m to 8.9e-07 m."
+        ),
+        cause=(
+            "The solver stops on the clearance's edge (margin 5 mm plus the "
+            "capsule radii), and Blender stores keyframes as float32, so "
+            "writing the repaired rotations back moves a depth of 0 to a "
+            "micrometre. 'No overlap' is a tolerance, not an equality."
+        ),
+        fix=(
+            "The test asserts the invariant the op promises: the second "
+            "pass starts and ends at or below 0.002 m and moves no key by "
+            "1e-3 or more."
+        ),
+        guarded_by=(
+            "tests/blender/test_motion_ops.py::"
+            "test_a_second_repair_only_trims_micrometres"
+        ),
+        recorded_on="2026-10-12",
+    ),
+    MistakeRecord(
+        identifier="a-probe-ceiling-was-written-before-it-was-measured",
+        scope="process",
+        failure=(
+            "The comment above UNBAKED_CHAIN_CLEARANCE_CEILING_M said the "
+            "unbaked chains read about -0.07 m against the swinging thighs; "
+            "measured through the same probe they read -0.0555 m (baked: "
+            "+0.0113 m)."
+        ),
+        cause=(
+            "The number was estimated from the geometry while the test was "
+            "being written, and went into a comment as if measured; the "
+            "assertion (< -0.02 m) was loose enough to hide it."
+        ),
+        fix=(
+            "Measured both numbers in Blender and wrote them into the "
+            "comment; the control asserts the unbaked reading is below the "
+            "ceiling and the baked one above -0.005 m."
+        ),
+        guarded_by=(
+            "tests/blender/test_motion_ops.py::"
+            "test_the_clearance_probe_fails_on_chains_that_were_never_baked"
+        ),
+        recorded_on="2026-10-12",
+    ),
 )
 
 
