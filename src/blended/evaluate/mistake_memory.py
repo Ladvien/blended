@@ -4133,13 +4133,18 @@ MISTAKES: tuple[MistakeRecord, ...] = (
             "skinclip v0.1.1 moved RingSkirtSpec into skinclip.spec, a module "
             "that imports nothing; blended.ops.motion re-exports that class "
             "(the mirror and its field-for-field test are deleted). The "
-            "construction checks skinclip's dataclass does not have (equal "
-            "heights divide by zero in the weights) live in "
-            "`_require_valid_spec`, run before anything is read."
+            "construction checks skinclip's dataclass first lacked (equal "
+            "heights divide by zero in the weights) were kept in blended "
+            "until skinclip v0.1.2 put them in RingSkirtSpec.__post_init__; "
+            "blended's copy was deleted, and the agent binds the spec while "
+            "building the call, so a bad spec fails before the op body and "
+            "the scene are reached."
         ),
         guarded_by=(
             "tests/pure/test_motion_ops_pure.py::"
-            "test_the_ops_import_with_numpy_unavailable and "
+            "test_the_ops_import_with_numpy_unavailable, "
+            "tests/pure/test_motion_ops_pure.py::"
+            "test_a_bad_spec_fails_before_the_op_body_runs_and_so_before_the_scene_is_touched and "
             "tests/blender/test_motion_ops.py::"
             "test_the_exported_ring_skirt_spec_is_skinclips_own"
         ),
@@ -4169,6 +4174,36 @@ MISTAKES: tuple[MistakeRecord, ...] = (
         guarded_by=(
             "tests/blender/test_motion_ops.py::"
             "test_a_second_repair_only_trims_micrometres"
+        ),
+        recorded_on="2026-10-12",
+    ),
+    MistakeRecord(
+        identifier="removing-an-fcurve-leaves-the-property-at-its-last-value",
+        scope="harness_code",
+        failure=(
+            "The OT-51 cloth control ('chains that were never baked') removed "
+            "the 24 chain bones' rotation_quaternion fcurves and read the "
+            "clearance: -0.0555 m on skinclip v0.1.0/v0.1.1, -0.0690 m on "
+            "v0.1.2. Same bones, same thighs, but the number moved with the "
+            "skinclip version, which a never-baked chain cannot depend on. "
+            "With the pose reset to rest it reads -0.0700 m on v0.1.2."
+        ),
+        cause=(
+            "Deleting an fcurve does not reset the property it drove: the "
+            "pose bone keeps the last value evaluated, here the baked "
+            "frame-30 rotation, so the control held the chains frozen in a "
+            "baked pose, not at rest. The comment above it claimed 'rest "
+            "pose'. A control must be varied against what it controls: the "
+            "number moving with the thing under test was the tell."
+        ),
+        fix=(
+            "The control resets each chain pose bone to the identity "
+            "quaternion after removing its curves; the comment records both "
+            "readings and the mechanism."
+        ),
+        guarded_by=(
+            "tests/blender/test_motion_ops.py::"
+            "test_the_clearance_probe_fails_on_chains_that_were_never_baked"
         ),
         recorded_on="2026-10-12",
     ),

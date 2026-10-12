@@ -37,11 +37,15 @@ REPAIRED_KEY_DRIFT_LIMIT = 1e-3
 ARM_BONES = {"upperarm_l", "lowerarm_l", "hand_l"}
 TORSO_BONES = {"pelvis", "spine_01", "spine_02", "spine_03", "thigh_l", "thigh_r"}
 CLEARANCE_LIMIT_M = -0.005
-# Measured 2026-10-12: the same 24 bones with their keys removed (chains left
-# at their rest pose against the swinging thighs) read -0.0555 m, against +0.0113 m
-# for the baked chains; a probe that could not read below this ceiling could
-# not tell a bake from none.
+# Measured 2026-10-12 on skinclip v0.1.2: the same 24 bones with their keys
+# removed AND their pose reset to rest (chains hanging at their rest pose
+# against the swinging thighs) read -0.0700 m, against +0.0170 m for the baked
+# chains. (With the keys removed but the pose NOT reset the property keeps its
+# last evaluated value, so the chains hang frozen in the baked frame-30 pose
+# and read -0.0690 m: that is not a control for "never baked".) A probe that
+# could not read below this ceiling could not tell a bake from none.
 UNBAKED_CHAIN_CLEARANCE_CEILING_M = -0.02
+REST_QUATERNION_WXYZ = (1.0, 0.0, 0.0, 0.0)
 
 MOVE_M = (3.0, -2.0, 0.5)
 TURN_RAD = 0.5
@@ -615,6 +619,11 @@ def test_the_clearance_probe_fails_on_chains_that_were_never_baked(
         fc for fc in bag.fcurves if fc.data_path.startswith('pose.bones["skirt_')
     ]:
         bag.fcurves.remove(fcurve)
+    # Removing a curve leaves its property at the last value it evaluated to.
+    for pose_bone in armature.pose.bones:
+        if pose_bone.name.startswith("skirt_"):
+            pose_bone.rotation_quaternion = REST_QUATERNION_WXYZ
+    bpy.context.view_layer.update()
 
     figure = _skinned.read_figure(
         armature, CheckSettings(non_crease_prefixes=("skirt_",))

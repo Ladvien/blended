@@ -146,7 +146,7 @@ requires-dist = [
     { name = "blender-mcp", editable = "blender_mcp/mcp" },
     { name = "jinja2", specifier = ">=3.1.6" },
     { name = "pillow", marker = "extra == 'capture'" },
-    { name = "skinclip", git = "https://github.com/Ladvien/skinclip.git?tag=v0.1.1" },
+    { name = "skinclip", git = "https://github.com/Ladvien/skinclip.git?tag=v0.1.2" },
 ]
 provides-extras = ["capture"]
 
@@ -1352,8 +1352,8 @@ wheels = [
 
 [[package]]
 name = "skinclip"
-version = "0.1.1"
-source = { git = "https://github.com/Ladvien/skinclip.git?tag=v0.1.1#7bdb5eb404c01eb3025d1a0bfe08729992090e3c" }
+version = "0.1.2"
+source = { git = "https://github.com/Ladvien/skinclip.git?tag=v0.1.2#848d4517a8be77c1027269f86e590fe0da0b7980" }
 
 [[package]]
 name = "sse-starlette"

@@ -14,13 +14,10 @@ import pytest
 from skinclip.spec import RingSkirtSpec
 
 import blended.ops as ops_facade
+from blended.agent.op_call import call_op
 from blended.manifest import OP_CONFIG_DATACLASSES, OP_MODULE_NAMES
 from blended.ops._contract import changes_scene, is_gated, is_reads_only
-from blended.ops.motion import (
-    MINIMUM_SKIRT_CHAIN_COUNT,
-    ArmatureRotationModeError,
-    _require_valid_spec,
-)
+from blended.ops.motion import ArmatureRotationModeError, bake_cloth_chains
 
 MOTION_READERS = ("body_capsules_report", "clip_self_intersection_report")
 MOTION_WRITERS = ("bake_cloth_chains", "repair_limb_penetration")
@@ -87,22 +84,49 @@ def test_the_facade_exports_skinclips_own_ring_skirt_spec():
     assert spec.prefix == "skirt_"
     with pytest.raises(TypeError):
         RingSkirtSpec(12, 0.9, 0.55, 0.2, 1.0, 0.0)  # type: ignore[misc]
-    _require_valid_spec(spec)
 
 
-@pytest.mark.parametrize(
-    ("override", "message"),
-    [
-        ({"count": MINIMUM_SKIRT_CHAIN_COUNT - 1}, "at least"),
-        ({"knee_height_m": 0.95}, "hem < knee < top < blend"),
-        ({"hem_height_m": 0.55}, "hem < knee < top < blend"),
-        ({"blend_height_m": 0.9}, "hem < knee < top < blend"),
-        ({"prefix": ""}, "prefix"),
-    ],
-)
-def test_a_ring_skirt_spec_that_would_divide_by_zero_is_refused_before_anything_is_read(
+BAD_SPECS = [
+    ({"count": 2}, "at least 3 chains"),
+    ({"knee_height_m": 0.95}, "heights must rise"),
+    ({"hem_height_m": 0.55}, "heights must rise"),
+    ({"blend_height_m": 0.9}, "heights must rise"),
+    ({"prefix": ""}, "prefix is empty"),
+]
+
+BAKE_ARGUMENTS = {
+    "armature_name": "NoSuchArmature",
+    "mesh_name": "NoSuchMesh",
+    "garment_material": "M_Skirt",
+    "anchor_bone_name": "pelvis",
+    "action_name": "thigh_swing",
+}
+
+
+@pytest.mark.parametrize(("override", "message"), BAD_SPECS)
+def test_skinclips_spec_refuses_a_ring_that_would_divide_by_zero(override, message):
+    """skinclip's weights divide by top - knee and blend - top; the dataclass refuses those at construction."""
+    with pytest.raises(ValueError, match=message):
+        RingSkirtSpec(**{**GOOD_SPEC, **override})
+
+
+@pytest.mark.parametrize(("override", "message"), BAD_SPECS)
+def test_a_bad_spec_fails_before_the_op_body_runs_and_so_before_the_scene_is_touched(
     override, message
 ):
-    """skinclip divides by top - knee and blend - top; blended refuses the equal-height cases up front."""
-    with pytest.raises(ValueError, match=message):
-        _require_valid_spec(RingSkirtSpec(**{**GOOD_SPEC, **override}))
+    """The agent binds the spec while building the call, so the op never starts.
+
+    The armature named here does not exist: had the op body run, the error
+    would be `UnknownObject`, and importing bpy would fail in this layer.
+    """
+    result = call_op(
+        "bake_cloth_chains",
+        bake_cloth_chains,
+        {**BAKE_ARGUMENTS, "spec": {**GOOD_SPEC, **override}},
+    )
+
+    assert not result.ok
+    assert result.stage_reached == "execute"
+    assert result.execution.error_type == "ValueError"
+    assert message in result.execution.traceback_text
+    assert "UnknownObject" not in result.execution.traceback_text

@@ -56,41 +56,12 @@ from blended.ops._contract import op
 # `tests/blender/test_motion_ops.py` asserts the two agree.
 DEFAULT_CONTOUR_LIMIT_M = 0.04
 
-# Fewest chains that still make a ring: two chains are a line, and the
-# neighbour limit of the simulation needs a cycle.
-MINIMUM_SKIRT_CHAIN_COUNT = 3
-
 # Keep a chain's knee and hem this far off the ground plane (z = 0): the
 # cloth has thickness. skinclip's own cloth test uses the same 2 cm.
 CLOTH_GROUND_CLEARANCE_M = 0.02
 
 CHAIN_SUFFIX_UPPER = "a"
 CHAIN_SUFFIX_LOWER = "b"
-
-
-def _require_valid_spec(spec: RingSkirtSpec) -> None:
-    """Refuse a ring skirt whose heights or count skinclip would divide by zero on, before anything is read.
-
-    skinclip's `RingSkirtSpec` carries no checks of its own; the weights
-    divide by `top - knee` and `blend - top`, and the layout needs a cycle
-    of chains.
-    """
-    if spec.count < MINIMUM_SKIRT_CHAIN_COUNT:
-        raise ValueError(
-            f"a ring skirt needs at least {MINIMUM_SKIRT_CHAIN_COUNT} "
-            f"chains, got count={spec.count}"
-        )
-    if not (
-        spec.hem_height_m < spec.knee_height_m < spec.top_height_m < spec.blend_height_m
-    ):
-        raise ValueError(
-            "ring skirt heights must satisfy hem < knee < top < blend, got "
-            f"hem={spec.hem_height_m}, knee={spec.knee_height_m}, "
-            f"top={spec.top_height_m}, blend={spec.blend_height_m} "
-            "(the weights divide by top - knee and blend - top)"
-        )
-    if not spec.prefix:
-        raise ValueError("a ring skirt needs a bone-name prefix")
 
 
 class ArmatureRotationModeError(ValueError):
@@ -351,7 +322,6 @@ def bake_cloth_chains(
     from blended.ops import _skinned
     from blended.ops._objects import object_by_name
 
-    _require_valid_spec(spec)
     armature_object = object_by_name(armature_name, "ARMATURE")
     mesh_object = object_by_name(mesh_name, "MESH")
     # Everything that can refuse does so before the scene is touched: a bad
